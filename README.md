@@ -11,14 +11,14 @@ Want to make a game without writing code? Try the **[LittleJS GPT!](https://chat
 
 For advanced users, LittleJS also works great with tools like GitHub copilot, Codex, and Cursor. 
 
-LittleJS and everything in this repository is **MIT licensed**. See [LICENSE](LICENSE) for details.
+LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LICENSE) for details.
 
 ## 📚 Resources
 
 - [LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) - The main LittleJS repository
-- [LittleJS Documentation](https://killedbyapixel.github.io/LittleJS/docs/) - API documentation
-- [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) - Use ChatGPT to make games without writing any code
+- [Games Folder](games/) - Example games made with LittleJS AI
 - [AI Folder](AI/) - AI instructions, tutorials, and reference materials for vibe coding with LittleJS
+- [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) - Use ChatGPT to make games without writing any code
 - [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - 20 quick game demos made with LittleJS AI
 
 ## 🕹️ Featured Games
