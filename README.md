@@ -1,6 +1,10 @@
 # 🎮 LittleJS-AI
 
-A collection of classic games recreated using [LittleJS](https://github.com/KilledByAPixel/LittleJS) and AI-assisted "vibe coding" experiments.
+A collection of games made using [LittleJS](https://github.com/KilledByAPixel/LittleJS) and AI-assisted vibe coding experiments.
+
+All of these games were built completely by AI and can be used as starting points to remix into new games.
+
+You can use the [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) to make your own games. Send us a pull request and maybe we will add them to the repo.
 
 ## About
 
@@ -14,7 +18,6 @@ This repository showcases games built with the lightweight JavaScript game engin
 |------|------|
 | 2048 | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/2048.html) |
 | Asteroids | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/asteroids.html) |
-| Baseball | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) |
 | Breakout | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
 | Centipede | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) |
 | Columns | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) |
@@ -42,13 +45,9 @@ This repository showcases games built with the lightweight JavaScript game engin
 - **[LittleJS Engine](https://github.com/KilledByAPixel/LittleJS)** - The main LittleJS repository
 - **[LittleJS Documentation](https://killedbyapixel.github.io/LittleJS/docs/)** - API documentation
 - **[GPT Folder](GPT/)** - AI instructions, tutorials, and reference materials for vibe coding with LittleJS
-
-## 🚀 Getting Started
-
-1. Clone this repository
-2. Open any game HTML file in your browser, or serve locally
-3. Check out the [GPT folder](GPT/) for AI coding tips and LittleJS reference
+- **[LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs)** - Use ChatGPT to make games without writing any code
 
 ## License
 
+LittleJS and all the examples in this repository are MIT licensed.
 See [LICENSE](LICENSE) for details.
