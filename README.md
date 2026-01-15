@@ -19,7 +19,7 @@ LittleJS and everything in this repository is **MIT licensed**. See [LICENSE](LI
 - [LittleJS Documentation](https://killedbyapixel.github.io/LittleJS/docs/) - API documentation
 - [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) - Use ChatGPT to make games without writing any code
 - [GPT Folder](GPT/) - AI instructions, tutorials, and reference materials for vibe coding with LittleJS
-- [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - Short video showing 20 quick game demos made with LittleJS AI
+- [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - 20 quick game demos made with LittleJS AI
 
 ## 🕹️ Featured Games
 
