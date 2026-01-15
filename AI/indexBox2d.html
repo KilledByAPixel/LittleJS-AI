@@ -3,6 +3,7 @@
 <meta charset="utf-8">
 </head><body style="background:#000">
 <script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/box2d.wasm.js"></script>
 <script>
 'use strict';
 
@@ -42,10 +43,37 @@ class SoundGenerator extends Sound
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// game stuff
+let mouseJoint;
+let groundObject;
+
+///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
     // called once after the engine starts up
     // setup the game
+
+    // setup box2d first!
+    await box2dInit();
+    
+    // setup world
+    canvasClearColor = hsl(0,0,.9);
+    mouseJoint = 0;
+    gravity.y = -50;
+    
+    // create ground object
+    groundObject = new Box2dStaticObject(vec2(-8));
+    groundObject.color = GRAY;
+    groundObject.addBox(vec2(100,2));
+
+    // add some random objects
+    for (let i=50; i--;)
+    {
+        const pos = randInCircle(5);
+        const color = randColor();
+        const o = new Box2dObject(pos, vec2(), 0, 0, color);
+        randInt(2) ? o.addCircle(rand(1,2)) : o.addRandomPoly(rand(1,2));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,6 +81,26 @@ function gameUpdate()
 {
     // called every frame at 60 frames per second
     // handle input and update the game state
+    
+    // mouse joint controls
+    if (mouseJoint)
+    {
+        // update mouse joint
+        mouseJoint.setTarget(mousePos);
+        if (mouseWasReleased(0))
+        {
+            // release object
+            mouseJoint = mouseJoint.destroy();
+        }
+    }
+    else if (mouseWasPressed(0))
+    {
+        // grab object
+        const object = box2d.pointCast(mousePos);
+        if (object)
+            mouseJoint = new Box2dTargetJoint(object,
+                groundObject, mousePos);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -67,17 +115,6 @@ function gameRender()
 {
     // called before objects are rendered
     // draw any background effects that appear behind objects
-
-    // draw background gradient
-    drawRectGradient(cameraPos, getCameraSize(), BLACK, WHITE);
-        
-    // draw some shapes
-    drawCircle(vec2(5,-3), 5, RED);
-    drawRect(vec2(-5,-3), vec2(5,5), BLUE);
-    drawLine(cameraPos, mousePos, 1,  YELLOW);
-
-    // draw world space text
-    drawText(`LittleJS Engine`, vec2(0,3), 3);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -85,11 +122,14 @@ function gameRenderPost()
 {
     // called after objects are rendered
     // draw effects or hud that appear above all objects
-
+    
     // draw screen space text
     drawTextScreen(`Hello World!`, 
         vec2(mainCanvasSize.x/2, 70), 80,   // position, size
         hsl(0,0,1), 6, hsl(0,0,0));         // color, outline size and color
+
+    // draw mouse joint
+    mouseJoint && drawLine(mousePos, mouseJoint.getAnchorB(), .2, RED);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

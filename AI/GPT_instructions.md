@@ -34,10 +34,19 @@ Output format (in chat)
 - Next step options (2-4 choices)
 - All code must be written into Canvas as index.html
 
+Game ideas that work well with LittleJS
+- Puzzle: tetris, columns, minesweeper, match3
+- Arcade: breakout, snake, asteroids, space invaders, frogger
+- Boardgame: checkers, connect four, battleship, solitaire
+- Platformer: use a TileCollisionLayer 
+- Top down game: duel stick shooter, racing, adventure game
+- Pseudo 3d: Raycasting or arcade racing.
+- Box2d Physics: use indexBox2d.html as a starter
+
 Common pitfalls
 - For drawCircle and drawEllipse, the size is the diameter not the radius.
 - Clockwise is positive for angles.
 - Do not redefine shortcuts to Math functions.
 - Do not write new audio code, just use SoundGenerator to make sounds.
 - Do not change html or css, only write JavaScript.
-- Do not put literal newlines inside quotes, use \n instead.
+- Do not replace \n with new lines for text inside strings.
