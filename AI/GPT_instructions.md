@@ -40,3 +40,4 @@ Common pitfalls
 - Do not redefine shortcuts to Math functions.
 - Do not write new audio code, just use SoundGenerator to make sounds.
 - Do not change html or css, only write JavaScript.
+- Do not put literal newlines inside quotes, use \n instead.
