@@ -1,4 +1,4 @@
-# 🚂🤖 LittleJS + AI
+# 🚂🤖 LittleJS AI
 
 [LittleJS](https://github.com/KilledByAPixel/LittleJS) is a fast, lightweight, and fully open source HTML5 game engine designed for simplicity and performance.
 
