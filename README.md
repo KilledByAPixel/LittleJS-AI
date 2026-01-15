@@ -1,20 +1,25 @@
 # 🚂🤖 LittleJS + AI
 
-[LittleJS](https://github.com/KilledByAPixel/LittleJS) is a tiny game engine with many features and no dependencies. It excells at AI driven game developoment because of it's simplicty, ease of use, and comprehensive feature set. This repo is a place to share LitleJS AI experiments and improve how LittJS interfaces with AI.
+[LittleJS](https://github.com/KilledByAPixel/LittleJS) is a fast, lightweight, and fully open source HTML5 game engine designed for simplicity and performance.
 
-This repo is also a library of games made using LittleJS and AI-assisted vibe coding. These games can also be used as starting points to create new games or further refine these.
+This repo is a library of **LittleJS + AI** experiments:
+- playable games generated or iterated with AI help
+- starter projects you can fork and remix
+- docs and prompts to improve LittleJS + AI workflows
 
-You can use the [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) to make your own games without writing code!
+Want to make a game without writing code? Try the **[LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs)**
 
-LittleJS and all the examples in this repository are MIT licensed! See [LICENSE](LICENSE) for details.
+For advanced users, LittleJS also works great with tools like GitHub copilot, Codex, and Cursor. 
+
+LittleJS and everything in this repository is **MIT licensed**. See [LICENSE](LICENSE) for details.
 
 ## 📚 Resources
 
 - [LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) - The main LittleJS repository
 - [LittleJS Documentation](https://killedbyapixel.github.io/LittleJS/docs/) - API documentation
-- [GPT Folder](GPT/) - AI instructions, tutorials, and reference materials for vibe coding with LittleJS
 - [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs) - Use ChatGPT to make games without writing any code
-- [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - Short video showing 20 quick game demos made with LittleJS AI
+- [GPT Folder](GPT/) - AI instructions, tutorials, and reference materials for vibe coding with LittleJS
+- [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - 20 quick game demos made with LittleJS AI
 
 ## 🕹️ Featured Games
 
