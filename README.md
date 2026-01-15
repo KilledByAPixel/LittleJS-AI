@@ -7,7 +7,7 @@ This repo is a library of LittleJS AI experiments:
 - starter projects you can fork and remix
 - docs and prompts to improve LittleJS + AI workflows
 
-Want to make a game without writing code? Try the **[LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs)**
+### Want to make a game without writing code? Try the **[LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-make-games-with-littlejs)**
 
 For advanced users, LittleJS also works great with tools like GitHub copilot, Codex, and Cursor. 
 
