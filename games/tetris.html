@@ -1,379 +1,1389 @@
 <!DOCTYPE html><head>
-<title>LittleJS AI Starter Project</title>
+<title>LittleJS Tetris VS AI</title>
 <meta charset="utf-8">
 </head><body style="background:#000">
 <script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/box2d.wasm.js"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
-debugWatermark = false; // Hide debug watermark in corner
-showEngineVersion = false; // Hide engine version console display
-paused = false; // Start unpaused
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
 
-// engine settings, customize if necessary
 gravity = vec2(0, 0);
-objectDefaultDamping = .01;
-objectDefaultAngleDamping = .01;
-cameraScale = 28;
-canvasClearColor = hsl(0,0,.08); // set immediately so we don't flash white while loading
-cameraPos = vec2();
+cameraPos = vec2(0, 0);
+cameraScale = 22;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound 
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0, pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
-// Pinball (Box2D) - tiny prototype
-//
-// Fix for "Assert failed!": LittleJS Box2D helpers use `addCircle(diameter, ... isSensor)`
-// where the last parameter MUST be a boolean. The earlier code accidentally passed a
-// number as isSensor (e.g. 0.4), which triggers LittleJS ASSERT.
-//
-// Note: We use LittleJS's built-in Sound class for SFX so we don't depend on any
-// optional helper like SoundGenerator.
+// CONSTANTS
 
-const FIELD_W = 16;
-const FIELD_H = 28;
-const FIELD_BOTTOM = -FIELD_H/2;
-const FIELD_TOP    =  FIELD_H/2;
+const COLS = 10;
+const ROWS = 20;
+const CELL = 1;
 
-let table;                 // Box2dStaticObject holding walls
-let ball;                  // Box2dObject
-let score = 0;
-let ballsLeft = 3;
+const GAP_X = 4.5;
+const BOARD_SIZE = vec2(COLS*CELL, ROWS*CELL);
+const LEFT_CENTER_X  = -(BOARD_SIZE.x/2 + GAP_X/2);
+const RIGHT_CENTER_X = +(BOARD_SIZE.x/2 + GAP_X/2);
+const BOARD_BOTTOM_Y = -10;
 
-let leftFlipper, rightFlipper;
-let leftJoint, rightJoint;
+const START_GRAVITY = 1;
+const SOFT_DROP_MULT = 12;
+const LOCK_DELAY = .35;
+const MOVE_DAS = .14;
+const MOVE_ARR = .045;
 
-let launchCharge = 0;
-let canLaunch = false;
+const NEXT_COUNT = 4;
 
-// simple sfx (LittleJS Sound)
-let sfxBumper, sfxFlip, sfxDrain;
+// Line clear "chain" animation
+const CLEAR_STEP_TIME = .03;
 
-let ready = false;
-let initError = '';
+// Particles
+const PARTICLE_LIFE = .45;
+const PARTICLES_PER_CELL = 10;
 
-class Bumper extends Box2dStaticObject
+// Sparkles (tiny ambient particles on pieces)
+const SPARKLE_LIFE = .35;
+const SPARKLE_RATE = 22;          // approx sparkles per second per active piece
+const SPARKLE_SIZE_MIN = .04;
+const SPARKLE_SIZE_MAX = .11;
+
+
+// VS / Garbage
+const GARBAGE_TYPE = 7;
+const GARBAGE_COLOR = rgb(.35,.35,.38);
+// Classic vs-style attack table (single sends 0)
+const ATTACK_TABLE = [0, 0, 1, 2, 4]; // cleared lines -> garbage lines
+
+// AI (human-ish)
+// AI (human-ish, but faster)
+// "2x speed" = roughly half the delays
+const AI_THINK_DELAY_MIN = .04;
+const AI_THINK_DELAY_MAX = .11;
+const AI_ACTION_INTERVAL_MIN = .02;
+const AI_ACTION_INTERVAL_MAX = .05;
+const AI_DROP_DELAY_MIN = .025;
+const AI_DROP_DELAY_MAX = .10;
+const AI_SOFT_DROP_CHANCE = .35;
+const AI_MISTAKE_CHANCE = .04; // occasionally choose 2nd-best-ish
+
+///////////////////////////////////////////////////////////////////////////////
+// PIECES
+
+const PIECES = [
+    { name:'I', color:hsl(.55, .9, .55), rots:[
+        [vec2(-2,0), vec2(-1,0), vec2(0,0), vec2(1,0)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(0,2)],
+        [vec2(-2,1), vec2(-1,1), vec2(0,1), vec2(1,1)],
+        [vec2(-1,-1), vec2(-1,0), vec2(-1,1), vec2(-1,2)],
+    ]},
+    { name:'O', color:hsl(.14, .9, .55), rots:[
+        [vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1)],
+        [vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1)],
+        [vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1)],
+        [vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1)],
+    ]},
+    { name:'T', color:hsl(.84, .75, .6), rots:[
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(0,1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(1,0)],
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(0,-1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(-1,0)],
+    ]},
+    { name:'S', color:hsl(.33, .9, .55), rots:[
+        // S piece (CW rotation uses (x,y)->(y,-x))
+        [vec2(-1,0), vec2(0,0), vec2(0,1), vec2(1,1)],
+        [vec2(0,1), vec2(0,0), vec2(1,0), vec2(1,-1)],
+        [vec2(1,0), vec2(0,0), vec2(0,-1), vec2(-1,-1)],
+        [vec2(0,-1), vec2(0,0), vec2(-1,0), vec2(-1,1)],
+    ]},
+    { name:'Z', color:hsl(.02, .9, .6), rots:[
+        // Z piece
+        [vec2(-1,1), vec2(0,1), vec2(0,0), vec2(1,0)],
+        [vec2(1,1), vec2(1,0), vec2(0,0), vec2(0,-1)],
+        [vec2(1,-1), vec2(0,-1), vec2(0,0), vec2(-1,0)],
+        [vec2(-1,-1), vec2(-1,0), vec2(0,0), vec2(0,1)],
+    ]},
+
+    { name:'J', color:hsl(.62, .85, .58), rots:[
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(-1,1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(1,1)],
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(1,-1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(-1,-1)],
+    ]},
+    { name:'L', color:hsl(.08, .9, .6), rots:[
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(1,1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(1,-1)],
+        [vec2(-1,0), vec2(0,0), vec2(1,0), vec2(-1,-1)],
+        [vec2(0,-1), vec2(0,0), vec2(0,1), vec2(-1,1)],
+    ]},
+];
+
+const KICKS = [vec2(0,0), vec2(-1,0), vec2(1,0), vec2(0,1), vec2(-2,0), vec2(2,0)];
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBAL STATE
+
+let players = []; // [human, ai]
+let particles = [];
+
+// sounds
+let sMove, sRotate, sDrop, sLock, sClear, sHold, sOver, sGarbage;
+
+///////////////////////////////////////////////////////////////////////////////
+// HELPERS
+
+function frand(min=0, max=1){ return min + Math.random()*(max-min); }
+function clamp01(x){ return x < 0 ? 0 : x > 1 ? 1 : x; }
+
+function clamp(x, a, b){ return x < a ? a : x > b ? b : x; }
+function shadeColor(c, amount)
 {
-    // radius is in world units; addCircle expects diameter
-    constructor(pos, radius=1.1)
-    {
-        super(pos);
-        this.color = hsl(.12, .8, .55);
-        this.lineColor = hsl(0,0,0);
-        this.lineWidth = .15;
+    // amount: -1..+1 (negative darkens)
+    const out = c.copy();
+    out.r = clamp(out.r + amount, 0, 1);
+    out.g = clamp(out.g + amount, 0, 1);
+    out.b = clamp(out.b + amount, 0, 1);
+    return out;
+}
 
-        const diameter = radius * 2;
-        // addCircle(diameter, offset, density, friction, restitution, isSensor)
-        // For static objects, density is ignored, but we keep it 0.
-        this.addCircle(diameter, vec2(), 0, .2, .95, false);
+function withAlpha(c, a)
+{
+    const out = c.copy();
+    out.a = a;
+    return out;
+}
+
+function getBlocks(type, rot){ return PIECES[type].rots[mod(rot,4)]; }
+
+function makeEmptyBoard()
+{
+    const b = [];
+    for (let y=0; y<ROWS; ++y)
+    {
+        const row = [];
+        for (let x=0; x<COLS; ++x) row.push(-1);
+        b.push(row);
+    }
+    return b;
+}
+
+function cloneBoard(src)
+{
+    const out = [];
+    for (let y=0; y<ROWS; ++y) out.push(src[y].slice());
+    return out;
+}
+
+function fitsType(type, rot, pos, boardRef)
+{
+    const b = getBlocks(type, rot);
+    for (const p of b)
+    {
+        const x = (pos.x + p.x) | 0;
+        const y = (pos.y + p.y) | 0;
+        if (x < 0 || x >= COLS || y < 0) return false;
+        if (y < ROWS && boardRef[y][x] != -1) return false;
+    }
+    return true;
+}
+
+function worldFromCell(player, cx, cy)
+{
+    return player.boardPos.add(vec2((cx + .5)*CELL, (cy + .5)*CELL));
+}
+
+function drawBlock3D(pos, size, color)
+{
+    // size is side length (world units)
+    const base = color.copy();
+    const hi   = shadeColor(color, .18);
+    const hi2  = shadeColor(color, .28);
+    const sh   = shadeColor(color, -.18);
+    const sh2  = shadeColor(color, -.28);
+
+    // proportional styling so previews match in feel
+    const outline = size * .09;
+    const bevel   = size * .22;
+    const inner   = size - bevel;
+
+    // outer outline
+    drawRect(pos, vec2(size + outline), withAlpha(rgb(0,0,0), base.a));
+
+    // base
+    drawRect(pos, vec2(size), base);
+
+    // top highlight strip
+    drawRect(pos.add(vec2(0, inner/2)), vec2(size - outline*0.7, bevel), withAlpha(hi2, base.a));
+    // left highlight strip
+    drawRect(pos.add(vec2(-inner/2, 0)), vec2(bevel, size - outline*0.7), withAlpha(hi, base.a));
+
+    // bottom shadow strip
+    drawRect(pos.add(vec2(0, -inner/2)), vec2(size - outline*0.7, bevel), withAlpha(sh2, base.a));
+    // right shadow strip
+    drawRect(pos.add(vec2(inner/2, 0)), vec2(bevel, size - outline*0.7), withAlpha(sh, base.a));
+
+    // tiny specular corner
+    drawRect(pos.add(vec2(-inner/2 + bevel*0.55, inner/2 - bevel*0.55)), vec2(bevel*0.75), withAlpha(rgb(1,1,1), .12*base.a));
+}
+
+function drawCell(player, cx, cy, color, pad=.06)
+{
+    // Same 3D treatment everywhere (board blocks + previews)
+    const pos = worldFromCell(player, cx, cy);
+    const size = CELL - pad*2;
+    drawBlock3D(pos, size, color);
+}
+
+function drawMiniCell(pos, color)
+{
+    // Mini preview version uses the exact same block renderer
+    drawBlock3D(pos, .88, color);
+}
+
+
+function shuffleBag()
+{
+    const bag = [0,1,2,3,4,5,6];
+    for (let i=bag.length-1; i>0; --i)
+    {
+        const j = randInt(i+1);
+        const t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+    }
+    return bag;
+}
+
+function takeFromBag(player)
+{
+    if (!player.nextBag.length)
+        player.nextBag = shuffleBag();
+    return player.nextBag.pop();
+}
+
+function ensureNextQueue(player)
+{
+    while (player.nextQueue.length < NEXT_COUNT)
+        player.nextQueue.push(takeFromBag(player));
+}
+
+function findFullRows(boardRef)
+{
+    const rows = [];
+    for (let y=0; y<ROWS; ++y)
+    {
+        let full = true;
+        for (let x=0; x<COLS; ++x)
+            if (boardRef[y][x] == -1) { full = false; break; }
+        if (full) rows.push(y);
+    }
+    return rows;
+}
+
+function applyClearRows(rows, boardRef)
+{
+    if (!rows.length) return;
+
+    const set = new Set(rows);
+    const newBoard = [];
+
+    for (let y=0; y<ROWS; ++y)
+        if (!set.has(y))
+            newBoard.push(boardRef[y]);
+
+    while (newBoard.length < ROWS)
+    {
+        const row = [];
+        for (let x=0; x<COLS; ++x) row.push(-1);
+        newBoard.push(row);
     }
 
-    beginContact(other)
+    for (let y=0; y<ROWS; ++y)
+        boardRef[y] = newBoard[y];
+}
+
+function addGarbage(player, count)
+{
+    for (let i=0; i<count; ++i)
     {
-        if (other != ball) return;
+        // push everything up by 1: drop top row, shift up, insert garbage at bottom
+        for (let y=ROWS-1; y>0; --y)
+            for (let x=0; x<COLS; ++x)
+                player.board[y][x] = player.board[y-1][x];
 
-        score += 100;
+        // new bottom garbage row
+        const hole = randInt(COLS);
+        for (let x=0; x<COLS; ++x)
+            player.board[0][x] = (x === hole) ? -1 : GARBAGE_TYPE;
+    }
 
-        // kick the ball away from the bumper center
-        const dir = ball.pos.subtract(this.pos);
-        const n = dir.length() ? dir.normalize() : vec2(0,1);
-        ball.applyAcceleration(n.scale(25)); // impulse-ish
+    sGarbage && sGarbage.play(player.boardCenter);
+}
 
-        sfxBumper && sfxBumper.play(ball.pos);
+// Garbage cancellation: attacks remove queued incoming first
+function applyGarbageCancellation(player, attack)
+{
+    const cancel = Math.min(attack, player.pendingGarbage);
+    player.pendingGarbage -= cancel;
+    return attack - cancel;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PARTICLES
+
+function spawnCellParticles(player, cellX, cellY, baseColor)
+{
+    const p0 = worldFromCell(player, cellX, cellY);
+    const c = baseColor.copy();
+
+    for (let i=0; i<PARTICLES_PER_CELL; ++i)
+    {
+        const a = frand(0, Math.PI*2);
+        const speed = frand(3, 8);
+        const vel = vec2(Math.cos(a), Math.sin(a)).scale(speed);
+
+        particles.push({
+            kind: 'burst',
+            pos: p0.add(vec2(frand(-.25,.25), frand(-.25,.25))),
+            vel: vel.add(vec2(0, frand(1,4))),
+            life: PARTICLE_LIFE,
+            lifeMax: PARTICLE_LIFE,
+            size: frand(.08, .22),
+            color: c,
+        });
     }
 }
 
-class Flipper extends Box2dObject
+function spawnSparkleAt(pos, color)
 {
-    constructor(pos, angle, isRight=false)
-    {
-        super(pos, vec2(), 0, angle, hsl(isRight?.55:.05, .7, .55));
-        this.lineColor = hsl(0,0,0);
-        this.lineWidth = .12;
+    const vel = vec2(frand(-1.1, 1.1), frand(0.2, 2.4));
+    const size = frand(SPARKLE_SIZE_MIN, SPARKLE_SIZE_MAX);
+    particles.push({
+        kind: 'sparkle',
+        pos: pos.add(vec2(frand(-.28,.28), frand(-.28,.28))),
+        vel,
+        life: SPARKLE_LIFE,
+        lifeMax: SPARKLE_LIFE,
+        size,
+        size0: size,
+        color: withAlpha(shadeColor(color, .25), 1),
+        tw: frand(0, 6.28),
+        aMul: 1,
+    });
+}
 
-        // addBox(size, offset, angle, density, friction, restitution, isSensor)
-        this.addBox(vec2(4.2, .75), vec2(), 0, 3, .4, .1, false);
-        this.setAngularDamping(8);
-        this.setDamping(1);
-        this.setBullet(true);
+function stepPieceSparkles(p, dt)
+{
+    if (!p.cur || p.gameOver || p.clearAnim) return;
+
+    // spawn a few sparkles over time around the active piece
+    p.sparkleAcc += dt * SPARKLE_RATE;
+    while (p.sparkleAcc >= 1)
+    {
+        p.sparkleAcc -= 1;
+
+        const blocks = getBlocks(p.cur.type, p.cur.rot);
+        const b = blocks[randInt(blocks.length)];
+        const cx = (p.cur.pos.x + b.x) | 0;
+        const cy = (p.cur.pos.y + b.y) | 0;
+        if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) continue;
+
+        const baseColor = PIECES[p.cur.type].color;
+        spawnSparkleAt(worldFromCell(p, cx, cy), baseColor);
     }
 }
 
-function makeWalls()
+function spawnLockSparkles(p)
 {
-    table = new Box2dStaticObject(vec2());
-    table.color = hsl(0,0,.15);
-    table.lineColor = hsl(0,0,0);
-    table.lineWidth = .15;
-
-    // outer walls
-    table.addBox(vec2(1, FIELD_H+2), vec2(-FIELD_W/2 - .5, 0), 0, 0, .2, .2, false);
-    table.addBox(vec2(1, FIELD_H+2), vec2( FIELD_W/2 + .5, 0), 0, 0, .2, .2, false);
-    table.addBox(vec2(FIELD_W+2, 1), vec2(0, FIELD_TOP + .5), 0, 0, .2, .2, false);
-
-    // shooter lane wall (right)
-    table.addBox(vec2(1, FIELD_H*0.65), vec2(5.8, FIELD_BOTTOM + FIELD_H*0.325), 0, 0, .2, .2, false);
-
-    // bottom sloped guides to flippers
-    table.addBox(vec2(6.5, 1), vec2(-4.0, FIELD_BOTTOM + 2.3),  0.30, 0, .2, .2, false);
-    table.addBox(vec2(6.5, 1), vec2( 4.0, FIELD_BOTTOM + 2.3), -0.30, 0, .2, .2, false);
-
-    // little posts near drain
-    table.addBox(vec2(.6, 1.8), vec2(-1.8, FIELD_BOTTOM + 1.2), 0, 0, .2, .2, false);
-    table.addBox(vec2(.6, 1.8), vec2( 1.8, FIELD_BOTTOM + 1.2), 0, 0, .2, .2, false);
-
-    // top angled nudges
-    table.addBox(vec2(6, 1), vec2(-4.5, FIELD_TOP-2.5), -0.35, 0, .2, .2, false);
-    table.addBox(vec2(6, 1), vec2( 4.5, FIELD_TOP-2.5),  0.35, 0, .2, .2, false);
+    const blocks = getBlocks(p.cur.type, p.cur.rot);
+    const baseColor = PIECES[p.cur.type].color;
+    for (const b of blocks)
+    {
+        const cx = (p.cur.pos.x + b.x) | 0;
+        const cy = (p.cur.pos.y + b.y) | 0;
+        if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) continue;
+        // small burst of sparkles on lock
+        for (let i=0; i<3; ++i)
+            spawnSparkleAt(worldFromCell(p, cx, cy), baseColor);
+    }
 }
 
-function makeFlippers()
+
+function updateParticles(dt)
 {
-    // left flipper pivots near left wall, points toward center
-    const leftPivot  = vec2(-5.4, FIELD_BOTTOM + 2.2);
-    const leftCenter = leftPivot.add(vec2(2.1, .15));
-    leftFlipper = new Flipper(leftCenter, 0.20, false);
+    const gBurst = -14;
+    const gSpark = -3;
 
-    leftJoint = new Box2dRevoluteJoint(table, leftFlipper, leftPivot);
-    leftJoint.enableLimit(true);
-    leftJoint.setLimits(-0.95, 0.25);
-    leftJoint.enableMotor(true);
-    leftJoint.setMaxMotorTorque(2200);
+    for (let i=particles.length-1; i>=0; --i)
+    {
+        const p = particles[i];
+        p.life -= dt;
+        if (p.life <= 0)
+        {
+            particles.splice(i,1);
+            continue;
+        }
 
-    // right flipper pivots near right wall, points toward center (angle ~ PI)
-    const rightPivot  = vec2(5.4, FIELD_BOTTOM + 2.2);
-    const rightCenter = rightPivot.add(vec2(-2.1, .15));
-    rightFlipper = new Flipper(rightCenter, PI-0.20, true);
+        const t = p.lifeMax ? (p.life / p.lifeMax) : 1;
 
-    rightJoint = new Box2dRevoluteJoint(table, rightFlipper, rightPivot);
-    rightJoint.enableLimit(true);
-    rightJoint.setLimits(PI-0.25, PI+0.95); // down near PI+0.95, up near PI-0.25
-    rightJoint.enableMotor(true);
-    rightJoint.setMaxMotorTorque(2200);
+        if (p.kind === 'sparkle')
+        {
+            // float and drift
+            p.vel = p.vel.add(vec2(0, gSpark*dt));
+            p.vel = p.vel.scale(0.992);
+
+            // mild twinkle
+            p.tw = (p.tw || frand(0, 6.28)) + dt*9;
+            p.aMul = .6 + .4*Math.sin(p.tw);
+
+            // shrink a bit
+            p.size = p.size0 ? (p.size0 * (0.7 + 0.3*t)) : p.size;
+        }
+        else
+        {
+            // juicy burst
+            p.vel = p.vel.add(vec2(0, gBurst*dt));
+            p.vel = p.vel.scale(0.985);
+        }
+
+        p.pos = p.pos.add(p.vel.scale(dt));
+    }
 }
 
-function spawnBall(isNewBall=false)
+
+function renderParticles()
 {
-    if (ball) ball.destroy();
+    for (const p of particles)
+    {
+        const t = p.lifeMax ? clamp01(p.life / p.lifeMax) : 1;
+        const c = p.color.copy();
 
-    if (isNewBall)
-        ballsLeft = max(0, ballsLeft-1);
-
-    // start in shooter lane
-    const startPos = vec2(6.9, FIELD_BOTTOM + 1.6);
-    ball = new Box2dObject(startPos, vec2(), 0, 0, WHITE);
-    ball.lineColor = hsl(0,0,0);
-    ball.lineWidth = .12;
-
-    // addCircle expects DIAMETER (not radius) and the last param isSensor must be boolean
-    ball.addCircle(1.1, vec2(), 1.0, .05, .35, false);
-
-    ball.setBullet(true);
-    ball.setAngularDamping(.2);
-    ball.setDamping(.05);
-    ball.setGravityScale(1);
+        if (p.kind === 'sparkle')
+        {
+            c.a *= t * (p.aMul || 1);
+            // bright core + faint glow
+            drawRect(p.pos, vec2(p.size), c);
+            drawRect(p.pos, vec2(p.size*2.2), withAlpha(rgb(1,1,1), c.a*.15));
+        }
+        else
+        {
+            c.a *= t;
+            drawRect(p.pos, vec2(p.size), c);
+        }
+    }
 }
 
-function ballIsInShooterLane()
+
+///////////////////////////////////////////////////////////////////////////////
+// PLAYER MODEL
+
+function makePlayer(name, boardCenterX, isAI)
 {
-    return ball && ball.pos.x > 6 && ball.pos.y < FIELD_BOTTOM + 4;
+    const boardPos = vec2(boardCenterX - BOARD_SIZE.x/2, BOARD_BOTTOM_Y);
+    const boardCenter = boardPos.add(BOARD_SIZE.scale(.5));
+
+    // UI positions per side
+    const uiX = isAI ? (boardPos.x + BOARD_SIZE.x + 3.2) : (boardPos.x - 3.2);
+    const uiPos = vec2(uiX, boardPos.y + BOARD_SIZE.y - 1.2);
+
+    return {
+        name,
+        isAI,
+
+        board: makeEmptyBoard(),
+        cur: null,
+
+        nextBag: [],
+        nextQueue: [],
+        holdType: -1,
+        holdUsed: false,
+
+        score: 0,
+        lines: 0,
+        level: 1,
+        gameOver: false,
+
+        moveDir: 0,
+        moveTimer: 0,
+        arrTimer: 0,
+
+        fallAcc: 0,
+        lockTimer: -1,
+
+        clearAnim: null, // {rows, col, timer, clearedCount}
+
+        pendingGarbage: 0,
+
+        // AI state
+        aiEnabled: isAI,
+        aiPlan: null,         // {rot, x}
+        aiStepTimer: 0,
+        aiThinkTimer: 0,
+        aiDropTimer: 0,
+        aiSoftMode: false,
+
+        // sparkles
+        sparkleAcc: 0,
+
+        // placement / layout
+        boardPos,
+        boardCenter,
+        uiPos,
+        boardCenterX,
+    };
 }
 
-function ballIsDrained()
+function resetPlayer(p)
 {
-    return ball && ball.pos.y < FIELD_BOTTOM - 3;
+    p.board = makeEmptyBoard();
+
+    p.nextBag = [];
+    p.nextQueue = [];
+    ensureNextQueue(p);
+
+    p.holdType = -1;
+    p.holdUsed = false;
+
+    p.score = 0;
+    p.lines = 0;
+    p.level = 1;
+    p.gameOver = false;
+
+    p.moveDir = 0;
+    p.moveTimer = 0;
+    p.arrTimer = 0;
+
+    p.fallAcc = 0;
+    p.lockTimer = -1;
+
+    p.clearAnim = null;
+
+    p.pendingGarbage = 0;
+
+    p.aiPlan = null;
+    p.aiStepTimer = 0;
+    p.aiThinkTimer = frand(AI_THINK_DELAY_MIN, AI_THINK_DELAY_MAX);
+    p.aiDropTimer = 0;
+    p.aiSoftMode = false;
+
+    p.sparkleAcc = 0;
+
+    spawnPiece(p);
 }
+
+function gravityCellsPerSecond(p)
+{
+    return START_GRAVITY * (1 + (p.level-1)*.15);
+}
+
+function spawnPiece(p, type)
+{
+    if (p.gameOver) return;
+
+    // Apply pending garbage right before a new piece spawns
+    if (p.pendingGarbage > 0)
+    {
+        addGarbage(p, p.pendingGarbage);
+        p.pendingGarbage = 0;
+    }
+
+    if (type === undefined)
+    {
+        ensureNextQueue(p);
+        type = p.nextQueue.shift();
+        ensureNextQueue(p);
+    }
+
+    p.cur = {
+        type,
+        rot: 0,
+        pos: vec2(4, ROWS-2),
+    };
+
+    p.holdUsed = false;
+    p.lockTimer = -1;
+
+    if (!fitsType(p.cur.type, p.cur.rot, p.cur.pos, p.board))
+    {
+        p.gameOver = true;
+        sOver && sOver.play(p.boardCenter);
+    }
+
+    // AI new-piece think
+    p.aiPlan = null;
+    p.aiThinkTimer = frand(AI_THINK_DELAY_MIN, AI_THINK_DELAY_MAX);
+    p.aiDropTimer = 0;
+    p.aiSoftMode = (Math.random() < AI_SOFT_DROP_CHANCE);
+}
+
+function tryMove(p, dx, dy)
+{
+    if (p.gameOver || p.clearAnim) return false;
+    const np = p.cur.pos.add(vec2(dx,dy));
+    if (!fitsType(p.cur.type, p.cur.rot, np, p.board))
+        return false;
+
+    p.cur.pos = np;
+    if (dy) p.lockTimer = -1;
+    return true;
+}
+
+function tryRotate(p, dir)
+{
+    if (p.gameOver || p.clearAnim) return false;
+    const nr = mod(p.cur.rot + dir, 4);
+    for (const k of KICKS)
+    {
+        const np = p.cur.pos.add(k);
+        if (fitsType(p.cur.type, nr, np, p.board))
+        {
+            p.cur.rot = nr;
+            p.cur.pos = np;
+            p.lockTimer = -1;
+            sRotate && sRotate.play(p.boardCenter);
+            return true;
+        }
+    }
+    return false;
+}
+
+function hardDrop(p)
+{
+    if (p.gameOver || p.clearAnim) return;
+    let dropped = 0;
+    while (tryMove(p, 0, -1)) dropped++;
+    if (dropped) sDrop && sDrop.play(p.boardCenter);
+    lockPiece(p, true);
+}
+
+function lockPiece(p, fromHardDrop=false)
+{
+    if (p.gameOver || p.clearAnim) return;
+
+    const blocks = getBlocks(p.cur.type, p.cur.rot);
+    for (const b of blocks)
+    {
+        const x = (p.cur.pos.x + b.x) | 0;
+        const y = (p.cur.pos.y + b.y) | 0;
+        if (y >= ROWS) continue;
+        if (y < 0) { p.gameOver = true; break; }
+        p.board[y][x] = p.cur.type;
+    }
+
+    sLock && sLock.play(p.boardCenter);
+    spawnLockSparkles(p);
+
+    const rows = findFullRows(p.board);
+    if (rows.length)
+    {
+        startClearAnim(p, rows);
+        return;
+    }
+
+    if (fromHardDrop) p.score += 2;
+
+    spawnPiece(p);
+}
+
+function hold(p)
+{
+    if (p.gameOver || p.holdUsed || p.clearAnim) return;
+
+    const t = p.cur.type;
+    if (p.holdType == -1)
+    {
+        p.holdType = t;
+        spawnPiece(p);
+    }
+    else
+    {
+        const swap = p.holdType;
+        p.holdType = t;
+        spawnPiece(p, swap);
+    }
+
+    p.holdUsed = true;
+    sHold && sHold.play(p.boardCenter);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CLEAR ANIMATION + VS ATTACK
+
+function startClearAnim(p, rows)
+{
+    p.clearAnim = { rows, col: 0, timer: 0, clearedCount: rows.length };
+    sClear && sClear.play(p.boardCenter);
+}
+
+function stepClearAnim(p, opponent, dt)
+{
+    if (!p.clearAnim) return;
+
+    p.clearAnim.timer += dt;
+    while (p.clearAnim && p.clearAnim.timer >= CLEAR_STEP_TIME)
+    {
+        p.clearAnim.timer -= CLEAR_STEP_TIME;
+
+        const x = p.clearAnim.col;
+        for (const y of p.clearAnim.rows)
+        {
+            const t = p.board[y][x];
+            if (t != -1)
+            {
+                const color = (t === GARBAGE_TYPE) ? GARBAGE_COLOR : PIECES[t].color;
+                spawnCellParticles(p, x, y, color);
+                p.board[y][x] = -1;
+            }
+        }
+
+        p.clearAnim.col++;
+        if (p.clearAnim.col >= COLS)
+        {
+            const cleared = p.clearAnim.clearedCount;
+            const rowsToRemove = p.clearAnim.rows;
+            p.clearAnim = null;
+
+            // collapse
+            applyClearRows(rowsToRemove, p.board);
+
+            // scoring
+            const table = [0, 100, 300, 500, 800];
+            p.score += (table[cleared] || (cleared*200)) * p.level;
+            p.lines += cleared;
+            p.level = 1 + (p.lines/10|0);
+
+            // send garbage (with cancellation)
+            let attack = ATTACK_TABLE[cleared] || 0;
+            if (attack)
+            {
+                // cancel incoming first (classic VS behavior)
+                attack = applyGarbageCancellation(p, attack);
+
+                // then send any remaining to opponent
+                if (attack && opponent && !opponent.gameOver)
+                    opponent.pendingGarbage += attack;
+            }
+
+            spawnPiece(p);
+            break;
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AI
+
+function computeDropY(type, rot, x, boardRef)
+{
+    let y = ROWS + 6;
+    while (!fitsType(type, rot, vec2(x,y), boardRef) && y > 0)
+        y--;
+    if (!fitsType(type, rot, vec2(x,y), boardRef))
+        return null;
+
+    while (fitsType(type, rot, vec2(x,y-1), boardRef))
+        y--;
+
+    // reject placements above top
+    const blocks = getBlocks(type, rot);
+    for (const b of blocks)
+        if ((y + b.y) >= ROWS)
+            return null;
+
+    return y;
+}
+
+function placeOnBoard(type, rot, x, y, boardRef)
+{
+    const blocks = getBlocks(type, rot);
+    for (const b of blocks)
+    {
+        const cx = (x + b.x) | 0;
+        const cy = (y + b.y) | 0;
+        if (cy < 0) return false;
+        if (cy >= ROWS) continue;
+        if (cx < 0 || cx >= COLS) return false;
+        if (boardRef[cy][cx] != -1) return false;
+        boardRef[cy][cx] = type;
+    }
+    return true;
+}
+
+function boardStats(boardRef)
+{
+    const heights = new Array(COLS).fill(0);
+    let holes = 0;
+
+    for (let x=0; x<COLS; ++x)
+    {
+        let top = -1;
+        for (let y=ROWS-1; y>=0; --y)
+            if (boardRef[y][x] != -1) { top = y; break; }
+
+        heights[x] = top + 1;
+
+        if (top >= 0)
+            for (let y=0; y<top; ++y)
+                if (boardRef[y][x] == -1) holes++;
+    }
+
+    let aggHeight = 0;
+    let bump = 0;
+    let maxH = 0;
+    for (let x=0; x<COLS; ++x)
+    {
+        const h = heights[x];
+        aggHeight += h;
+        maxH = h > maxH ? h : maxH;
+        if (x) bump += Math.abs(h - heights[x-1]);
+    }
+
+    return { aggHeight, bump, maxH, holes };
+}
+
+function isSurvivalMode(boardRef)
+{
+    // "Mostly filled up" heuristic: if stack is high, stop greedily chasing big clears.
+    const s = boardStats(boardRef);
+    return s.maxH >= 15 || s.aggHeight >= 120 || s.holes >= 18; // tuned for 10x20
+}
+
+function evalBoard(boardRef, linesCleared, survival)
+{
+    const s = boardStats(boardRef);
+
+    // Strongly prefer multi-line clears in normal mode.
+    // In survival mode, still like clears, but prioritize staying low and reducing holes.
+    const multiBonusNormal   = [0, 0, 900, 1900, 3600];
+    const multiBonusSurvival = [0, 0, 500, 1100, 2100];
+
+    const multiBonus = (survival ? multiBonusSurvival : multiBonusNormal)[linesCleared] || 0;
+    const clearValue = (survival ? 700 : 450) * linesCleared;
+
+    const holesW = survival ? 130 : 95;
+    const aggW   = survival ? 12  : 8;
+    const bumpW  = survival ? 16  : 12;
+    const maxW   = survival ? 16  : 7;
+
+    return multiBonus + clearValue - s.holes*holesW - s.aggHeight*aggW - s.bump*bumpW - s.maxH*maxW;
+}
+
+function computeBestMove(type, boardRef)
+{
+    // Decide whether we are in "survival mode" based on the CURRENT board (not the hypothetical).
+    const survival = isSurvivalMode(boardRef);
+
+    // gather a small list of top candidates
+    const candidates = [];
+
+    for (let rot=0; rot<4; ++rot)
+    for (let x=-4; x<COLS+4; ++x)
+    {
+        const y = computeDropY(type, rot, x, boardRef);
+        if (y === null) continue;
+
+        const b2 = cloneBoard(boardRef);
+        if (!placeOnBoard(type, rot, x, y, b2)) continue;
+
+        const rows = findFullRows(b2);
+        const cleared = rows.length;
+        if (cleared) applyClearRows(rows, b2);
+
+        const v = evalBoard(b2, cleared, survival);
+        candidates.push({rot, x, v});
+    }
+
+    if (!candidates.length) return null;
+    candidates.sort((a,b)=>b.v-a.v);
+
+    // human-ish mistakes: sometimes pick 2nd/3rd best
+    const pickIndex = (Math.random() < AI_MISTAKE_CHANCE) ? Math.min(2, candidates.length-1) : 0;
+    return candidates[pickIndex];
+}
+
+function planAI(p)
+{
+    if (!p.aiEnabled || p.gameOver || p.clearAnim) return;
+    if (p.aiPlan) return;
+
+    p.aiThinkTimer -= timeDelta;
+    if (p.aiThinkTimer > 0)
+        return;
+
+    const best = computeBestMove(p.cur.type, p.board);
+    if (best)
+        p.aiPlan = { rot: best.rot, x: best.x };
+    else
+        p.aiPlan = { rot: p.cur.rot, x: p.cur.pos.x };
+
+    p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
+}
+
+function stepAI(p, dt)
+{
+    if (!p.aiEnabled || p.gameOver || p.clearAnim) return;
+
+    planAI(p);
+    if (!p.aiPlan) return;
+
+    p.aiStepTimer -= dt;
+    if (p.aiStepTimer > 0)
+        return;
+    p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
+
+    // rotate to target (CW only)
+    const rotDelta = mod(p.aiPlan.rot - p.cur.rot, 4);
+    if (rotDelta)
+    {
+        if (!tryRotate(p, 1))
+            p.aiPlan = null;
+        return;
+    }
+
+    // move to target x
+    const dx = p.aiPlan.x - p.cur.pos.x;
+    if (dx)
+    {
+        const step = dx > 0 ? 1 : -1;
+        if (!tryMove(p, step, 0))
+            p.aiPlan = null;
+        return;
+    }
+
+    // aligned: pause a bit before dropping
+    p.aiDropTimer += dt;
+    const dropDelay = p.aiSoftMode ? frand(AI_DROP_DELAY_MIN, AI_DROP_DELAY_MAX) * 1.35 : frand(AI_DROP_DELAY_MIN, AI_DROP_DELAY_MAX);
+    if (p.aiDropTimer < dropDelay)
+        return;
+
+    // soft drop mode: step down over time (more human)
+    if (p.aiSoftMode)
+    {
+        p.aiDropTimer = 0;
+        if (!tryMove(p, 0, -1))
+        {
+            // lock when grounded
+            lockPiece(p, false);
+            p.aiPlan = null;
+        }
+        return;
+    }
+
+    // otherwise hard drop
+    hardDrop(p);
+    p.aiPlan = null;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// RENDERING
+
+function drawPiece(player, type, rot, pos, alpha=1, ghost=false)
+{
+    const blocks = getBlocks(type, rot);
+    const c = (type === GARBAGE_TYPE) ? GARBAGE_COLOR.copy() : PIECES[type].color.copy();
+    c.a *= alpha;
+
+    for (const b of blocks)
+    {
+        const x = (pos.x + b.x) | 0;
+        const y = (pos.y + b.y) | 0;
+        if (y < 0 || x < 0 || x >= COLS || y >= ROWS) continue;
+        const pad = ghost ? .18 : .06;
+        drawCell(player, x, y, c, pad);
+    }
+}
+
+function ghostPos(p)
+{
+    let pos = p.cur.pos.copy();
+    while (fitsType(p.cur.type, p.cur.rot, pos.add(vec2(0,-1)), p.board))
+        pos.y -= 1;
+    return pos;
+}
+
+function drawMini(type, at)
+{
+    if (type < 0) return;
+
+    const blocks = getBlocks(type, 0);
+    let minX =  1e9, maxX = -1e9, minY =  1e9, maxY = -1e9;
+    for (const b of blocks)
+    {
+        minX = b.x < minX ? b.x : minX;
+        maxX = b.x > maxX ? b.x : maxX;
+        minY = b.y < minY ? b.y : minY;
+        maxY = b.y > maxY ? b.y : maxY;
+    }
+
+    const center = vec2((minX + maxX) * .5, (minY + maxY) * .5);
+    const offset = center.scale(-1);
+    const c = PIECES[type].color;
+
+    for (const b of blocks)
+    {
+        const p = at.add(vec2(b.x, b.y).add(offset));
+        drawMiniCell(p, c);
+    }
+}
+
+function drawPlayer(p)
+{
+    // frame
+    const center = p.boardCenter;
+    drawRect(center, BOARD_SIZE.add(vec2(.35)), rgb(.15,.15,.18));
+    drawRect(center, BOARD_SIZE.add(vec2(.10)), rgb(.05,.05,.06));
+
+    // blocks
+    for (let y=0; y<ROWS; ++y)
+    for (let x=0; x<COLS; ++x)
+    {
+        const t = p.board[y][x];
+        if (t == -1) continue;
+        const color = (t === GARBAGE_TYPE) ? GARBAGE_COLOR : PIECES[t].color;
+        drawCell(p, x, y, color);
+    }
+
+    // current + ghost
+    if (!p.gameOver && !p.clearAnim)
+    {
+        const gp = ghostPos(p);
+        drawPiece(p, p.cur.type, p.cur.rot, gp, .25, true);
+        drawPiece(p, p.cur.type, p.cur.rot, p.cur.pos, 1, false);
+    }
+
+    // name
+    drawText(p.name, vec2(p.boardCenterX, p.boardPos.y + BOARD_SIZE.y + 1.4), 1.2, WHITE, .25, BLACK);
+
+    // UI
+    const u = p.uiPos;
+    drawText('NEXT', u.add(vec2(0,0)), 1.0, WHITE, .25, BLACK);
+    ensureNextQueue(p);
+    for (let i=0; i<NEXT_COUNT; ++i)
+        drawMini(p.nextQueue[i], u.add(vec2(0,-2.2 - i*2.1)));
+
+    drawText('HOLD', u.add(vec2(0,-11.0)), 1.0, WHITE, .25, BLACK);
+    drawMini(p.holdType, u.add(vec2(0,-13.2)));
+
+    drawText(`Score ${p.score}`, u.add(vec2(0,-16.0)), .9, WHITE, .2, BLACK);
+    drawText(`Lines ${p.lines}`, u.add(vec2(0,-17.1)), .9, WHITE, .2, BLACK);
+    drawText(`Level ${p.level}`, u.add(vec2(0,-18.2)), .9, WHITE, .2, BLACK);
+
+    if (p.pendingGarbage)
+        drawText(`+${p.pendingGarbage} incoming`, u.add(vec2(0,-19.4)), .7, hsl(.05,.1,.85), .2, BLACK);
+
+    if (p.isAI)
+        drawText(`AI ${p.aiEnabled ? 'ON' : 'OFF'} (P)`, u.add(vec2(0,-20.6)), .8, p.aiEnabled ? hsl(.33,.9,.6) : hsl(0,0,.8), .2, BLACK);
+
+    if (p.gameOver)
+    {
+        drawRect(p.boardCenter, BOARD_SIZE, rgb(0,0,0,.6));
+        drawText('KO', p.boardCenter.add(vec2(0,2)), 3, RED, .4, BLACK);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// INPUT (HUMAN)
+
+function humanUpdate(p, dt)
+{
+    // rotation
+    if (keyWasPressed('KeyZ')) tryRotate(p, -1);
+    if (keyWasPressed('KeyX') || keyWasPressed('ArrowUp')) tryRotate(p, 1);
+
+    // hold
+    if (keyWasPressed('KeyC') || keyWasPressed('ShiftLeft') || keyWasPressed('ShiftRight'))
+        hold(p);
+
+    // hard drop
+    if (keyWasPressed('Space'))
+        hardDrop(p);
+
+    // horizontal movement with DAS/ARR
+    const leftDown  = keyIsDown('ArrowLeft') || keyIsDown('KeyA');
+    const rightDown = keyIsDown('ArrowRight') || keyIsDown('KeyD');
+    const newDir = rightDown && !leftDown ? 1 : leftDown && !rightDown ? -1 : 0;
+
+    if (newDir != p.moveDir)
+    {
+        p.moveDir = newDir;
+        p.moveTimer = 0;
+        p.arrTimer = 0;
+        if (p.moveDir)
+        {
+            if (tryMove(p, p.moveDir, 0)) sMove && sMove.play(p.boardCenter);
+            p.moveTimer = MOVE_DAS;
+        }
+    }
+    else if (p.moveDir)
+    {
+        p.moveTimer -= dt;
+        if (p.moveTimer <= 0)
+        {
+            p.arrTimer -= dt;
+            if (p.arrTimer <= 0)
+            {
+                if (tryMove(p, p.moveDir, 0)) sMove && sMove.play(p.boardCenter);
+                p.arrTimer = MOVE_ARR;
+            }
+        }
+    }
+
+    // gravity + soft drop
+    const soft = keyIsDown('ArrowDown') || keyIsDown('KeyS');
+    const cps = gravityCellsPerSecond(p) * (soft ? SOFT_DROP_MULT : 1);
+    p.fallAcc += cps * dt;
+
+    while (p.fallAcc >= 1)
+    {
+        p.fallAcc -= 1;
+        if (!tryMove(p, 0, -1))
+        {
+            if (p.lockTimer < 0)
+                p.lockTimer = LOCK_DELAY;
+            break;
+        }
+    }
+
+    // lock delay
+    if (p.lockTimer >= 0)
+    {
+        if (fitsType(p.cur.type, p.cur.rot, p.cur.pos.add(vec2(0,-1)), p.board))
+        {
+            p.lockTimer = -1;
+        }
+        else
+        {
+            p.lockTimer -= dt;
+            if (p.lockTimer <= 0)
+                lockPiece(p, false);
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
+
+function assert(cond, msg){ if (!cond) throw new Error('TEST FAILED: ' + msg); }
 
 function runSelfTests()
 {
-    // Basic runtime checks (non-fatal). Return false if something critical is missing.
-    const okSound = (typeof Sound == 'function');
-    const okBox2d = (typeof box2dInit == 'function');
-    const okWrap  = (typeof Box2dObject != 'undefined');
-    const okCircleSig = (typeof Box2dObject != 'undefined') && (typeof Box2dObject.prototype.addCircle == 'function');
+    function keyOf(v){ return `${v.x|0},${v.y|0}`; }
+    function setOf(arr){ const s=new Set(); for (const v of arr) s.add(keyOf(v)); return s; }
+    function cw(v){ return vec2(v.y, -v.x); }
+    function assertSameSet(a, b, msg)
+    {
+        const sa=setOf(a), sb=setOf(b);
+        assert(sa.size===sb.size, msg + ' size');
+        for (const k of sa) assert(sb.has(k), msg + ' missing ' + k);
+    }
 
-    console.assert(okSound, 'LittleJS Sound class should exist');
-    console.assert(okBox2d, 'Box2D should be loaded (box2d.wasm.js)');
-    console.assert(okWrap,  'LittleJS Box2D wrapper classes should exist');
-    console.assert(okCircleSig, 'Box2dObject.addCircle should exist');
+    // Bag should be 7 unique
+    const bag = shuffleBag();
+    assert(bag.length === 7, 'shuffleBag length');
+    assert(new Set(bag).size === 7, 'shuffleBag uniqueness');
 
-    return okSound && okBox2d && okWrap && okCircleSig;
+    // Pieces sanity
+    for (let i=0; i<PIECES.length; ++i)
+    {
+        assert(PIECES[i].rots.length === 4, 'rots len ' + PIECES[i].name);
+        for (let r=0; r<4; ++r)
+            assert(PIECES[i].rots[r].length === 4, 'blocks len ' + PIECES[i].name + r);
+    }
+
+    // Rotation sanity for S/Z (rot1 should be CW of rot0, etc)
+    {
+        const s = PIECES.find(p=>p.name==='S');
+        const z = PIECES.find(p=>p.name==='Z');
+        assert(!!s && !!z, 'S/Z exist');
+        for (const p of [s,z])
+        {
+            const r0 = p.rots[0];
+            const r1 = p.rots[1];
+            const r2 = p.rots[2];
+            const r3 = p.rots[3];
+            assertSameSet(r1, r0.map(cw), p.name + ' r1=cw(r0)');
+            assertSameSet(r2, r1.map(cw), p.name + ' r2=cw(r1)');
+            assertSameSet(r3, r2.map(cw), p.name + ' r3=cw(r2)');
+        }
+    }
+
+    // Garbage push
+    const p = makePlayer('T', 0, false);
+    resetPlayer(p);
+    // fill some blocks near top and ensure function doesn't crash
+    p.board[ROWS-1][0] = 0;
+    addGarbage(p, 2);
+    assert(p.board[0].includes(GARBAGE_TYPE) || p.board[0].includes(-1), 'garbage row exists');
+
+    // Garbage cancellation sanity
+    {
+        const a = makePlayer('A', 0, false);
+        resetPlayer(a);
+        a.pendingGarbage = 3;
+        let out = applyGarbageCancellation(a, 2);
+        assert(out === 0, 'cancel consumes attack');
+        assert(a.pendingGarbage === 1, 'pending reduced');
+        out = applyGarbageCancellation(a, 5);
+        assert(out === 4, 'leftover attack after cancel');
+        assert(a.pendingGarbage === 0, 'pending to zero');
+    }
+
+    // Classic attack table sanity
+    assert(ATTACK_TABLE[1] === 0, 'attack single = 0');
+    assert(ATTACK_TABLE[2] === 1, 'attack double = 1');
+    assert(ATTACK_TABLE[3] === 2, 'attack triple = 2');
+    assert(ATTACK_TABLE[4] === 4, 'attack tetris = 4');
+
+    // Survival mode heuristic sanity
+    {
+        const b = makeEmptyBoard();
+        assert(isSurvivalMode(b) === false, 'empty board not survival');
+        // Build a tall stack
+        for (let y=0; y<16; ++y)
+            for (let x=0; x<COLS; ++x)
+                b[y][x] = (x==5 && y<15) ? -1 : 0; // some holes
+        assert(isSurvivalMode(b) === true, 'tall stack is survival');
+    }
+
+    // AI produces a move
+    const empty = makeEmptyBoard();
+    const m = computeBestMove(0, empty);
+    assert(!!m, 'AI best move exists');
 }
 
-// Added test cases: validate we never pass a non-boolean isSensor
-function assertCircleArgs(isSensor)
-{
-    console.assert(typeof isSensor == 'boolean', 'isSensor must be boolean');
-}
+///////////////////////////////////////////////////////////////////////////////
+// LITTLEJS CALLBACKS
 
 async function gameInit()
 {
-    // called once after the engine starts up
-    // IMPORTANT: Wrap init so any error shows on screen (not just console)
-    try
-    {
-        ready = false;
-        initError = '';
+    setCanvasFixedSize(vec2(960, 540));
 
-        const ok = runSelfTests();
-        if (!ok)
-            throw new Error('Missing required LittleJS/Box2D pieces (see console asserts).');
+    // sounds
+    sMove   = new SoundGenerator({frequency:330, release:.04, volume:.35});
+    sRotate = new SoundGenerator({frequency:520, release:.06, volume:.35});
+    sDrop   = new SoundGenerator({frequency:220, release:.06, slide:-.4, volume:.45});
+    sLock   = new SoundGenerator({frequency:180, release:.08, noise:.06, volume:.5});
+    sClear  = new SoundGenerator({frequency:740, release:.12, slide:.25, volume:.5});
+    sHold   = new SoundGenerator({frequency:400, release:.08, pitchJump:200, pitchJumpTime:.02, volume:.35});
+    sOver   = new SoundGenerator({frequency:120, release:.35, noise:.2, volume:.55});
+    sGarbage= new SoundGenerator({frequency:90,  release:.14, noise:.1, volume:.45, slide:.15});
 
-        // Our local test cases for argument types
-        assertCircleArgs(false);
+    runSelfTests();
 
-        // setup box2d first!
-        await box2dInit();
+    players = [
+        makePlayer('YOU', LEFT_CENTER_X, false),
+        makePlayer('AI',  RIGHT_CENTER_X, true),
+    ];
 
-        // pinball gravity (down)
-        gravity = vec2(0, -85);
-
-        // sounds (zzfx-style params; Sound.play(worldPos) supported)
-        // [volume, randomness, frequency, attack, sustain, release, shape, shapeCurve, slide,
-        //  deltaSlide, pitchJump, pitchJumpTime, repeatTime, noise, modulation, bitCrush, delay,
-        //  sustainVolume, decay, tremolo]
-        sfxBumper = new Sound([1.0, .06, 520, 0, .03, .10, 2, 0, 0, 0, 0, 0, 0, .02, 0, 0, 0, 1, 0, 0]);
-        sfxFlip   = new Sound([1.2, .03, 260, 0, .02, .08, 1, 0, 0, 0, 0, 0, 0, .01, 0, 0, 0, 1, 0, 0]);
-        sfxDrain  = new Sound([0.9, .10, 140, 0, .06, .28, 0, 0, -0.2, 0, 0, 0, 0, .06, 0, 0, 0, 1, 0, 0]);
-
-        makeWalls();
-        makeFlippers();
-
-        // bumpers (triangle-ish layout)
-        new Bumper(vec2(-3.5, 4.0), 1.15);
-        new Bumper(vec2( 0.0, 6.0), 1.20);
-        new Bumper(vec2( 3.5, 4.0), 1.15);
-
-        // a couple small posts (smaller bumpers)
-        const postA = new Bumper(vec2(-5.8, -1.0), .7); postA.color = hsl(.55,.6,.5);
-        const postB = new Bumper(vec2( 5.0, -1.5), .7); postB.color = hsl(.55,.6,.5);
-
-        spawnBall(false);
-
-        // extra sanity checks
-        console.assert(table, 'table should exist');
-        console.assert(ball, 'ball should exist');
-
-        ready = true;
-    }
-    catch(e)
-    {
-        initError = (e && (e.stack || e.message)) ? (e.stack || e.message) : 'Unknown init error';
-        console.error(e);
-        ready = false;
-    }
+    resetPlayer(players[0]);
+    resetPlayer(players[1]);
 }
 
 function gameUpdate()
 {
-    if (!ready) return;
-
-    // flipper input
-    const leftDown  = keyIsDown('ArrowLeft') || keyIsDown('KeyA');
-    const rightDown = keyIsDown('ArrowRight') || keyIsDown('KeyD');
-
-    // left joint angles go toward min when pressed (negative speed = CCW)
-    leftJoint && leftJoint.setMotorSpeed(leftDown ? -35 : 25);
-    rightJoint && rightJoint.setMotorSpeed(rightDown ? -35 : 25);
-
-    // sfx on press
-    if (keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') ||
-        keyWasPressed('ArrowRight') || keyWasPressed('KeyD'))
-        sfxFlip && sfxFlip.play();
-
-    // launcher charge (Space)
-    if (ballIsInShooterLane())
+    // restart
+    if (keyWasPressed('KeyR'))
     {
-        canLaunch = true;
-
-        if (keyIsDown('Space'))
-            launchCharge = min(1, launchCharge + timeDelta*1.2);
-        else if (launchCharge > 0 && keyWasReleased('Space'))
-        {
-            // impulse upwards + slight left to enter field
-            const power = lerp(18, 55, launchCharge);
-            ball.applyAcceleration(vec2(-5, power));
-            launchCharge = 0;
-            canLaunch = false;
-        }
-    }
-    else
-    {
-        launchCharge = 0;
-        canLaunch = false;
+        particles = [];
+        resetPlayer(players[0]);
+        resetPlayer(players[1]);
     }
 
-    // drain check
-    if (ballIsDrained())
+    // toggle AI (right player)
+    if (keyWasPressed('KeyP'))
     {
-        sfxDrain && sfxDrain.play();
-        if (ballsLeft > 0)
-            spawnBall(true);
-        else
-        {
-            // game over -> restart
-            ballsLeft = 3;
-            score = 0;
-            spawnBall(false);
-        }
+        players[1].aiEnabled = !players[1].aiEnabled;
+        players[1].aiPlan = null;
+        players[1].aiThinkTimer = frand(AI_THINK_DELAY_MIN, AI_THINK_DELAY_MAX);
+        players[1].aiDropTimer = 0;
     }
 
-    // gentle nudge (optional)
-    if (keyWasPressed('KeyQ')) { ball && ball.applyAcceleration(vec2(-8, 0)); }
-    if (keyWasPressed('KeyE')) { ball && ball.applyAcceleration(vec2( 8, 0)); }
+    // particles
+    updateParticles(timeDelta);
+
+    // ambient sparkles on active pieces
+    stepPieceSparkles(players[0], timeDelta);
+    stepPieceSparkles(players[1], timeDelta);
+
+    const human = players[0];
+    const ai = players[1];
+
+    // clear anims first (they pause gameplay for that player)
+    if (human.clearAnim) stepClearAnim(human, ai, timeDelta);
+    if (ai.clearAnim) stepClearAnim(ai, human, timeDelta);
+
+    // If someone is KO'd, pause ALL gameplay input/AI (but let particles + any in-progress clear animation run)
+    if (human.gameOver || ai.gameOver)
+        return;
+
+    if (!human.clearAnim)
+        humanUpdate(human, timeDelta);
+
+    if (!ai.clearAnim)
+        stepAI(ai, timeDelta);
+
+    // end condition: if someone is KO'd, allow restart
 }
 
 function gameUpdatePost()
 {
-    // camera follows a bit upward to show action
-    const target = vec2(0, 1.0);
-    cameraPos = cameraPos.lerp(target, .08);
-    cameraScale = lerp(cameraScale, 28, .05);
+    cameraPos = vec2(0,0);
 }
 
 function gameRender()
 {
-    // Always draw something so we never show a blank/white screen
-    drawRect(vec2(0,0), vec2(FIELD_W+1.2, FIELD_H+1.2), hsl(0,0,.12));
-    drawRect(vec2(0,0), vec2(FIELD_W, FIELD_H), hsl(0,0,.06));
+    // background
+    drawRect(cameraPos, getCameraSize(), rgb(.06,.06,.07));
 
-    // If not ready, also draw a simple "loading" indicator in-world
-    if (!ready)
-        drawText('Loading Box2D...', vec2(0,0), 1.2, WHITE, 0.1, hsl(0,0,0));
+    // center divider
+    drawRect(vec2(0,0), vec2(.15, 28), rgb(.12,.12,.14));
+
+    drawPlayer(players[0]);
+    drawPlayer(players[1]);
+
+    renderParticles();
+
+    // bottom help
+    drawText('Controls: Arrows/A-D move, Up/X rotate, Z CCW, Space drop, C/Shift hold, R restart, P toggle AI', vec2(0,-13.2), .7, hsl(0,0,.85), .15, BLACK);
+
+    // win/lose banner
+    const hKO = players[0].gameOver;
+    const aKO = players[1].gameOver;
+    if (hKO || aKO)
+    {
+        drawRect(vec2(0,0), getCameraSize(), rgb(0,0,0,.55));
+        const msg = hKO && aKO ? 'DOUBLE KO' : hKO ? 'YOU LOSE' : 'YOU WIN';
+        drawText(msg, vec2(0,2.5), 3.2, hKO && !aKO ? RED : (aKO && !hKO ? hsl(.33,.9,.6) : WHITE), .4, BLACK);
+        drawText('Press R to restart', vec2(0,-1.0), 1.2, WHITE, .25, BLACK);
+    }
 }
 
-function gameRenderPost()
-{
-    if (!ready)
-    {
-        // Big on-screen message if init failed or still loading
-        const msg = initError ? 'Init Error (open console)' : 'Loading...';
-        drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 30), 42, WHITE, 6, hsl(0,0,0));
-        if (initError)
-            drawTextScreen('If you can, paste the console error here.', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 20), 24, WHITE, 4, hsl(0,0,0));
-        return;
-    }
-
-    // HUD
-    const y = 40;
-    drawTextScreen(`SCORE ${score}`, vec2(140, y), 36, WHITE, 4, hsl(0,0,0));
-    drawTextScreen(`BALLS ${ballsLeft}`, vec2(140, y+40), 28, WHITE, 4, hsl(0,0,0));
-
-    // launcher UI
-    if (canLaunch)
-    {
-        const w = 220, h = 16;
-        const x = mainCanvasSize.x - w/2 - 30;
-        const y2 = mainCanvasSize.y - 50;
-        drawRectScreen(vec2(x,y2), vec2(w,h), hsl(0,0,.2));
-        drawRectScreen(vec2(x - (w*(1-launchCharge))/2, y2), vec2(w*launchCharge,h), hsl(.12,.8,.55));
-        drawTextScreen(`HOLD SPACE`, vec2(x, y2-26), 22, WHITE, 3, hsl(0,0,0));
-    }
-
-    // controls hint
-    drawTextScreen(`←/A and →/D = flippers   Space = launch   Q/E = nudge`,
-        vec2(mainCanvasSize.x/2, mainCanvasSize.y-22), 22, WHITE, 3, hsl(0,0,0));
-}
+function gameRenderPost(){}
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
 </script>
+</body></html>
