@@ -69,14 +69,91 @@ let score = 0;
 let bestScore = 0;
 
 let bird;
-let pipes = []; // {x, gapY, scored}
+let obstacles = []; // {type:'pipe', x, gapY, scored} | {type:'fire', x, y0, amp, freq, phase, r, scored}
+let obstacleTime = 0;
+
+// coins
+let coins = []; // {x, y, r}
+let coinCount = 0;
 let pipeSpawnTimer = 0;
 let shakeTimer = 0;
+
+// parallax + particles
+let bgScroll = 0;
+let particles = []; // {pos, vel, life, maxLife, size}
+
+function fract(x){ return x - Math.floor(x); }
+function hash1(n){ return fract(Math.sin(n*127.1)*43758.5453); }
+
+function emitTrail(intensity=1)
+{
+    // emit a few puffs behind the bird
+    const base = bird.pos.add(vec2(-0.7, 0).rotate(bird.angle));
+    const count = (intensity*2)|0;
+    for (let i=0; i<count; ++i)
+    {
+        const spread = vec2(rand(-.4,-.05), rand(-.25,.25)).rotate(bird.angle);
+        const vel = spread.add(vec2(-2,0)).scale(rand(.6, 1.1));
+        const life = rand(.25,.45);
+        particles.push({
+            pos: base.add(randVec2(.1)),
+            vel,
+            life,
+            maxLife: life,
+            size: rand(.08,.18),
+        });
+    }
+}
+
+function updateParticles(dt, move=true)
+{
+    for (const p of particles)
+    {
+        p.life -= dt;
+        if (move)
+        {
+            p.pos = p.pos.add(p.vel.scale(dt));
+            p.vel = p.vel.scale(1 - dt*3.5);
+            p.vel.y += dt*2; // slight rise
+        }
+    }
+    particles = particles.filter(p => p.life > 0);
+}
+
+function drawMountainLayer(parallax, baseY, height, color)
+{
+    const camW = WORLD_W;
+    const left = -camW;
+    const right = camW;
+    const step = 3; // peak spacing
+
+    // scroll left as bgScroll increases
+    const scroll = bgScroll * parallax;
+    const start = Math.floor((left + scroll) / step) - 2;
+    const end   = Math.floor((right + scroll) / step) + 2;
+
+    const points = [];
+    // ridge
+    for (let i=start; i<=end; ++i)
+    {
+        const x = i*step - scroll;
+        const h = (hash1(i*13.7) * 0.8 + hash1(i*3.1)*0.2);
+        const y = baseY + h*height;
+        points.push(vec2(x, y));
+    }
+
+    // close polygon downwards
+    points.push(vec2(points[points.length-1].x, WORLD_BOT-2));
+    points.push(vec2(points[0].x, WORLD_BOT-2));
+
+    drawPoly(points, color, 0, BLACK, vec2(0,0), 0);
+}
 
 // sounds
 const sFlap  = new SoundGenerator({volume:.55, frequency:560, release:.09, slide:-1.2, randomness:.06});
 const sScore = new SoundGenerator({volume:.55, frequency:880, release:.12, pitchJump:440, pitchJumpTime:.02, randomness:.02});
 const sHit   = new SoundGenerator({volume:.65, frequency:140, release:.18, noise:.25, randomness:.1});
+const sCoin  = new SoundGenerator({volume:.5, frequency:1200, release:.08, pitchJump:600, pitchJumpTime:.01, randomness:.03});
 
 class Bird extends EngineObject
 {
@@ -188,10 +265,17 @@ function resetGame()
 {
     // clear objects/pipes
     engineObjectsDestroy();
-    pipes = [];
+    obstacles = [];
+    obstacleTime = 0;
+    coins = [];
+    coinCount = 0;
     score = 0;
     pipeSpawnTimer = 0;
     shakeTimer = 0;
+
+    // reset parallax + particles
+    bgScroll = 0;
+    particles = [];
 
     bird = new Bird();
     gameState = 'ready';
@@ -205,6 +289,16 @@ function startGame()
     pipeSpawnTimer = .2; // spawn soon
 }
 
+function spawnObstacle()
+{
+    // mix obstacle types (bias to pipes early)
+    const fireChance = score < 3 ? 0 : 0.35;
+    if (rand() < fireChance)
+        spawnFireball();
+    else
+        spawnPipe();
+}
+
 function spawnPipe()
 {
     // keep gap away from floor/ceiling
@@ -214,7 +308,107 @@ function spawnPipe()
     const maxY = (WORLD_TOP - padTop);
 
     const gapY = rand(minY, maxY);
-    pipes.push({x: WORLD_W/2 + 3, gapY, scored:false});
+    const x = WORLD_W/2 + 3;
+    const o = {type:'pipe', x, gapY, scored:false};
+    obstacles.push(o);
+
+    // coin in the gap (kept away from pipe edges)
+    if (rand() < 0.65)
+        spawnCoinInPipe(o);
+}
+
+function spawnFireball()
+{
+    // moving hazard that oscillates vertically
+    const floorTop = FLOOR_Y + FLOOR_H/2;
+    const padTop = 1.8;
+    const padBot = 2.8;
+    const minY = floorTop + padBot;
+    const maxY = WORLD_TOP - padTop;
+
+    const y0 = rand(minY, maxY);
+    const amp = rand(1.2, 2.6);
+    const freq = rand(2.0, 3.4);
+    const phase = rand(0, 10);
+    const r = rand(.55, .85);
+
+    const x = WORLD_W/2 + 3;
+    const o = {type:'fire', x, y0, amp, freq, phase, r, scored:false};
+    obstacles.push(o);
+
+    // occasional coin above/below its path (kept away from fireball)
+    if (rand() < 0.45)
+        spawnCoinNearFire(o);
+}
+
+const COIN_R = .38;
+const COIN_EDGE_PAD = .85; // keep coins away from pipe edges/hazards
+
+function addCoin(x, y)
+{
+    // clamp into safe vertical region
+    const floorTop = FLOOR_Y + FLOOR_H/2;
+    const yMin = floorTop + 1.0;
+    const yMax = WORLD_TOP - 1.0;
+    y = clamp(y, yMin, yMax);
+
+    coins.push({x, y, r: COIN_R});
+}
+
+function spawnCoinInPipe(pipe)
+{
+    const gapHalf = GAP_H/2;
+    const safe = max(0, gapHalf - (COIN_R + COIN_EDGE_PAD));
+    const y = pipe.gapY + rand(-safe, safe);
+    addCoin(pipe.x, y);
+}
+
+function spawnCoinNearFire(fire)
+{
+    const floorTop = FLOOR_Y + FLOOR_H/2;
+    const padTop = 1.0;
+    const minY = floorTop + 1.1;
+    const maxY = WORLD_TOP - padTop;
+
+    const clearance = fire.amp + fire.r + COIN_R + COIN_EDGE_PAD;
+    const aboveY = fire.y0 + clearance;
+    const belowY = fire.y0 - clearance;
+
+    // choose a side that stays in bounds; if both, random
+    let y;
+    const aboveOk = aboveY < maxY;
+    const belowOk = belowY > minY;
+    if (aboveOk && belowOk)
+        y = rand() < .5 ? aboveY : belowY;
+    else if (aboveOk)
+        y = aboveY;
+    else if (belowOk)
+        y = belowY;
+    else
+        y = clamp(fire.y0, minY, maxY);
+
+    addCoin(fire.x, y);
+}
+
+function updateCoins(dt)
+{
+    // move/cull
+    for (const c of coins)
+        c.x -= PIPE_SPEED * dt;
+    coins = coins.filter(c => c.x > -WORLD_W/2 - 5);
+
+    // pickup
+    for (let i=coins.length-1; i>=0; --i)
+    {
+        const c = coins[i];
+        const cPos = vec2(c.x, c.y);
+        if (circleRectOverlap(cPos, c.r, bird.pos, bird.size))
+        {
+            coins.splice(i, 1);
+            coinCount++;
+            sCoin.play();
+        }
+    }
 }
 
 function pipeRects(pipe)
@@ -237,26 +431,53 @@ function pipeRects(pipe)
     return {topPos, topSize, botPos, botSize};
 }
 
-function collideBirdWithPipes()
+function getFireballY(o)
 {
-    for (const p of pipes)
+    // only depends on obstacleTime so it freezes on game over
+    return o.y0 + Math.sin((obstacleTime + o.phase) * o.freq) * o.amp;
+}
+
+function circleRectOverlap(cPos, radius, rPos, rSize)
+{
+    const rx0 = rPos.x - rSize.x/2, rx1 = rPos.x + rSize.x/2;
+    const ry0 = rPos.y - rSize.y/2, ry1 = rPos.y + rSize.y/2;
+    const cx = clamp(cPos.x, rx0, rx1);
+    const cy = clamp(cPos.y, ry0, ry1);
+    const dx = cPos.x - cx;
+    const dy = cPos.y - cy;
+    return dx*dx + dy*dy <= radius*radius;
+}
+
+function collideBirdWithObstacles()
+{
+    for (const o of obstacles)
     {
-        const r = pipeRects(p);
-        if (r.topSize.y > 0 && isOverlapping(bird.pos, bird.size, r.topPos, r.topSize))
-            return true;
-        if (r.botSize.y > 0 && isOverlapping(bird.pos, bird.size, r.botPos, r.botSize))
-            return true;
+        if (o.type === 'pipe')
+        {
+            const r = pipeRects(o);
+            if (r.topSize.y > 0 && isOverlapping(bird.pos, bird.size, r.topPos, r.topSize))
+                return true;
+            if (r.botSize.y > 0 && isOverlapping(bird.pos, bird.size, r.botPos, r.botSize))
+                return true;
+        }
+        else // fireball
+        {
+            const cPos = vec2(o.x, getFireballY(o));
+            if (circleRectOverlap(cPos, o.r, bird.pos, bird.size))
+                return true;
+        }
     }
     return false;
 }
 
 function updateScore()
 {
-    for (const p of pipes)
+    for (const o of obstacles)
     {
-        if (!p.scored && p.x + PIPE_W/2 < bird.pos.x)
+        const half = o.type === 'pipe' ? PIPE_W/2 : o.r;
+        if (!o.scored && o.x + half < bird.pos.x)
         {
-            p.scored = true;
+            o.scored = true;
             score++;
             sScore.play();
         }
@@ -280,39 +501,55 @@ function gameUpdate()
 {
     const dt = timeDelta;
 
+    // forward movement: only during play
+    const moving = (gameState === 'play');
+    if (moving)
+        bgScroll += PIPE_SPEED * dt;
+
+    // particles: keep fading on game over, but stop drifting
+    updateParticles(dt, moving);
+
     // screenshake
     if (shakeTimer > 0)
         shakeTimer = max(0, shakeTimer - dt);
 
     if (gameState === 'play')
     {
-        // spawn pipes
+        // bird trail (continuous)
+        emitTrail(1);
+
+        // spawn obstacles
         pipeSpawnTimer -= dt;
         if (pipeSpawnTimer <= 0)
         {
             pipeSpawnTimer += PIPE_SPAWN_TIME;
-            spawnPipe();
+            spawnObstacle();
         }
 
-        // move pipes
-        for (const p of pipes)
-            p.x -= PIPE_SPEED * dt;
+        // advance obstacle animation time
+        obstacleTime += dt;
 
-        // cull pipes
-        pipes = pipes.filter(p => p.x > -WORLD_W/2 - 5);
+        // move obstacles
+        for (const o of obstacles)
+            o.x -= PIPE_SPEED * dt;
+
+        // cull obstacles
+        obstacles = obstacles.filter(o => o.x > -WORLD_W/2 - 5);
+
+        // move + pickup coins (keep them in safer spaces)
+        updateCoins(dt);
 
         // score
         updateScore();
 
         // collisions
-        if (collideBirdWithPipes())
+        if (collideBirdWithObstacles())
             bird.die();
     }
     else if (gameState === 'dead')
     {
-        // let pipes keep moving a bit for drama
-        for (const p of pipes)
-            p.x -= PIPE_SPEED * dt * 0.35;
+        // freeze forward motion on game over (no new trail, no pipe movement)
+        // bird still falls via its own update()
     }
 }
 
@@ -342,24 +579,61 @@ function gameRender()
     // subtle sun
     drawCircle(cameraPos.add(vec2(7,4)), 4.5, hsl(.14,.55,.9,.25));
 
-    // pipes
-    for (const p of pipes)
-    {
-        const r = pipeRects(p);
-        const pipeColor = hsl(.33, .55, .42);
-        const pipeRim   = hsl(.33, .45, .32);
+    // mountains (far to near)
+    drawMountainLayer(.12, -0.8, 4.0, hsl(.58,.18,.80,.60));
+    drawMountainLayer(.22, -1.5, 4.8, hsl(.58,.20,.72,.75));
+    drawMountainLayer(.35, -2.3, 5.6, hsl(.58,.22,.64,.90));
 
-        if (r.topSize.y > 0)
+    // coins
+    for (const c of coins)
+    {
+        const p = vec2(c.x, c.y);
+        // outer ring + inner shine
+        drawCircle(p, c.r*1.9, hsl(.14,.9,.62,.25));
+        drawCircle(p, c.r*1.25, hsl(.14,.95,.58,.85));
+        drawCircle(p.add(vec2(.10,.10)), c.r*.45, hsl(.14,.6,.8,.6));
+    }
+
+    // obstacles
+    for (const o of obstacles)
+    {
+        if (o.type === 'pipe')
         {
-            drawRect(r.topPos, r.topSize, pipeColor);
-            // rim at end
-            drawRect(vec2(p.x, (p.gapY+GAP_H/2) + .35), vec2(PIPE_W+0.3, .7), pipeRim);
+            const r = pipeRects(o);
+            const pipeColor = hsl(.33, .55, .42);
+            const pipeRim   = hsl(.33, .45, .32);
+
+            if (r.topSize.y > 0)
+            {
+                drawRect(r.topPos, r.topSize, pipeColor);
+                // rim at end
+                drawRect(vec2(o.x, (o.gapY+GAP_H/2) + .35), vec2(PIPE_W+0.3, .7), pipeRim);
+            }
+            if (r.botSize.y > 0)
+            {
+                drawRect(r.botPos, r.botSize, pipeColor);
+                drawRect(vec2(o.x, (o.gapY-GAP_H/2) - .35), vec2(PIPE_W+0.3, .7), pipeRim);
+            }
         }
-        if (r.botSize.y > 0)
+        else // fireball
         {
-            drawRect(r.botPos, r.botSize, pipeColor);
-            drawRect(vec2(p.x, (p.gapY-GAP_H/2) - .35), vec2(PIPE_W+0.3, .7), pipeRim);
+            const y = getFireballY(o);
+            const cPos = vec2(o.x, y);
+            // glow
+            drawCircle(cPos, o.r*2.4, hsl(.08,.9,.65,.18));
+            drawCircle(cPos, o.r*1.7, hsl(.06,.95,.55,.28));
+            // core
+            drawCircle(cPos, o.r, hsl(.04,.98,.55,.95));
+            drawCircle(cPos.add(vec2(.12,.10)), o.r*.32, hsl(.14,.9,.7,.75));
         }
+    }
+
+    // trail particles (behind the bird)
+    for (const p of particles)
+    {
+        const a = clamp(p.life/p.maxLife, 0, 1);
+        drawCircle(p.pos, p.size*3.0, hsl(.57,.25,.95,.18*a));
+        drawCircle(p.pos, p.size*1.6, hsl(.57,.10,1,.35*a));
     }
 
     // ground
@@ -381,11 +655,15 @@ function gameRenderPost()
     const scoreText = '' + score;
     drawTextScreen(scoreText, vec2(cx, 70), 90, WHITE, 8, hsl(0,0,0,.55));
 
+    // coin counter
+    drawTextScreen(`Coins: ${coinCount}`, vec2(cx, 125), 34, hsl(.14,.9,.7), 6, hsl(0,0,0,.55));
+
     if (gameState === 'ready')
     {
         drawTextScreen('FLAPPY', vec2(cx, 170), 80, WHITE, 10, hsl(0,0,0,.55));
         drawTextScreen('Click / Tap / Space', vec2(cx, 240), 40, hsl(0,0,1), 6, hsl(0,0,0,.55));
-        drawTextScreen('Avoid the pipes', vec2(cx, 285), 32, hsl(0,0,1), 5, hsl(0,0,0,.55));
+        drawTextScreen('Avoid pipes + fireballs', vec2(cx, 285), 32, hsl(0,0,1), 5, hsl(0,0,0,.55));
+        drawTextScreen('Grab coins (they spawn safely)', vec2(cx, 325), 28, hsl(0,0,1), 5, hsl(0,0,0,.55));
     }
     else if (gameState === 'dead')
     {
