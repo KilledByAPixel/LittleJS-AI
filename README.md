@@ -29,6 +29,7 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Snood | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) |
 | Asteroids | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/asteroids.html) |
 | Missile Command | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) |
+| Minesweeper | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/minesweeper.html) |
 | Breakout | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
 | Flappy Bird | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/flappyBird.html) |
 | Centipede | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) |
