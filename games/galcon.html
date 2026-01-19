@@ -1,0 +1,1087 @@
+<!DOCTYPE html><head>
+<title>LittleJS AI Starter Project</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+debugKey = 'Backquote';
+
+// engine settings
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 19;
+
+///////////////////////////////////////////////////////////////////////////////
+// OrbitSwarm
+//
+// Controls
+// - Click + drag from your planet to a target to send ships
+// - 1/2/3/4 sets send percent: 10/25/50/100
+// - Mouse wheel while dragging adjusts percent
+// - Click a blue planet to select it
+// - Q/W/E buy upgrades on selected planet (spend ships)
+// - R restarts, Esc returns to title
+//
+// Ships launch in a rapid stream (1-2s) and arrive/attack one at a time.
+// Defense upgrade: chance to "block" an invader with no defender loss.
+//
+// NOTE: Sound effects are disabled for now.
+
+// -------------------------------------------------------------
+// Constants / helpers
+
+const OWNER_NEUTRAL = 0;
+const OWNER_PLAYER  = 1;
+const OWNER_AI      = 2;
+
+const WORLD_SIZE = vec2(70, 40);
+const PLANET_COUNT = 11;
+
+const FLEET_SPEED = 5;                  // world units per second
+const SHIP_DRAW_LIMIT = 180;            // max ship instances to draw per fleet
+
+// Capacity tuning
+const CAPACITY_SCALE = .5;              // scales ALL planet capacities (base + upgrades)
+const MAX_SHIPS = 300;                  // absolute hard cap (safety)
+
+// stream combat tuning
+const LAUNCH_DUR_MIN = .8;
+const LAUNCH_DUR_MAX = 2.0;
+const ARRIVAL_PROCESS_CAP = 40;         // max ships processed per frame per fleet
+
+// background starfield
+const STAR_FIELD_SIZE = vec2(180, 110);
+const STAR_COUNT = 1400;
+const NEBULA_COUNT = 10;
+
+// game flow
+const STATE_TITLE = 0;
+const STATE_PLAY  = 1;
+
+const clamp01 = (v)=> clamp(v, 0, 1);
+function randInt(n){ return (rand(0, n))|0; }
+
+function isShiftDown(){ return keyIsDown('ShiftLeft') || keyIsDown('ShiftRight'); }
+function isCtrlDown() { return keyIsDown('ControlLeft') || keyIsDown('ControlRight'); }
+function isAltDown()  { return keyIsDown('AltLeft') || keyIsDown('AltRight'); }
+
+// -------------------------------------------------------------
+// Sound disabled (stubs)
+
+const sfx = { play: function(){} };
+const sfxSelect  = sfx;
+const sfxSend    = sfx;
+const sfxHit     = sfx;
+const sfxCapture = sfx;
+const sfxWin     = sfx;
+const sfxLose    = sfx;
+const sfxBuy     = sfx;
+const sfxNope    = sfx;
+
+// -------------------------------------------------------------
+// Upgrades (spend ships from the planet)
+
+function prodCost(level){ return 20 + level * 18; }
+function capCost(level) { return 30 + level * 24; }
+function defCost(level) { return 35 + level * 28; }
+
+function recalcPlanetStats(p)
+{
+    // upgrades apply on top of base stats
+    p.capacity = min(MAX_SHIPS, (p.baseCapacity + (p.upCap * (30*CAPACITY_SCALE))) | 0);
+    p.production = p.baseProduction * (1 + p.upProd * .22);
+
+    // defense: chance to block an invader without losing a ship
+    p.defChance = clamp(p.upDef * .08, 0, .55);
+
+    p.ships = min(p.capacity, p.ships);
+}
+
+function tryBuyUpgrade(p, kind, owner, playSfx)
+{
+    if (owner === undefined) owner = OWNER_PLAYER;
+    if (playSfx === undefined) playSfx = true;
+
+    // kind: 0=prod, 1=cap, 2=def
+    if (!p || p.owner != owner) return;
+
+    let cost = 0;
+    if (kind == 0) cost = prodCost(p.upProd);
+    if (kind == 1) cost = capCost(p.upCap);
+    if (kind == 2) cost = defCost(p.upDef);
+
+    if (p.ships < cost)
+    {
+        if (playSfx) sfxNope.play();
+        return;
+    }
+
+    p.ships -= cost;
+    if (kind == 0) p.upProd++;
+    if (kind == 1) p.upCap++;
+    if (kind == 2) p.upDef++;
+
+    recalcPlanetStats(p);
+    if (playSfx) sfxBuy.play();
+}
+
+// -------------------------------------------------------------
+// Game state classes
+
+class Planet
+{
+    constructor(pos, radius)
+    {
+        this.pos = pos;
+        this.radius = radius;
+        this.owner = OWNER_NEUTRAL;
+
+        // base stats (size-based)
+        this.baseProduction = radius * 1.0;
+        this.baseCapacity = max((60*CAPACITY_SCALE)|0, (radius * 60 * CAPACITY_SCALE) | 0);
+
+        // upgrade levels
+        this.upProd = 0;
+        this.upCap = 0;
+        this.upDef = 0;
+
+        // derived stats
+        this.production = 0;
+        this.capacity = 0;
+        this.defChance = 0;
+
+        // ships
+        this.ships = 0;
+
+        // cosmetic
+        this.seed = randInt(1e9);
+
+        // init stats + starter ships
+        recalcPlanetStats(this);
+        this.ships = min(this.capacity, (radius * 10) | 0);
+    }
+}
+
+class Fleet
+{
+    constructor(from, to, owner, count)
+    {
+        this.from = from;
+        this.to = to;
+        this.owner = owner;
+
+        this.count = count|0;
+        this.time = 0;
+
+        // launch stream duration (1-2s-ish depending on count)
+        this.launchDuration = clamp(0.6 + this.count / 80, LAUNCH_DUR_MIN, LAUNCH_DUR_MAX);
+        this.launchRate = this.count / this.launchDuration; // ships per second
+
+        const dir = to.pos.subtract(from.pos).normalize();
+        this.dir = dir;
+        this.perp = vec2(-dir.y, dir.x);
+
+        const dist = max(.1, from.pos.distance(to.pos) - from.radius - to.radius);
+        this.travelTime = dist / FLEET_SPEED;
+
+        this.processedArrivals = 0;
+        this.swirl = rand(0, 6.28);
+
+        // ship instances (visual only) - each gets a launch delay
+        const visualCount = min(SHIP_DRAW_LIMIT, this.count);
+        this.visualShips = [];
+        for (let i = 0; i < visualCount; ++i)
+        {
+            const delay = (i / max(1, visualCount-1)) * this.launchDuration;
+
+            const back = rand(0, 2.4) + rand(0, 2.4);
+            const side = rand(-.65, .65);
+            const wobblePhase = rand(0, 6.28);
+            const wobbleAmt = rand(.05, .22);
+            const speedJitter = rand(.92, 1.06);
+
+            this.visualShips.push({ delay:delay, back:back, side:side, wobblePhase:wobblePhase, wobbleAmt:wobbleAmt, speedJitter:speedJitter });
+        }
+    }
+
+    arrivedCount(t)
+    {
+        const x = t - this.travelTime;
+        return x <= 0 ? 0 : clamp((x * this.launchRate)|0, 0, this.count);
+    }
+
+    processOneArrival()
+    {
+        const planet = this.to;
+        if (!planet) return;
+
+        if (planet.owner == this.owner)
+        {
+            planet.ships = min(planet.capacity, (planet.ships|0) + 1);
+            return;
+        }
+
+        // defending planet may block the invader without losing a ship
+        const chance = planet.defChance || 0;
+        if (chance > 0 && rand() < chance)
+        {
+            spawnBlockEffect(planet, this.dir);
+            return;
+        }
+
+        // each invader reduces defender count by 1
+        planet.ships = (planet.ships|0) - 1;
+
+        // capture when count goes negative
+        if (planet.ships < 0)
+        {
+            planet.owner = this.owner;
+            planet.ships = min(planet.capacity, -planet.ships);
+            sfxCapture.play();
+        }
+    }
+
+    update(dt)
+    {
+        this.time += dt;
+
+        // arrivals (process incrementally)
+        const arrived = this.arrivedCount(this.time);
+        let toProcess = arrived - this.processedArrivals;
+        toProcess = min(toProcess, ARRIVAL_PROCESS_CAP);
+
+        for (let i = 0; i < toProcess; ++i)
+        {
+            this.processOneArrival();
+            this.processedArrivals++;
+        }
+
+        return this.processedArrivals >= this.count;
+    }
+}
+
+// -------------------------------------------------------------
+// Background
+
+let stars = [];
+let nebulas = [];
+let starDrift = vec2(0, 0);
+
+function initStarfield()
+{
+    stars.length = 0;
+    nebulas.length = 0;
+    starDrift = vec2(0, 0);
+
+    for (let i = 0; i < STAR_COUNT; ++i)
+    {
+        const layer = randInt(3);
+        const speed = layer == 0 ? 1.0 : layer == 1 ? .55 : .28;
+        const size = layer == 0 ? rand(.10, .18) : layer == 1 ? rand(.07, .13) : rand(.05, .09);
+        const tw = rand(0, 6.28);
+
+        stars.push({
+            pos: vec2(rand(-STAR_FIELD_SIZE.x/2, STAR_FIELD_SIZE.x/2), rand(-STAR_FIELD_SIZE.y/2, STAR_FIELD_SIZE.y/2)),
+            speed: speed,
+            size: size,
+            tw: tw
+        });
+    }
+
+    for (let i = 0; i < NEBULA_COUNT; ++i)
+    {
+        const r = rand(10, 22);
+        nebulas.push({
+            pos: vec2(rand(-STAR_FIELD_SIZE.x/2, STAR_FIELD_SIZE.x/2), rand(-STAR_FIELD_SIZE.y/2, STAR_FIELD_SIZE.y/2)),
+            r: r,
+            hue: rand(0, 1),
+            a: rand(.05, .12)
+        });
+    }
+}
+
+function wrapInField(p)
+{
+    const hx = STAR_FIELD_SIZE.x/2;
+    const hy = STAR_FIELD_SIZE.y/2;
+    if (p.x < -hx) p.x += STAR_FIELD_SIZE.x;
+    if (p.x >  hx) p.x -= STAR_FIELD_SIZE.x;
+    if (p.y < -hy) p.y += STAR_FIELD_SIZE.y;
+    if (p.y >  hy) p.y -= STAR_FIELD_SIZE.y;
+}
+
+function updateStarfield(dt)
+{
+    starDrift = starDrift.add(vec2(rand(-.08, .08), rand(-.05, .05)).scale(dt));
+    const maxDrift = .9;
+    starDrift.x = clamp(starDrift.x, -maxDrift, maxDrift);
+    starDrift.y = clamp(starDrift.y, -maxDrift, maxDrift);
+
+    for (let i = 0; i < stars.length; ++i)
+    {
+        const s = stars[i];
+        s.tw += dt * 1.6;
+        s.pos = s.pos.add(starDrift.scale(dt * s.speed));
+        wrapInField(s.pos);
+    }
+}
+
+function renderStarfield()
+{
+    drawRect(vec2(0, 0), vec2(500, 300), hsl(.62, .25, .04));
+
+    for (let i = 0; i < nebulas.length; ++i)
+    {
+        const n = nebulas[i];
+        drawCircle(n.pos, n.r*2, hsl(n.hue, .55, .18, n.a));
+        drawCircle(n.pos.add(vec2(2, -1)), n.r*1.2, hsl(n.hue + .08, .55, .22, n.a*.7));
+    }
+
+    for (let i = 0; i < stars.length; ++i)
+    {
+        const s = stars[i];
+        const twinkle = 1 + Math.sin(s.tw) * .25;
+        const d = s.size * twinkle;
+        drawCircle(s.pos, d, hsl(0, 0, 1, .75));
+    }
+}
+
+// -------------------------------------------------------------
+// Rendering helpers
+
+const lightDir = vec2(-.7, .5).normalize();
+
+function rotate2(v, a)
+{
+    const c = Math.cos(a), s = Math.sin(a);
+    return vec2(v.x*c - v.y*s, v.x*s + v.y*c);
+}
+
+function drawWedge(pos, dir, size, color, outlineAlpha)
+{
+    if (outlineAlpha === undefined) outlineAlpha = .35;
+
+    const a = Math.atan2(dir.y, dir.x);
+    const tip  = rotate2(vec2(size, 0), a);
+    const back = -size * .65;
+    const wing = size * .55;
+    const p1 = rotate2(vec2(back,  wing), a);
+    const p2 = rotate2(vec2(back, -wing), a);
+    drawPoly([p1, tip, p2], color, .08, hsl(0,0,0,outlineAlpha), pos);
+}
+
+// -------------------------------------------------------------
+// Defense block visuals
+
+let blockEffects = []; // {pos, origin, life, maxLife, seed}
+
+function fract(x){ return x - Math.floor(x); }
+function hash01(n){ return fract(Math.sin(n) * 43758.5453123); }
+
+function spawnBlockEffect(planet, incomingDir)
+{
+    const dir = incomingDir.normalize();
+    const perp = vec2(-dir.y, dir.x);
+
+    const edge = planet.pos.subtract(dir.scale(planet.radius + rand(.12, .35)));
+    const hitPos = edge.add(perp.scale(rand(-.40, .40)));
+
+    const ang = Math.atan2(-dir.y, -dir.x) + rand(-.9, .9);
+    const origin = planet.pos.add(vec2(Math.cos(ang), Math.sin(ang)).scale(planet.radius * rand(.7, 1.0)));
+
+    blockEffects.push({ pos: hitPos, origin: origin, life: 0, maxLife: rand(.18, .28), seed: randInt(1e9) });
+}
+
+function updateBlockEffects(dt)
+{
+    for (let i = blockEffects.length; i--;)
+    {
+        const e = blockEffects[i];
+        e.life += dt;
+        if (e.life >= e.maxLife)
+            blockEffects.splice(i, 1);
+    }
+}
+
+function renderBlockEffects()
+{
+    for (let j = 0; j < blockEffects.length; ++j)
+    {
+        const e = blockEffects[j];
+        const t = clamp01(e.life / e.maxLife);
+        const a = 1 - t;
+
+        drawLine(e.origin, e.pos, .12, hsl(0,0,1, .65*a));
+        drawLine(e.origin, e.pos, .04, hsl(0,0,1, .95*a));
+
+        drawCircle(e.pos, .65 + t*.25, hsl(0,0,1, .09*a));
+        drawCircle(e.pos, .20 + t*.08, hsl(0,0,1, .70*a));
+
+        const rays = 7;
+        for (let i = 0; i < rays; ++i)
+        {
+            const h = hash01(e.seed + i*97);
+            const ang2 = h * 6.28318 + t*2.4;
+            const len = (.45 + hash01(e.seed + i*191) * 1.1) * (1 - t);
+            const p2 = e.pos.add(vec2(Math.cos(ang2), Math.sin(ang2)).scale(len));
+            drawLine(e.pos, p2, .06, hsl(0,0,1, .60*a));
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// UI helpers
+
+function ownerHue(owner)
+{
+    if (owner == OWNER_PLAYER) return .58;
+    if (owner == OWNER_AI)     return .02;
+    return .62;
+}
+
+function ownerColor(owner, alpha)
+{
+    if (alpha === undefined) alpha = 1;
+    if (owner == OWNER_PLAYER) return hsl(.58, .9, .55, alpha);
+    if (owner == OWNER_AI)     return hsl(.02, .9, .55, alpha);
+    return hsl(0, 0, .55, alpha);
+}
+
+function planetAt(pos)
+{
+    let bestP = null;
+    let bestD = 1e9;
+    for (let i = 0; i < planets.length; ++i)
+    {
+        const p = planets[i];
+        const d = p.pos.distance(pos);
+        if (d <= p.radius && d < bestD)
+        {
+            bestD = d;
+            bestP = p;
+        }
+    }
+    return bestP;
+}
+
+// -------------------------------------------------------------
+// Game globals
+
+let planets = [];
+let fleets = [];
+
+let gameOver = 0;
+let gameState = STATE_TITLE;
+
+let dragSource = null;
+let dragTarget = null;
+let dragPercent = .5;
+let sendPreset = 3;
+let aiTimer = 0;
+let selectedPlanet = null;
+
+// -------------------------------------------------------------
+// Gameplay
+
+function startGame(){ resetGame(); gameState = STATE_PLAY; }
+
+function goToTitle()
+{
+    gameState = STATE_TITLE;
+    gameOver = 0;
+    planets.length = 0;
+    fleets.length = 0;
+    dragSource = dragTarget = null;
+    dragPercent = .5;
+    sendPreset = 3;
+    aiTimer = 0;
+    selectedPlanet = null;
+    initStarfield();
+    blockEffects.length = 0;
+}
+
+function applyRandomStartingUpgrades(p)
+{
+    if (p.owner != OWNER_NEUTRAL) return;
+    if (rand() > .45) return;
+
+    const upgrades = 1 + randInt(2); // 1..2
+    for (let i = 0; i < upgrades; ++i)
+    {
+        const k = randInt(3);
+        if (k == 0) p.upProd++;
+        else if (k == 1) p.upCap++;
+        else p.upDef++;
+    }
+
+    recalcPlanetStats(p);
+    p.ships = min(p.capacity, p.ships);
+}
+
+function resetGame()
+{
+    planets.length = 0;
+    fleets.length = 0;
+    gameOver = 0;
+    dragSource = dragTarget = null;
+    dragPercent = .5;
+    sendPreset = 3;
+    aiTimer = 0;
+    selectedPlanet = null;
+    blockEffects.length = 0;
+
+    initStarfield();
+
+    // generate planets
+    const triesMax = 2000;
+    let tries = 0;
+
+    while (planets.length < PLANET_COUNT && tries++ < triesMax)
+    {
+        const radius = rand(2.3, 4.6);
+        const pos = vec2(
+            rand(-WORLD_SIZE.x/2 + 10, WORLD_SIZE.x/2 - 10),
+            rand(-WORLD_SIZE.y/2 + 7,  WORLD_SIZE.y/2 - 7)
+        );
+
+        let ok = true;
+        for (let i = 0; i < planets.length; ++i)
+        {
+            const p = planets[i];
+            const minDist = p.radius + radius + 2.2;
+            if (p.pos.distance(pos) < minDist) { ok = false; break; }
+        }
+        if (!ok) continue;
+
+        planets.push(new Planet(pos, radius));
+    }
+
+    // pick two far apart planets for player/ai
+    let a = 0, b = 1, best = -1;
+    for (let i = 0; i < planets.length; ++i)
+    for (let j = i+1; j < planets.length; ++j)
+    {
+        const d = planets[i].pos.distance(planets[j].pos);
+        if (d > best) { best = d; a = i; b = j; }
+    }
+
+    const playerHome = planets[a];
+    const aiHome = planets[b];
+
+    playerHome.owner = OWNER_PLAYER;
+    playerHome.ships = min(playerHome.capacity, 50);
+    playerHome.baseProduction *= 1.1;
+    recalcPlanetStats(playerHome);
+
+    aiHome.owner = OWNER_AI;
+    aiHome.ships = min(aiHome.capacity, 30);
+    recalcPlanetStats(aiHome);
+
+    for (let i = 0; i < planets.length; ++i)
+    {
+        const p = planets[i];
+        if (p.owner == OWNER_NEUTRAL)
+        {
+            p.ships = min(p.capacity, (p.radius * rand(7, 13)) | 0);
+            applyRandomStartingUpgrades(p);
+        }
+    }
+
+    selectedPlanet = playerHome;
+}
+
+function sendFleet(from, to, owner, fraction)
+{
+    if (!from || !to) return;
+    if (from.owner != owner) return;
+
+    const count = max(1, (from.ships * fraction) | 0);
+    if (count <= 0 || from.ships < 2) return;
+
+    from.ships -= count;
+    fleets.push(new Fleet(from, to, owner, count));
+    sfxSend.play();
+}
+
+// -------------------------------------------------------------
+// AI
+
+function aiTryUpgrade()
+{
+    const aiPlanets = planets.filter(function(p){ return p.owner == OWNER_AI; });
+    if (!aiPlanets.length) return;
+    if (rand() > .45) return;
+
+    let best = null;
+    let bestShips = 0;
+    for (let i = 0; i < aiPlanets.length; ++i)
+    {
+        const p = aiPlanets[i];
+        if (p.ships > bestShips) { bestShips = p.ships; best = p; }
+    }
+    if (!best) return;
+
+    const options = [
+        {k:0, cost:prodCost(best.upProd)},
+        {k:1, cost:capCost(best.upCap)},
+        {k:2, cost:defCost(best.upDef)}
+    ].sort(function(a,b){ return a.cost - b.cost; });
+
+    for (let i = 0; i < options.length; ++i)
+    {
+        const o = options[i];
+        if (best.ships >= o.cost + 12) { tryBuyUpgrade(best, o.k, OWNER_AI, false); break; }
+    }
+}
+
+function aiStep()
+{
+    if (gameOver) return;
+
+    const aiPlanets = planets.filter(function(p){ return p.owner == OWNER_AI; });
+    if (!aiPlanets.length) return;
+
+    let source = null;
+    let most = 0;
+    for (let i = 0; i < aiPlanets.length; ++i)
+    {
+        const p = aiPlanets[i];
+        if (p.ships > most) { most = p.ships; source = p; }
+    }
+
+    if (!source || source.ships < 22) return;
+
+    let bestTarget = null;
+    let bestScore = -1;
+
+    for (let i = 0; i < planets.length; ++i)
+    {
+        const t = planets[i];
+        if (t.owner == OWNER_AI) continue;
+
+        const dist = max(1, source.pos.distance(t.pos));
+        const defFactor = 1 + (t.defChance || 0) * 1.2;
+        const defenders = (t.ships * defFactor) + (t.owner ? t.production * (dist / FLEET_SPEED) : 0);
+
+        const value = t.production * (t.owner == OWNER_PLAYER ? 1.15 : 1.0);
+        const score = value / (defenders + 5) * (1 / dist);
+
+        if (score > bestScore) { bestScore = score; bestTarget = t; }
+    }
+
+    if (!bestTarget) return;
+
+    const fraction = source.ships > 85 ? .7 : .45;
+    sendFleet(source, bestTarget, OWNER_AI, fraction);
+}
+
+// -------------------------------------------------------------
+// Drawing
+
+function drawTitleDecor()
+{
+    const p1 = vec2(-18, 6);
+    const r1 = 7.5;
+    drawCircle(p1, r1*2, hsl(.58, .55, .25, .95), .14, hsl(.58, .85, .6));
+    drawCircle(p1.add(lightDir.scale(-r1*.25)), r1*2, hsl(.58, .55, .12, .35));
+    drawCircle(p1.add(lightDir.scale(r1*.28)), r1*1.25, hsl(.58, .65, .6, .18));
+
+    const p2 = vec2(22, -8);
+    const r2 = 5.3;
+    drawCircle(p2, r2*2, hsl(.02, .55, .23, .95), .14, hsl(.02, .85, .6));
+    drawCircle(p2.add(lightDir.scale(-r2*.25)), r2*2, hsl(.02, .55, .12, .35));
+    drawCircle(p2.add(lightDir.scale(r2*.28)), r2*1.25, hsl(.02, .65, .6, .18));
+}
+
+function drawPlanet(p)
+{
+    const hue = ownerHue(p.owner);
+    const sel = p == selectedPlanet;
+
+    const baseSat0 = p.owner ? .7 : .18;
+    const baseLit0 = p.owner ? .38 : .30;
+    const baseSat = sel ? min(1, baseSat0 + .30) : baseSat0;
+    const baseLit = sel ? min(1, baseLit0 + .32) : baseLit0;
+
+    const base = hsl(hue, baseSat, baseLit, .95);
+    const outline = ownerColor(p.owner, 1);
+
+    if (sel)
+    {
+        drawCircle(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .08));
+        drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .04));
+    }
+
+    drawCircle(p.pos, p.radius*2, base, .14, outline);
+
+    const shadowPos = p.pos.add(lightDir.scale(-p.radius*.25));
+    drawCircle(shadowPos, p.radius*2, hsl(hue, p.owner ? .8 : .2, .18, .35));
+
+    const hiPos = p.pos.add(lightDir.scale(p.radius*.28));
+    drawCircle(hiPos, p.radius*1.25, hsl(hue, p.owner ? .75 : .25, .58, .22));
+
+    drawCircle(p.pos, p.radius*2 + .65, hsl(hue, .7, .55, .08));
+
+    // selection ring (solid white)
+    if (sel)
+    {
+        drawCircle(p.pos, p.radius*2 + 1.10, hsl(0,0,0,0), .26, hsl(0,0,1,1));
+        drawCircle(p.pos, p.radius*2 + 1.55, hsl(0,0,0,0), .10, hsl(0,0,1,.35));
+    }
+
+    // subtle production ring
+    const ring = p.radius*2 + .55;
+    drawCircle(p.pos, ring, hsl(0,0,0,0), .08, hsl(hue, .25, .5, .25));
+
+    // capacity ring (player only)
+    if (p.owner == OWNER_PLAYER)
+    {
+        const frac = clamp01((p.ships|0) / max(1, p.capacity));
+        const capR = p.radius + .62;
+        const thick = .24;
+
+        drawCircle(p.pos, capR*2, hsl(0,0,0,0), thick, hsl(0,0,1,.10));
+
+        const segs = 56;
+        const start = -Math.PI/2;
+        const endSeg = (frac * segs) | 0;
+        const col = hsl(hue, .85, .62, .85);
+
+        for (let s = 0; s < endSeg; ++s)
+        {
+            const a0 = start + (s / segs) * 6.28;
+            const a1 = start + ((s + 1) / segs) * 6.28;
+            const p0 = p.pos.add(vec2(Math.cos(a0), Math.sin(a0)).scale(capR));
+            const p1 = p.pos.add(vec2(Math.cos(a1), Math.sin(a1)).scale(capR));
+            drawLine(p0, p1, thick, col);
+        }
+    }
+
+    // orbiting ship visuals (neutral + player only)
+    if (p.owner != OWNER_AI && (p.ships|0) > 0)
+    {
+        const shipCount = min(p.capacity, p.ships|0);
+        const perRing = 70;
+        const rings2 = ((shipCount + perRing - 1) / perRing) | 0;
+
+        const spin = ((p.seed % 200) / 200 - .5) * .18;
+        const baseAng = time * (.35 + spin);
+
+        let idx = 0;
+        for (let r = 0; r < rings2; ++r)
+        {
+            const start2 = r * perRing;
+            const end2 = min(shipCount, start2 + perRing);
+            const n = end2 - start2;
+            const orbitR = p.radius + .95 + r * .38;
+
+            for (let j = 0; j < n; ++j, ++idx)
+            {
+                const off = ((p.seed % 997) / 997) * 6.28;
+                const a = baseAng + off + (j / n) * 6.28;
+                const wob = Math.sin(time * 1.2 + idx * .37) * .05;
+
+                const pos = p.pos.add(vec2(Math.cos(a), Math.sin(a)).scale(orbitR + wob));
+                const tdir = vec2(-Math.sin(a), Math.cos(a));
+                drawWedge(pos, tdir, .26, hsl(hue, p.owner ? .8 : .2, .65, .75));
+            }
+        }
+
+        // number + upgrade icons (player only)
+        if (p.owner == OWNER_PLAYER)
+        {
+            drawText(p.ships|0, p.pos, 1.6, hsl(0,0,1), .18, hsl(0,0,0));
+
+            const parts = [];
+            if (p.upProd > 0) parts.push('⚡' + p.upProd);
+            if (p.upCap  > 0) parts.push('📦' + p.upCap);
+            if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
+            if (parts.length)
+                drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, hsl(0,0,1), .18, hsl(0,0,0));
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// Tiny self-tests (lightweight)
+
+function selfTest()
+{
+    // ensure defense chance monotonic
+    const p = new Planet(vec2(0,0), 3);
+    p.upDef = 0; recalcPlanetStats(p); const c0 = p.defChance;
+    p.upDef = 2; recalcPlanetStats(p); const c2 = p.defChance;
+    p.upDef = 6; recalcPlanetStats(p); const c6 = p.defChance;
+    console.assert(c0 <= c2 && c2 <= c6, 'defChance should increase with upgrade');
+
+    // fleet launch duration clamped
+    const a = new Planet(vec2(-10,0), 3);
+    const b = new Planet(vec2( 10,0), 3);
+    a.owner = OWNER_PLAYER; a.ships = 50;
+    const f = new Fleet(a,b,OWNER_PLAYER,40);
+    console.assert(f.launchDuration >= LAUNCH_DUR_MIN && f.launchDuration <= LAUNCH_DUR_MAX, 'launchDuration clamp');
+
+    // block effect lifecycle
+    blockEffects.length = 0;
+    spawnBlockEffect(p, vec2(1,0));
+    console.assert(blockEffects.length == 1, 'block effect should spawn');
+    updateBlockEffects(10);
+    console.assert(blockEffects.length == 0, 'block effect should expire');
+
+    // help string is safe (no raw newlines in source)
+    const help = 'A\\nB';
+    console.assert(help.indexOf('\n') >= 0, 'help string should contain escaped newline');
+}
+
+// -------------------------------------------------------------
+// LittleJS callbacks
+
+function gameInit()
+{
+    selfTest();
+    goToTitle();
+}
+
+function gameUpdate()
+{
+    if (keyWasPressed('Escape'))
+    {
+        goToTitle();
+        return;
+    }
+
+    if (gameState == STATE_TITLE)
+    {
+        updateStarfield(timeDelta);
+        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
+            startGame();
+        return;
+    }
+
+    if (keyWasPressed('KeyR'))
+        resetGame();
+
+    // upgrades (selected planet)
+    if (keyWasPressed('KeyQ')) tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
+    if (keyWasPressed('KeyW')) tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
+    if (keyWasPressed('KeyE')) tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
+
+    // send percent presets
+    if (keyWasPressed('Digit1')) { sendPreset = 1; dragPercent = .10; }
+    if (keyWasPressed('Digit2')) { sendPreset = 2; dragPercent = .25; }
+    if (keyWasPressed('Digit3')) { sendPreset = 3; dragPercent = .50; }
+    if (keyWasPressed('Digit4')) { sendPreset = 4; dragPercent = 1.00; }
+
+    if (gameOver)
+    {
+        if (keyWasPressed('Space'))
+            resetGame();
+        return;
+    }
+
+    updateStarfield(timeDelta);
+    updateBlockEffects(timeDelta);
+
+    // planet production
+    for (let i = 0; i < planets.length; ++i)
+    {
+        const p = planets[i];
+        if (p.owner != OWNER_NEUTRAL)
+            p.ships = min(p.capacity, p.ships + p.production * timeDelta);
+    }
+
+    // mouse
+    const hover = planetAt(mousePos);
+
+    if (mouseWasPressed(0))
+    {
+        if (hover && hover.owner == OWNER_PLAYER)
+        {
+            selectedPlanet = hover;
+            sfxSelect.play();
+            dragSource = hover;
+            dragTarget = null;
+
+            if (isAltDown())  dragPercent = .10;
+            if (isCtrlDown()) dragPercent = .25;
+            if (isShiftDown())dragPercent = 1.0;
+        }
+    }
+
+    if (dragSource)
+    {
+        dragTarget = hover;
+
+        if (mouseWheel)
+        {
+            dragPercent = clamp01(dragPercent + mouseWheel * .05);
+            const snaps = [.10, .25, .50, 1.0];
+            for (let i = 0; i < snaps.length; ++i)
+                if (abs(dragPercent - snaps[i]) < .03) dragPercent = snaps[i];
+        }
+
+        if (isAltDown()) dragPercent = .10;
+        else if (isCtrlDown()) dragPercent = .25;
+        else if (isShiftDown()) dragPercent = 1.0;
+
+        if (mouseWasReleased(0))
+        {
+            if (dragTarget && dragTarget != dragSource)
+                sendFleet(dragSource, dragTarget, OWNER_PLAYER, dragPercent);
+
+            dragSource = null;
+            dragTarget = null;
+        }
+    }
+
+    // fleets
+    for (let i = fleets.length; i--;)
+        if (fleets[i].update(timeDelta))
+            fleets.splice(i, 1);
+
+    // AI
+    aiTimer -= timeDelta;
+    if (aiTimer <= 0)
+    {
+        aiTimer = rand(1.05, 1.65);
+        aiTryUpgrade();
+        aiStep();
+    }
+
+    // win/lose
+    const playerAlive = planets.some(function(p){ return p.owner == OWNER_PLAYER; });
+    const aiAlive = planets.some(function(p){ return p.owner == OWNER_AI; });
+
+    if (!playerAlive || !aiAlive)
+        gameOver = aiAlive ? -1 : 1;
+}
+
+function gameUpdatePost()
+{
+    cameraPos = vec2(0, 0);
+}
+
+function gameRender()
+{
+    renderStarfield();
+
+    if (gameState == STATE_TITLE)
+    {
+        drawTitleDecor();
+        return;
+    }
+
+    for (let i = 0; i < planets.length; ++i)
+        drawPlanet(planets[i]);
+
+    // fleets (triangle wedge stream)
+    for (let fi = 0; fi < fleets.length; ++fi)
+    {
+        const f = fleets[fi];
+        const c = ownerColor(f.owner, 1);
+        const startPos = f.from.pos.add(f.dir.scale(f.from.radius + .3));
+
+        for (let si = 0; si < f.visualShips.length; ++si)
+        {
+            const s = f.visualShips[si];
+            const localT = f.time - s.delay;
+            if (localT <= 0) continue;
+            if (localT >= f.travelTime) continue;
+
+            const tt = clamp01(localT / max(.001, f.travelTime));
+            const wobble = Math.sin((tt*6.28) + f.swirl) * .18;
+            const side = f.perp.scale(wobble);
+
+            let pos = startPos.add(f.dir.scale(FLEET_SPEED * localT)).add(side);
+            const tWob = Math.sin(localT * 5.5 * s.speedJitter + s.wobblePhase) * s.wobbleAmt;
+            pos = pos.subtract(f.dir.scale(s.back)).add(f.perp.scale(s.side + tWob));
+
+            drawWedge(pos, f.dir, .32, c);
+        }
+    }
+
+    renderBlockEffects();
+
+    // drag line + send preview
+    if (dragSource)
+    {
+        const targetPos = dragTarget ? dragTarget.pos : mousePos;
+        const beamHue = ownerHue(OWNER_PLAYER);
+        drawLine(dragSource.pos, targetPos, .14, hsl(beamHue, .9, .62, .9));
+        drawLine(dragSource.pos, targetPos, .05, hsl(beamHue, .9, .72, .8));
+
+        const sendCount = max(1, (dragSource.ships * dragPercent)|0);
+        drawText((dragPercent*100|0) + '%  (' + sendCount + ')', mousePos.add(vec2(0, 2.2)),
+            1.2, hsl(0,0,1), .18, hsl(0,0,0));
+    }
+}
+
+function gameRenderPost()
+{
+    if (gameState == STATE_TITLE)
+    {
+        const cx = mainCanvasSize.x/2;
+        const cy = mainCanvasSize.y/2;
+
+        drawTextScreen('ORBITSWARM', vec2(cx, cy - 110), 110, hsl(.58, .9, .65), 10, hsl(0,0,0));
+        drawTextScreen('STREAM COMBAT', vec2(cx, cy - 45), 40, hsl(0,0,1), 6, hsl(0,0,0));
+
+        drawTextScreen('Click or Press Space to Start', vec2(cx, cy + 40), 34, hsl(0,0,1), 6, hsl(0,0,0));
+        drawTextScreen('Ships launch & arrive one-by-one (fast stream)', vec2(cx, cy + 95), 24, hsl(0,0,1), 5, hsl(0,0,0));
+        drawTextScreen('Defense upgrade can block invaders (no defender loss)', vec2(cx, cy + 125), 22, hsl(0,0,1), 4, hsl(0,0,0));
+        drawTextScreen('1/2/3/4 = send %    Mouse Wheel = fine adjust', vec2(cx, cy + 155), 22, hsl(0,0,1), 4, hsl(0,0,0));
+        drawTextScreen('R = restart    Esc = title', vec2(cx, cy + 185), 22, hsl(0,0,1), 4, hsl(0,0,0));
+        return;
+    }
+
+    const help =
+        'ORBITSWARM\n' +
+        'Drag from your blue planet to send ships\n' +
+        '1/2/3/4 = 10/25/50/100%   Wheel = fine adjust\n' +
+        'Click a blue planet to select it\n' +
+        'Q/W/E buy upgrades (spend ships)\n' +
+        'Combat is streamed: ships fight one-by-one\n' +
+        'R = restart   Esc = title';
+
+    drawTextScreen(help, vec2(20, 70), 22, hsl(0,0,1), 4, hsl(0,0,0), 'left');
+
+    if (selectedPlanet && selectedPlanet.owner == OWNER_PLAYER)
+    {
+        const p = selectedPlanet;
+        const x = mainCanvasSize.x - 18;
+        const y = 74;
+
+        drawTextScreen('Selected Planet', vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+        drawTextScreen('Ships: ' + (p.ships|0) + ' / ' + (p.capacity|0), vec2(x, y+28), 22, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+        drawTextScreen('Prod: ' + (p.production).toFixed(1) + '/s  (Lv ' + p.upProd + ')', vec2(x, y+56), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+        drawTextScreen('Cap:  ' + (p.capacity|0) + '  (Lv ' + p.upCap + ')', vec2(x, y+80), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+        drawTextScreen('Def:  ' + ((p.defChance*100)|0) + '% block  (Lv ' + p.upDef + ')', vec2(x, y+104), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+
+        drawTextScreen('[Q] Production  Cost ' + prodCost(p.upProd), vec2(x, y+138), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
+        drawTextScreen('[W] Capacity    Cost ' + capCost(p.upCap), vec2(x, y+162), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
+        drawTextScreen('[E] Defense     Cost ' + defCost(p.upDef), vec2(x, y+186), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
+    }
+
+    if (gameOver)
+    {
+        const msg = gameOver == 1 ? 'YOU WIN!' : 'YOU LOSE!';
+        drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 10),
+            90, hsl(gameOver==1?.33:.02, .9, .6), 10, hsl(0,0,0));
+
+        drawTextScreen('Press Space or R to restart',
+            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 70),
+            32, hsl(0,0,1), 6, hsl(0,0,0));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Startup
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>

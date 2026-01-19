@@ -64,15 +64,21 @@
 
   let waitingForServe = true;
   let gameOver = false;
-  let aiRight = false; // press T to toggle
+  let aiRight = true; // press T to toggle
+
+  // AI configuration
+  const aiReactionDelay = 0.15;   // seconds before AI reacts to ball direction change
+  const aiErrorMargin = 1.5;      // random offset to make AI imperfect
+  const aiPredictionNoise = 0.12; // noise in ball trajectory prediction
+  let aiTargetY = 0;              // where AI wants to move
+  let aiLastUpdate = 0;           // time of last prediction update
+  let aiPredictedY = 0;           // predicted ball Y at paddle
 
   // Sounds
   let sfxPaddle, sfxWall, sfxScore, sfxServe;
 
   ///////////////////////////////////////////////////////////////////////////////////////////////
   // Helpers
-
-  const clamp01 = (v)=> clamp(v, 0, 1);
 
   function aabbOverlap(posA, sizeA, posB, sizeB)
   {
@@ -84,6 +90,33 @@
   {
       const limit = halfField.y - paddleSize.y/2;
       p.pos.y = clamp(p.pos.y, -limit, limit);
+  }
+
+  // Predict where ball will be when it reaches a given x position
+  function predictBallY(targetX)
+  {
+      if (ball.vel.x === 0) return 0;
+      
+      let simPos = ball.pos.copy();
+      let simVel = ball.vel.copy();
+      const yLimit = halfField.y - ballSize.y/2;
+      const maxSteps = 500;
+      
+      for (let i = 0; i < maxSteps; i++)
+      {
+          // Step simulation
+          const dt = 0.016; // ~60fps step
+          simPos = simPos.add(simVel.scale(dt));
+          
+          // Wall bounces
+          if (simPos.y > yLimit) { simPos.y = yLimit; simVel.y = -Math.abs(simVel.y); }
+          if (simPos.y < -yLimit) { simPos.y = -yLimit; simVel.y = Math.abs(simVel.y); }
+          
+          // Check if reached target x
+          if ((simVel.x > 0 && simPos.x >= targetX) || (simVel.x < 0 && simPos.x <= targetX))
+              return simPos.y;
+      }
+      return 0;
   }
 
   function resetRound(servingToRight)
@@ -178,25 +211,46 @@
       }
 
       // Paddle input
-      let moveL = 0;
-      if (keyIsDown('KeyW')) moveL += 1;
-      if (keyIsDown('KeyS')) moveL -= 1;
-      left.pos.y += moveL * paddleSpeed * timeDelta;
+      left.pos.y += keyDirection().y * paddleSpeed * timeDelta;
       clampPaddleY(left);
 
       if (!aiRight)
       {
-          let moveR = 0;
-          if (keyIsDown('ArrowUp'))   moveR += 1;
-          if (keyIsDown('ArrowDown')) moveR -= 1;
-          right.pos.y += moveR * paddleSpeed * timeDelta;
+          right.pos.y += keyDirection().y * paddleSpeed * timeDelta;
       }
       else
       {
-          // simple AI: chase ball when it's moving toward it, otherwise drift to center
-          const targetY = (!waitingForServe && ball.vel.x > 0) ? ball.pos.y : 0;
-          const delta = clamp(targetY - right.pos.y, -1, 1);
-          right.pos.y += delta * aiSpeed * timeDelta;
+          // AI with prediction and imperfection
+          if (waitingForServe || gameOver)
+          {
+              // Drift to center when waiting
+              aiTargetY = 0;
+          }
+          else if (ball.vel.x > 0)
+          {
+              // Ball coming toward AI - predict intercept
+              const now = time;
+              if (now - aiLastUpdate > aiReactionDelay)
+              {
+                  aiLastUpdate = now;
+                  aiPredictedY = predictBallY(right.pos.x);
+                  // Add some error to make AI beatable
+                  aiPredictedY += rand(-aiErrorMargin, aiErrorMargin);
+                  aiPredictedY += ball.vel.y * aiPredictionNoise;
+              }
+              aiTargetY = aiPredictedY;
+          }
+          else
+          {
+              // Ball going away - return toward center
+              aiTargetY = ball.pos.y * 0.3;
+          }
+          
+          // Move toward target
+          const diff = aiTargetY - right.pos.y;
+          const dir = Math.sign(diff);
+          const move = Math.min(Math.abs(diff), aiSpeed * timeDelta);
+          right.pos.y += dir * move;
       }
       clampPaddleY(right);
 
@@ -221,17 +275,13 @@
           sfxWall?.play(ball.pos);
       }
 
-      // Paddle collisions
-      const leftPaddlePos  = left.pos;
-      const rightPaddlePos = right.pos;
-
       // Left paddle
-      if (ball.vel.x < 0 && aabbOverlap(ball.pos, ballSize, leftPaddlePos, paddleSize))
+      if (ball.vel.x < 0 && aabbOverlap(ball.pos, ballSize, left.pos, paddleSize))
       {
-          ball.pos.x = leftPaddlePos.x + (paddleSize.x + ballSize.x) * .5;
+          ball.pos.x = left.pos.x + (paddleSize.x + ballSize.x) * .5;
           ball.vel.x = Math.abs(ball.vel.x);
 
-          const offset = clamp((ball.pos.y - leftPaddlePos.y) / (paddleSize.y * .5), -1, 1);
+          const offset = clamp((ball.pos.y - left.pos.y) / (paddleSize.y * .5), -1, 1);
           ball.vel.y += offset * 8;
 
           const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
@@ -240,12 +290,12 @@
       }
 
       // Right paddle
-      if (ball.vel.x > 0 && aabbOverlap(ball.pos, ballSize, rightPaddlePos, paddleSize))
+      if (ball.vel.x > 0 && aabbOverlap(ball.pos, ballSize, right.pos, paddleSize))
       {
-          ball.pos.x = rightPaddlePos.x - (paddleSize.x + ballSize.x) * .5;
+          ball.pos.x = right.pos.x - (paddleSize.x + ballSize.x) * .5;
           ball.vel.x = -Math.abs(ball.vel.x);
 
-          const offset = clamp((ball.pos.y - rightPaddlePos.y) / (paddleSize.y * .5), -1, 1);
+          const offset = clamp((ball.pos.y - right.pos.y) / (paddleSize.y * .5), -1, 1);
           ball.vel.y += offset * 8;
 
           const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
