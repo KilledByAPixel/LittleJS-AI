@@ -2,7 +2,7 @@
 <title>LittleJS Tetris</title>
 <meta charset="utf-8">
 </head><body style="background:#000">
-<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
+<script src="../AI/littlejs.js"></script>
 <script>
 'use strict';
 
@@ -144,7 +144,9 @@ const KICKS = [vec2(0,0), vec2(-1,0), vec2(1,0), vec2(0,1), vec2(-2,0), vec2(2,0
 
 let gameState = 'menu'; // 'menu' or 'playing'
 let gameMode = 'vs';    // 'single' or 'vs'
-let menuSelection = 0;  // 0 = single player, 1 = vs AI
+
+// Menu UI elements
+let menuTitle, btnSinglePlayer, btnVsAI, menuInstructions;
 
 let players = []; // [human, ai]
 let particles = [];
@@ -1173,6 +1175,11 @@ async function gameInit()
 {
     setCanvasFixedSize(vec2(960, 540));
 
+    // Initialize UI system
+    new UISystemPlugin();
+    uiSystem.defaultCornerRadius = 8;
+    uiSystem.defaultLineWidth = 3;
+
     // sounds
     sMove   = new SoundGenerator({frequency:330, release:.04, volume:.35});
     sRotate = new SoundGenerator({frequency:520, release:.06, volume:.35});
@@ -1184,8 +1191,58 @@ async function gameInit()
     sGarbage= new SoundGenerator({frequency:90,  release:.14, noise:.1, volume:.45, slide:.15});
     sSelect = new SoundGenerator({frequency:440, release:.08, volume:.3});
 
+    // Create menu UI
+    createMenuUI();
+
     gameState = 'menu';
-    menuSelection = 0;
+}
+
+function createMenuUI()
+{
+    // Canvas is 960x540, UI uses screen coordinates with center at (480, 270)
+    const cx = 480;
+    const cy = 270;
+
+    // Title
+    menuTitle = new UIText(vec2(cx, cy - 120), vec2(400, 80), 'TETRIS');
+    menuTitle.textColor = hsl(.55, .9, .6);
+    menuTitle.textLineColor = BLACK;
+    menuTitle.textLineWidth = 6;
+
+    // Single Player button
+    btnSinglePlayer = new UIButton(vec2(cx, cy), vec2(280, 60), 'SINGLE PLAYER');
+    btnSinglePlayer.color = hsl(.55, .7, .35);
+    btnSinglePlayer.hoverColor = hsl(.55, .8, .5);
+    btnSinglePlayer.textColor = WHITE;
+    btnSinglePlayer.textLineColor = BLACK;
+    btnSinglePlayer.textLineWidth = 3;
+    btnSinglePlayer.soundClick = sSelect;
+    btnSinglePlayer.navigationIndex = 1;
+    btnSinglePlayer.onClick = () => startGame('single');
+
+    // VS AI button
+    btnVsAI = new UIButton(vec2(cx, cy + 80), vec2(280, 60), 'VS AI');
+    btnVsAI.color = hsl(.02, .7, .4);
+    btnVsAI.hoverColor = hsl(.02, .8, .55);
+    btnVsAI.textColor = WHITE;
+    btnVsAI.textLineColor = BLACK;
+    btnVsAI.textLineWidth = 3;
+    btnVsAI.soundClick = sSelect;
+    btnVsAI.navigationIndex = 2;
+    btnVsAI.onClick = () => startGame('vs');
+
+    // Instructions
+    menuInstructions = new UIText(vec2(cx, cy + 180), vec2(500, 40), 'Click or use Arrow Keys + Enter');
+    menuInstructions.textColor = hsl(0, 0, .5);
+    menuInstructions.textLineWidth = 0;
+}
+
+function showMenuUI(visible)
+{
+    menuTitle.visible = visible;
+    btnSinglePlayer.visible = visible;
+    btnVsAI.visible = visible;
+    menuInstructions.visible = visible;
 }
 
 function startGame(mode)
@@ -1193,6 +1250,7 @@ function startGame(mode)
     gameMode = mode;
     gameState = 'playing';
     particles = [];
+    showMenuUI(false);
 
     if (mode === 'single')
     {
@@ -1218,22 +1276,7 @@ function gameUpdate()
 {
     if (gameState === 'menu')
     {
-        // Menu navigation
-        if (keyWasPressed('ArrowUp') || keyWasPressed('KeyW'))
-        {
-            menuSelection = (menuSelection + 1) % 2;
-            sSelect && sSelect.play();
-        }
-        if (keyWasPressed('ArrowDown') || keyWasPressed('KeyS'))
-        {
-            menuSelection = (menuSelection + 1) % 2;
-            sSelect && sSelect.play();
-        }
-        if (keyWasPressed('Enter') || keyWasPressed('Space'))
-        {
-            startGame(menuSelection === 0 ? 'single' : 'vs');
-            sSelect && sSelect.play();
-        }
+        // UI system handles menu interaction
         return;
     }
 
@@ -1248,6 +1291,7 @@ function gameUpdate()
     if (keyWasPressed('Escape'))
     {
         gameState = 'menu';
+        showMenuUI(true);
         return;
     }
 
@@ -1294,18 +1338,7 @@ function gameRender()
 
     if (gameState === 'menu')
     {
-        // Title
-        drawText('TETRIS', vec2(0, 5), 4, hsl(.55, .9, .6), .4, BLACK);
-        
-        // Menu options
-        const opt1Color = menuSelection === 0 ? hsl(.14, .9, .6) : hsl(0, 0, .6);
-        const opt2Color = menuSelection === 1 ? hsl(.14, .9, .6) : hsl(0, 0, .6);
-        
-        drawText(menuSelection === 0 ? '> SINGLE PLAYER <' : '  SINGLE PLAYER  ', vec2(0, 0), 1.8, opt1Color, .25, BLACK);
-        drawText(menuSelection === 1 ? '> VS AI <' : '  VS AI  ', vec2(0, -2.5), 1.8, opt2Color, .25, BLACK);
-        
-        // Instructions
-        drawText('Use UP/DOWN to select, ENTER to start', vec2(0, -6), 1, hsl(0, 0, .5), .15, BLACK);
+        // UI system renders the menu
         return;
     }
 
