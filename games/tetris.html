@@ -53,7 +53,7 @@ const RIGHT_CENTER_X = +(BOARD_SIZE.x/2 + GAP_X/2);
 const BOARD_BOTTOM_Y = -10;
 const START_GRAVITY = 1;
 const SOFT_DROP_MULT = 12;
-const LOCK_DELAY = .35;
+const LOCK_DELAY = .5; // time before piece locks after touching ground
 const MOVE_DAS = .14;
 const MOVE_ARR = .045;
 const NEXT_COUNT = 4;
@@ -633,7 +633,7 @@ function tryMove(p, dx, dy)
         return false;
 
     p.cur.pos = np;
-    if (dy) p.lockTimer = -1;
+    if (dy) p.lockTimer = -1; // only dropping resets lock timer
     return true;
 }
 
@@ -648,7 +648,6 @@ function tryRotate(p, dir)
         {
             p.cur.rot = nr;
             p.cur.pos = np;
-            p.lockTimer = -1;
             sRotate && sRotate.play(p.boardCenter);
             return true;
         }
@@ -1150,18 +1149,15 @@ function humanUpdate(p, dt)
         }
     }
 
-    // lock delay
+    // lock delay - once started, just counts down and locks
     if (p.lockTimer >= 0)
     {
-        if (fitsType(p.cur.type, p.cur.rot, p.cur.pos.add(vec2(0,-1)), p.board))
+        p.lockTimer -= dt;
+        if (p.lockTimer <= 0)
         {
-            p.lockTimer = -1;
-        }
-        else
-        {
-            p.lockTimer -= dt;
-            if (p.lockTimer <= 0)
-                lockPiece(p, false);
+            // Drop piece to ground first, then lock
+            while (tryMove(p, 0, -1)) {}
+            lockPiece(p, false);
         }
     }
 }
@@ -1200,6 +1196,12 @@ function gameUpdate()
         particles = [];
         resetPlayer(players[0]);
         resetPlayer(players[1]);
+    }
+
+    // DEBUG: press G to send garbage to AI
+    if (keyWasPressed('KeyG'))
+    {
+        players[1].pendingGarbage += 1;
     }
 
     // particles
