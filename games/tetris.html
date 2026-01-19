@@ -52,7 +52,7 @@ const BOARD_SIZE = vec2(COLS*CELL, ROWS*CELL);
 const LEFT_CENTER_X  = -(BOARD_SIZE.x/2 + GAP_X/2);
 const RIGHT_CENTER_X = +(BOARD_SIZE.x/2 + GAP_X/2);
 const BOARD_BOTTOM_Y = -10;
-const START_GRAVITY = 1;
+const START_GRAVITY = 2;  // cells per second (doubled from 1)
 const SOFT_DROP_MULT = 24;
 const LOCK_DELAY = .25; // time before piece locks after touching ground
 const MOVE_DAS = .14;
@@ -917,34 +917,103 @@ function boardStats(boardRef)
         if (x) bump += Math.abs(h - heights[x-1]);
     }
 
-    return { aggHeight, bump, maxH, holes };
+    return { aggHeight, bump, maxH, holes, heights };
 }
 
 function isSurvivalMode(boardRef)
 {
-    // "Mostly filled up" heuristic: if stack is high, stop greedily chasing big clears.
+    // Survival mode when board is halfway full - go for any clear
     const s = boardStats(boardRef);
-    return s.maxH >= 15 || s.aggHeight >= 120 || s.holes >= 18; // tuned for 10x20
+    return s.maxH >= 10 || s.holes >= 12; // halfway up = survival
+}
+
+// Check if column x is a "well" (lower than neighbors, good for Tetris)
+function getWellDepth(heights, x)
+{
+    const h = heights[x];
+    const leftH = x > 0 ? heights[x-1] : 99;
+    const rightH = x < COLS-1 ? heights[x+1] : 99;
+    // A well is a column lower than both neighbors
+    if (h < leftH && h < rightH)
+        return Math.min(leftH, rightH) - h;
+    return 0;
 }
 
 function evalBoard(boardRef, linesCleared, survival)
 {
     const s = boardStats(boardRef);
 
-    // Strongly prefer multi-line clears in normal mode.
-    // In survival mode, still like clears, but prioritize staying low and reducing holes.
-    const multiBonusNormal   = [0, 0, 900, 1900, 3600];
-    const multiBonusSurvival = [0, 0, 500, 1100, 2100];
+    // In normal mode: penalize single clears, strongly reward multi-clears
+    // Single clear = 0 garbage sent, wastes potential!
+    // In survival mode: any clear is good
+    const clearBonus = survival 
+        ? [0, 400, 1200, 2200, 4000]   // survival: all clears are good
+        : [0, -200, 1200, 2500, 5000]; // normal: penalize singles, reward multi
+    
+    const lineBonus = clearBonus[linesCleared] || 0;
 
-    const multiBonus = (survival ? multiBonusSurvival : multiBonusNormal)[linesCleared] || 0;
-    const clearValue = (survival ? 700 : 450) * linesCleared;
+    // Well bonus: reward having exactly one deep well (Tetris setup)
+    // Only in normal mode when safe
+    let wellBonus = 0;
+    if (!survival)
+    {
+        // Find the deepest well
+        let bestWell = 0;
+        let wellCount = 0;
+        for (let x = 0; x < COLS; x++)
+        {
+            const depth = getWellDepth(s.heights, x);
+            if (depth >= 3)
+            {
+                wellCount++;
+                bestWell = Math.max(bestWell, depth);
+            }
+        }
+        // Reward having exactly one good well (edge wells are best for I-piece)
+        if (wellCount === 1 && bestWell >= 3)
+        {
+            // Bonus for well depth (encourages building up for Tetris)
+            wellBonus = Math.min(bestWell, 4) * 80;
+            // Extra bonus if well is on the edge (easier I-piece placement)
+            const leftWell = getWellDepth(s.heights, 0) >= 3;
+            const rightWell = getWellDepth(s.heights, COLS-1) >= 3;
+            if (leftWell || rightWell) wellBonus += 150;
+        }
+        else if (wellCount > 1)
+        {
+            // Penalize multiple wells (messy board)
+            wellBonus = -100 * wellCount;
+        }
+    }
 
     const holesW = survival ? 130 : 95;
-    const aggW   = survival ? 12  : 8;
-    const bumpW  = survival ? 16  : 12;
-    const maxW   = survival ? 16  : 7;
+    const aggW   = survival ? 12  : 6;  // Less penalty for height in normal mode (build up for Tetris)
+    const bumpW  = survival ? 16  : 10;
+    const maxW   = survival ? 16  : 5;
 
-    return multiBonus + clearValue - s.holes*holesW - s.aggHeight*aggW - s.bump*bumpW - s.maxH*maxW;
+    return lineBonus + wellBonus - s.holes*holesW - s.aggHeight*aggW - s.bump*bumpW - s.maxH*maxW;
+}
+
+const I_PIECE = 0; // I-piece is type 0
+
+// Find the best Tetris (4-line clear) opportunity for a given piece type
+// Returns {rot, x, lines} or null if no Tetris possible
+function findTetrisOpportunity(type, boardRef)
+{
+    for (let rot = 0; rot < 4; ++rot)
+    for (let x = -4; x < COLS + 4; ++x)
+    {
+        const y = computeDropY(type, rot, x, boardRef);
+        if (y === null) continue;
+
+        const b2 = cloneBoard(boardRef);
+        if (!placeOnBoard(type, rot, x, y, b2)) continue;
+
+        const rows = findFullRows(b2);
+        if (rows.length === 4)
+            return { rot, x, lines: 4 };
+    }
+    return null;
 }
 
 function computeBestMove(type, boardRef)
@@ -969,11 +1038,16 @@ function computeBestMove(type, boardRef)
         if (cleared) applyClearRows(rows, b2);
 
         const v = evalBoard(b2, cleared, survival);
-        candidates.push({rot, x, v});
+        candidates.push({rot, x, v, cleared});
     }
 
     if (!candidates.length) return null;
     candidates.sort((a,b)=>b.v-a.v);
+
+    // If we can do a Tetris, ALWAYS do it (no mistakes)
+    const tetrisMove = candidates.find(c => c.cleared === 4);
+    if (tetrisMove)
+        return tetrisMove;
 
     // human-ish mistakes: sometimes pick 2nd/3rd best
     const pickIndex = (Math.random() < AI_MISTAKE_CHANCE) ? Math.min(2, candidates.length-1) : 0;
@@ -989,6 +1063,46 @@ function planAI(p)
     if (p.aiThinkTimer > 0)
         return;
 
+    const survival = isSurvivalMode(p.board);
+
+    // Check if current piece can do a Tetris
+    const currentTetris = findTetrisOpportunity(p.cur.type, p.board);
+    if (currentTetris)
+    {
+        // Always go for Tetris!
+        p.aiPlan = { rot: currentTetris.rot, x: currentTetris.x };
+        p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
+        return;
+    }
+    
+    // Check if hold piece (or next piece if no hold) can do a Tetris
+    if (!p.holdUsed)
+    {
+        const holdType = p.holdType >= 0 ? p.holdType : p.nextQueue[0];
+        const holdTetris = findTetrisOpportunity(holdType, p.board);
+        if (holdTetris)
+        {
+            // Swap to hold piece and do the Tetris!
+            p.aiPlan = { rot: holdTetris.rot, x: holdTetris.x, useHold: true };
+            p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
+            return;
+        }
+    }
+    
+    // Strategic hold: save I-piece for later Tetris (only when not in survival mode)
+    if (!survival && !p.holdUsed && p.cur.type === I_PIECE)
+    {
+        // Only hold if we don't already have an I-piece in hold
+        if (p.holdType !== I_PIECE)
+        {
+            // Hold the I-piece for later
+            p.aiPlan = { rot: 0, x: 0, useHold: true };
+            p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
+            return;
+        }
+    }
+
+    // No Tetris available, use normal best move
     const best = computeBestMove(p.cur.type, p.board);
     if (best)
         p.aiPlan = { rot: best.rot, x: best.x };
@@ -1010,6 +1124,17 @@ function stepAI(p, dt)
         return;
     p.aiStepTimer = frand(AI_ACTION_INTERVAL_MIN, AI_ACTION_INTERVAL_MAX);
 
+    // If plan says to use hold, do it first
+    if (p.aiPlan && p.aiPlan.useHold && !p.holdUsed)
+    {
+        hold(p);
+        // Clear plan so it will re-plan with the new piece
+        p.aiPlan = null;
+        return;
+    }
+    
+    if (!p.aiPlan) return;
+
     // rotate to target (CW only)
     const rotDelta = mod(p.aiPlan.rot - p.cur.rot, 4);
     if (rotDelta)
@@ -1029,7 +1154,7 @@ function stepAI(p, dt)
         return;
     }
 
-    // aligned: use gravity-based drop speed (same as human soft drop)
+    // aligned and in position: use soft drop (gravity-based, not instant)
     const cps = gravityCellsPerSecond(p) * SOFT_DROP_MULT;
     p.fallAcc += cps * dt;
     
@@ -1253,7 +1378,7 @@ function humanUpdate(p, dt)
 
 async function gameInit()
 {
-    setCanvasFixedSize(vec2(1920, 1080));
+    setCanvasFixedSize(vec2(1440, 1080));
 
     // Initialize UI system
     new UISystemPlugin();
