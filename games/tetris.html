@@ -77,6 +77,12 @@ const GARBAGE_TYPE = 7;
 const GARBAGE_COLOR = rgb(.35,.35,.38);
 const ATTACK_TABLE = [0, 0, 1, 2, 4]; // cleared lines -> garbage lines
 
+// Screen shake
+let screenShake = vec2(0, 0);
+let screenShakeTime = 0;
+let screenShakeType = 'none'; // 'drop' or 'garbage'
+let renderShakeOffset = vec2(0, 0); // Applied during rendering
+
 // AI (human-ish)
 const AI_THINK_DELAY_MIN = .04;
 const AI_THINK_DELAY_MAX = .11;
@@ -221,7 +227,7 @@ function fitsType(type, rot, pos, boardRef)
 
 function worldFromCell(player, cx, cy)
 {
-    return player.boardPos.add(vec2((cx + .5)*CELL, (cy + .5)*CELL));
+    return player.boardPos.add(vec2((cx + .5)*CELL, (cy + .5)*CELL)).add(renderShakeOffset);
 }
 
 function drawBlock3D(pos, size, color)
@@ -347,6 +353,10 @@ function addGarbage(player, count)
     }
 
     sGarbage && sGarbage.play(player.boardCenter);
+    
+    // Screen shake for receiving garbage (side to side) - only for human
+    if (!player.isAI)
+        startScreenShake('garbage', 0.2 + count * 0.05);
 }
 
 // Garbage cancellation: attacks remove queued incoming first
@@ -355,6 +365,43 @@ function applyGarbageCancellation(player, attack)
     const cancel = Math.min(attack, player.pendingGarbage);
     player.pendingGarbage -= cancel;
     return attack - cancel;
+}
+
+function startScreenShake(type, duration)
+{
+    screenShakeType = type;
+    screenShakeTime = duration;
+}
+
+function updateScreenShake(dt)
+{
+    if (screenShakeTime <= 0)
+    {
+        screenShake = vec2(0, 0);
+        return;
+    }
+    
+    screenShakeTime -= dt;
+    const t = screenShakeTime / 0.3; // normalize to 0-1 range (based on duration)
+    
+    if (screenShakeType === 'drop')
+    {
+        // Downward impact shake
+        const intensity = t * t; // quadratic falloff
+        screenShake = vec2(
+            rand(-0.4, 0.4) * intensity,
+            -0.6 * intensity
+        );
+    }
+    else if (screenShakeType === 'garbage')
+    {
+        // Side to side shake
+        const intensity = t;
+        screenShake = vec2(
+            Math.sin(screenShakeTime * 50) * 0.5 * intensity,
+            rand(-0.2, 0.2) * intensity
+        );
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -676,6 +723,11 @@ function hardDrop(p)
     let dropped = 0;
     while (tryMove(p, 0, -1)) dropped++;
     if (dropped) sDrop && sDrop.play(p.boardCenter);
+    
+    // Screen shake on hard drop (downward impact) - only for human
+    if (!p.isAI)
+        startScreenShake('drop', 0.3);
+    
     lockPiece(p, true);
 }
 
@@ -692,6 +744,10 @@ function lockPiece(p, fromHardDrop=false)
         if (y < 0) { p.gameOver = true; break; }
         p.board[y][x] = p.cur.type;
     }
+    
+    // Screen shake on any piece lock (smaller for soft drop)
+    if (!p.isAI && !fromHardDrop)
+        startScreenShake('drop', 0.15);
 
     sLock && sLock.play(p.boardCenter);
     spawnLockSparkles(p);
@@ -1054,10 +1110,13 @@ function drawMini(type, at)
     }
 }
 
-function drawPlayer(p)
+function drawPlayer(p, applyShake = false)
 {
+    // Set shake offset for this player
+    renderShakeOffset = applyShake ? screenShake : vec2(0, 0);
+    
     // frame
-    const center = p.boardCenter;
+    const center = p.boardCenter.add(renderShakeOffset);
     drawRect(center, BOARD_SIZE.add(vec2(.35)), rgb(.15,.15,.18));
     drawRect(center, BOARD_SIZE.add(vec2(.10)), rgb(.05,.05,.06));
 
@@ -1084,10 +1143,10 @@ function drawPlayer(p)
     }
 
     // name
-    drawText(p.name, vec2(p.boardCenterX, p.boardPos.y + BOARD_SIZE.y + 1.4), 1.2, WHITE, .25, BLACK);
+    drawText(p.name, vec2(p.boardCenterX, p.boardPos.y + BOARD_SIZE.y + 1.4).add(renderShakeOffset), 1.2, WHITE, .25, BLACK);
 
     // UI
-    const u = p.uiPos;
+    const u = p.uiPos.add(renderShakeOffset);
     drawText('NEXT', u.add(vec2(0,0)), 1.0, WHITE, .25, BLACK);
     ensureNextQueue(p);
     for (let i=0; i<NEXT_COUNT; ++i)
@@ -1105,9 +1164,12 @@ function drawPlayer(p)
 
     if (p.gameOver)
     {
-        drawRect(p.boardCenter, BOARD_SIZE, rgb(0,0,0,.6));
-        drawText('KO', p.boardCenter.add(vec2(0,2)), 3, RED, .4, BLACK);
+        drawRect(center, BOARD_SIZE, rgb(0,0,0,.6));
+        drawText('KO', center.add(vec2(0,2)), 3, RED, .4, BLACK);
     }
+    
+    // Reset shake offset after drawing
+    renderShakeOffset = vec2(0, 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1199,14 +1261,14 @@ async function gameInit()
     uiSystem.defaultLineWidth = 3;
 
     // sounds
-    sMove   = new SoundGenerator({frequency:330, release:.04, volume:.35});
-    sRotate = new SoundGenerator({frequency:520, release:.06, volume:.35});
+    sMove   = new SoundGenerator({frequency:330, release:.01, volume:.35});
+    sRotate = new SoundGenerator({frequency:1520, release:.005, volume:.35});
     sDrop   = new SoundGenerator({frequency:220, release:.06, slide:-.4, volume:.45});
     sLock   = new SoundGenerator({frequency:180, release:.08, noise:.06, volume:.5});
     sClear  = new SoundGenerator({frequency:740, release:.12, slide:.25, volume:.5});
     sHold   = new SoundGenerator({frequency:400, release:.08, pitchJump:200, pitchJumpTime:.02, volume:.35});
     sOver   = new SoundGenerator({frequency:120, release:.35, noise:.2, volume:.55});
-    sGarbage= new SoundGenerator({frequency:90,  release:.14, noise:.1, volume:.45, slide:.15});
+    sGarbage = new SoundGenerator({frequency:90,  release:.14, noise:.1, volume:.45, slide:.15});
     sSelect = new SoundGenerator({frequency:440, release:.08, volume:.3});
 
     // Create menu UI
@@ -1367,7 +1429,7 @@ function startGame(mode)
     {
         // Single player - centered board
         players = [
-            makePlayer('YOU', 0, false),
+            makePlayer('PLAYER', 0, false),
         ];
         resetPlayer(players[0]);
     }
@@ -1375,7 +1437,7 @@ function startGame(mode)
     {
         // VS AI - two boards
         players = [
-            makePlayer('YOU', LEFT_CENTER_X, false),
+            makePlayer('PLAYER', LEFT_CENTER_X, false),
             makePlayer('AI',  RIGHT_CENTER_X, true),
         ];
         resetPlayer(players[0]);
@@ -1416,6 +1478,9 @@ function gameUpdate()
     // particles
     updateParticles(timeDelta);
 
+    // screen shake
+    updateScreenShake(timeDelta);
+
     // ambient sparkles on active pieces
     stepPieceSparkles(players[0], timeDelta);
     if (gameMode === 'vs') stepPieceSparkles(players[1], timeDelta);
@@ -1440,7 +1505,7 @@ function gameUpdate()
 
 function gameUpdatePost()
 {
-    cameraPos = vec2(0,0);
+    // Camera stays at origin - shake is applied via renderShakeOffset during drawing
 }
 
 function gameRender()
@@ -1465,13 +1530,13 @@ function gameRender()
     {
         // center divider
         drawRect(vec2(0,0), vec2(.15, 28), rgb(.12,.12,.14));
-        drawPlayer(players[0]);
-        drawPlayer(players[1]);
+        drawPlayer(players[0], true);  // human with shake
+        drawPlayer(players[1], false); // AI no shake
     }
     else
     {
         // single player - just draw one board
-        drawPlayer(players[0]);
+        drawPlayer(players[0], true);  // human with shake
     }
 
     renderParticles();
