@@ -47,7 +47,7 @@ const COLS = 10;
 const ROWS = 20;
 const CELL = 1;
 
-const GAP_X = 4.5;
+const GAP_X = 3;  // reduced gap to bring boards closer to center
 const BOARD_SIZE = vec2(COLS*CELL, ROWS*CELL);
 const LEFT_CENTER_X  = -(BOARD_SIZE.x/2 + GAP_X/2);
 const RIGHT_CENTER_X = +(BOARD_SIZE.x/2 + GAP_X/2);
@@ -1407,8 +1407,8 @@ async function gameInit()
 
 function createMenuUI()
 {
-    // Canvas is 1920x1080, UI uses screen coordinates with center at (960, 540)
-    const cx = 960;
+    // Canvas is 1440x1080, UI uses screen coordinates with center at (720, 540)
+    const cx = 720;
     const cy = 540;
 
     // Title is drawn manually in renderMenuTitle() for animation effect
