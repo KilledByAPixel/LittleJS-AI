@@ -53,7 +53,7 @@ const RIGHT_CENTER_X = +(BOARD_SIZE.x/2 + GAP_X/2);
 const BOARD_BOTTOM_Y = -10;
 const START_GRAVITY = 1;
 const SOFT_DROP_MULT = 24;
-const LOCK_DELAY = .5; // time before piece locks after touching ground
+const LOCK_DELAY = .25; // time before piece locks after touching ground
 const MOVE_DAS = .14;
 const MOVE_ARR = .045;
 const NEXT_COUNT = 4;
@@ -626,8 +626,10 @@ function spawnPiece(p, type)
 
     if (!fitsType(p.cur.type, p.cur.rot, p.cur.pos, p.board))
     {
+        // Keep cur set so the piece is visible at spawn position
         p.gameOver = true;
         sOver && sOver.play(p.boardCenter);
+        return; // Don't reset AI state, game is over
     }
 
     // AI new-piece think
@@ -1069,11 +1071,15 @@ function drawPlayer(p)
     }
 
     // current + ghost
-    if (!p.gameOver && !p.clearAnim)
+    if (!p.clearAnim && p.cur)
     {
-        const gp = ghostPos(p);
-        drawPiece(p, p.cur.type, p.cur.rot, gp, .25, true);
-        drawPiece(p, p.cur.type, p.cur.rot, p.cur.pos, 1, false);
+        if (!p.gameOver)
+        {
+            const gp = ghostPos(p);
+            drawPiece(p, p.cur.type, p.cur.rot, gp, .25, true);
+        }
+        // Always draw current piece (including game over to show it didn't fit)
+        drawPiece(p, p.cur.type, p.cur.rot, p.cur.pos, p.gameOver ? 0.7 : 1, false);
     }
 
     // name
