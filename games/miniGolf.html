@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS AI Starter Project</title>
+<title>Mini Golf</title>
 <meta charset="utf-8">
 </head><body style="background:#000">
 <script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
@@ -67,7 +67,6 @@ let gameState = 'menu';  // 'menu' or 'play'
 
 // aiming
 let aiming = false;
-let aimMouseStart = vec2();
 let aimDrag = vec2();
 
 // sounds
@@ -452,7 +451,10 @@ function gameUpdate()
             const cellW = 360;
             const cellH = 200;
             const startX = (mainCanvasSize.x - gridSize * cellW) / 2;
-            const startY = 140;
+            const startY = 100;
+            const previewScale = 8;
+            const courseW = COURSE_SIZE.x * previewScale;
+            const courseH = COURSE_SIZE.y * previewScale;
             
             for (let i = 0; i < 9; i++)
             {
@@ -461,9 +463,9 @@ function gameUpdate()
                 const cx = startX + col * cellW + cellW/2;
                 const cy = startY + row * cellH + cellH/2;
                 
-                // Check if mouse is within this cell
-                if (mousePosScreen.x > cx - cellW/2 + 10 && mousePosScreen.x < cx + cellW/2 - 10 &&
-                    mousePosScreen.y > cy - cellH/2 + 10 && mousePosScreen.y < cy + cellH/2 - 10)
+                // Check if mouse is within the course preview area
+                if (mousePosScreen.x > cx - courseW/2 && mousePosScreen.x < cx + courseW/2 &&
+                    mousePosScreen.y > cy - courseH/2 && mousePosScreen.y < cy + courseH/2)
                 {
                     gameState = 'play';
                     totalStrokes = 0;
@@ -542,7 +544,6 @@ function gameUpdate()
             if (mousePos.distance(ball.pos) < 2.4)
             {
                 aiming = true;
-                aimMouseStart = mousePos.copy();
                 aimDrag = vec2();
             }
         }
