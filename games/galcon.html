@@ -40,7 +40,9 @@ const OWNER_NEUTRAL = 0;
 const OWNER_PLAYER  = 1;
 const OWNER_AI      = 2;
 
+const PANEL_WIDTH = 15;                 // world units for right panel
 const WORLD_SIZE = vec2(70, 40);
+const PLAY_AREA_X = WORLD_SIZE.x - PANEL_WIDTH;  // planets spawn in this width
 const PLANET_COUNT = 11;
 
 const FLEET_SPEED = 2.5;                // world units per second (halved)
@@ -551,7 +553,7 @@ function resetGame()
     {
         const radius = rand(2.3, 4.6);
         const pos = vec2(
-            rand(-WORLD_SIZE.x/2 + 10, WORLD_SIZE.x/2 - 10),
+            rand(-WORLD_SIZE.x/2 + 10, -WORLD_SIZE.x/2 + PLAY_AREA_X - 5),
             rand(-WORLD_SIZE.y/2 + 7,  WORLD_SIZE.y/2 - 7)
         );
 
@@ -711,16 +713,16 @@ function drawPlanet(p)
 
     const baseSat0 = p.owner ? .7 : .18;
     const baseLit0 = p.owner ? .38 : .30;
-    const baseSat = sel ? min(1, baseSat0 + .30) : baseSat0;
-    const baseLit = sel ? min(1, baseLit0 + .32) : baseLit0;
+    const baseSat = sel ? min(1, baseSat0 + .35) : baseSat0;
+    const baseLit = sel ? min(1, baseLit0 + .45) : baseLit0;  // much brighter when selected
 
     const base = hsl(hue, baseSat, baseLit, .95);
     const outline = ownerColor(p.owner, 1);
 
     if (sel)
     {
-        drawCircle(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .08));
-        drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .04));
+        drawCircle(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .15));  // brighter glow
+        drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .08));
     }
 
     drawCircle(p.pos, p.radius*2, base, .14, outline);
@@ -733,11 +735,11 @@ function drawPlanet(p)
 
     drawCircle(p.pos, p.radius*2 + .65, hsl(hue, .7, .55, .08));
 
-    // selection ring (solid white)
+    // selection ring (solid white) - inside the capacity ring for visibility
     if (sel)
     {
-        drawCircle(p.pos, p.radius*2 + 1.10, hsl(0,0,0,0), .26, hsl(0,0,1,1));
-        drawCircle(p.pos, p.radius*2 + 1.55, hsl(0,0,0,0), .10, hsl(0,0,1,.35));
+        drawCircle(p.pos, p.radius*2 + .25, hsl(0,0,0,0), .20, hsl(0,0,1,1));
+        drawCircle(p.pos, p.radius*2 + .45, hsl(0,0,0,0), .08, hsl(0,0,1,.5));
     }
 
     // subtle production ring
@@ -876,8 +878,8 @@ function selfTest()
     console.assert(blockEffects.length == 0, 'block effect should expire');
 
     // help string is safe (no raw newlines in source)
-    const help = 'A\\nB';
-    console.assert(help.indexOf('\n') >= 0, 'help string should contain escaped newline');
+    const help = 'A\nB';
+    console.assert(help.includes('\n'), 'help string should contain newline');
 }
 
 // -------------------------------------------------------------
@@ -1085,42 +1087,77 @@ function gameRenderPost()
         return;
     }
 
-    const help =
-        'ORBITSWARM\n' +
-        'Drag from your blue planet to send ships\n' +
-        '1/2/3/4 = 10/25/50/100%   Wheel = fine adjust\n' +
-        'Click a blue planet to select it\n' +
-        'Q/W/E buy upgrades (spend ships)\n' +
-        'Combat is streamed: ships fight one-by-one\n' +
-        'R = restart   Esc = title';
+    // Right panel background (draw directly on overlay canvas)
+    const panelX = mainCanvasSize.x - 220;
+    const panelW = 240;
+    const panelH = mainCanvasSize.y;
+    
+    // Use main context for screen-space rectangles
+    mainContext.fillStyle = 'rgba(15, 15, 20, 0.9)';
+    mainContext.fillRect(panelX, 0, panelW, panelH);
+    mainContext.fillStyle = 'rgba(80, 140, 180, 0.8)';
+    mainContext.fillRect(panelX, 0, 3, panelH);
 
-    drawTextScreen(help, vec2(20, 70), 22, hsl(0,0,1), 4, hsl(0,0,0), 'left');
+    // Panel title
+    drawTextScreen('SELECTED PLANET', vec2(panelX + panelW/2, 40), 22, hsl(.58, .7, .7), 4, hsl(0,0,0));
 
     if (selectedPlanet && selectedPlanet.owner == OWNER_PLAYER)
     {
         const p = selectedPlanet;
-        const x = mainCanvasSize.x - 18;
-        const y = 74;
+        const cx = panelX + panelW/2;
+        let y = 90;
 
-        drawTextScreen('Selected Planet', vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0), 'right');
-        drawTextScreen('Ships: ' + (p.ships|0) + ' / ' + (p.capacity|0), vec2(x, y+28), 22, hsl(0,0,1), 4, hsl(0,0,0), 'right');
-        drawTextScreen('Prod: ' + (p.production).toFixed(1) + '/s  (Lv ' + p.upProd + ')', vec2(x, y+56), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
-        drawTextScreen('Cap:  ' + (p.capacity|0) + '  (Lv ' + p.upCap + ')', vec2(x, y+80), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
-        drawTextScreen('Def:  ' + ((p.defChance*100)|0) + '% block  (Lv ' + p.upDef + ')', vec2(x, y+104), 20, hsl(0,0,1), 4, hsl(0,0,0), 'right');
+        // Planet stats
+        drawTextScreen('🚀 Ships', vec2(cx, y), 20, hsl(0,0,.7), 3, hsl(0,0,0));
+        drawTextScreen((p.ships|0) + ' / ' + (p.capacity|0), vec2(cx, y+26), 28, hsl(0,0,1), 5, hsl(0,0,0));
+        y += 70;
 
-        drawTextScreen('[Q] Production  Cost ' + prodCost(p.upProd), vec2(x, y+138), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
-        drawTextScreen('[W] Capacity    Cost ' + capCost(p.upCap), vec2(x, y+162), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
-        drawTextScreen('[E] Defense     Cost ' + defCost(p.upDef), vec2(x, y+186), 20, hsl(.58, .9, .7), 4, hsl(0,0,0), 'right');
+        drawTextScreen('⚡ Production', vec2(cx, y), 18, hsl(.14, .7, .7), 3, hsl(0,0,0));
+        drawTextScreen((p.production).toFixed(1) + '/s', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
+        y += 60;
+
+        drawTextScreen('🛡 Defense', vec2(cx, y), 18, hsl(.33, .7, .7), 3, hsl(0,0,0));
+        drawTextScreen(((p.defChance*100)|0) + '% block', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
+        y += 80;
+
+        // Upgrades section
+        drawTextScreen('── UPGRADES ──', vec2(cx, y), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+        y += 40;
+
+        const upColor = hsl(.58, .8, .65);
+        drawTextScreen('[Q] Production', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
+        drawTextScreen('Lv ' + p.upProd + '  →  Cost ' + prodCost(p.upProd), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
+        y += 55;
+
+        drawTextScreen('[W] Capacity', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
+        drawTextScreen('Lv ' + p.upCap + '  →  Cost ' + capCost(p.upCap), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
+        y += 55;
+
+        drawTextScreen('[E] Defense', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
+        drawTextScreen('Lv ' + p.upDef + '  →  Cost ' + defCost(p.upDef), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
     }
+    else
+    {
+        drawTextScreen('Click a blue planet', vec2(panelX + panelW/2, 100), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+        drawTextScreen('to select it', vec2(panelX + panelW/2, 124), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+    }
+
+    // Help text at bottom of panel
+    const helpY = mainCanvasSize.y - 120;
+    drawTextScreen('── CONTROLS ──', vec2(panelX + panelW/2, helpY), 16, hsl(0,0,.5), 2, hsl(0,0,0));
+    drawTextScreen('Drag: Send ships', vec2(panelX + panelW/2, helpY+24), 14, hsl(0,0,.6), 2, hsl(0,0,0));
+    drawTextScreen('1/2/3/4: Send %', vec2(panelX + panelW/2, helpY+44), 14, hsl(0,0,.6), 2, hsl(0,0,0));
+    drawTextScreen('Wheel: Fine adjust', vec2(panelX + panelW/2, helpY+64), 14, hsl(0,0,.6), 2, hsl(0,0,0));
+    drawTextScreen('R: Restart  Esc: Menu', vec2(panelX + panelW/2, helpY+84), 14, hsl(0,0,.6), 2, hsl(0,0,0));
 
     if (gameOver)
     {
         const msg = gameOver == 1 ? 'YOU WIN!' : 'YOU LOSE!';
-        drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 10),
+        drawTextScreen(msg, vec2((mainCanvasSize.x - 220)/2, mainCanvasSize.y/2 - 10),
             90, hsl(gameOver==1?.33:.02, .9, .6), 10, hsl(0,0,0));
 
         drawTextScreen('Press Space or R to restart',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 70),
+            vec2((mainCanvasSize.x - 220)/2, mainCanvasSize.y/2 + 70),
             32, hsl(0,0,1), 6, hsl(0,0,0));
     }
 }
