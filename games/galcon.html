@@ -871,27 +871,20 @@ function drawPlanet(p)
             }
         }
 
-        // number + upgrade icons (player only)
-        if (p.owner == OWNER_PLAYER)
+        // number + upgrade icons (player and neutral)
+        if (p.owner == OWNER_PLAYER || p.owner == OWNER_NEUTRAL)
         {
-            drawText(p.ships|0, p.pos, 1.6, hsl(0,0,1), .18, hsl(0,0,0));
+            const isPlayer = p.owner == OWNER_PLAYER;
+            const textCol = isPlayer ? hsl(0,0,1) : hsl(0, 0, .85);
+            
+            drawText(p.ships|0, p.pos, 1.6, textCol, .18, hsl(0,0,0));
 
             const parts = [];
             if (p.upProd > 0) parts.push('⚡' + p.upProd);
             if (p.upCap  > 0) parts.push('📦' + p.upCap);
             if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
             if (parts.length)
-                drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, hsl(0,0,1), .18, hsl(0,0,0));
-        }
-        
-        // Always show count + defense for neutral planets
-        if (p.owner == OWNER_NEUTRAL)
-        {
-            const ships = p.ships | 0;
-            const defPct = (p.defChance * 100) | 0;
-            drawText(ships, p.pos, 1.6, hsl(0, 0, .85), .18, hsl(0,0,0));
-            if (defPct > 0)
-                drawText('🛡️' + defPct + '%', p.pos.add(vec2(0, -p.radius - 0.8)), 0.9, hsl(0, 0, .7), .12, hsl(0,0,0));
+                drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, textCol, .18, hsl(0,0,0));
         }
     }
     
