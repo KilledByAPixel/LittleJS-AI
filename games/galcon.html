@@ -161,6 +161,7 @@ class Planet
 
         // ships
         this.ships = 0;
+        this.visualShipCount = 0;  // for smooth orbit interpolation
 
         // cosmetic
         this.seed = randInt(1e9);
@@ -168,6 +169,7 @@ class Planet
         // init stats + starter ships
         recalcPlanetStats(this);
         this.ships = min(this.capacity, (radius * 10) | 0);
+        this.visualShipCount = this.ships;  // start synced
     }
 }
 
@@ -769,12 +771,25 @@ function drawPlanet(p)
     // orbiting ship visuals (neutral + player only)
     if (p.owner != OWNER_AI && (p.ships|0) > 0)
     {
-        const shipCount = min(p.capacity, p.ships|0);
+        // Smoothly interpolate visual ship count toward actual count
+        // Speed: roughly matches production rate (instant for decreases)
+        const targetCount = min(p.capacity, p.ships|0);
+        if (p.visualShipCount < targetCount)
+            p.visualShipCount = min(targetCount, p.visualShipCount + p.production * timeDelta * 2);
+        else
+            p.visualShipCount = targetCount;  // instant decrease
+        
+        const shipCount = p.visualShipCount | 0;
+        if (shipCount <= 0) return;
+        
         const perRing = 70;
         const rings2 = ((shipCount + perRing - 1) / perRing) | 0;
 
         const spin = ((p.seed % 200) / 200 - .5) * .18;
         const baseAng = time * (.35 + spin);
+        
+        // Use fractional part for smooth spacing interpolation
+        const fracPart = p.visualShipCount - (p.visualShipCount | 0);
 
         let idx = 0;
         for (let r = 0; r < rings2; ++r)
@@ -782,12 +797,14 @@ function drawPlanet(p)
             const start2 = r * perRing;
             const end2 = min(shipCount, start2 + perRing);
             const n = end2 - start2;
+            // Interpolate spacing: blend between n and n+1 ships spacing
+            const effectiveN = n + fracPart;
             const orbitR = p.radius + .95 + r * .38;
 
             for (let j = 0; j < n; ++j, ++idx)
             {
                 const off = ((p.seed % 997) / 997) * 6.28;
-                const a = baseAng + off + (j / n) * 6.28;
+                const a = baseAng + off + (j / effectiveN) * 6.28;
                 const wob = Math.sin(time * 1.2 + idx * .37) * .05;
 
                 const pos = p.pos.add(vec2(Math.cos(a), Math.sin(a)).scale(orbitR + wob));
@@ -807,6 +824,16 @@ function drawPlanet(p)
             if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
             if (parts.length)
                 drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, hsl(0,0,1), .18, hsl(0,0,0));
+        }
+        
+        // Always show count + defense for neutral planets
+        if (p.owner == OWNER_NEUTRAL)
+        {
+            const ships = p.ships | 0;
+            const defPct = (p.defChance * 100) | 0;
+            drawText(ships, p.pos, 1.6, hsl(0, 0, .85), .18, hsl(0,0,0));
+            if (defPct > 0)
+                drawText('🛡' + defPct + '%', p.pos.add(vec2(0, -p.radius - 0.8)), 0.9, hsl(0, 0, .7), .12, hsl(0,0,0));
         }
     }
     
