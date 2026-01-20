@@ -149,6 +149,7 @@ const holes = [
         obstacles: [
             {type:'box', pos:vec2(-6, 5), size:vec2(8, 1.2), angle:-0.3},
             {type:'box', pos:vec2(-6,-5), size:vec2(8, 1.2), angle: 0.3},
+            {type:'circle', pos:vec2(0, 0), diameter:3.5},
             {type:'box', pos:vec2( 6, 3), size:vec2(8, 1.2), angle: 0.3},
             {type:'box', pos:vec2( 6,-3), size:vec2(8, 1.2), angle:-0.3},
         ],
@@ -199,6 +200,14 @@ function drawRotatedRectScreenSpace(pos, size, angle, color)
     mainContext.fillStyle = color.toString();
     mainContext.fillRect(-size.x/2, -size.y/2, size.x, size.y);
     mainContext.restore();
+}
+
+function drawCircleScreenSpace(pos, radius, color)
+{
+    mainContext.fillStyle = color.toString();
+    mainContext.beginPath();
+    mainContext.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    mainContext.fill();
 }
 
 function addCourseObject(o)
@@ -615,7 +624,7 @@ function gameRenderPost()
                 else if (o.type === 'circle')
                 {
                     const r = o.diameter * previewScale / 2;
-                    drawRectScreenSpace(vec2(ox, oy), vec2(r*2, r*2), rgb(.45,.45,.5));
+                    drawCircleScreenSpace(vec2(ox, oy), r, rgb(.45,.45,.5));
                 }
             }
             
