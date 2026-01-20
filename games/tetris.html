@@ -1479,6 +1479,11 @@ function showMenuUI(visible)
     // Reset and warm up background pieces when showing menu
     if (visible)
     {
+
+        // VS modes use wide canvas for two boards
+        setCanvasFixedSize(vec2(1440, 1080));
+        cameraPos = vec2();
+
         menuBgPieces = [];
         // Spawn initial pieces scattered across the screen
         for (let i = 0; i < 15; i++)
@@ -1578,6 +1583,14 @@ function startGame(mode)
     gameState = 'playing';
     particles = [];
     showMenuUI(false);
+
+    // Set canvas size based on mode
+    if (mode === 'single' && isTouchDevice)
+    {
+        // Single player uses narrow canvas
+        setCanvasFixedSize(vec2(720, 1080));
+        cameraPos = vec2(-2, -2);
+    }
 
     // Generate a shared seed for piece generation so both players get same pieces
     pieceSeed = randInt(2147483647);
@@ -1716,10 +1729,9 @@ function gameRender()
     renderParticles();
 
     // bottom help
-    const helpText = gameMode === 'vs' 
-        ? 'Arrows/A-D move, Up/X rotate, Z CCW, Space drop, C/Shift hold, R restart, ESC menu'
-        : 'Arrows/A-D move, Up/X rotate, Z CCW, Space drop, C/Shift hold, R restart, ESC menu';
-    drawText(helpText, vec2(0,-11.5), .6, hsl(0,0,.7), .12, BLACK);
+    const helpText = 'Arrows/A-D move, Up/X rotate,\nZ CCW, Space drop, C/Shift hold, R restart, ESC menu';
+    if (!isTouchDevice)
+        drawText(helpText, vec2(0,-11.5), .6, hsl(0,0,.7), .12, BLACK);
 
     // win/lose banner
     const hKO = players[0].gameOver;
