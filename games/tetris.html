@@ -163,6 +163,7 @@ const MENU_FALL_SPEED = 3; // cells per second
 
 let players = []; // [human, ai]
 let particles = [];
+let pieceSeed = 0; // shared seed for piece generation
 
 // sounds
 let sMove, sRotate, sDrop, sLock, sClear, sHold, sOver, sGarbage, sSelect;
@@ -278,12 +279,12 @@ function drawMiniCell(pos, color)
     drawBlock3D(pos, .88, color);
 }
 
-function shuffleBag()
+function shuffleBag(rng)
 {
     const bag = [0,1,2,3,4,5,6];
     for (let i=bag.length-1; i>0; --i)
     {
-        const j = randInt(i+1);
+        const j = rng.int(i+1);
         const t = bag[i]; bag[i] = bag[j]; bag[j] = t;
     }
     return bag;
@@ -292,7 +293,7 @@ function shuffleBag()
 function takeFromBag(player)
 {
     if (!player.nextBag.length)
-        player.nextBag = shuffleBag();
+        player.nextBag = shuffleBag(player.pieceRng);
     return player.nextBag.pop();
 }
 
@@ -602,6 +603,9 @@ function makePlayer(name, boardCenterX, isAI, uiOnRight = null)
         // sparkles
         sparkleAcc: 0,
 
+        // piece random generator (seeded for fairness)
+        pieceRng: new RandomGenerator(pieceSeed),
+
         // placement / layout
         boardPos,
         boardCenter,
@@ -614,6 +618,8 @@ function resetPlayer(p)
 {
     p.board = makeEmptyBoard();
 
+    // Reset piece random generator with the shared seed
+    p.pieceRng = new RandomGenerator(pieceSeed);
     p.nextBag = [];
     p.nextQueue = [];
     ensureNextQueue(p);
@@ -1563,6 +1569,9 @@ function startGame(mode)
     particles = [];
     showMenuUI(false);
 
+    // Generate a shared seed for piece generation so both players get same pieces
+    pieceSeed = randInt(2147483647);
+
     if (mode === 'single')
     {
         // Single player - centered board
@@ -1607,6 +1616,8 @@ function gameUpdate()
     if (keyWasPressed('KeyR'))
     {
         particles = [];
+        // Generate new shared seed for fair restart
+        pieceSeed = randInt(2147483647);
         resetPlayer(players[0]);
         if (gameMode === 'vs' || gameMode === 'aivs') resetPlayer(players[1]);
     }
