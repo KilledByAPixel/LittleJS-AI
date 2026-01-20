@@ -582,7 +582,7 @@ function gameRenderPost()
         const cellW = 360;
         const cellH = 200;
         const startX = (mainCanvasSize.x - gridSize * cellW) / 2;
-        const startY = 140;
+        const startY = 100;
         const previewScale = 8;  // Scale for drawing preview
         
         for (let i = 0; i < 9; i++)
@@ -640,8 +640,6 @@ function gameRenderPost()
             drawRectScreenSpace(vec2(hx, hy), vec2(10, 10), BLACK);
         }
         
-        // Instructions
-        drawTextScreen('Click a hole to play!', vec2(mainCanvasSize.x/2, mainCanvasSize.y - 40), 32, WHITE, 3, BLACK);
         return;
     }
 
