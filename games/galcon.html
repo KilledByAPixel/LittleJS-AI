@@ -1,8 +1,8 @@
 <!DOCTYPE html><head>
-<title>LittleJS AI Starter Project</title>
+<title>OrbitSwarm</title>
 <meta charset="utf-8">
 </head><body style="background:#000">
-<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
+<script src="../AI/littlejs.js"></script>
 <script>
 'use strict';
 
@@ -68,6 +68,9 @@ const STATE_PLAY  = 1;
 
 // debug display
 let debugShowStats = false;
+
+// UI buttons for upgrades
+let btnProduction, btnCapacity, btnDefense;
 
 const clamp01 = (v)=> clamp(v, 0, 1);
 function randInt(n){ return (rand(0, n))|0; }
@@ -727,9 +730,6 @@ function drawPlanet(p)
 
     drawCircle(p.pos, p.radius*2, base, .14, outline);
 
-    const shadowPos = p.pos.add(lightDir.scale(-p.radius*.25));
-    drawCircle(shadowPos, p.radius*2, hsl(hue, p.owner ? .8 : .2, .18, .35));
-
     const hiPos = p.pos.add(lightDir.scale(p.radius*.28));
     drawCircle(hiPos, p.radius*1.25, hsl(hue, p.owner ? .75 : .25, .58, .22));
 
@@ -835,7 +835,7 @@ function drawPlanet(p)
             const defPct = (p.defChance * 100) | 0;
             drawText(ships, p.pos, 1.6, hsl(0, 0, .85), .18, hsl(0,0,0));
             if (defPct > 0)
-                drawText('🛡' + defPct + '%', p.pos.add(vec2(0, -p.radius - 0.8)), 0.9, hsl(0, 0, .7), .12, hsl(0,0,0));
+                drawText('🛡️' + defPct + '%', p.pos.add(vec2(0, -p.radius - 0.8)), 0.9, hsl(0, 0, .7), .12, hsl(0,0,0));
         }
     }
     
@@ -844,7 +844,7 @@ function drawPlanet(p)
     {
         const ships = p.ships | 0;
         const defPct = (p.defChance * 100) | 0;
-        const statsText = `${ships}  🛡${defPct}%`;
+        const statsText = `${ships}  🛡️${defPct}%`;
         const col = p.owner === OWNER_AI ? hsl(.02, .9, .7) : 
                     p.owner === OWNER_PLAYER ? hsl(.55, .9, .7) : hsl(0, 0, .7);
         drawText(statsText, p.pos.add(vec2(0, p.radius + 1.2)), 1.0, col, .15, hsl(0,0,0));
@@ -888,7 +888,77 @@ function selfTest()
 function gameInit()
 {
     selfTest();
+    
+    // Initialize UI system
+    new UISystemPlugin();
+    uiSystem.defaultCornerRadius = 6;
+    uiSystem.defaultLineWidth = 2;
+    
+    // Create upgrade buttons
+    createUpgradeButtons();
+    
     goToTitle();
+}
+
+function createUpgradeButtons()
+{
+    const panelX = mainCanvasSize.x - 220;
+    const panelW = 240;
+    const cx = panelX + panelW/2;
+    const btnW = 200;
+    const btnH = 50;
+    let y = 340;
+    
+    // Production button
+    btnProduction = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[Q] Production');
+    btnProduction.color = hsl(.14, .6, .25);
+    btnProduction.hoverColor = hsl(.14, .7, .4);
+    btnProduction.textColor = hsl(0, 0, 1);
+    btnProduction.textLineColor = hsl(0, 0, 0);
+    btnProduction.textLineWidth = 3;
+    btnProduction.visible = false;
+    btnProduction.onClick = () => tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
+    
+    y += 70;
+    
+    // Capacity button
+    btnCapacity = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[W] Capacity');
+    btnCapacity.color = hsl(.58, .6, .25);
+    btnCapacity.hoverColor = hsl(.58, .7, .4);
+    btnCapacity.textColor = hsl(0, 0, 1);
+    btnCapacity.textLineColor = hsl(0, 0, 0);
+    btnCapacity.textLineWidth = 3;
+    btnCapacity.visible = false;
+    btnCapacity.onClick = () => tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
+    
+    y += 70;
+    
+    // Defense button
+    btnDefense = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[E] Defense');
+    btnDefense.color = hsl(.33, .6, .25);
+    btnDefense.hoverColor = hsl(.33, .7, .4);
+    btnDefense.textColor = hsl(0, 0, 1);
+    btnDefense.textLineColor = hsl(0, 0, 0);
+    btnDefense.textLineWidth = 3;
+    btnDefense.visible = false;
+    btnDefense.onClick = () => tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
+}
+
+function updateUpgradeButtons()
+{
+    const show = selectedPlanet && selectedPlanet.owner == OWNER_PLAYER && gameState == STATE_PLAY && !gameOver;
+    
+    btnProduction.visible = show;
+    btnCapacity.visible = show;
+    btnDefense.visible = show;
+    
+    if (show)
+    {
+        const p = selectedPlanet;
+        btnProduction.text = '⚡ Prod  Cost ' + prodCost(p.upProd);
+        btnCapacity.text = '📦 Cap   Cost ' + capCost(p.upCap);
+        btnDefense.text = '🛡️ Def   Cost ' + defCost(p.upDef);
+    }
 }
 
 function gameUpdate()
@@ -913,11 +983,6 @@ function gameUpdate()
 
     if (keyWasPressed('KeyR'))
         resetGame();
-
-    // upgrades (selected planet)
-    if (keyWasPressed('KeyQ')) tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
-    if (keyWasPressed('KeyW')) tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
-    if (keyWasPressed('KeyE')) tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
 
     // send percent presets
     if (keyWasPressed('Digit1')) { sendPreset = 1; dragPercent = .10; }
@@ -1012,6 +1077,7 @@ function gameUpdate()
 function gameUpdatePost()
 {
     cameraPos = vec2(0, 0);
+    updateUpgradeButtons();
 }
 
 function gameRender()
@@ -1116,25 +1182,10 @@ function gameRenderPost()
         drawTextScreen((p.production).toFixed(1) + '/s', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
         y += 60;
 
-        drawTextScreen('🛡 Defense', vec2(cx, y), 18, hsl(.33, .7, .7), 3, hsl(0,0,0));
+        drawTextScreen('🛡️ Defense', vec2(cx, y), 18, hsl(.33, .7, .7), 3, hsl(0,0,0));
         drawTextScreen(((p.defChance*100)|0) + '% block', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
-        y += 80;
-
-        // Upgrades section
-        drawTextScreen('── UPGRADES ──', vec2(cx, y), 18, hsl(0,0,.5), 3, hsl(0,0,0));
-        y += 40;
-
-        const upColor = hsl(.58, .8, .65);
-        drawTextScreen('[Q] Production', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
-        drawTextScreen('Lv ' + p.upProd + '  →  Cost ' + prodCost(p.upProd), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
-        y += 55;
-
-        drawTextScreen('[W] Capacity', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
-        drawTextScreen('Lv ' + p.upCap + '  →  Cost ' + capCost(p.upCap), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
-        y += 55;
-
-        drawTextScreen('[E] Defense', vec2(cx, y), 20, upColor, 3, hsl(0,0,0));
-        drawTextScreen('Lv ' + p.upDef + '  →  Cost ' + defCost(p.upDef), vec2(cx, y+24), 18, hsl(0,0,.8), 3, hsl(0,0,0));
+        
+        // Buttons are rendered by UI system
     }
     else
     {
