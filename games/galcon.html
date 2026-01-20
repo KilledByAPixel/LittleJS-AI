@@ -789,6 +789,13 @@ function drawPlanet(p)
         drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .08));
     }
 
+    // Atmospheric halo (additive glow effect)
+    const atmoSat = p.owner ? .7 : .2;
+    const atmoLit = p.owner ? .6 : .4;
+    drawCircle(p.pos, p.radius*2 + 2.0, hsl(hue, atmoSat, atmoLit, .15));
+    drawCircle(p.pos, p.radius*2 + 1.4, hsl(hue, atmoSat, atmoLit + .1, .20));
+    drawCircle(p.pos, p.radius*2 + .8, hsl(hue, atmoSat, atmoLit + .15, .25));
+
     drawCircle(p.pos, p.radius*2, base, .14, outline);
 
     const hiPos = p.pos.add(lightDir.scale(p.radius*.28));
