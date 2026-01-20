@@ -43,7 +43,7 @@ const OWNER_AI      = 2;
 const WORLD_SIZE = vec2(70, 40);
 const PLANET_COUNT = 11;
 
-const FLEET_SPEED = 5;                  // world units per second
+const FLEET_SPEED = 2.5;                // world units per second (halved)
 const SHIP_DRAW_LIMIT = 180;            // max ship instances to draw per fleet
 
 // Capacity tuning
@@ -63,6 +63,9 @@ const NEBULA_COUNT = 10;
 // game flow
 const STATE_TITLE = 0;
 const STATE_PLAY  = 1;
+
+// debug display
+let debugShowStats = false;
 
 const clamp01 = (v)=> clamp(v, 0, 1);
 function randInt(n){ return (rand(0, n))|0; }
@@ -806,6 +809,17 @@ function drawPlanet(p)
                 drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, hsl(0,0,1), .18, hsl(0,0,0));
         }
     }
+    
+    // Debug: show stats on all planets
+    if (debugShowStats)
+    {
+        const ships = p.ships | 0;
+        const defPct = (p.defChance * 100) | 0;
+        const statsText = `${ships}  🛡${defPct}%`;
+        const col = p.owner === OWNER_AI ? hsl(.02, .9, .7) : 
+                    p.owner === OWNER_PLAYER ? hsl(.55, .9, .7) : hsl(0, 0, .7);
+        drawText(statsText, p.pos.add(vec2(0, p.radius + 1.2)), 1.0, col, .15, hsl(0,0,0));
+    }
 }
 
 // -------------------------------------------------------------
@@ -850,6 +864,10 @@ function gameInit()
 
 function gameUpdate()
 {
+    // Debug toggle: show troop/defense stats on all planets
+    if (keyWasPressed('KeyG'))
+        debugShowStats = !debugShowStats;
+    
     if (keyWasPressed('Escape'))
     {
         goToTitle();
