@@ -1309,21 +1309,25 @@ function drawPlayer(p, applyShake = false)
 
 function humanUpdate(p, dt)
 {
-    // rotation
-    if (keyWasPressed('KeyZ')) tryRotate(p, -1);
-    if (keyWasPressed('KeyX') || keyWasPressed('ArrowUp')) tryRotate(p, 1);
+    // rotation - keyboard and gamepad
+    // Gamepad: Button 0 = A (rotate CW), Button 2 = X (rotate CCW)
+    if (keyWasPressed('KeyZ') || gamepadWasPressed(2)) tryRotate(p, -1);
+    if (keyWasPressed('KeyX') || keyWasPressed('ArrowUp') || gamepadWasPressed(0)) tryRotate(p, 1);
 
-    // hold
-    if (keyWasPressed('KeyC') || keyWasPressed('ShiftLeft') || keyWasPressed('ShiftRight'))
+    // hold - keyboard and gamepad
+    // Gamepad: Button 1 = B (hold)
+    if (keyWasPressed('KeyC') || keyWasPressed('ShiftLeft') || keyWasPressed('ShiftRight') || gamepadWasPressed(1))
         hold(p);
 
-    // hard drop
-    if (keyWasPressed('Space'))
+    // hard drop - keyboard and gamepad
+    // Gamepad: Button 3 = Y (hard drop)
+    if (keyWasPressed('Space') || gamepadWasPressed(3))
         hardDrop(p);
 
-    // horizontal movement with DAS/ARR
-    const leftDown  = keyIsDown('ArrowLeft') || keyIsDown('KeyA');
-    const rightDown = keyIsDown('ArrowRight') || keyIsDown('KeyD');
+    // horizontal movement with DAS/ARR - keyboard and gamepad
+    const stick = gamepadStick(0);
+    const leftDown  = keyIsDown('ArrowLeft') || keyIsDown('KeyA') || stick.x < -0.3;
+    const rightDown = keyIsDown('ArrowRight') || keyIsDown('KeyD') || stick.x > 0.3;
     const newDir = rightDown && !leftDown ? 1 : leftDown && !rightDown ? -1 : 0;
 
     if (newDir != p.moveDir)
@@ -1351,8 +1355,9 @@ function humanUpdate(p, dt)
         }
     }
 
-    // gravity + soft drop
-    const soft = keyIsDown('ArrowDown') || keyIsDown('KeyS');
+    // gravity + soft drop - keyboard and gamepad
+    const stick2 = gamepadStick(0);
+    const soft = keyIsDown('ArrowDown') || keyIsDown('KeyS') || stick2.y < -0.3;
     const cps = gravityCellsPerSecond(p) * (soft ? SOFT_DROP_MULT : 1);
     p.fallAcc += cps * dt;
 
@@ -1386,6 +1391,11 @@ function humanUpdate(p, dt)
 async function gameInit()
 {
     setCanvasFixedSize(vec2(1440, 1080));
+
+    // Enable touch gamepad for mobile devices
+    setTouchGamepadEnable(true);
+    setTouchGamepadAnalog(false);  // Use 8-way dpad instead of analog
+    setTouchGamepadButtonCount(4); // 4 buttons: rotate CW, rotate CCW, hold, hard drop
 
     // Initialize UI system
     new UISystemPlugin();
