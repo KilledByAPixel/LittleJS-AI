@@ -602,7 +602,7 @@ function gameRenderPost()
     if (gameState == 'menu')
     {
         // Title
-        drawTextScreen('MINI GOLF', vec2(mainCanvasSize.x/2, 70), 72, WHITE, 6, BLACK);
+        drawTextScreen('MINI GOLF', vec2(mainCanvasSize.x/2, 50), 72, WHITE, 6, BLACK);
         
         // 3x3 grid of hole previews
         const gridSize = 3;
@@ -663,16 +663,16 @@ function gameRenderPost()
                 }
             }
             
-            // Tee position (white dot)
+            // Tee position (white circle for ball)
             const tx = cx + h.tee.x * previewScale;
             const ty = cy - h.tee.y * previewScale;
-            drawRectScreenSpace(vec2(tx, ty), vec2(8, 8), WHITE);
+            drawCircleScreenSpace(vec2(tx, ty), 5, WHITE);
             
-            // Hole position (black dot with ring)
+            // Hole position (black circle with ring)
             const hx = cx + h.hole.x * previewScale;
             const hy = cy - h.hole.y * previewScale;
-            drawRectScreenSpace(vec2(hx, hy), vec2(14, 14), rgb(0,0,0,.5));
-            drawRectScreenSpace(vec2(hx, hy), vec2(10, 10), BLACK);
+            drawCircleScreenSpace(vec2(hx, hy), 7, rgb(0,0,0,.5));
+            drawCircleScreenSpace(vec2(hx, hy), 5, BLACK);
         }
         
         return;
