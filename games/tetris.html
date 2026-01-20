@@ -88,6 +88,7 @@ const AI_THINK_DELAY_MIN = .04;
 const AI_THINK_DELAY_MAX = .11;
 const AI_ACTION_INTERVAL_MIN = .02;
 const AI_ACTION_INTERVAL_MAX = .05;
+const AI_ROTATE_COOLDOWN = .06;  // minimum time between rotations
 const AI_DROP_DELAY_MIN = .025;
 const AI_DROP_DELAY_MAX = .10;
 const AI_SOFT_DROP_CHANCE = .35;
@@ -598,6 +599,7 @@ function makePlayer(name, boardCenterX, isAI, uiOnRight = null)
         aiStepTimer: 0,
         aiThinkTimer: 0,
         aiDropTimer: 0,
+        aiRotateTimer: 0,     // cooldown between rotations
         aiSoftMode: false,
 
         // sparkles
@@ -642,6 +644,7 @@ function resetPlayer(p)
     p.aiStepTimer = 0;
     p.aiThinkTimer = frand(AI_THINK_DELAY_MIN, AI_THINK_DELAY_MAX);
     p.aiDropTimer = 0;
+    p.aiRotateTimer = 0;
     p.aiSoftMode = false;
 
     spawnPiece(p);
@@ -1142,12 +1145,21 @@ function stepAI(p, dt)
     
     if (!p.aiPlan) return;
 
+    // Update rotation cooldown timer
+    if (p.aiRotateTimer > 0)
+        p.aiRotateTimer -= dt;
+
     // rotate to target (CW only)
     const rotDelta = mod(p.aiPlan.rot - p.cur.rot, 4);
     if (rotDelta)
     {
+        // Wait for rotation cooldown
+        if (p.aiRotateTimer > 0)
+            return;
         if (!tryRotate(p, 1))
             p.aiPlan = null;
+        else
+            p.aiRotateTimer = AI_ROTATE_COOLDOWN;  // Set cooldown after successful rotation
         return;
     }
 
