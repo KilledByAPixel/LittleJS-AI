@@ -11,6 +11,7 @@
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
 paused = false; // Start unpaused
+debugKey = 'Backquote'; // Use tilde key for debug instead of Escape
 
 // engine settings, customize if necessary
 gravity = vec2(0, 0); // No gravity by default
@@ -62,6 +63,7 @@ let holeIndex = 0;
 let holeStrokes = 0;
 let totalStrokes = 0;
 let completeTimer = new Timer();
+let gameState = 'menu';  // 'menu' or 'play'
 
 // aiming
 let aiming = false;
@@ -71,8 +73,9 @@ let aimDrag = vec2();
 // sounds
 let sfxHit, sfxSink;
 
-// holes (simple hand-built layouts)
+// holes (simple hand-built layouts) - 9 holes total
 const holes = [
+    // Hole 1: Simple diagonal with obstacles
     {
         tee:  vec2(-14, -7),
         hole: vec2( 14,  7),
@@ -82,6 +85,7 @@ const holes = [
             {type:'circle', pos:vec2(-8,  5), diameter:3.0},
         ],
     },
+    // Hole 2: X-shaped barriers
     {
         tee:  vec2(-15,  6),
         hole: vec2( 15, -6),
@@ -92,6 +96,7 @@ const holes = [
             {type:'circle', pos:vec2( 0,  6), diameter:2.6},
         ],
     },
+    // Hole 3: Corridor with pillars
     {
         tee:  vec2(-14,  0),
         hole: vec2( 14,  0),
@@ -102,10 +107,99 @@ const holes = [
             {type:'circle', pos:vec2( 4, 0), diameter:3.0},
         ],
     },
+    // Hole 4: Zigzag
+    {
+        tee:  vec2(-14, -6),
+        hole: vec2( 14,  6),
+        obstacles: [
+            {type:'box', pos:vec2(-8, 3), size:vec2(12, 1.2), angle:0},
+            {type:'box', pos:vec2( 0,-3), size:vec2(12, 1.2), angle:0},
+            {type:'box', pos:vec2( 8, 3), size:vec2(12, 1.2), angle:0},
+        ],
+    },
+    // Hole 5: Pillar maze
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            {type:'circle', pos:vec2(-10, 4), diameter:2.5},
+            {type:'circle', pos:vec2(-10,-4), diameter:2.5},
+            {type:'circle', pos:vec2(-5,  0), diameter:3.0},
+            {type:'circle', pos:vec2( 0,  5), diameter:2.5},
+            {type:'circle', pos:vec2( 0, -5), diameter:2.5},
+            {type:'circle', pos:vec2( 5,  0), diameter:3.0},
+            {type:'circle', pos:vec2( 10, 4), diameter:2.5},
+            {type:'circle', pos:vec2( 10,-4), diameter:2.5},
+        ],
+    },
+    // Hole 6: L-shaped corridor
+    {
+        tee:  vec2(-14, -6),
+        hole: vec2( 14,  6),
+        obstacles: [
+            {type:'box', pos:vec2(-5, -2), size:vec2(1.2, 10), angle:0},
+            {type:'box', pos:vec2( 5,  2), size:vec2(10, 1.2), angle:0},
+            {type:'circle', pos:vec2( 0, -6), diameter:2.8},
+        ],
+    },
+    // Hole 7: Funnel
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            {type:'box', pos:vec2(-6, 5), size:vec2(8, 1.2), angle:-0.3},
+            {type:'box', pos:vec2(-6,-5), size:vec2(8, 1.2), angle: 0.3},
+            {type:'box', pos:vec2( 6, 3), size:vec2(8, 1.2), angle: 0.3},
+            {type:'box', pos:vec2( 6,-3), size:vec2(8, 1.2), angle:-0.3},
+        ],
+    },
+    // Hole 8: Center obstacle
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            {type:'circle', pos:vec2(0, 0), diameter:6.0},
+            {type:'box', pos:vec2(-8, 6), size:vec2(6, 1.2), angle:0.2},
+            {type:'box', pos:vec2(-8,-6), size:vec2(6, 1.2), angle:-0.2},
+            {type:'box', pos:vec2( 8, 6), size:vec2(6, 1.2), angle:-0.2},
+            {type:'box', pos:vec2( 8,-6), size:vec2(6, 1.2), angle:0.2},
+        ],
+    },
+    // Hole 9: Gauntlet
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            {type:'circle', pos:vec2(-10, 2), diameter:2.0},
+            {type:'circle', pos:vec2(-10,-2), diameter:2.0},
+            {type:'box', pos:vec2(-5, 0), size:vec2(1.2, 6), angle:0.15},
+            {type:'circle', pos:vec2( 0, 4), diameter:2.5},
+            {type:'circle', pos:vec2( 0,-4), diameter:2.5},
+            {type:'box', pos:vec2( 5, 0), size:vec2(1.2, 6), angle:-0.15},
+            {type:'circle', pos:vec2( 10, 2), diameter:2.0},
+            {type:'circle', pos:vec2( 10,-2), diameter:2.0},
+        ],
+    },
 ];
 
 ///////////////////////////////////////////////////////////////////////////////
 // helpers
+
+function drawRectScreenSpace(pos, size, color)
+{
+    mainContext.fillStyle = color.toString();
+    mainContext.fillRect(pos.x - size.x/2, pos.y - size.y/2, size.x, size.y);
+}
+
+function drawRotatedRectScreenSpace(pos, size, angle, color)
+{
+    mainContext.save();
+    mainContext.translate(pos.x, pos.y);
+    mainContext.rotate(-angle);  // negative because screen Y is flipped
+    mainContext.fillStyle = color.toString();
+    mainContext.fillRect(-size.x/2, -size.y/2, size.x, size.y);
+    mainContext.restore();
+}
 
 function addCourseObject(o)
 {
@@ -305,13 +399,47 @@ async function gameInit()
         delay:.05,
     });
 
-    // build first hole
-    buildHole(0);
+    // start at menu
+    gameState = 'menu';
+    totalStrokes = 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    // Menu state
+    if (gameState == 'menu')
+    {
+        // Handle hole selection clicks
+        if (mouseWasPressed(0))
+        {
+            const gridSize = 3;
+            const cellW = 360;
+            const cellH = 200;
+            const startX = (mainCanvasSize.x - gridSize * cellW) / 2;
+            const startY = 140;
+            
+            for (let i = 0; i < 9; i++)
+            {
+                const col = i % gridSize;
+                const row = (i / gridSize) | 0;
+                const cx = startX + col * cellW + cellW/2;
+                const cy = startY + row * cellH + cellH/2;
+                
+                // Check if mouse is within this cell
+                if (mousePosScreen.x > cx - cellW/2 + 10 && mousePosScreen.x < cx + cellW/2 - 10 &&
+                    mousePosScreen.y > cy - cellH/2 + 10 && mousePosScreen.y < cy + cellH/2 - 10)
+                {
+                    gameState = 'play';
+                    totalStrokes = 0;
+                    buildHole(i);
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
     // reset/retry
     if (keyWasPressed('KeyR'))
         buildHole(holeIndex);
@@ -319,6 +447,14 @@ function gameUpdate()
     // next hole (debug)
     if (keyWasPressed('KeyN'))
         buildHole(holeIndex + 1);
+
+    // return to menu
+    if (keyWasPressed('Escape'))
+    {
+        clearCourse();
+        gameState = 'menu';
+        return;
+    }
 
     // completion
     if (completeTimer.elapsed())
@@ -406,6 +542,9 @@ function gameUpdatePost()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRender()
 {
+    if (gameState == 'menu')
+        return;  // Don't render game world in menu
+
     // background grass
     drawRect(cameraPos, COURSE_SIZE.add(vec2(6)), rgb(.12,.22,.12));
     drawRect(cameraPos, COURSE_SIZE.add(vec2(1.2)), rgb(.18,.35,.18));
@@ -423,6 +562,80 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
+    // Menu rendering
+    if (gameState == 'menu')
+    {
+        // Title
+        drawTextScreen('MINI GOLF', vec2(mainCanvasSize.x/2, 70), 72, WHITE, 6, BLACK);
+        
+        // 3x3 grid of hole previews
+        const gridSize = 3;
+        const cellW = 360;
+        const cellH = 200;
+        const startX = (mainCanvasSize.x - gridSize * cellW) / 2;
+        const startY = 140;
+        const previewScale = 8;  // Scale for drawing preview
+        
+        for (let i = 0; i < 9; i++)
+        {
+            const col = i % gridSize;
+            const row = (i / gridSize) | 0;
+            const cx = startX + col * cellW + cellW/2;
+            const cy = startY + row * cellH + cellH/2;
+            
+            const h = holes[i];
+            
+            // Cell background
+            const hovered = mousePosScreen.x > cx - cellW/2 + 10 && mousePosScreen.x < cx + cellW/2 - 10 &&
+                           mousePosScreen.y > cy - cellH/2 + 10 && mousePosScreen.y < cy + cellH/2 - 10;
+            const bgColor = hovered ? rgb(.2,.35,.2) : rgb(.12,.22,.12);
+            drawRectScreenSpace(vec2(cx, cy), vec2(cellW - 20, cellH - 20), bgColor);
+            drawRectScreenSpace(vec2(cx, cy), vec2(cellW - 24, cellH - 24), rgb(.14,.28,.14));
+            
+            // Hole number
+            drawTextScreen('Hole ' + (i+1), vec2(cx, cy - 70), 28, WHITE, 3, BLACK);
+            
+            // Draw mini preview of course
+            const courseW = COURSE_SIZE.x * previewScale;
+            const courseH = COURSE_SIZE.y * previewScale;
+            
+            // Draw obstacles as simple shapes
+            for (const o of h.obstacles)
+            {
+                const ox = cx + o.pos.x * previewScale;
+                const oy = cy + 10 - o.pos.y * previewScale;  // flip Y
+                
+                if (o.type === 'box')
+                {
+                    const w = o.size.x * previewScale;
+                    const hh = o.size.y * previewScale;
+                    const angle = o.angle || 0;
+                    drawRotatedRectScreenSpace(vec2(ox, oy), vec2(w, hh), angle, rgb(.5,.4,.2));
+                }
+                else if (o.type === 'circle')
+                {
+                    const r = o.diameter * previewScale / 2;
+                    drawRectScreenSpace(vec2(ox, oy), vec2(r*2, r*2), rgb(.45,.45,.5));
+                }
+            }
+            
+            // Tee position (white dot)
+            const tx = cx + h.tee.x * previewScale;
+            const ty = cy + 10 - h.tee.y * previewScale;
+            drawRectScreenSpace(vec2(tx, ty), vec2(8, 8), WHITE);
+            
+            // Hole position (black dot with ring)
+            const hx = cx + h.hole.x * previewScale;
+            const hy = cy + 10 - h.hole.y * previewScale;
+            drawRectScreenSpace(vec2(hx, hy), vec2(14, 14), rgb(0,0,0,.5));
+            drawRectScreenSpace(vec2(hx, hy), vec2(10, 10), BLACK);
+        }
+        
+        // Instructions
+        drawTextScreen('Click a hole to play!', vec2(mainCanvasSize.x/2, mainCanvasSize.y - 40), 32, WHITE, 3, BLACK);
+        return;
+    }
+
     // aim UI
     if (aiming && canShoot())
     {

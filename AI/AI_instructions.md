@@ -51,3 +51,4 @@ Common pitfalls
 - Do not change html or css, only write JavaScript.
 - Do not replace \n with new lines for text inside strings.
 - Use keyDirection() to get directional input as a vec2.
+- Drawing functions are in world space by default with a screenSpace parameter
