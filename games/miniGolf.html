@@ -73,27 +73,30 @@ let aimDrag = vec2();
 // sounds
 let sfxHit, sfxSink;
 
-// holes (simple hand-built layouts) - 9 holes total
+// holes (hand-built layouts) - 9 holes total
 const holes = [
-    // Hole 1: Simple diagonal with obstacles
+    // Hole 1: Gentle Introduction - simple S-curve
     {
-        tee:  vec2(-14, -7),
-        hole: vec2( 14,  7),
+        tee:  vec2(-14, -5),
+        hole: vec2( 14,  5),
         obstacles: [
-            {type:'box', pos:vec2(-2,  0), size:vec2(1.2, 10), angle: 0.2},
-            {type:'box', pos:vec2( 6, -3), size:vec2(8,   1.2), angle:-0.25},
-            {type:'circle', pos:vec2(-8,  5), diameter:3.0},
+            {type:'box', pos:vec2(-5, 2), size:vec2(10, 1.2), angle:0},
+            {type:'box', pos:vec2( 5,-2), size:vec2(10, 1.2), angle:0},
         ],
     },
-    // Hole 2: X-shaped barriers
+    // Hole 2: Pinball Bumpers - chaotic bounces
     {
-        tee:  vec2(-15,  6),
-        hole: vec2( 15, -6),
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
         obstacles: [
-            {type:'box', pos:vec2(-4,  0), size:vec2(10,  1.2), angle: 0.35},
-            {type:'box', pos:vec2( 4,  0), size:vec2(10,  1.2), angle:-0.35},
-            {type:'box', pos:vec2( 0, -6), size:vec2(1.2,  5.5), angle:0},
-            {type:'circle', pos:vec2( 0,  6), diameter:2.6},
+            {type:'circle', pos:vec2(-8,  3), diameter:2.5},
+            {type:'circle', pos:vec2(-8, -3), diameter:2.5},
+            {type:'circle', pos:vec2(-3,  0), diameter:2.0},
+            {type:'circle', pos:vec2( 0,  4), diameter:2.2},
+            {type:'circle', pos:vec2( 0, -4), diameter:2.2},
+            {type:'circle', pos:vec2( 3,  0), diameter:2.0},
+            {type:'circle', pos:vec2( 8,  3), diameter:2.5},
+            {type:'circle', pos:vec2( 8, -3), diameter:2.5},
         ],
     },
     // Hole 3: Corridor with pillars
@@ -103,82 +106,93 @@ const holes = [
         obstacles: [
             {type:'box', pos:vec2( 0,  5), size:vec2(24, 1.2), angle:0},
             {type:'box', pos:vec2( 0, -5), size:vec2(24, 1.2), angle:0},
+            {type:'circle', pos:vec2(-6, 0), diameter:3.0},
+            {type:'circle', pos:vec2( 0, 0), diameter:2.5},
+            {type:'circle', pos:vec2( 6, 0), diameter:3.0},
+        ],
+    },
+    // Hole 4: Dogleg Right - sharp 90° turn
+    {
+        tee:  vec2(-14, -5),
+        hole: vec2( 10,  7),
+        obstacles: [
+            // Force right turn with walls
+            {type:'box', pos:vec2(-4,  4), size:vec2(16, 1.2), angle:0},  // top wall blocks straight
+            {type:'box', pos:vec2( 4, -4), size:vec2(1.2, 10), angle:0},  // right wall of first corridor
+            {type:'box', pos:vec2(-8, -4), size:vec2(8, 1.2), angle:0},   // bottom wall left section
+            {type:'box', pos:vec2( 4,  0), size:vec2(12, 1.2), angle:0},  // inner corner
+            {type:'circle', pos:vec2(-2, -2), diameter:2.0},              // hazard in corner
+        ],
+    },
+    // Hole 5: Split Path - risk vs reward
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            // Center divider
+            {type:'box', pos:vec2( 0, 0), size:vec2(18, 1.5), angle:0},
+            // Top path - longer but safer
+            {type:'circle', pos:vec2(-6, 5), diameter:2.0},
+            {type:'circle', pos:vec2( 6, 5), diameter:2.0},
+            // Bottom path - tight squeeze with obstacles
+            {type:'box', pos:vec2(-4, -5), size:vec2(6, 1.2), angle:0.3},
+            {type:'box', pos:vec2( 4, -5), size:vec2(6, 1.2), angle:-0.3},
+            {type:'circle', pos:vec2( 0, -4), diameter:2.5},
+        ],
+    },
+    // Hole 6: L-Shape Course - corner blocked by walls
+    {
+        tee:  vec2(-12, -6),
+        hole: vec2( 12,  6),
+        obstacles: [
+            // Block top-right corner to create L-shape
+            {type:'box', pos:vec2( 8,  4), size:vec2(12, 1.2), angle:0},   // horizontal wall
+            {type:'box', pos:vec2( 2,  7), size:vec2(1.2, 6), angle:0},    // vertical wall (connects to edge)
+            // Block bottom-left to complete L
+            {type:'box', pos:vec2(-8, -2), size:vec2(10, 1.2), angle:0},   // horizontal 
+            {type:'box', pos:vec2(-3, -6), size:vec2(1.2, 8), angle:0},    // vertical
+            // Obstacles in the path
+            {type:'circle', pos:vec2(-8, 4), diameter:2.5},
+            {type:'circle', pos:vec2( 8, -4), diameter:2.5},
+        ],
+    },
+    // Hole 7: U-Shape with angled bounce walls
+    {
+        tee:  vec2(-12, 0),
+        hole: vec2( 12, 0),
+        obstacles: [
+            // Horizontal wall blocking direct path - forces U around
+            {type:'box', pos:vec2( 0, 0), size:vec2(20, 1.5), angle:0},
+            // Angled bounce walls at the far right end of the U
+            {type:'box', pos:vec2( 14, 5), size:vec2(6, 1.2), angle: 0.785},  // top-right angled
+            {type:'box', pos:vec2( 14,-5), size:vec2(6, 1.2), angle:-0.785},  // bottom-right angled
+        ],
+    },
+    // Hole 8: Snake Path - two vertical walls create S-pattern
+    {
+        tee:  vec2(-14, 0),
+        hole: vec2( 14, 0),
+        obstacles: [
+            // Wall from top going most of the way down
+            {type:'box', pos:vec2(-5, 4), size:vec2(1.5, 14), angle:0},
+            // Wall from bottom going most of the way up  
+            {type:'box', pos:vec2( 5,-4), size:vec2(1.5, 14), angle:0},
+        ],
+    },
+    // Hole 9: Diamond - 45° walls cutting all corners
+    {
+        tee:  vec2(-12, 0),
+        hole: vec2( 12, 0),
+        obstacles: [
+            // Corner walls at 45° - positioned at corners, sized to reach edges
+            {type:'box', pos:vec2(-14, 6), size:vec2(10, 1.2), angle: 0.785},  // top-left corner
+            {type:'box', pos:vec2(-14,-6), size:vec2(10, 1.2), angle:-0.785},  // bottom-left corner  
+            {type:'box', pos:vec2( 14, 6), size:vec2(10, 1.2), angle:-0.785},  // top-right corner
+            {type:'box', pos:vec2( 14,-6), size:vec2(10, 1.2), angle: 0.785},  // bottom-right corner
+            // Center obstacles
             {type:'circle', pos:vec2(-4, 0), diameter:3.0},
             {type:'circle', pos:vec2( 4, 0), diameter:3.0},
-        ],
-    },
-    // Hole 4: Zigzag
-    {
-        tee:  vec2(-14, -6),
-        hole: vec2( 14,  6),
-        obstacles: [
-            {type:'box', pos:vec2(-8, 3), size:vec2(12, 1.2), angle:0},
-            {type:'box', pos:vec2( 0,-3), size:vec2(12, 1.2), angle:0},
-            {type:'box', pos:vec2( 8, 3), size:vec2(12, 1.2), angle:0},
-        ],
-    },
-    // Hole 5: Pillar maze
-    {
-        tee:  vec2(-14, 0),
-        hole: vec2( 14, 0),
-        obstacles: [
-            {type:'circle', pos:vec2(-10, 4), diameter:2.5},
-            {type:'circle', pos:vec2(-10,-4), diameter:2.5},
-            {type:'circle', pos:vec2(-5,  0), diameter:3.0},
-            {type:'circle', pos:vec2( 0,  5), diameter:2.5},
-            {type:'circle', pos:vec2( 0, -5), diameter:2.5},
-            {type:'circle', pos:vec2( 5,  0), diameter:3.0},
-            {type:'circle', pos:vec2( 10, 4), diameter:2.5},
-            {type:'circle', pos:vec2( 10,-4), diameter:2.5},
-        ],
-    },
-    // Hole 6: L-shaped corridor
-    {
-        tee:  vec2(-14, -6),
-        hole: vec2( 14,  6),
-        obstacles: [
-            {type:'box', pos:vec2(-5, -2), size:vec2(1.2, 10), angle:0},
-            {type:'box', pos:vec2( 5,  2), size:vec2(10, 1.2), angle:0},
-            {type:'circle', pos:vec2( 0, -6), diameter:2.8},
-        ],
-    },
-    // Hole 7: Funnel
-    {
-        tee:  vec2(-14, 0),
-        hole: vec2( 14, 0),
-        obstacles: [
-            {type:'box', pos:vec2(-6, 5), size:vec2(8, 1.2), angle:-0.3},
-            {type:'box', pos:vec2(-6,-5), size:vec2(8, 1.2), angle: 0.3},
-            {type:'circle', pos:vec2(0, 0), diameter:3.5},
-            {type:'box', pos:vec2( 6, 3), size:vec2(8, 1.2), angle: 0.3},
-            {type:'box', pos:vec2( 6,-3), size:vec2(8, 1.2), angle:-0.3},
-        ],
-    },
-    // Hole 8: Center obstacle
-    {
-        tee:  vec2(-14, 0),
-        hole: vec2( 14, 0),
-        obstacles: [
-            {type:'circle', pos:vec2(0, 0), diameter:6.0},
-            {type:'box', pos:vec2(-8, 6), size:vec2(6, 1.2), angle:0.2},
-            {type:'box', pos:vec2(-8,-6), size:vec2(6, 1.2), angle:-0.2},
-            {type:'box', pos:vec2( 8, 6), size:vec2(6, 1.2), angle:-0.2},
-            {type:'box', pos:vec2( 8,-6), size:vec2(6, 1.2), angle:0.2},
-        ],
-    },
-    // Hole 9: Gauntlet
-    {
-        tee:  vec2(-14, 0),
-        hole: vec2( 14, 0),
-        obstacles: [
-            {type:'circle', pos:vec2(-10, 2), diameter:2.0},
-            {type:'circle', pos:vec2(-10,-2), diameter:2.0},
-            {type:'box', pos:vec2(-5, 0), size:vec2(1.2, 6), angle:0.15},
-            {type:'circle', pos:vec2( 0, 4), diameter:2.5},
-            {type:'circle', pos:vec2( 0,-4), diameter:2.5},
-            {type:'box', pos:vec2( 5, 0), size:vec2(1.2, 6), angle:-0.15},
-            {type:'circle', pos:vec2( 10, 2), diameter:2.0},
-            {type:'circle', pos:vec2( 10,-2), diameter:2.0},
+            {type:'box', pos:vec2( 0, 0), size:vec2(1.2, 6), angle:0},         // center divider
         ],
     },
 ];
@@ -416,6 +430,18 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    // Number keys 1-9 to select holes (works in menu or during play)
+    for (let i = 0; i < 9; i++)
+    {
+        if (keyWasPressed('Digit' + (i + 1)))
+        {
+            gameState = 'play';
+            totalStrokes = 0;
+            buildHole(i);
+            return;
+        }
+    }
+
     // Menu state
     if (gameState == 'menu')
     {
@@ -594,25 +620,25 @@ function gameRenderPost()
             
             const h = holes[i];
             
-            // Cell background
-            const hovered = mousePosScreen.x > cx - cellW/2 + 10 && mousePosScreen.x < cx + cellW/2 - 10 &&
-                           mousePosScreen.y > cy - cellH/2 + 10 && mousePosScreen.y < cy + cellH/2 - 10;
-            const bgColor = hovered ? rgb(.2,.35,.2) : rgb(.12,.22,.12);
-            drawRectScreenSpace(vec2(cx, cy), vec2(cellW - 20, cellH - 20), bgColor);
-            drawRectScreenSpace(vec2(cx, cy), vec2(cellW - 24, cellH - 24), rgb(.14,.28,.14));
-            
-            // Hole number
-            drawTextScreen('Hole ' + (i+1), vec2(cx, cy - 70), 28, WHITE, 3, BLACK);
-            
-            // Draw mini preview of course
+            // Draw mini preview of course - use actual course aspect ratio
             const courseW = COURSE_SIZE.x * previewScale;
             const courseH = COURSE_SIZE.y * previewScale;
+            
+            // Cell background - use course aspect ratio
+            const hovered = mousePosScreen.x > cx - courseW/2 && mousePosScreen.x < cx + courseW/2 &&
+                           mousePosScreen.y > cy - courseH/2 && mousePosScreen.y < cy + courseH/2;
+            const bgColor = hovered ? rgb(.2,.35,.2) : rgb(.12,.22,.12);
+            drawRectScreenSpace(vec2(cx, cy), vec2(courseW + 6, courseH + 6), bgColor);
+            drawRectScreenSpace(vec2(cx, cy), vec2(courseW, courseH), rgb(.14,.28,.14));
+            
+            // Hole number
+            drawTextScreen('Hole ' + (i+1), vec2(cx, cy - courseH/2 - 20), 28, WHITE, 3, BLACK);
             
             // Draw obstacles as simple shapes
             for (const o of h.obstacles)
             {
                 const ox = cx + o.pos.x * previewScale;
-                const oy = cy + 10 - o.pos.y * previewScale;  // flip Y
+                const oy = cy - o.pos.y * previewScale;  // flip Y
                 
                 if (o.type === 'box')
                 {
@@ -630,12 +656,12 @@ function gameRenderPost()
             
             // Tee position (white dot)
             const tx = cx + h.tee.x * previewScale;
-            const ty = cy + 10 - h.tee.y * previewScale;
+            const ty = cy - h.tee.y * previewScale;
             drawRectScreenSpace(vec2(tx, ty), vec2(8, 8), WHITE);
             
             // Hole position (black dot with ring)
             const hx = cx + h.hole.x * previewScale;
-            const hy = cy + 10 - h.hole.y * previewScale;
+            const hy = cy - h.hole.y * previewScale;
             drawRectScreenSpace(vec2(hx, hy), vec2(14, 14), rgb(0,0,0,.5));
             drawRectScreenSpace(vec2(hx, hy), vec2(10, 10), BLACK);
         }
