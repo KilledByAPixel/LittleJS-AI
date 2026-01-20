@@ -112,33 +112,29 @@ const holes = [
             {type:'circle', pos:vec2( 6, 0), diameter:3.0},
         ],
     },
-    // Hole 4: Dogleg Right - sharp 90° turn
+    // Hole 4: Dogleg Right - bank shot around the corner
     {
-        tee:  vec2(-14, -5),
-        hole: vec2( 10,  7),
+        tee:  vec2(2, -5),
+        hole: vec2( 14, -3),
         obstacles: [
-            // Force right turn with walls
-            {type:'box', pos:vec2(-4,  4), size:vec2(16, 1.2), angle:0},  // top wall blocks straight
-            {type:'box', pos:vec2( 4, -4), size:vec2(1.2, 10), angle:0},  // right wall of first corridor
-            {type:'box', pos:vec2(-8, -4), size:vec2(8, 1.2), angle:0},   // bottom wall left section
-            {type:'box', pos:vec2( 4,  0), size:vec2(12, 1.2), angle:0},  // inner corner
-            {type:'circle', pos:vec2(-2, -2), diameter:2.0},              // hazard in corner
+            // L-shaped wall forces you to go right then up
+            {type:'box', pos:vec2(2, 2.4), size:vec2(13.2, 1.2), angle:0},  // horizontal blocker (extended to overlap corner)
+            {type:'box', pos:vec2(8, -3), size:vec2(1.2, 12), angle:0},     // vertical wall (touches bottom)
         ],
     },
-    // Hole 5: Split Path - risk vs reward
+    // Hole 5: The Gauntlet - narrow corridor with bumpers
     {
         tee:  vec2(-14, 0),
         hole: vec2( 14, 0),
         obstacles: [
-            // Center divider
-            {type:'box', pos:vec2( 0, 0), size:vec2(18, 1.5), angle:0},
-            // Top path - longer but safer
-            {type:'circle', pos:vec2(-6, 5), diameter:2.0},
-            {type:'circle', pos:vec2( 6, 5), diameter:2.0},
-            // Bottom path - tight squeeze with obstacles
-            {type:'box', pos:vec2(-4, -5), size:vec2(6, 1.2), angle:0.3},
-            {type:'box', pos:vec2( 4, -5), size:vec2(6, 1.2), angle:-0.3},
-            {type:'circle', pos:vec2( 0, -4), diameter:2.5},
+            // Corridor walls - wider gap, thinner walls
+            {type:'box', pos:vec2(0, 5), size:vec2(20, 0.8), angle:0},
+            {type:'box', pos:vec2(0, -5), size:vec2(20, 0.8), angle:0},
+            // Staggered bumpers inside the corridor
+            {type:'circle', pos:vec2(-6, 1.8), diameter:2.0},
+            {type:'circle', pos:vec2(-2, -1.8), diameter:2.0},
+            {type:'circle', pos:vec2(2, 1.8), diameter:2.0},
+            {type:'circle', pos:vec2(6, -1.8), diameter:2.0},
         ],
     },
     // Hole 6: L-Shape Course - corner blocked by walls
@@ -175,9 +171,9 @@ const holes = [
         hole: vec2( 14, 0),
         obstacles: [
             // Wall from top going most of the way down
-            {type:'box', pos:vec2(-5, 4), size:vec2(1.5, 14), angle:0},
+            {type:'box', pos:vec2(-5, 3), size:vec2(1.5, 12), angle:0},
             // Wall from bottom going most of the way up  
-            {type:'box', pos:vec2( 5,-4), size:vec2(1.5, 14), angle:0},
+            {type:'box', pos:vec2( 5,-3), size:vec2(1.5, 12), angle:0},
         ],
     },
     // Hole 9: Timing Challenge - moving blocker you must time your shot through
