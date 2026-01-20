@@ -72,6 +72,11 @@ let debugShowStats = false;
 // UI buttons for upgrades
 let btnProduction, btnCapacity, btnDefense;
 
+// Money system
+let playerMoney = 0;
+let aiMoney = 0;
+const MONEY_RATE = 0.5;  // money per production point per second
+
 const clamp01 = (v)=> clamp(v, 0, 1);
 function randInt(n){ return (rand(0, n))|0; }
 
@@ -93,7 +98,7 @@ const sfxBuy     = sfx;
 const sfxNope    = sfx;
 
 // -------------------------------------------------------------
-// Upgrades (spend ships from the planet)
+// Upgrades (spend money)
 
 function prodCost(level){ return 20 + level * 18; }
 function capCost(level) { return 30 + level * 24; }
@@ -111,6 +116,17 @@ function recalcPlanetStats(p)
     p.ships = min(p.capacity, p.ships);
 }
 
+function getOwnerMoney(owner)
+{
+    return owner == OWNER_PLAYER ? playerMoney : aiMoney;
+}
+
+function setOwnerMoney(owner, value)
+{
+    if (owner == OWNER_PLAYER) playerMoney = value;
+    else aiMoney = value;
+}
+
 function tryBuyUpgrade(p, kind, owner, playSfx)
 {
     if (owner === undefined) owner = OWNER_PLAYER;
@@ -124,13 +140,14 @@ function tryBuyUpgrade(p, kind, owner, playSfx)
     if (kind == 1) cost = capCost(p.upCap);
     if (kind == 2) cost = defCost(p.upDef);
 
-    if (p.ships < cost)
+    const money = getOwnerMoney(owner);
+    if (money < cost)
     {
         if (playSfx) sfxNope.play();
         return;
     }
 
-    p.ships -= cost;
+    setOwnerMoney(owner, money - cost);
     if (kind == 0) p.upProd++;
     if (kind == 1) p.upCap++;
     if (kind == 2) p.upDef++;
@@ -512,6 +529,8 @@ function goToTitle()
     sendPreset = 3;
     aiTimer = 0;
     selectedPlanet = null;
+    playerMoney = 0;
+    aiMoney = 0;
     initStarfield();
     blockEffects.length = 0;
 }
@@ -544,6 +563,8 @@ function resetGame()
     sendPreset = 3;
     aiTimer = 0;
     selectedPlanet = null;
+    playerMoney = 0;
+    aiMoney = 0;
     blockEffects.length = 0;
 
     initStarfield();
@@ -628,25 +649,20 @@ function aiTryUpgrade()
     if (!aiPlanets.length) return;
     if (rand() > .45) return;
 
-    let best = null;
-    let bestShips = 0;
-    for (let i = 0; i < aiPlanets.length; ++i)
-    {
-        const p = aiPlanets[i];
-        if (p.ships > bestShips) { bestShips = p.ships; best = p; }
-    }
-    if (!best) return;
+    // Pick a random AI planet to upgrade
+    const target = aiPlanets[randInt(aiPlanets.length)];
+    if (!target) return;
 
     const options = [
-        {k:0, cost:prodCost(best.upProd)},
-        {k:1, cost:capCost(best.upCap)},
-        {k:2, cost:defCost(best.upDef)}
+        {k:0, cost:prodCost(target.upProd)},
+        {k:1, cost:capCost(target.upCap)},
+        {k:2, cost:defCost(target.upDef)}
     ].sort(function(a,b){ return a.cost - b.cost; });
 
     for (let i = 0; i < options.length; ++i)
     {
         const o = options[i];
-        if (best.ships >= o.cost + 12) { tryBuyUpgrade(best, o.k, OWNER_AI, false); break; }
+        if (aiMoney >= o.cost + 10) { tryBuyUpgrade(target, o.k, OWNER_AI, false); break; }
     }
 }
 
@@ -947,7 +963,7 @@ function createUpgradeButtons()
     const cx = panelX + panelW/2;
     const btnW = 200;
     const btnH = 50;
-    let y = 340;
+    let y = 380;
     
     // Production button
     btnProduction = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[Q] Production');
@@ -1040,12 +1056,18 @@ function gameUpdate()
     updateStarfield(timeDelta);
     updateBlockEffects(timeDelta);
 
-    // planet production
+    // planet production (ships and money)
     for (let i = 0; i < planets.length; ++i)
     {
         const p = planets[i];
         if (p.owner != OWNER_NEUTRAL)
+        {
             p.ships = min(p.capacity, p.ships + p.production * timeDelta);
+            // Generate money based on production
+            const moneyGain = p.production * MONEY_RATE * timeDelta;
+            if (p.owner == OWNER_PLAYER) playerMoney += moneyGain;
+            else aiMoney += moneyGain;
+        }
     }
 
     // mouse
@@ -1218,15 +1240,19 @@ function gameRenderPost()
     mainContext.fillStyle = 'rgba(80, 140, 180, 0.8)';
     mainContext.fillRect(panelX, 0, 3, panelH);
 
+    // Money display at top of panel
+    const cx = panelX + panelW/2;
+    drawTextScreen('💰 CREDITS', vec2(cx, 30), 18, hsl(.14, .7, .7), 3, hsl(0,0,0));
+    drawTextScreen((playerMoney|0) + '', vec2(cx, 54), 32, hsl(.14, .9, .7), 5, hsl(0,0,0));
+
     // Panel title
-    drawTextScreen('SELECTED PLANET', vec2(panelX + panelW/2, 40), 22, hsl(.58, .7, .7), 4, hsl(0,0,0));
+    drawTextScreen('SELECTED PLANET', vec2(cx, 95), 22, hsl(.58, .7, .7), 4, hsl(0,0,0));
 
     if (selectedPlanet && selectedPlanet.owner != OWNER_AI)
     {
         // Show info for owned and neutral planets (not enemy)
         const p = selectedPlanet;
-        const cx = panelX + panelW/2;
-        let y = 90;
+        let y = 130;
 
         // Planet stats
         drawTextScreen('🚀 Ships', vec2(cx, y), 20, hsl(0,0,.7), 3, hsl(0,0,0));
@@ -1244,13 +1270,13 @@ function gameRenderPost()
     }
     else if (selectedPlanet && selectedPlanet.owner == OWNER_AI)
     {
-        drawTextScreen('Enemy Planet', vec2(panelX + panelW/2, 100), 20, hsl(.02, .7, .6), 3, hsl(0,0,0));
-        drawTextScreen('Info hidden', vec2(panelX + panelW/2, 130), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+        drawTextScreen('Enemy Planet', vec2(cx, 140), 20, hsl(.02, .7, .6), 3, hsl(0,0,0));
+        drawTextScreen('Info hidden', vec2(cx, 170), 18, hsl(0,0,.5), 3, hsl(0,0,0));
     }
     else
     {
-        drawTextScreen('Click any planet', vec2(panelX + panelW/2, 100), 18, hsl(0,0,.5), 3, hsl(0,0,0));
-        drawTextScreen('to select it', vec2(panelX + panelW/2, 124), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+        drawTextScreen('Click any planet', vec2(cx, 140), 18, hsl(0,0,.5), 3, hsl(0,0,0));
+        drawTextScreen('to select it', vec2(cx, 164), 18, hsl(0,0,.5), 3, hsl(0,0,0));
     }
 
     // Help text at bottom of panel
