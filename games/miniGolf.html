@@ -157,14 +157,14 @@ const holes = [
     },
     // Hole 7: U-Shape with angled bounce walls
     {
-        tee:  vec2(-12, 0),
-        hole: vec2( 12, 0),
+        tee:  vec2(-12, 5),
+        hole: vec2(-12, -5),
         obstacles: [
-            // Horizontal wall blocking direct path - forces U around
-            {type:'box', pos:vec2( 0, 0), size:vec2(20, 1.5), angle:0},
-            // Angled bounce walls at the far right end of the U
-            {type:'box', pos:vec2( 14, 5), size:vec2(6, 1.2), angle: 0.785},  // top-right angled
-            {type:'box', pos:vec2( 14,-5), size:vec2(6, 1.2), angle:-0.785},  // bottom-right angled
+            // Horizontal wall blocking direct path - extends to left edge
+            {type:'box', pos:vec2(-6, 0), size:vec2(22, 1.5), angle:0},
+            // Angled bounce walls on the right side (45 degrees, rotated to bounce back)
+            {type:'box', pos:vec2( 14, 6), size:vec2(10, 1.2), angle:-0.785},  // top-right angled
+            {type:'box', pos:vec2( 14,-6), size:vec2(10, 1.2), angle: 0.785},  // bottom-right angled
         ],
     },
     // Hole 8: Snake Path - two vertical walls create S-pattern
@@ -288,6 +288,7 @@ class GolfBall extends Box2dObject
         this.setLinearDamping(.22);
         this.setAngularDamping(.14);
         this.setBullet(true);
+        this.setFixedRotation(true);  // prevent ball from rotating
     }
 }
 
