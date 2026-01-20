@@ -838,65 +838,55 @@ function drawPlanet(p)
             p.visualShipCount = targetCount;  // instant decrease
         
         const shipCount = p.visualShipCount | 0;
-        if (shipCount <= 0) return;
-        
-        const perRing = 70;
-        const rings2 = ((shipCount + perRing - 1) / perRing) | 0;
-
-        const spin = ((p.seed % 200) / 200 - .5) * .18;
-        const baseAng = time * (.35 + spin);
-        
-        // Use fractional part for smooth spacing interpolation
-        const fracPart = p.visualShipCount - (p.visualShipCount | 0);
-
-        let idx = 0;
-        for (let r = 0; r < rings2; ++r)
+        if (shipCount > 0)
         {
-            const start2 = r * perRing;
-            const end2 = min(shipCount, start2 + perRing);
-            const n = end2 - start2;
-            // Interpolate spacing: blend between n and n+1 ships spacing
-            const effectiveN = n + fracPart;
-            const orbitR = p.radius + .95 + r * .38;
+            const perRing = 70;
+            const rings2 = ((shipCount + perRing - 1) / perRing) | 0;
 
-            for (let j = 0; j < n; ++j, ++idx)
+            const spin = ((p.seed % 200) / 200 - .5) * .18;
+            const baseAng = time * (.35 + spin);
+            
+            // Use fractional part for smooth spacing interpolation
+            const fracPart = p.visualShipCount - (p.visualShipCount | 0);
+
+            let idx = 0;
+            for (let r = 0; r < rings2; ++r)
             {
-                const off = ((p.seed % 997) / 997) * 6.28;
-                const a = baseAng + off + (j / effectiveN) * 6.28;
-                const wob = Math.sin(time * 1.2 + idx * .37) * .05;
+                const start2 = r * perRing;
+                const end2 = min(shipCount, start2 + perRing);
+                const n = end2 - start2;
+                // Interpolate spacing: blend between n and n+1 ships spacing
+                const effectiveN = n + fracPart;
+                const orbitR = p.radius + .95 + r * .38;
 
-                const pos = p.pos.add(vec2(Math.cos(a), Math.sin(a)).scale(orbitR + wob));
-                const tdir = vec2(-Math.sin(a), Math.cos(a));
-                drawWedge(pos, tdir, .26, hsl(hue, p.owner ? .8 : .2, .65, .75));
+                for (let j = 0; j < n; ++j, ++idx)
+                {
+                    const off = ((p.seed % 997) / 997) * 6.28;
+                    const a = baseAng + off + (j / effectiveN) * 6.28;
+                    const wob = Math.sin(time * 1.2 + idx * .37) * .05;
+
+                    const pos = p.pos.add(vec2(Math.cos(a), Math.sin(a)).scale(orbitR + wob));
+                    const tdir = vec2(-Math.sin(a), Math.cos(a));
+                    drawWedge(pos, tdir, .26, hsl(hue, p.owner ? .8 : .2, .65, .75));
+                }
             }
         }
-
-        // number + upgrade icons (player and neutral)
-        if (p.owner == OWNER_PLAYER || p.owner == OWNER_NEUTRAL)
-        {
-            const isPlayer = p.owner == OWNER_PLAYER;
-            const textCol = isPlayer ? hsl(0,0,1) : hsl(0, 0, .85);
-            
-            drawText(p.ships|0, p.pos, 1.6, textCol, .18, hsl(0,0,0));
-
-            const parts = [];
-            if (p.upProd > 0) parts.push('⚡' + p.upProd);
-            if (p.upCap  > 0) parts.push('📦' + p.upCap);
-            if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
-            if (parts.length)
-                drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, textCol, .18, hsl(0,0,0));
-        }
     }
-    
-    // Debug: show stats on all planets
-    if (debugShowStats)
+
+    // number + upgrade icons (player, neutral, and AI when debug mode enabled)
+    if (p.owner == OWNER_PLAYER || p.owner == OWNER_NEUTRAL || (p.owner == OWNER_AI && debugShowStats))
     {
-        const ships = p.ships | 0;
-        const defPct = (p.defChance * 100) | 0;
-        const statsText = `${ships}  🛡️${defPct}%`;
-        const col = p.owner === OWNER_AI ? hsl(.02, .9, .7) : 
-                    p.owner === OWNER_PLAYER ? hsl(.55, .9, .7) : hsl(0, 0, .7);
-        drawText(statsText, p.pos.add(vec2(0, p.radius + 1.2)), 1.0, col, .15, hsl(0,0,0));
+        const textCol = p.owner == OWNER_PLAYER ? hsl(0,0,1) : 
+                       p.owner == OWNER_AI ? hsl(.02, .9, .85) : hsl(0, 0, .85);
+        
+        drawText(p.ships|0, p.pos, 1.6, textCol, .18, hsl(0,0,0));
+
+        const parts = [];
+        if (p.upProd > 0) parts.push('⚡' + p.upProd);
+        if (p.upCap  > 0) parts.push('📦' + p.upCap);
+        if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
+        if (parts.length)
+            drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, textCol, .18, hsl(0,0,0));
     }
 }
 
@@ -965,6 +955,7 @@ function createUpgradeButtons()
     btnProduction.textColor = hsl(0, 0, 1);
     btnProduction.textLineColor = hsl(0, 0, 0);
     btnProduction.textLineWidth = 3;
+    btnProduction.textHeight = 22;
     btnProduction.visible = false;
     btnProduction.onClick = () => tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
     
@@ -977,6 +968,7 @@ function createUpgradeButtons()
     btnCapacity.textColor = hsl(0, 0, 1);
     btnCapacity.textLineColor = hsl(0, 0, 0);
     btnCapacity.textLineWidth = 3;
+    btnCapacity.textHeight = 22;
     btnCapacity.visible = false;
     btnCapacity.onClick = () => tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
     
@@ -989,6 +981,7 @@ function createUpgradeButtons()
     btnDefense.textColor = hsl(0, 0, 1);
     btnDefense.textLineColor = hsl(0, 0, 0);
     btnDefense.textLineWidth = 3;
+    btnDefense.textHeight = 22;
     btnDefense.visible = false;
     btnDefense.onClick = () => tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
 }
@@ -1279,6 +1272,10 @@ function gameRenderPost()
     drawTextScreen('1/2/3/4: Send %', vec2(panelX + panelW/2, helpY+44), 14, hsl(0,0,.6), 2, hsl(0,0,0));
     drawTextScreen('Wheel: Fine adjust', vec2(panelX + panelW/2, helpY+64), 14, hsl(0,0,.6), 2, hsl(0,0,0));
     drawTextScreen('R: Restart  Esc: Menu', vec2(panelX + panelW/2, helpY+84), 14, hsl(0,0,.6), 2, hsl(0,0,0));
+
+    // Debug mode indicator
+    if (debugShowStats)
+        drawTextScreen('DEBUG MODE (G)', vec2(panelX + panelW/2, helpY - 20), 14, hsl(.14, .8, .6), 2, hsl(0,0,0));
 
     if (gameOver)
     {
