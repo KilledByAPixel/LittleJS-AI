@@ -71,7 +71,7 @@ let aiming = false;
 let aimDrag = vec2();
 
 // sounds
-let sfxHit, sfxSink;
+let sfxHit, sfxSink, sfxBounce;
 
 // holes (hand-built layouts) - 9 holes total
 const holes = [
@@ -312,6 +312,24 @@ class GolfBall extends Box2dObject
         this.setBullet(true);
         this.setFixedRotation(true);  // prevent ball from rotating
     }
+
+    beginContact(other)
+    {
+        // don't play sound when sinking into hole
+        if (other === hole)
+            return;
+
+        // play bounce sound scaled by speed
+        const speed = this.getSpeed();
+        const minSpeed = 2;  // minimum speed to play sound
+        const maxSpeed = 30;  // speed for max volume
+        
+        if (speed > minSpeed)
+        {
+            const volume = clamp((speed - minSpeed) / (maxSpeed - minSpeed), 0, 1);
+            sfxBounce.play(undefined, volume);
+        }
+    }
 }
 
 class Hole extends Box2dStaticObject
@@ -401,9 +419,10 @@ function buildHole(index)
 
     // tiny tee marker
     const tee = addCourseObject(new EngineObject(h.tee, vec2(.8,.8)));
-    tee.color = rgb(1,1,1,.2);
+    tee.color = rgb(1,1,1,.5);
     tee.renderOrder = -1;
     tee.update = ()=>{};
+    tee.render = function() { drawCircle(this.pos, .5, this.color); };
 }
 
 function canShoot()
@@ -444,6 +463,16 @@ async function gameInit()
         pitchJump:120,
         pitchJumpTime:.06,
         delay:.05,
+    });
+
+    sfxBounce = new SoundGenerator({
+        volume:.5,
+        frequency:150,
+        attack:0,
+        release:.08,
+        shapeCurve:1.2,
+        slide:-1.5,
+        noise:.01,
     });
 
     // start at menu
