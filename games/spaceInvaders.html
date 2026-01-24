@@ -209,11 +209,18 @@ class Player extends RectObject
         if (keyIsDown('ArrowLeft') || keyIsDown('KeyA')) move -= 1;
         if (keyIsDown('ArrowRight') || keyIsDown('KeyD')) move += 1;
         this.pos.x += move * .55;
+        
+        // Mouse control - follow mouse X position instantly
+        if (mousePos.x >= playMin.x && mousePos.x <= playMax.x)
+        {
+            this.pos.x = mousePos.x;
+        }
+        
         clampToPlayfield(this.pos, this.size.scale(.5));
 
-        // shoot
+        // shoot with keyboard or mouse (hold to shoot)
         if (this.cooldown > 0) this.cooldown--;
-        if (this.cooldown === 0 && (keyWasPressed('Space') || keyWasPressed('KeyK')))
+        if (this.cooldown === 0 && (keyIsDown('Space') || keyIsDown('KeyK') || mouseIsDown(0)))
         {
             this.cooldown = 10;
             bullets.push(new Bullet(this.pos.add(vec2(0, this.size.y/2 + .6)), vec2(0, 1.2), true));
