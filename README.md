@@ -26,6 +26,7 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Game | Play |
 |------|------|
 | Tetris | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) |
+| Space Invaders | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) |
 | Snood | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) |
 | Asteroids | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/asteroids.html) |
 | Missile Command | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) |
@@ -47,4 +48,4 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | River Raid | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
 | Snake | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) |
-| Space Invaders | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) |
+
