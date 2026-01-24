@@ -179,7 +179,7 @@ function startLevel()
 
     invaderDir = 1;
     // Base speed increases with level
-    const baseSpeed = .08 + (currentLevel - 1) * .015;
+    const baseSpeed = .06 + (currentLevel - 1) * .01;
     invaderSpeed = baseSpeed;
     invaderDrop = 1.0;
     invaderAnimTick = 0;
@@ -188,7 +188,7 @@ function startLevel()
     const levelShootBonus = (currentLevel - 1) * 2;
     alienShootMin = max(3, 6 - levelShootBonus);
     alienShootMax = max(10, 20 - levelShootBonus * 2);
-    setRandomAlienShootTimer();
+    alienShootTimer = 60; // 1 second delay before enemies start shooting
     
     ufoSpawnTimer = randIntInclusive(300, 600);
     marchTimer = 40;
@@ -252,7 +252,7 @@ class Player extends RectObject
         if (this.cooldown === 0 && (keyIsDown('Space') || keyIsDown('KeyK') || mouseIsDown(0)))
         {
             this.cooldown = 20;
-            bullets.push(new Bullet(this.pos.add(vec2(0, this.size.y/2 + .6)), vec2(0, 1.2), true));
+            bullets.push(new Bullet(this.pos.add(vec2(0, 0.1)), vec2(0, 1.2), true));
             sfxShoot.play(this.pos);
         }
     }
@@ -394,7 +394,7 @@ class Bullet extends RectObject
 {
     constructor(pos, vel, fromPlayer)
     {
-        super(pos, vec2(.25, 1.2), fromPlayer ? rgb(.95,.95,.95) : rgb(.95,.3,.3));
+        super(pos, fromPlayer ? vec2(.45, 1.0) : vec2(.25, 1.2), fromPlayer ? rgb(.95,.95,.95) : rgb(.95,.3,.3));
         this.vel = vel; // per frame
         this.fromPlayer = fromPlayer;
         this.renderOrder = 20;
@@ -494,15 +494,26 @@ class UFO extends RectObject
     {
         const p = this.pos;
         const s = .22;
+        const t = time * 5; // animation timer
         
-        // Classic UFO sprite
-        drawRect(p.add(vec2(0,.3)), vec2(s*6, s), this.color);
-        drawRect(p, vec2(s*10, s*2), this.color);
-        drawRect(p.add(vec2(0,-.3)), vec2(s*6, s), this.color);
-        // Windows
-        drawRect(p.add(vec2(-.6,.1)), vec2(s,s), rgb(0,0,0));
-        drawRect(p.add(vec2(0,.1)), vec2(s,s), rgb(0,0,0));
-        drawRect(p.add(vec2(.6,.1)), vec2(s,s), rgb(0,0,0));
+        // Main saucer body - layered for depth
+        drawRect(p.add(vec2(0,.3)), vec2(s*6, s*2), this.color);
+        drawRect(p, vec2(s*12, s*2), this.color);
+        drawRect(p.add(vec2(0,-.2)), vec2(s*8, s*2), rgb(.7,.15,.15));
+        
+        // Flashing lights around the edge
+        const lightColors = [rgb(1,1,0), rgb(0,1,1), rgb(1,0,1), rgb(0,1,0)];
+        for (let i = 0; i < 4; i++)
+        {
+            const offset = (i - 1.5) * 0.55;
+            const flash = Math.sin(t + i * 1.5) > 0 ? 1 : 0.3;
+            const col = lightColors[i].scale(flash, 1);
+            drawRect(p.add(vec2(offset, -.15)), vec2(s*1.2, s*1.2), col);
+        }
+        
+        // Bottom glow/beam effect
+        const beamAlpha = 0.3 + Math.sin(t * 2) * 0.15;
+        drawRect(p.add(vec2(0,-.4)), vec2(s*4, s), new Color(.2,.8,1,beamAlpha));
     }
 }
 
@@ -593,6 +604,17 @@ function gameUpdate()
         currentLevel++;
         startLevel();
     }
+    
+    // Debug: hold X to kill enemies quickly for testing
+    if (keyIsDown('KeyX') && aliens.length > 0 && frame % 5 === 0)
+    {
+        const a = aliens[0];
+        createExplosion(a.pos, a.color);
+        a.destroy();
+        score += 10;
+        hiScore = max(hiScore, score);
+        checkBonusLife();
+    }
 }
 
 function gameUpdatePost()
@@ -627,7 +649,7 @@ function gameRenderPost()
     drawTextScreen(String(hiScore).padStart(4, '0'), vec2(mainCanvasSize.x - 100, hudY + 32), 26, rgb(.95,.95,.95));
     
     // Lives indicator with ship icons at bottom - below the green line
-    const livesY = mainCanvasSize.y - 22;
+    const livesY = mainCanvasSize.y - 18;
     for (let i = 0; i < lives - 1 && i < 5; i++)
     {
         const px = 50 + i * 45;
@@ -640,6 +662,9 @@ function gameRenderPost()
         mainContext.fillRect(px - 16, py + 2, 6, 4); // left wing
         mainContext.fillRect(px + 10, py + 2, 6, 4); // right wing
     }
+    
+    // Level indicator at bottom right
+    drawTextScreen(`LEVEL ${currentLevel}`, vec2(mainCanvasSize.x - 80, livesY), 26, color);
 
     if (gameOver)
     {
@@ -691,9 +716,10 @@ function updateInvaders()
     }
     else
     {
-        // Speed boost based on how few aliens remain (twice as fast effect)
+        // Speed scales inversely with remaining aliens (like original)
+        // Uses fourth root so speed increase is more gradual
         const aliveCount = aliens.length;
-        const speedMultiplier = 1 + (55 - aliveCount) * 0.04; // up to 2.2x faster
+        const speedMultiplier = Math.pow(55 / aliveCount, 0.25); // max ~2.7x at 1 alien
         for (const a of aliens)
             a.pos.x += invaderDir * invaderSpeed * speedMultiplier;
     }
@@ -716,12 +742,17 @@ function updateInvaders()
         }
     }
 
-    // invader shooting
+    // invader shooting - scale rate by number of aliens alive
     if (alienShootTimer > 0) alienShootTimer--;
     if (alienShootTimer === 0)
     {
         alienFire();
-        setRandomAlienShootTimer();
+        // Fewer aliens = slower shooting (scales linearly with alien count)
+        const aliveCount = aliens.length;
+        const shootScale = max(0.2, aliveCount / 55); // 20% rate minimum when few aliens
+        const scaledMin = alienShootMin / shootScale;
+        const scaledMax = alienShootMax / shootScale;
+        alienShootTimer = randIntInclusive(scaledMin, scaledMax);
     }
 }
 
@@ -826,20 +857,6 @@ function updateCollisions()
 
         if (b.destroyed) continue;
 
-        // vs bombs (optional: shoot bombs)
-        for (const bomb of bombs)
-        {
-            if (bomb.destroyed) continue;
-            if (!aabbOverlap(b, bomb)) continue;
-            b.destroy();
-            bomb.destroy();
-            score += 2;
-            sfxHit.play(b.pos);
-            break;
-        }
-
-        if (b.destroyed) continue;
-
         // vs barriers
         for (const br of barriers)
         {
@@ -884,16 +901,35 @@ function loseLife()
     createExplosion(player.pos, rgb(.2,.9,.95), 20);
     sfxLoseLife.play(player.pos);
 
-    // brief "respawn" by moving player to center and clearing bullets near bottom
-    player.pos = vec2(levelSize.x/2, playerY);
-
-    for (const b of bullets)
-        b.pos.y < barrierY + 2 && b.destroy();
-    for (const bomb of bombs)
-        bomb.pos.y < barrierY + 4 && bomb.destroy();
-
     if (lives <= 0)
+    {
         doGameOver();
+        return;
+    }
+
+    // Clear all projectiles but keep barriers and aliens as they are
+    for (const b of bullets) b.destroy();
+    for (const bomb of bombs) bomb.destroy();
+    bullets.length = 0;
+    bombs.length = 0;
+    
+    // Reset invader movement state but DON'T respawn them
+    invaderDir = 1;
+    const baseSpeed = .06 + (currentLevel - 1) * .01;
+    invaderSpeed = baseSpeed;
+    
+    // Reset shooting timers with 1 second delay
+    const levelShootBonus = (currentLevel - 1) * 2;
+    alienShootMin = max(3, 6 - levelShootBonus);
+    alienShootMax = max(10, 20 - levelShootBonus * 2);
+    alienShootTimer = 60; // 1 second delay before enemies shoot again
+    
+    marchTimer = 40;
+    marchBeat = 0;
+    
+    // Respawn player at center
+    player.pos = vec2(levelSize.x/2, playerY);
+    player.cooldown = 30; // brief cooldown
 }
 
 function doGameOver()
