@@ -73,6 +73,7 @@ let levelAnnounce = 0; // frames to show level announcement
 let respawnTimer = 0; // frames to wait before respawning
 let playerHidden = false; // true when player is dead and waiting to respawn
 let gameOverTimer = 0; // frames before can click to return to title
+let inputMode = 'mouse'; // 'mouse' or 'keyboard'
 let titleTimer = 0;
 
 let invaderDir = 1;
@@ -260,23 +261,37 @@ class Player extends RectObject
         if (gameOver || gameWin || levelAnnounce > 0 || respawnTimer > 0)
             return;
 
-        // left/right move (no dt; fixed 60fps)
-        let move = 0;
-        if (keyIsDown('ArrowLeft') || keyIsDown('KeyA')) move -= 1;
-        if (keyIsDown('ArrowRight') || keyIsDown('KeyD')) move += 1;
-        this.pos.x += move * .55;
+        // Switch to keyboard mode if movement keys pressed
+        if (keyIsDown('ArrowLeft') || keyIsDown('ArrowRight') || keyIsDown('KeyA') || keyIsDown('KeyD'))
+            inputMode = 'keyboard';
         
-        // Mouse control - follow mouse X position instantly
-        if (mousePos.x >= playMin.x && mousePos.x <= playMax.x)
+        // Switch to mouse mode if mouse clicked
+        if (mouseWasPressed(0))
+            inputMode = 'mouse';
+        
+        if (inputMode === 'keyboard')
         {
-            this.pos.x = mousePos.x;
+            // Keyboard mode - compute direction from keys
+            let move = 0;
+            if (keyIsDown('ArrowLeft') || keyIsDown('KeyA')) move -= 1;
+            if (keyIsDown('ArrowRight') || keyIsDown('KeyD')) move += 1;
+            this.pos.x += move * .55;
+        }
+        else
+        {
+            // Mouse mode - follow mouse X position instantly
+            if (mousePos.x >= playMin.x && mousePos.x <= playMax.x)
+                this.pos.x = mousePos.x;
         }
         
         clampToPlayfield(this.pos, this.size.scale(.5));
 
-        // shoot with keyboard or mouse (hold to shoot)
+        // Shooting - keyboard uses Space/K, mouse uses click
         if (this.cooldown > 0) this.cooldown--;
-        if (this.cooldown === 0 && (keyIsDown('Space') || keyIsDown('KeyK') || mouseIsDown(0)))
+        const wantsShoot = inputMode === 'keyboard' 
+            ? (keyIsDown('Space') || keyIsDown('KeyK'))
+            : mouseIsDown(0);
+        if (this.cooldown === 0 && wantsShoot)
         {
             this.cooldown = 20;
             bullets.push(new Bullet(this.pos.add(vec2(0, 0.1)), vec2(0, 1.2), true));
