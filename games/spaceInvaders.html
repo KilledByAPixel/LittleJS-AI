@@ -61,7 +61,8 @@ let ufo = null;
 let score = 0;
 let hiScore = 0;
 let lives = 3;
-let nextBonusLife = 1500;
+let nextBonusLife = 1000;
+let currentLevel = 1;
 
 let gameOver = false;
 let gameWin = false;
@@ -152,24 +153,52 @@ function resetGame()
 
     score = 0;
     lives = 3;
-    nextBonusLife = 1500;
+    nextBonusLife = 1000;
+    currentLevel = 1;
     gameOver = false;
     gameWin = false;
 
+    startLevel();
+}
+
+function startLevel()
+{
+    // Clear remaining projectiles
+    for (const b of bullets) b.destroy();
+    for (const bomb of bombs) bomb.destroy();
+    bullets.length = 0;
+    bombs.length = 0;
+    
+    // Destroy old aliens if any
+    for (const a of aliens) a.destroy();
+    aliens.length = 0;
+    
+    // Destroy old barriers
+    for (const br of barriers) br.destroy();
+    barriers.length = 0;
+
     invaderDir = 1;
-    invaderSpeed = .10;
+    // Base speed increases with level
+    const baseSpeed = .08 + (currentLevel - 1) * .015;
+    invaderSpeed = baseSpeed;
     invaderDrop = 1.0;
     invaderAnimTick = 0;
 
-    alienShootMin = 18;
-    alienShootMax = 55;
+    // Shooting gets faster each level
+    const levelShootBonus = (currentLevel - 1) * 2;
+    alienShootMin = max(3, 6 - levelShootBonus);
+    alienShootMax = max(10, 20 - levelShootBonus * 2);
     setRandomAlienShootTimer();
     
     ufoSpawnTimer = randIntInclusive(300, 600);
     marchTimer = 40;
     marchBeat = 0;
 
-    player = new Player(vec2(levelSize.x/2, playerY));
+    if (!player || player.destroyed)
+        player = new Player(vec2(levelSize.x/2, playerY));
+    else
+        player.pos = vec2(levelSize.x/2, playerY);
+        
     createBarriers();
     createAliens();
 }
@@ -558,11 +587,11 @@ function gameUpdate()
     cleanupArrays();
     updateMarchingSound();
 
-    // win condition
+    // win condition - start next level
     if (!aliens.length)
     {
-        gameWin = true;
-        sfxExplode.play(player.pos);
+        currentLevel++;
+        startLevel();
     }
 }
 
@@ -655,15 +684,18 @@ function updateInvaders()
         for (const a of aliens)
             a.pos.y -= invaderDrop;
 
-        // slightly speed up as they descend
-        invaderSpeed = min(invaderSpeed + .01, .32);
-        alienShootMin = max(alienShootMin - 1, 6);
-        alienShootMax = max(alienShootMax - 1, 16);
+        // speed up as they descend
+        invaderSpeed = min(invaderSpeed + .02, .5);
+        alienShootMin = max(alienShootMin - 1, 3);
+        alienShootMax = max(alienShootMax - 2, 8);
     }
     else
     {
+        // Speed boost based on how few aliens remain (twice as fast effect)
+        const aliveCount = aliens.length;
+        const speedMultiplier = 1 + (55 - aliveCount) * 0.04; // up to 2.2x faster
         for (const a of aliens)
-            a.pos.x += invaderDir * invaderSpeed;
+            a.pos.x += invaderDir * invaderSpeed * speedMultiplier;
     }
 
     // lose if invaders reach the player line
@@ -877,7 +909,7 @@ function checkBonusLife()
     if (score >= nextBonusLife)
     {
         lives++;
-        nextBonusLife += 1500; // Next bonus at +1500 points
+        nextBonusLife += 1000; // Next bonus at +1000 points
         sfxBonusLife.play(player.pos);
     }
 }
