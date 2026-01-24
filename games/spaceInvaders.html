@@ -67,13 +67,13 @@ let gameOver = false;
 let gameWin = false;
 
 let invaderDir = 1;
-let invaderSpeed = .10;        // world units per frame
+let invaderSpeed = .08;        // world units per frame (20% slower)
 let invaderDrop = 1.0;         // world units
 let invaderAnimTick = 0;
 
 let alienShootTimer = 0;
-let alienShootMin = 18;         // frames
-let alienShootMax = 55;         // frames
+let alienShootMin = 6;          // frames (2x faster firing)
+let alienShootMax = 20;         // frames
 
 let ufoSpawnTimer = 0;
 let marchTimer = 0;
@@ -83,17 +83,17 @@ let stars = [];
 let credit = 0;
 
 // Sounds
-const sfxShoot    = new SoundGenerator({volume:.35, frequency:700, release:.07, shapeCurve:.2});
+const sfxShoot    = new SoundGenerator({volume:.25, frequency:440, release:.03, shapeCurve:.3});
 const sfxExplode  = new SoundGenerator({volume:.35, frequency:120, release:.22, noise:.2, shapeCurve:1.6, slide:-.4});
 const sfxHit      = new SoundGenerator({volume:.28, frequency:280, release:.08, shapeCurve:1.2});
 const sfxLoseLife = new SoundGenerator({volume:.40, frequency:180, release:.25, shapeCurve:1.8, slide:-.2});
-const sfxUFO      = new SoundGenerator({volume:.25, frequency:240, release:.15, shapeCurve:.8});
+const sfxUFO      = new SoundGenerator({volume:.25, frequency:350, release:.2, shapeCurve:.6, slide:.15});
 const sfxBonusLife = new SoundGenerator({volume:.45, frequency:440, release:.35, shapeCurve:.5, pitchJump:220, pitchJumpTime:.1});
-// Marching sounds - 4 alternating notes
-const sfxMarch1   = new SoundGenerator({volume:.20, frequency:200, release:.05, shapeCurve:1.5});
-const sfxMarch2   = new SoundGenerator({volume:.20, frequency:180, release:.05, shapeCurve:1.5});
-const sfxMarch3   = new SoundGenerator({volume:.20, frequency:160, release:.05, shapeCurve:1.5});
-const sfxMarch4   = new SoundGenerator({volume:.20, frequency:140, release:.05, shapeCurve:1.5});
+// Marching sounds - 4 alternating notes (higher frequency so they're audible)
+const sfxMarch1   = new SoundGenerator({volume:.25, frequency:180, release:.08, shapeCurve:1.2});
+const sfxMarch2   = new SoundGenerator({volume:.25, frequency:160, release:.08, shapeCurve:1.2});
+const sfxMarch3   = new SoundGenerator({volume:.25, frequency:140, release:.08, shapeCurve:1.2});
+const sfxMarch4   = new SoundGenerator({volume:.25, frequency:120, release:.08, shapeCurve:1.2});
 
 // ------------------------------------------------------------
 // Helpers
@@ -120,20 +120,20 @@ function setRandomAlienShootTimer()
     alienShootTimer = randIntInclusive(alienShootMin, alienShootMax);
 }
 
-function createExplosion(pos, color)
+function createExplosion(pos, color, count = 10)
 {
     // Simple particle explosion using LittleJS ParticleEmitter
     new ParticleEmitter(
         pos, 0,                     // pos, angle
-        vec2(0.5),                  // emitSize
-        .1, 100,                    // emitTime, emitRate
+        vec2(0.3),                  // emitSize
+        .1, count * 10,             // emitTime, emitRate
         PI*2,                       // emitConeAngle
         undefined,                  // tileInfo
         color, color,               // colorStartA, colorStartB
         color.scale(1,0), color.scale(1,0), // colorEndA, colorEndB
-        .3, .4, .1,                 // particleTime, sizeStart, sizeEnd
-        .5, 0,                      // speed, angleSpeed
-        .95, 1,                     // damping, angleDamping
+        .4, .35, .08,               // particleTime, sizeStart, sizeEnd
+        .25, 0,                     // speed (reduced), angleSpeed
+        .92, 1,                     // damping, angleDamping
         0,                          // gravityScale
         PI, .1, 1                   // cone, fadeRate, randomness
     );
@@ -222,7 +222,7 @@ class Player extends RectObject
         if (this.cooldown > 0) this.cooldown--;
         if (this.cooldown === 0 && (keyIsDown('Space') || keyIsDown('KeyK') || mouseIsDown(0)))
         {
-            this.cooldown = 10;
+            this.cooldown = 20;
             bullets.push(new Bullet(this.pos.add(vec2(0, this.size.y/2 + .6)), vec2(0, 1.2), true));
             sfxShoot.play(this.pos);
         }
@@ -388,7 +388,7 @@ class Bomb extends RectObject
     constructor(pos)
     {
         super(pos, vec2(.3, 1.0), rgb(.95,.95,.95));
-        this.vel = vec2(0, -0.65);
+        this.vel = vec2(0, -0.32);
         this.renderOrder = 20;
         this.animTick = 0;
     }
@@ -434,6 +434,7 @@ class UFO extends RectObject
         this.renderOrder = 15;
         this.pointValue = [50, 100, 150, 300][randIntInclusive(0, 3)];
         this.showPoints = 0;
+        this.soundTimer = 0;
     }
     
     update()
@@ -448,19 +449,20 @@ class UFO extends RectObject
         
         this.pos = this.pos.add(this.velocity);
         
+        // Play UFO sound every ~60 frames (1 second)
+        this.soundTimer++;
+        if (this.soundTimer >= 60)
+        {
+            this.soundTimer = 0;
+            sfxUFO.play(this.pos);
+        }
+        
         if (this.pos.x < -5 || this.pos.x > levelSize.x + 5)
             this.destroy();
     }
     
     render()
     {
-        if (this.showPoints > 0)
-        {
-            // Show point value instead of UFO
-            drawText(String(this.pointValue), this.pos, .8, rgb(.95,.25,.25));
-            return;
-        }
-        
         const p = this.pos;
         const s = .22;
         
@@ -761,16 +763,15 @@ function updateCollisions()
         if (b.destroyed) continue;
 
         // vs UFO
-        if (ufo && !ufo.destroyed && !ufo.showPoints && aabbOverlap(b, ufo))
+        if (ufo && !ufo.destroyed && aabbOverlap(b, ufo))
         {
             b.destroy();
             score += ufo.pointValue;
             hiScore = max(hiScore, score);
             checkBonusLife();
-            createExplosion(ufo.pos, rgb(.95,.25,.25));
-            ufo.velocity = vec2(0, 0);
-            ufo.showPoints = 60;
-            sfxUFO.play(ufo.pos);
+            createExplosion(ufo.pos, rgb(.95,.25,.25), 20); // more particles for UFO
+            ufo.destroy();
+            sfxExplode.play(ufo.pos);
             continue;
         }
 
