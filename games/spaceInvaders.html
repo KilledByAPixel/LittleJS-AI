@@ -69,6 +69,7 @@ let gameOver = false;
 let gameWin = false;
 let titleScreen = true;
 let titleAliens = [];
+let levelAnnounce = 0; // frames to show level announcement
 let titleTimer = 0;
 
 let invaderDir = 1;
@@ -94,6 +95,7 @@ const sfxHit      = new SoundGenerator({volume:.28, frequency:280, release:.08, 
 const sfxLoseLife = new SoundGenerator({volume:.40, frequency:180, release:.25, shapeCurve:1.8, slide:-.2});
 const sfxUFO      = new SoundGenerator({volume:.25, frequency:350, release:.2, shapeCurve:.6, slide:.15});
 const sfxBonusLife = new SoundGenerator({volume:.45, frequency:440, release:.35, shapeCurve:.5, pitchJump:220, pitchJumpTime:.1});
+const sfxAlienDeath = new SoundGenerator({volume:.32, frequency:380, release:.12, shapeCurve:1.4, slide:-.3, pitchJump:-80, pitchJumpTime:.05});
 // Marching sounds - 4 alternating notes (higher frequency so they're audible)
 const sfxMarch1   = new SoundGenerator({volume:.25, frequency:180, release:.08, shapeCurve:1.2});
 const sfxMarch2   = new SoundGenerator({volume:.25, frequency:160, release:.08, shapeCurve:1.2});
@@ -202,6 +204,9 @@ function startLevel()
         player = new Player(vec2(levelSize.x/2, playerY));
     else
         player.pos = vec2(levelSize.x/2, playerY);
+    
+    // Show level announcement for 2 seconds (120 frames)
+    levelAnnounce = 120;
         
     createBarriers();
     createAliens();
@@ -234,7 +239,7 @@ class Player extends RectObject
     }
     update()
     {
-        if (gameOver || gameWin)
+        if (gameOver || gameWin || levelAnnounce > 0)
             return;
 
         // left/right move (no dt; fixed 60fps)
@@ -634,9 +639,17 @@ function gameUpdate()
         return;
     }
     
-    // restart
-    if ((gameOver || gameWin) && keyWasPressed('Enter'))
+    // restart (Enter or Click)
+    if ((gameOver || gameWin) && (keyWasPressed('Enter') || mouseWasPressed(0)))
         resetGame();
+    
+    // Level announcement pause
+    if (levelAnnounce > 0)
+    {
+        levelAnnounce--;
+        invaderAnimTick++; // Keep aliens animating
+        return; // Don't update gameplay during announcement
+    }
     
     // Return to title screen with Escape
     if (keyWasPressed('Escape'))
@@ -680,6 +693,7 @@ function gameUpdate()
         score += 10;
         hiScore = max(hiScore, score);
         checkBonusLife();
+        sfxAlienDeath.play(a.pos);
     }
 }
 
@@ -699,8 +713,8 @@ function gameRender()
     // playfield
     drawRect(cameraPos, levelSize, rgb(0,0,0));
 
-    // Green floor line right below the player
-    drawRect(vec2(levelSize.x/2, playerY - 0.8), vec2(levelSize.x, .15), rgb(.2,.95,.25));
+    // Red floor line right below the player
+    drawRect(vec2(levelSize.x/2, playerY - 0.8), vec2(levelSize.x, .15), rgb(.95,.25,.25));
 }
 
 function gameRenderPost()
@@ -742,10 +756,22 @@ function gameRenderPost()
     // Level indicator at bottom right
     drawTextScreen(`LEVEL ${currentLevel}`, vec2(mainCanvasSize.x - 80, livesY), 26, color);
 
+    // Level announcement
+    if (levelAnnounce > 0)
+    {
+        const pulse = 0.7 + Math.sin(levelAnnounce * 0.15) * 0.3;
+        const announceColor = rgb(.2 * pulse, .95 * pulse, .25 * pulse);
+        drawTextScreen(`LEVEL ${currentLevel}`, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 90, announceColor, 10, rgb(0,0,0));
+        
+        // Show "GET READY" below
+        if (levelAnnounce < 90)
+            drawTextScreen('GET READY', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 60), 36, rgb(.95,.95,.95), 6, rgb(0,0,0));
+    }
+    
     if (gameOver)
     {
         drawTextScreen('GAME OVER', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20), 80, rgb(.95,.25,.25), 8, rgb(0,0,0));
-        drawTextScreen('Press Enter', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 45), 34, rgb(.95,.95,.95), 6, rgb(0,0,0));
+        drawTextScreen('Click to Restart', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 45), 34, rgb(.95,.95,.95), 6, rgb(0,0,0));
     }
     else if (gameWin)
     {
@@ -948,7 +974,9 @@ function updateMarchingSound()
     {
         marchTimer = delay;
         const sounds = [sfxMarch1, sfxMarch2, sfxMarch3, sfxMarch4];
-        sounds[marchBeat % 4].play();
+        // Use center of alien formation for positional audio
+        const centerPos = vec2(levelSize.x/2, levelSize.y/2);
+        sounds[marchBeat % 4].play(centerPos);
         marchBeat++;
     }
 }
@@ -1013,7 +1041,7 @@ function updateCollisions()
             score += 10;
             hiScore = max(hiScore, score);
             checkBonusLife();
-            sfxExplode.play(a.pos);
+            sfxAlienDeath.play(a.pos);
             break;
         }
 
