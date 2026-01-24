@@ -93,6 +93,7 @@ const AI_DROP_DELAY_MIN = .025;
 const AI_DROP_DELAY_MAX = .10;
 const AI_SOFT_DROP_CHANCE = .35;
 const AI_MISTAKE_CHANCE = .04; // occasionally choose 2nd-best-ish
+const AI_EVAL_NOISE = 50; // random noise added to move evaluation
 
 ///////////////////////////////////////////////////////////////////////////////
 // PIECES
@@ -1047,7 +1048,9 @@ function computeBestMove(type, boardRef)
         const cleared = rows.length;
         if (cleared) applyClearRows(rows, b2);
 
-        const v = evalBoard(b2, cleared, survival);
+        // Add random noise to evaluation so AI vs AI makes different decisions
+        const noise = (Math.random() - 0.5) * AI_EVAL_NOISE;
+        const v = evalBoard(b2, cleared, survival) + noise;
         candidates.push({rot, x, v, cleared});
     }
 
