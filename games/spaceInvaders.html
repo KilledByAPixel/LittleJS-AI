@@ -159,11 +159,14 @@ function goToTitleScreen()
     initTitleScreen();
 }
 
-function resetInvaderState()
+function resetInvaderState(resetSpeed = true)
 {
-    // Reset invader movement
+    // Reset invader movement direction
     invaderDir = 1;
-    invaderSpeed = .06 + (currentLevel - 1) * .01;
+    
+    // Only reset speed on new level, not on respawn
+    if (resetSpeed)
+        invaderSpeed = .06 + (currentLevel - 1) * .01;
     
     // Reset shooting timers
     const levelShootBonus = (currentLevel - 1) * 2;
@@ -1187,7 +1190,7 @@ function doRespawn()
             a.pos = a.originalPos.copy();
     }
     
-    resetInvaderState();
+    resetInvaderState(false); // Keep current speed based on aliens killed
     
     // Respawn player at center
     player.pos = vec2(levelSize.x/2, playerY);
