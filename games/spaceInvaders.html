@@ -577,8 +577,8 @@ function gameRender()
     // playfield
     drawRect(cameraPos, levelSize, rgb(0,0,0));
 
-    // Classic green floor line at bottom
-    drawRect(vec2(levelSize.x/2, 0.6), vec2(levelSize.x, .25), rgb(.2,.95,.25));
+    // Green floor line right below the player
+    drawRect(vec2(levelSize.x/2, playerY - 0.8), vec2(levelSize.x, .15), rgb(.2,.95,.25));
 }
 
 function gameRenderPost()
@@ -587,35 +587,28 @@ function gameRenderPost()
     const hudY = 30;
     const color = rgb(.2,.95,.25);
     
-    // SCORE<1> at top left
-    drawTextScreen('SCORE<1>', vec2(80, hudY), 26, color);
+    // SCORE at top left
+    drawTextScreen('SCORE', vec2(80, hudY), 26, color);
     drawTextScreen(String(score).padStart(4, '0'), vec2(80, hudY + 32), 26, rgb(.95,.95,.95));
     
-    // HI-SCORE in center
-    drawTextScreen('HI-SCORE', vec2(mainCanvasSize.x/2, hudY), 26, color);
-    drawTextScreen(String(hiScore).padStart(4, '0'), vec2(mainCanvasSize.x/2, hudY + 32), 26, rgb(.95,.95,.95));
+    // HI-SCORE on top right only
+    drawTextScreen('HI-SCORE', vec2(mainCanvasSize.x - 100, hudY), 26, color);
+    drawTextScreen(String(hiScore).padStart(4, '0'), vec2(mainCanvasSize.x - 100, hudY + 32), 26, rgb(.95,.95,.95));
     
-    // SCORE<2> at top right  
-    drawTextScreen('SCORE<2>', vec2(mainCanvasSize.x - 100, hudY), 26, color);
-    
-    // Lives indicator with ship icons at bottom left
-    drawTextScreen(String(lives), vec2(40, mainCanvasSize.y - 40), 30, color);
+    // Lives indicator with ship icons at bottom - below the green line
+    const livesY = mainCanvasSize.y - 22;
     for (let i = 0; i < lives - 1 && i < 5; i++)
     {
-        const px = 90 + i * 45;
-        const py = mainCanvasSize.y - 42;
-        // Draw mini player ships using drawTextScreen shapes
+        const px = 50 + i * 45;
+        const py = livesY;
+        // Draw mini player ships using filled rectangles via canvas
         const shipColor = rgb(.2,.9,.95);
-        // Simple ship representation using filled rectangles via canvas
         mainContext.fillStyle = shipColor.toString();
         mainContext.fillRect(px - 2, py - 8, 4, 6); // cannon
         mainContext.fillRect(px - 12, py - 2, 24, 8); // body
         mainContext.fillRect(px - 16, py + 2, 6, 4); // left wing
         mainContext.fillRect(px + 10, py + 2, 6, 4); // right wing
     }
-    
-    // CREDIT at bottom right
-    drawTextScreen(`CREDIT ${String(credit).padStart(2, '0')}`, vec2(mainCanvasSize.x - 130, mainCanvasSize.y - 40), 26, color);
 
     if (gameOver)
     {
