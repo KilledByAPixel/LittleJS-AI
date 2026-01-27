@@ -117,10 +117,10 @@ async function gameInit() {
 - Debug overlay default is `Escape` key; games often use `setDebugKey('Backquote')` to avoid conflicts
 
 ## Helpful Resources
-- [AI/reference.md](AI/reference.md) — Full API cheat sheet
-- [AI/tutorial.md](AI/tutorial.md) — Breakout tutorial walkthrough
-- [games/breakout.html](games/breakout.html) — Example with powerups, collisions
-- [games/tetris.html](games/tetris.html) — Complex example with AI opponent
+- [AI/reference.md](../AI/reference.md) — Full API cheat sheet
+- [AI/tutorial.md](../AI/tutorial.md) — Breakout tutorial walkthrough
+- [games/breakout.html](../games/breakout.html) — Example with powerups, collisions
+- [games/tetris.html](../games/tetris.html) — Complex example with AI opponent
 
 ## Testing Games
 Open the HTML file directly in a browser—no server required. Press `Escape` (or backtick if overridden) to toggle debug overlay.
