@@ -288,14 +288,15 @@ function updatePlayer(dt)
     
     if (mouseMode)
     {
-        // Mouse mode: move toward mouse position
+        // Mouse mode: move toward mouse position (fast tracking)
         const targetPos = mousePos;
         const diff = targetPos.subtract(player.pos);
         const dist = diff.length();
         
-        if (dist > 0.3)
+        if (dist > 0.1)
         {
-            const moveSpeed = min(speed * dt, dist);
+            // Move at 3x speed toward mouse, or snap if close
+            const moveSpeed = min(speed * 3 * dt, dist);
             player.pos = player.pos.add(diff.normalize().scale(moveSpeed));
         }
         player.vel = vec2(0, 0);
@@ -475,6 +476,20 @@ function renderPlayer()
     const engineGlow = hsl(.55, .9, .5 + .2 * Math.sin(time * 15));
     drawRect(player.pos.add(vec2(-.85, 0)), vec2(.3, .35), engineGlow);
 
+    // Engine flame particles
+    for (let i = 0; i < 2; i++)
+    {
+        const flamePos = player.pos.add(vec2(-.95 - rand(0, .3), rand(-.15, .15)));
+        particles.push({
+            pos: flamePos,
+            vel: vec2(-rand(3, 8), rand(-1, 1)),
+            color: hsl(rand(.02, .14), 1, rand(.5, .7)),
+            life: rand(.1, .25),
+            lifeMax: .25,
+            size: rand(.15, .3)
+        });
+    }
+
     // Shield effect
     if (shieldTimer > 0)
     {
@@ -492,11 +507,50 @@ function updateBullets(dt)
     {
         const b = bullets[i];
 
-        // Missile homing
-        if (b.isMissile && b.target)
+        // Missile smoke trail
+        if (b.isMissile && b.isPlayer)
         {
-            const dir = b.target.pos.subtract(b.pos).normalize();
-            b.vel = b.vel.add(dir.scale(dt * 40)).normalize(BULLET_SPEED * .8);
+            particles.push({
+                pos: b.pos.add(vec2(-.3, rand(-.1, .1))),
+                vel: vec2(rand(-2, -4), rand(-.5, .5)),
+                color: hsl(0, 0, rand(.4, .7)),
+                life: rand(.2, .4),
+                lifeMax: .4,
+                size: rand(.15, .3)
+            });
+        }
+
+        // Missile homing
+        if (b.isMissile)
+        {
+            // Find nearest enemy if no target or target is dead
+            if (!b.target || b.target.health <= 0 || !enemies.includes(b.target))
+            {
+                b.target = null;
+                let minDist = 999;
+                for (const e of enemies)
+                {
+                    if (e.pos.x > b.pos.x - 5) // Only target enemies ahead or nearby
+                    {
+                        const d = b.pos.distance(e.pos);
+                        if (d < minDist)
+                        {
+                            minDist = d;
+                            b.target = e;
+                        }
+                    }
+                }
+            }
+            
+            if (b.target)
+            {
+                // Strong homing - rotate toward target
+                const toTarget = b.target.pos.subtract(b.pos).normalize();
+                const currentDir = b.vel.normalize();
+                // Blend current direction toward target (strong homing)
+                const newDir = currentDir.lerp(toTarget, dt * 8).normalize();
+                b.vel = newDir.scale(BULLET_SPEED * .9);
+            }
         }
 
         b.pos = b.pos.add(b.vel.scale(dt));
@@ -554,9 +608,10 @@ function renderBullets()
         }
         else
         {
-            // Enemy bullets - 4x bigger for visibility
-            drawCircle(b.pos, b.size * 4, hsl(.02, .9, .6));
-            drawCircle(b.pos, b.size * 2.5, hsl(.02, 1, .8));
+            // Enemy bullets - fireballs (bright red outer, bright yellow center)
+            drawCircle(b.pos, b.size * 2, hsl(.02, 1, .5));   // bright red outer
+            drawCircle(b.pos, b.size * 1.3, hsl(.08, 1, .55)); // orange middle
+            drawCircle(b.pos, b.size * .8, hsl(.14, 1, .6));   // bright yellow center
         }
     }
 }
@@ -906,39 +961,102 @@ function renderEnemies()
 ///////////////////////////////////////////////////////////////////////////////
 // POWER-UPS
 
+// Power-up bouncing - mostly gives points, occasionally a real power-up
+const POWERUP_TYPES = [POWER_SPEED, POWER_DOUBLE, POWER_SPREAD, POWER_MISSILE, POWER_SHIELD, POWER_BOMB];
+
 function spawnPowerup(pos)
 {
-    const type = randInt(6);
     powerups.push({
         pos: pos.copy(),
-        vel: vec2(-2, 0),
-        type,
-        size: .6,
-        bobPhase: rand(0, PI * 2)
+        vel: vec2(-SCROLL_SPEED, 0),
+        bounceCount: 0, // Track number of bounces
+        currentType: -1, // -1 = points, otherwise index into POWERUP_TYPES
+        size: 1.2,
+        bobPhase: rand(0, PI * 2),
+        powerupIndex: 0 // Which power-up type to give next
     });
 }
 
 function updatePowerups(dt)
 {
+    const POWERUP_GRAVITY = -18; // Gravity pulling down
+    
     for (let i = powerups.length - 1; i >= 0; i--)
     {
         const p = powerups[i];
+        
+        // Apply gravity
+        p.vel.y += POWERUP_GRAVITY * dt;
+        
         p.pos = p.pos.add(p.vel.scale(dt));
         p.bobPhase += dt * 4;
 
-        // Remove if off screen
-        if (p.pos.x < -WORLD_WIDTH/2 - 2)
+        // Remove if off screen left or falls off bottom
+        if (p.pos.x < -WORLD_WIDTH/2 - 2 || p.pos.y < -WORLD_HEIGHT/2 - 2)
         {
             powerups.splice(i, 1);
             continue;
         }
 
-        // Collect
-        if (player.alive && p.pos.distance(player.pos) < 1.2)
+        // Check if shot by player bullets
+        for (let j = bullets.length - 1; j >= 0; j--)
         {
-            collectPowerup(p.type);
-            sfxPowerup && sfxPowerup.play(p.pos);
-            spawnParticles(p.pos, POWER_COLORS[p.type], 8);
+            const b = bullets[j];
+            if (b.isPlayer && !b.isMissile && p.pos.distance(b.pos) < p.size + b.size)
+            {
+                // Bounce upward! Keep X velocity minimal (just slight scroll)
+                p.vel.x = -SCROLL_SPEED; // Match scroll speed so it stays in place
+                p.vel.y = rand(12, 18); // Bounce up
+                
+                p.bounceCount++;
+                
+                // Determine what type this bounce gives
+                // Pattern: points, points, POWER, points, points, POWER, ...
+                // Every 3rd bounce (bounce 2, 5, 8, etc.) gives a real power-up
+                if ((p.bounceCount % 3) === 2)
+                {
+                    // Give a real power-up for this bounce
+                    p.currentType = POWERUP_TYPES[p.powerupIndex % POWERUP_TYPES.length];
+                    p.powerupIndex++;
+                }
+                else
+                {
+                    // Back to points
+                    p.currentType = -1;
+                }
+                
+                // Remove the bullet
+                bullets.splice(j, 1);
+                
+                // Particles
+                const color = p.currentType >= 0 ? POWER_COLORS[p.currentType] : hsl(0, 0, .8);
+                spawnParticles(p.pos, color, 4);
+                break;
+            }
+        }
+
+        // Bounce off ceiling
+        if (p.pos.y > WORLD_HEIGHT/2 - 1)
+        {
+            p.pos.y = WORLD_HEIGHT/2 - 1;
+            p.vel.y *= -.6;
+        }
+
+        // Collect
+        if (player.alive && p.pos.distance(player.pos) < p.size + .5)
+        {
+            if (p.currentType >= 0)
+            {
+                collectPowerup(p.currentType);
+                sfxPowerup && sfxPowerup.play(p.pos);
+                spawnParticles(p.pos, POWER_COLORS[p.currentType], 12);
+            }
+            else
+            {
+                // Just points
+                score += 100;
+                spawnParticles(p.pos, hsl(0, 0, .9), 6);
+            }
             powerups.splice(i, 1);
         }
     }
@@ -978,18 +1096,33 @@ function renderPowerups()
 {
     for (const p of powerups)
     {
-        const bobY = Math.sin(p.bobPhase) * .15;
+        const bobY = Math.sin(p.bobPhase) * .2;
         const pos = p.pos.add(vec2(0, bobY));
+        
+        const type = p.currentType;
+        const isPowerup = type >= 0;
+        const color = isPowerup ? POWER_COLORS[type] : hsl(0, 0, .6);
+        const name = isPowerup ? POWER_NAMES[type] : 'PTS';
+        const letter = isPowerup ? name[0] : '$';
+
+        // Pulsing effect when it's a real powerup
+        const pulse = isPowerup ? 1 + .15 * Math.sin(time * 10) : 1;
 
         // Outer glow
-        drawCircle(pos, p.size * 1.5, POWER_COLORS[p.type].scale(1, .3));
+        drawCircle(pos, p.size * 1.6 * pulse, color.scale(1, .35));
 
         // Core
-        drawCircle(pos, p.size, POWER_COLORS[p.type]);
+        drawCircle(pos, p.size * pulse, color);
+        drawCircle(pos, p.size * .7 * pulse, color.scale(1.3, 1));
 
         // Letter
-        const letter = POWER_NAMES[p.type][0];
-        drawText(letter, pos, .7, hsl(0, 0, 1), .15, hsl(0, 0, 0));
+        drawText(letter, pos, p.size * .8, hsl(0, 0, 1), .2, hsl(0, 0, 0));
+        
+        // Show powerup name when active
+        if (isPowerup)
+        {
+            drawText(name, pos.add(vec2(0, -p.size - .4)), .5, color, .1, hsl(0, 0, 0));
+        }
     }
 }
 
