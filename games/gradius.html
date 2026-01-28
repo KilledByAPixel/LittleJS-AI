@@ -1,0 +1,1197 @@
+<!DOCTYPE html><head>
+<title>LittleJS Gradius</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.15/dist/littlejs.js"></script>
+<script>
+'use strict';
+
+// engine settings
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+setDebugKey('Backquote');
+
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 32;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CONSTANTS
+
+const WORLD_WIDTH = 40;
+const WORLD_HEIGHT = 22;
+const PLAYER_START_X = -14;
+const PLAYER_SPEED = 12;
+const BULLET_SPEED = 28;
+const ENEMY_SPAWN_X = 22;
+const SCROLL_SPEED = 2;
+
+// Power-up types
+const POWER_SPEED = 0;
+const POWER_DOUBLE = 1;
+const POWER_SPREAD = 2;
+const POWER_MISSILE = 3;
+const POWER_SHIELD = 4;
+const POWER_BOMB = 5;
+
+const POWER_NAMES = ['SPEED', 'DOUBLE', 'SPREAD', 'MISSILE', 'SHIELD', 'BOMB'];
+const POWER_COLORS = [
+    hsl(.55, .9, .6),  // Speed - cyan
+    hsl(.12, .9, .6),  // Double - orange
+    hsl(.33, .9, .55), // Spread - green
+    hsl(.02, .9, .6),  // Missile - red
+    hsl(.75, .8, .65), // Shield - purple
+    hsl(.14, .95, .55) // Bomb - yellow
+];
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME STATE
+
+let player;
+let bullets = [];
+let enemies = [];
+let powerups = [];
+let particles = [];
+let stars = [];
+
+let score = 0;
+let lives = 3;
+let gameState = 'playing'; // 'playing', 'gameover', 'win'
+
+// Power-up state
+let speedLevel = 0;
+let fireMode = 0; // 0=single, 1=double, 2=spread
+let hasMissile = false;
+let shieldTimer = 0;
+let bombCount = 0;
+
+let fireTimer = 0;
+let missileTimer = 0;
+let enemySpawnTimer = 0;
+let waveNumber = 1;
+let enemiesDefeated = 0;
+let bossSpawned = false;
+let boss = null;
+
+let mouseMode = false; // true = follow mouse, false = keyboard only
+let mountains = []; // scrolling terrain
+
+// Sounds
+let sfxShoot, sfxEnemyShoot, sfxExplosion, sfxPowerup, sfxHit, sfxBomb, sfxBoss;
+
+///////////////////////////////////////////////////////////////////////////////
+// HELPERS
+
+function worldWrap(pos)
+{
+    if (pos.y > WORLD_HEIGHT/2) pos.y = WORLD_HEIGHT/2;
+    if (pos.y < -WORLD_HEIGHT/2) pos.y = -WORLD_HEIGHT/2;
+    if (pos.x < -WORLD_WIDTH/2) pos.x = -WORLD_WIDTH/2;
+    if (pos.x > WORLD_WIDTH/2 - 4) pos.x = WORLD_WIDTH/2 - 4;
+}
+
+function spawnParticles(pos, color, count = 10, speed = 8)
+{
+    for (let i = 0; i < count; i++)
+    {
+        const angle = rand(0, PI * 2);
+        const vel = vec2(cos(angle), sin(angle)).scale(rand(2, speed));
+        particles.push({
+            pos: pos.copy(),
+            vel,
+            color: color.copy(),
+            life: rand(.3, .6),
+            lifeMax: .6,
+            size: rand(.15, .35)
+        });
+    }
+}
+
+function spawnExplosion(pos, color, big = false)
+{
+    spawnParticles(pos, color, big ? 25 : 12, big ? 12 : 8);
+    sfxExplosion && sfxExplosion.play(pos);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// STARS (SCROLLING BACKGROUND)
+
+function initStars()
+{
+    stars = [];
+    for (let i = 0; i < 80; i++)
+    {
+        stars.push({
+            pos: vec2(rand(-WORLD_WIDTH/2, WORLD_WIDTH/2), rand(-WORLD_HEIGHT/2, WORLD_HEIGHT/2)),
+            speed: rand(.5, 3),
+            size: rand(.02, .08),
+            brightness: rand(.3, 1)
+        });
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MOUNTAINS (SCROLLING TERRAIN)
+
+function initMountains()
+{
+    mountains = [];
+    // Create a series of mountain peaks
+    let x = -WORLD_WIDTH/2 - 5;
+    while (x < WORLD_WIDTH/2 + 20)
+    {
+        const height = rand(1.5, 4.5);
+        const width = rand(3, 8);
+        mountains.push({
+            x,
+            width,
+            height,
+            color: hsl(rand(.55, .65), rand(.3, .5), rand(.15, .25))
+        });
+        x += width * rand(.6, .9);
+    }
+}
+
+function updateMountains(dt)
+{
+    for (const m of mountains)
+    {
+        m.x -= SCROLL_SPEED * dt;
+    }
+
+    // Remove mountains that go off screen left and add new ones on right
+    while (mountains.length > 0 && mountains[0].x + mountains[0].width < -WORLD_WIDTH/2 - 5)
+    {
+        mountains.shift();
+    }
+
+    // Add new mountains on the right
+    if (mountains.length > 0)
+    {
+        const last = mountains[mountains.length - 1];
+        if (last.x + last.width < WORLD_WIDTH/2 + 15)
+        {
+            const height = rand(1.5, 4.5);
+            const width = rand(3, 8);
+            mountains.push({
+                x: last.x + last.width * rand(.6, .9),
+                width,
+                height,
+                color: hsl(rand(.55, .65), rand(.3, .5), rand(.15, .25))
+            });
+        }
+    }
+}
+
+function renderMountains()
+{
+    const baseY = -WORLD_HEIGHT/2;
+
+    // Draw base ground
+    drawRect(vec2(0, baseY - 1), vec2(WORLD_WIDTH + 10, 2), hsl(.6, .4, .1));
+
+    // Draw mountains as triangular shapes
+    for (const m of mountains)
+    {
+        const cx = m.x + m.width/2;
+        const points = [
+            vec2(m.x, baseY),
+            vec2(cx, baseY + m.height),
+            vec2(m.x + m.width, baseY)
+        ];
+        drawPoly(points, m.color);
+
+        // Highlight on left side
+        const highlightPoints = [
+            vec2(m.x, baseY),
+            vec2(cx, baseY + m.height),
+            vec2(cx - m.width * .1, baseY)
+        ];
+        drawPoly(highlightPoints, m.color.scale(1.2, 1));
+    }
+}
+
+function updateStars(dt)
+{
+    for (const star of stars)
+    {
+        star.pos.x -= star.speed * SCROLL_SPEED * dt;
+        if (star.pos.x < -WORLD_WIDTH/2)
+        {
+            star.pos.x = WORLD_WIDTH/2;
+            star.pos.y = rand(-WORLD_HEIGHT/2, WORLD_HEIGHT/2);
+        }
+    }
+}
+
+function renderStars()
+{
+    for (const star of stars)
+    {
+        const c = hsl(0, 0, star.brightness);
+        drawRect(star.pos, vec2(star.size), c);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PLAYER
+
+function resetPlayer()
+{
+    player = {
+        pos: vec2(PLAYER_START_X, 0),
+        size: vec2(1.5, 1),
+        vel: vec2(0, 0),
+        invincible: 0,
+        alive: true
+    };
+}
+
+function updatePlayer(dt)
+{
+    if (!player.alive) return;
+
+    // Movement
+    const speed = PLAYER_SPEED * (1 + speedLevel * 0.25);
+    
+    // Check for keyboard input to switch to keyboard mode
+    if (keyWasPressed('Space') || keyWasPressed('KeyZ'))
+    {
+        mouseMode = false;
+    }
+    
+    if (mouseMode)
+    {
+        // Mouse mode: move toward mouse position
+        const targetPos = mousePos;
+        const diff = targetPos.subtract(player.pos);
+        const dist = diff.length();
+        
+        if (dist > 0.3)
+        {
+            const moveSpeed = min(speed * dt, dist);
+            player.pos = player.pos.add(diff.normalize().scale(moveSpeed));
+        }
+        player.vel = vec2(0, 0);
+    }
+    else
+    {
+        // Keyboard mode
+        const dir = keyDirection();
+        player.vel = dir.scale(speed);
+        player.pos = player.pos.add(player.vel.scale(dt));
+    }
+    
+    worldWrap(player.pos);
+
+    // Invincibility timer
+    if (player.invincible > 0)
+        player.invincible -= dt;
+
+    // Shield timer
+    if (shieldTimer > 0)
+        shieldTimer -= dt;
+
+    // Shooting
+    fireTimer -= dt;
+    
+    // Mouse click switches to mouse mode
+    if (mouseIsDown(0))
+    {
+        mouseMode = true;
+    }
+    
+    if ((keyIsDown('Space') || keyIsDown('KeyZ') || mouseIsDown(0)) && fireTimer <= 0)
+    {
+        shoot();
+        fireTimer = fireMode === 2 ? .18 : .12;
+    }
+
+    // Missiles
+    if (hasMissile)
+    {
+        missileTimer -= dt;
+        if (missileTimer <= 0)
+        {
+            shootMissile();
+            missileTimer = .8;
+        }
+    }
+
+    // Bomb
+    if ((keyWasPressed('KeyX') || keyWasPressed('KeyB') || mouseWasPressed(2)) && bombCount > 0)
+    {
+        useBomb();
+    }
+}
+
+function shoot()
+{
+    const y = player.pos.y;
+    const x = player.pos.x + .8;
+
+    sfxShoot && sfxShoot.play(player.pos);
+
+    if (fireMode === 0) // Single
+    {
+        bullets.push({ pos: vec2(x, y), vel: vec2(BULLET_SPEED, 0), size: .3, isPlayer: true, damage: 1 });
+    }
+    else if (fireMode === 1) // Double
+    {
+        bullets.push({ pos: vec2(x, y + .35), vel: vec2(BULLET_SPEED, 0), size: .3, isPlayer: true, damage: 1 });
+        bullets.push({ pos: vec2(x, y - .35), vel: vec2(BULLET_SPEED, 0), size: .3, isPlayer: true, damage: 1 });
+    }
+    else if (fireMode === 2) // Spread
+    {
+        bullets.push({ pos: vec2(x, y), vel: vec2(BULLET_SPEED, 0), size: .3, isPlayer: true, damage: 1 });
+        bullets.push({ pos: vec2(x, y), vel: vec2(BULLET_SPEED * .9, BULLET_SPEED * .3), size: .25, isPlayer: true, damage: 1 });
+        bullets.push({ pos: vec2(x, y), vel: vec2(BULLET_SPEED * .9, -BULLET_SPEED * .3), size: .25, isPlayer: true, damage: 1 });
+    }
+}
+
+function shootMissile()
+{
+    // Find nearest enemy
+    let target = null;
+    let minDist = 999;
+    for (const e of enemies)
+    {
+        const d = player.pos.distance(e.pos);
+        if (d < minDist && e.pos.x > player.pos.x)
+        {
+            minDist = d;
+            target = e;
+        }
+    }
+
+    const missile = {
+        pos: player.pos.add(vec2(0, .6)),
+        vel: vec2(BULLET_SPEED * .6, 4),
+        size: .4,
+        isPlayer: true,
+        isMissile: true,
+        target,
+        damage: 3
+    };
+    bullets.push(missile);
+}
+
+function useBomb()
+{
+    bombCount--;
+    sfxBomb && sfxBomb.play();
+
+    // Damage all enemies on screen
+    for (const e of enemies)
+    {
+        e.health -= 5;
+        spawnParticles(e.pos, hsl(.14, .9, .6), 8);
+    }
+
+    // Big screen flash effect
+    for (let i = 0; i < 40; i++)
+    {
+        const pos = vec2(rand(-WORLD_WIDTH/2, WORLD_WIDTH/2), rand(-WORLD_HEIGHT/2, WORLD_HEIGHT/2));
+        spawnParticles(pos, hsl(.14, .9, .7), 5, 15);
+    }
+}
+
+function damagePlayer()
+{
+    if (player.invincible > 0 || shieldTimer > 0) return;
+
+    lives--;
+    sfxHit && sfxHit.play(player.pos);
+    spawnExplosion(player.pos, hsl(.55, .9, .6));
+
+    if (lives <= 0)
+    {
+        player.alive = false;
+        gameState = 'gameover';
+        return;
+    }
+
+    // Reset power-ups on death
+    speedLevel = 0;
+    fireMode = 0;
+    hasMissile = false;
+    shieldTimer = 0;
+
+    player.invincible = 2;
+    player.pos = vec2(PLAYER_START_X, 0);
+}
+
+function renderPlayer()
+{
+    if (!player.alive) return;
+
+    const flash = player.invincible > 0 && Math.floor(player.invincible * 10) % 2;
+    if (flash) return;
+
+    // Ship body
+    const shipColor = hsl(.55, .8, .6);
+    const cockpit = hsl(.12, .9, .7);
+
+    // Main body
+    drawRect(player.pos, vec2(1.4, .7), shipColor);
+
+    // Nose
+    drawRect(player.pos.add(vec2(.6, 0)), vec2(.5, .4), shipColor);
+
+    // Wings
+    drawRect(player.pos.add(vec2(-.2, .55)), vec2(.8, .25), shipColor);
+    drawRect(player.pos.add(vec2(-.2, -.55)), vec2(.8, .25), shipColor);
+
+    // Cockpit
+    drawRect(player.pos.add(vec2(.2, 0)), vec2(.4, .35), cockpit);
+
+    // Engine glow
+    const engineGlow = hsl(.55, .9, .5 + .2 * Math.sin(time * 15));
+    drawRect(player.pos.add(vec2(-.85, 0)), vec2(.3, .35), engineGlow);
+
+    // Shield effect
+    if (shieldTimer > 0)
+    {
+        const shieldAlpha = .3 + .2 * Math.sin(time * 8);
+        drawCircle(player.pos, 2.5, hsl(.75, .8, .6, shieldAlpha));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// BULLETS
+
+function updateBullets(dt)
+{
+    for (let i = bullets.length - 1; i >= 0; i--)
+    {
+        const b = bullets[i];
+
+        // Missile homing
+        if (b.isMissile && b.target)
+        {
+            const dir = b.target.pos.subtract(b.pos).normalize();
+            b.vel = b.vel.add(dir.scale(dt * 40)).normalize(BULLET_SPEED * .8);
+        }
+
+        b.pos = b.pos.add(b.vel.scale(dt));
+
+        // Remove if off screen
+        if (b.pos.x > WORLD_WIDTH/2 + 2 || b.pos.x < -WORLD_WIDTH/2 - 2 ||
+            b.pos.y > WORLD_HEIGHT/2 + 2 || b.pos.y < -WORLD_HEIGHT/2 - 2)
+        {
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        if (b.isPlayer)
+        {
+            // Check collision with enemies
+            for (const e of enemies)
+            {
+                if (b.pos.distance(e.pos) < (b.size + e.size.x) * .5)
+                {
+                    e.health -= b.damage;
+                    spawnParticles(b.pos, hsl(.14, .9, .6), 4);
+                    bullets.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            // Check collision with player
+            if (player.alive && b.pos.distance(player.pos) < (b.size + player.size.x) * .5)
+            {
+                damagePlayer();
+                bullets.splice(i, 1);
+            }
+        }
+    }
+}
+
+function renderBullets()
+{
+    for (const b of bullets)
+    {
+        if (b.isPlayer)
+        {
+            if (b.isMissile)
+            {
+                drawRect(b.pos, vec2(.5, .25), hsl(.02, .9, .6));
+                drawRect(b.pos.add(vec2(-.3, 0)), vec2(.2, .15), hsl(.14, .9, .7));
+            }
+            else
+            {
+                drawRect(b.pos, vec2(b.size * 2, b.size * .6), hsl(.14, .95, .7));
+                drawRect(b.pos, vec2(b.size * 1.5, b.size * .4), hsl(.14, 1, .9));
+            }
+        }
+        else
+        {
+            // Enemy bullets - 4x bigger for visibility
+            drawCircle(b.pos, b.size * 4, hsl(.02, .9, .6));
+            drawCircle(b.pos, b.size * 2.5, hsl(.02, 1, .8));
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ENEMIES
+
+function spawnEnemy(type = 0)
+{
+    const y = rand(-WORLD_HEIGHT/2 + 2, WORLD_HEIGHT/2 - 2);
+
+    let enemy;
+    if (type === 0) // Basic
+    {
+        enemy = {
+            pos: vec2(ENEMY_SPAWN_X, y),
+            vel: vec2(-4 - waveNumber * .3, 0),
+            size: vec2(1, .8),
+            health: 1,
+            maxHealth: 1,
+            type: 0,
+            shootTimer: rand(1, 2),
+            color: hsl(.02, .8, .55),
+            points: 100
+        };
+    }
+    else if (type === 1) // Sine wave
+    {
+        enemy = {
+            pos: vec2(ENEMY_SPAWN_X, y),
+            vel: vec2(-3, 0),
+            size: vec2(1.2, .9),
+            health: 2,
+            maxHealth: 2,
+            type: 1,
+            shootTimer: rand(1.5, 2.5),
+            startY: y,
+            phase: rand(0, PI * 2),
+            color: hsl(.8, .8, .55),
+            points: 150
+        };
+    }
+    else if (type === 2) // Swooper
+    {
+        enemy = {
+            pos: vec2(ENEMY_SPAWN_X, y),
+            vel: vec2(-6, 0),
+            size: vec2(1, 1),
+            health: 2,
+            maxHealth: 2,
+            type: 2,
+            shootTimer: rand(1, 2),
+            swoopPhase: 0,
+            targetY: player.pos.y,
+            color: hsl(.33, .8, .5),
+            points: 200
+        };
+    }
+    else if (type === 3) // Tank
+    {
+        enemy = {
+            pos: vec2(ENEMY_SPAWN_X, y),
+            vel: vec2(-2, 0),
+            size: vec2(1.5, 1.2),
+            health: 5,
+            maxHealth: 5,
+            type: 3,
+            shootTimer: .5,
+            color: hsl(.08, .7, .45),
+            points: 300
+        };
+    }
+
+    enemies.push(enemy);
+}
+
+function spawnBoss()
+{
+    bossSpawned = true;
+    sfxBoss && sfxBoss.play();
+
+    boss = {
+        pos: vec2(WORLD_WIDTH/2 + 5, 0),
+        vel: vec2(-2, 0),
+        size: vec2(4, 3),
+        health: 50 + waveNumber * 10,
+        maxHealth: 50 + waveNumber * 10,
+        type: 99,
+        shootTimer: 0,
+        phase: 0,
+        pattern: 0,
+        color: hsl(.85, .7, .45),
+        points: 2000
+    };
+    enemies.push(boss);
+}
+
+function updateEnemies(dt)
+{
+    // Spawn enemies
+    if (gameState === 'playing' && !bossSpawned)
+    {
+        enemySpawnTimer -= dt;
+        if (enemySpawnTimer <= 0)
+        {
+            const spawnRate = max(.5, 2 - waveNumber * .15);
+            enemySpawnTimer = spawnRate;
+
+            // Vary enemy types based on wave
+            const r = rand();
+            if (waveNumber >= 3 && r < .15)
+                spawnEnemy(3); // Tank
+            else if (waveNumber >= 2 && r < .35)
+                spawnEnemy(2); // Swooper
+            else if (r < .55)
+                spawnEnemy(1); // Sine
+            else
+                spawnEnemy(0); // Basic
+        }
+
+        // Spawn boss every 20 enemies
+        if (enemiesDefeated > 0 && enemiesDefeated % 20 === 0 && enemies.length === 0)
+        {
+            spawnBoss();
+        }
+    }
+
+    for (let i = enemies.length - 1; i >= 0; i--)
+    {
+        const e = enemies[i];
+
+        // Movement patterns
+        if (e.type === 1) // Sine wave
+        {
+            e.phase += dt * 3;
+            e.pos.y = e.startY + Math.sin(e.phase) * 3;
+        }
+        else if (e.type === 2) // Swooper
+        {
+            e.swoopPhase += dt;
+            if (e.swoopPhase > 1 && e.swoopPhase < 1.5)
+            {
+                const dir = e.targetY - e.pos.y;
+                e.vel.y = sign(dir) * 8;
+            }
+            else
+            {
+                e.vel.y *= .95;
+            }
+        }
+        else if (e.type === 99) // Boss
+        {
+            // Move to position
+            if (e.pos.x > 12)
+                e.vel.x = -2;
+            else
+                e.vel.x = 0;
+
+            // Oscillate
+            e.phase += dt;
+            e.pos.y = Math.sin(e.phase * 1.5) * 6;
+
+            // Attack patterns
+            e.shootTimer -= dt;
+            if (e.shootTimer <= 0)
+            {
+                e.pattern = (e.pattern + 1) % 3;
+                if (e.pattern === 0)
+                {
+                    // Spread shot
+                    for (let a = -3; a <= 3; a++)
+                    {
+                        const angle = a * .25;
+                        bullets.push({
+                            pos: e.pos.add(vec2(-2, 0)),
+                            vel: vec2(cos(PI + angle), sin(angle)).scale(10),
+                            size: .35,
+                            isPlayer: false
+                        });
+                    }
+                    sfxEnemyShoot && sfxEnemyShoot.play(e.pos);
+                    e.shootTimer = 1.5;
+                }
+                else if (e.pattern === 1)
+                {
+                    // Aimed shot
+                    const dir = player.pos.subtract(e.pos).normalize();
+                    for (let a = 0; a < 5; a++)
+                    {
+                        setTimeout(() => {
+                            if (boss && boss.health > 0)
+                            {
+                                bullets.push({
+                                    pos: e.pos.add(vec2(-2, 0)),
+                                    vel: dir.scale(12),
+                                    size: .4,
+                                    isPlayer: false
+                                });
+                            }
+                        }, a * 100);
+                    }
+                    sfxEnemyShoot && sfxEnemyShoot.play(e.pos);
+                    e.shootTimer = 2;
+                }
+                else
+                {
+                    // Circle burst
+                    for (let a = 0; a < 12; a++)
+                    {
+                        const angle = a * PI * 2 / 12;
+                        bullets.push({
+                            pos: e.pos,
+                            vel: vec2(cos(angle), sin(angle)).scale(8),
+                            size: .3,
+                            isPlayer: false
+                        });
+                    }
+                    sfxEnemyShoot && sfxEnemyShoot.play(e.pos);
+                    e.shootTimer = 2.5;
+                }
+            }
+        }
+
+        e.pos = e.pos.add(e.vel.scale(dt));
+
+        // Regular enemy shooting
+        if (e.type !== 99)
+        {
+            e.shootTimer -= dt;
+            if (e.shootTimer <= 0 && e.pos.x > player.pos.x && e.pos.x < WORLD_WIDTH/2 - 2)
+            {
+                const dir = player.pos.subtract(e.pos).normalize();
+                bullets.push({
+                    pos: e.pos.copy(),
+                    vel: dir.scale(8 + waveNumber * .5),
+                    size: .25,
+                    isPlayer: false
+                });
+                sfxEnemyShoot && sfxEnemyShoot.play(e.pos);
+                e.shootTimer = e.type === 3 ? 1 : rand(1.5, 3);
+            }
+        }
+
+        // Remove if off screen left
+        if (e.pos.x < -WORLD_WIDTH/2 - 3)
+        {
+            enemies.splice(i, 1);
+            if (e === boss) boss = null;
+            continue;
+        }
+
+        // Check if dead
+        if (e.health <= 0)
+        {
+            spawnExplosion(e.pos, e.color, e.type === 99);
+            score += e.points;
+            enemiesDefeated++;
+
+            // Drop power-up chance
+            if (rand() < .2 || e.type === 99)
+            {
+                spawnPowerup(e.pos);
+            }
+
+            // Boss defeated
+            if (e.type === 99)
+            {
+                boss = null;
+                bossSpawned = false;
+                waveNumber++;
+                enemiesDefeated = 0;
+
+                // Extra power-ups from boss
+                for (let p = 0; p < 3; p++)
+                {
+                    spawnPowerup(e.pos.add(vec2(rand(-2, 2), rand(-2, 2))));
+                }
+            }
+
+            enemies.splice(i, 1);
+            continue;
+        }
+
+        // Collision with player
+        if (player.alive && e.pos.distance(player.pos) < (e.size.x + player.size.x) * .4)
+        {
+            damagePlayer();
+        }
+    }
+}
+
+function renderEnemies()
+{
+    for (const e of enemies)
+    {
+        if (e.type === 99) // Boss
+        {
+            // Main body
+            drawRect(e.pos, e.size, e.color);
+            drawRect(e.pos.add(vec2(-1.5, 0)), vec2(1.5, 2), e.color);
+
+            // Core
+            const coreGlow = hsl(.85, .9, .4 + .2 * Math.sin(time * 5));
+            drawCircle(e.pos, 1.2, coreGlow);
+
+            // Eyes
+            drawCircle(e.pos.add(vec2(-.5, .8)), .4, hsl(.02, 1, .6));
+            drawCircle(e.pos.add(vec2(-.5, -.8)), .4, hsl(.02, 1, .6));
+
+            // Health bar
+            const healthPct = e.health / e.maxHealth;
+            drawRect(e.pos.add(vec2(0, 2.5)), vec2(4, .3), hsl(0, 0, .2));
+            drawRect(e.pos.add(vec2(-2 + healthPct * 2, 2.5)), vec2(4 * healthPct, .25), hsl(.02, .9, .6));
+        }
+        else
+        {
+            // Regular enemies
+            drawRect(e.pos, e.size, e.color);
+
+            if (e.type === 0) // Basic
+            {
+                drawRect(e.pos.add(vec2(-.3, 0)), vec2(.4, .5), e.color.scale(.7, 1));
+            }
+            else if (e.type === 1) // Sine
+            {
+                drawRect(e.pos.add(vec2(0, .35)), vec2(.6, .3), e.color);
+                drawRect(e.pos.add(vec2(0, -.35)), vec2(.6, .3), e.color);
+            }
+            else if (e.type === 2) // Swooper
+            {
+                drawRect(e.pos.add(vec2(.3, .4)), vec2(.5, .25), e.color);
+                drawRect(e.pos.add(vec2(.3, -.4)), vec2(.5, .25), e.color);
+            }
+            else if (e.type === 3) // Tank
+            {
+                drawRect(e.pos.add(vec2(-.5, 0)), vec2(.8, .4), e.color.scale(.6, 1));
+                drawCircle(e.pos, .5, e.color.scale(.8, 1));
+            }
+
+            // Engine glow
+            const glow = e.color.scale(1.3, 1);
+            drawRect(e.pos.add(vec2(e.size.x * .5 + .1, 0)), vec2(.2, .25), glow);
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// POWER-UPS
+
+function spawnPowerup(pos)
+{
+    const type = randInt(6);
+    powerups.push({
+        pos: pos.copy(),
+        vel: vec2(-2, 0),
+        type,
+        size: .6,
+        bobPhase: rand(0, PI * 2)
+    });
+}
+
+function updatePowerups(dt)
+{
+    for (let i = powerups.length - 1; i >= 0; i--)
+    {
+        const p = powerups[i];
+        p.pos = p.pos.add(p.vel.scale(dt));
+        p.bobPhase += dt * 4;
+
+        // Remove if off screen
+        if (p.pos.x < -WORLD_WIDTH/2 - 2)
+        {
+            powerups.splice(i, 1);
+            continue;
+        }
+
+        // Collect
+        if (player.alive && p.pos.distance(player.pos) < 1.2)
+        {
+            collectPowerup(p.type);
+            sfxPowerup && sfxPowerup.play(p.pos);
+            spawnParticles(p.pos, POWER_COLORS[p.type], 8);
+            powerups.splice(i, 1);
+        }
+    }
+}
+
+function collectPowerup(type)
+{
+    if (type === POWER_SPEED)
+    {
+        speedLevel = min(speedLevel + 1, 3);
+    }
+    else if (type === POWER_DOUBLE)
+    {
+        fireMode = 1;
+    }
+    else if (type === POWER_SPREAD)
+    {
+        fireMode = 2;
+    }
+    else if (type === POWER_MISSILE)
+    {
+        hasMissile = true;
+    }
+    else if (type === POWER_SHIELD)
+    {
+        shieldTimer = 10;
+    }
+    else if (type === POWER_BOMB)
+    {
+        bombCount = min(bombCount + 1, 3);
+    }
+
+    score += 50;
+}
+
+function renderPowerups()
+{
+    for (const p of powerups)
+    {
+        const bobY = Math.sin(p.bobPhase) * .15;
+        const pos = p.pos.add(vec2(0, bobY));
+
+        // Outer glow
+        drawCircle(pos, p.size * 1.5, POWER_COLORS[p.type].scale(1, .3));
+
+        // Core
+        drawCircle(pos, p.size, POWER_COLORS[p.type]);
+
+        // Letter
+        const letter = POWER_NAMES[p.type][0];
+        drawText(letter, pos, .7, hsl(0, 0, 1), .15, hsl(0, 0, 0));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PARTICLES
+
+function updateParticles(dt)
+{
+    for (let i = particles.length - 1; i >= 0; i--)
+    {
+        const p = particles[i];
+        p.life -= dt;
+        if (p.life <= 0)
+        {
+            particles.splice(i, 1);
+            continue;
+        }
+        p.pos = p.pos.add(p.vel.scale(dt));
+        p.vel = p.vel.scale(.96);
+    }
+}
+
+function renderParticles()
+{
+    for (const p of particles)
+    {
+        const alpha = p.life / p.lifeMax;
+        const c = p.color.copy();
+        c.a = alpha;
+        drawRect(p.pos, vec2(p.size), c);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME
+
+function resetGame()
+{
+    score = 0;
+    lives = 3;
+    gameState = 'playing';
+
+    speedLevel = 0;
+    fireMode = 0;
+    hasMissile = false;
+    shieldTimer = 0;
+    bombCount = 0;
+
+    waveNumber = 1;
+    enemiesDefeated = 0;
+    bossSpawned = false;
+    boss = null;
+
+    bullets = [];
+    enemies = [];
+    powerups = [];
+    particles = [];
+
+    resetPlayer();
+    initStars();
+    initMountains();
+    mouseMode = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ENGINE CALLBACKS
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    cameraPos = vec2(0, 0);
+
+    // Sounds
+    sfxShoot = new SoundGenerator({ frequency: 880, release: .04, volume: .4, slide: 1 });
+    sfxEnemyShoot = new SoundGenerator({ frequency: 220, release: .08, volume: .3, noise: .1 });
+    sfxExplosion = new SoundGenerator({ frequency: 120, release: .25, volume: .6, noise: .3 });
+    sfxPowerup = new SoundGenerator({ frequency: 660, release: .15, volume: .5, pitchJump: 440, pitchJumpTime: .05 });
+    sfxHit = new SoundGenerator({ frequency: 180, release: .3, volume: .7, noise: .2, slide: -.5 });
+    sfxBomb = new SoundGenerator({ frequency: 60, release: .5, volume: .8, noise: .4 });
+    sfxBoss = new SoundGenerator({ frequency: 100, release: .4, volume: .6, pitchJump: -50, pitchJumpTime: .1 });
+
+    resetGame();
+}
+
+function gameUpdate()
+{
+    const dt = timeDelta;
+
+    if (gameState === 'gameover')
+    {
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
+        {
+            resetGame();
+        }
+        return;
+    }
+
+    // Restart
+    if (keyWasPressed('KeyR'))
+    {
+        resetGame();
+        return;
+    }
+
+    updateStars(dt);
+    updateMountains(dt);
+    updatePlayer(dt);
+    updateEnemies(dt);
+    updateBullets(dt);
+    updatePowerups(dt);
+    updateParticles(dt);
+}
+
+function gameUpdatePost()
+{
+}
+
+function gameRender()
+{
+    // Background
+    drawRect(cameraPos, vec2(WORLD_WIDTH + 10, WORLD_HEIGHT + 10), rgb(.02, .02, .06));
+
+    renderStars();
+    renderMountains();
+    renderPowerups();
+    renderEnemies();
+    renderBullets();
+    renderPlayer();
+    renderParticles();
+}
+
+function gameRenderPost()
+{
+    // HUD
+    const hudY = 24;
+
+    // Score
+    drawTextScreen('SCORE ' + score, vec2(20, hudY), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');
+
+    // Lives
+    drawTextScreen('LIVES ' + lives, vec2(mainCanvasSize.x - 20, hudY), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'right');
+
+    // Wave
+    drawTextScreen('WAVE ' + waveNumber, vec2(mainCanvasSize.x / 2, hudY), 28, hsl(.55, .8, .7), 4, hsl(0, 0, 0));
+
+    // Power-up status
+    let statusY = 60;
+    if (speedLevel > 0)
+    {
+        drawTextScreen('SPEED +' + speedLevel, vec2(20, statusY), 20, POWER_COLORS[POWER_SPEED], 3, hsl(0, 0, 0), 'left');
+        statusY += 22;
+    }
+    if (fireMode === 1)
+    {
+        drawTextScreen('DOUBLE', vec2(20, statusY), 20, POWER_COLORS[POWER_DOUBLE], 3, hsl(0, 0, 0), 'left');
+        statusY += 22;
+    }
+    else if (fireMode === 2)
+    {
+        drawTextScreen('SPREAD', vec2(20, statusY), 20, POWER_COLORS[POWER_SPREAD], 3, hsl(0, 0, 0), 'left');
+        statusY += 22;
+    }
+    if (hasMissile)
+    {
+        drawTextScreen('MISSILE', vec2(20, statusY), 20, POWER_COLORS[POWER_MISSILE], 3, hsl(0, 0, 0), 'left');
+        statusY += 22;
+    }
+    if (shieldTimer > 0)
+    {
+        drawTextScreen('SHIELD ' + shieldTimer.toFixed(0) + 's', vec2(20, statusY), 20, POWER_COLORS[POWER_SHIELD], 3, hsl(0, 0, 0), 'left');
+        statusY += 22;
+    }
+    if (bombCount > 0)
+    {
+        drawTextScreen('BOMB x' + bombCount, vec2(20, statusY), 20, POWER_COLORS[POWER_BOMB], 3, hsl(0, 0, 0), 'left');
+    }
+
+    // Controls hint
+    const modeText = mouseMode ? '[MOUSE MODE]' : '[KEYBOARD MODE]';
+    drawTextScreen('Arrow/WASD: Move | Space/Z: Shoot | X/B: Bomb | Mouse: Aim+Shoot | R: Restart',
+        vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 20), 16, hsl(0, 0, .7), 2, hsl(0, 0, 0));
+    drawTextScreen(modeText, vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 18, mouseMode ? hsl(.55, .8, .7) : hsl(.14, .8, .7), 2, hsl(0, 0, 0));
+
+    // Boss warning
+    if (boss)
+    {
+        const flash = Math.floor(time * 4) % 2;
+        if (flash)
+            drawTextScreen('! BOSS !', vec2(mainCanvasSize.x / 2, 80), 36, hsl(.02, 1, .6), 5, hsl(0, 0, 0));
+    }
+
+    // Game over
+    if (gameState === 'gameover')
+    {
+        drawRect(cameraPos, vec2(WORLD_WIDTH + 10, WORLD_HEIGHT + 10), rgb(0, 0, 0, .6));
+        drawTextScreen('GAME OVER', vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 - 30), 72, hsl(.02, 1, .6), 8, hsl(0, 0, 0));
+        drawTextScreen('Final Score: ' + score, vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 + 30), 36, hsl(0, 0, 1), 5, hsl(0, 0, 0));
+        drawTextScreen('Press SPACE to play again', vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 + 80), 24, hsl(0, 0, .8), 3, hsl(0, 0, 0));
+    }
+}
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
