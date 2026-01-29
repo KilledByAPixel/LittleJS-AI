@@ -335,7 +335,7 @@ class Player extends EngineObject
         // flame
         if (!gameState && this.thrusting)
         {
-            const flicker = .3 + .25*wave(22, 1, time);
+            const flicker = .3 + .25*oscillate(22, 1, time);
             const flame = [
                 vec2(-.18,-1.02),
                 vec2(.18,-1.02),

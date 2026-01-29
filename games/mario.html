@@ -218,7 +218,7 @@ class Coin extends EngineObject
     update()
     {
         // float animation (no dt; fixed 60fps)
-        this.pos.y = this.baseY + wave(2, 1, time + this.phase) * .14;
+        this.pos.y = this.baseY + oscillate(2, 1, time + this.phase) * .14;
 
         // collect
         if (!player) return;
@@ -235,7 +235,7 @@ class Coin extends EngineObject
     render()
     {
         // coin body
-        const wobble = wave(6, 1, time + this.phase) * .10;
+        const wobble = oscillate(6, 1, time + this.phase) * .10;
         drawEllipse(this.pos, vec2(.32 + wobble, .42), rgb(1, .88, .2));
         // inner shine
         drawEllipse(this.pos.add(vec2(-.06, .03)), vec2(.12, .22), rgb(1, 1, 1, .7));
@@ -563,7 +563,7 @@ function gameRender()
     for (let i=0; i<6; i++)
     {
         const cx = cameraPos.x*.35 + i*10 + 3;
-        const cy = 10 + (i%3)*2 + wave(.3, 1, time+i)*.2;
+        const cy = 10 + (i%3)*2 + oscillate(.3, 1, time+i)*.2;
         drawRect(vec2(cx, cy), vec2(3.2, 1.1), rgb(1,1,1,.65));
         drawRect(vec2(cx+1.2, cy+.4), vec2(2.6, .9), rgb(1,1,1,.65));
     }

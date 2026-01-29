@@ -152,7 +152,7 @@ function gameRender()
             drawCircle(vec2(x+.5, y+.5), .10, rgb(.95,.9,.75));
         else if (powerPellets[i])
         {
-            const pulse = .30 + .09*wave(4, 1, time + (x+y)*.07);
+            const pulse = .30 + .09*oscillate(4, 1, time + (x+y)*.07);
             drawCircle(vec2(x+.5, y+.5), pulse, rgb(.98,.90,.15));
         }
     }
@@ -646,8 +646,8 @@ function drawPac(p)
     const moving = p.dir.x || p.dir.y;
 
     // chomp: slower and readable
-    const wFast = .5 + .5*wave(4.2, 1, time);
-    const wIdle = .5 + .5*wave(2.4, 1, time);
+    const wFast = .5 + .5*oscillate(4.2, 1, time);
+    const wIdle = .5 + .5*oscillate(2.4, 1, time);
 
     // When moving, allow the mouth to fully close (open can hit ~0).
     // When idle, keep it slightly open.
@@ -674,7 +674,7 @@ function drawGhost(g)
     const c = frightened ? rgb(.25,.35,.95) : g.color;
 
     const r = .42;
-    const bob = .03*wave(6, 1, time + g.cell.x*.13 + g.cell.y*.17);
+    const bob = .03*oscillate(6, 1, time + g.cell.x*.13 + g.cell.y*.17);
 
     // body
     drawCircle(g.pos.add(vec2(0,bob)), r, c);

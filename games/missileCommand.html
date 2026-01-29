@@ -80,7 +80,7 @@ let playerMissiles = [];
 let explosions = [];
 
 let score = 0;
-let waveIndex = 1; // renamed from "wave" to avoid clashing with LittleJS's global wave() helper
+let waveIndex = 1;
 let missilesToSpawn = 0;
 let spawnTimer = 0;
 let betweenWaves = false;
@@ -352,12 +352,6 @@ function checkWaveComplete()
 
 function gameInit()
 {
-  // "tests" to catch common environment/name issues early
-  assert(typeof vec2 === 'function', 'vec2() should exist (LittleJS loaded?)');
-  assert(typeof hsl === 'function', 'hsl() should exist (LittleJS loaded?)');
-  assert(typeof wave === 'function', 'LittleJS wave() helper should exist (do not name vars wave)');
-  assert(Number.isFinite(levelSize.x) && Number.isFinite(levelSize.y), 'levelSize should be finite');
-
   // fixed resolution, classic feel
   setCanvasFixedSize(vec2(1280, 720));
   setCameraPos(levelSize.scale(.5));
@@ -468,7 +462,7 @@ function drawGround()
   {
     const x = (i*97 % 400) / 10;
     const y = (i*53 % 180) / 10 + 8;
-    const tw = .12 + wave(.6 + i*.03, .06);
+    const tw = .12 + oscillate(.6 + i*.03, .06);
     drawCircle(vec2(x, y), tw, hsl(.58, .2, .7, .55));
   }
 
@@ -498,7 +492,7 @@ function drawInstallations()
       const t = time + c.pos.x*.3;
       for (let i=0;i<2;i++)
       {
-        const p = c.pos.add(vec2((i?-.35:.3), .6 + i*.2 + wave(1.2+i, .2, t)));
+        const p = c.pos.add(vec2((i?-.35:.3), .6 + i*.2 + oscillate(1.2+i, .2, t)));
         drawCircle(p, .45, hsl(0,0,.35,.35));
       }
     }
