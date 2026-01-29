@@ -101,12 +101,12 @@ class Bumper
     render()
     {
         const flash = this.hitTimer > 0 ? 1.5 : 1;
-        const size = this.radius * 2 * (this.hitTimer > 0 ? 1.15 : 1);
-        drawCircle(this.pos, size, this.color.scale(flash, 1));
-        drawCircle(this.pos, size * 0.6, WHITE);
+        const diameter = this.radius * 2 * (this.hitTimer > 0 ? 1.15 : 1);
+        drawCircle(this.pos, diameter, this.color.scale(flash, 1));
+        drawCircle(this.pos, diameter * 0.6, WHITE);
         
-        // Draw points value
-        drawText(this.points.toString(), this.pos, this.radius * 0.8, BLACK, 0.1);
+        // Draw points value - size based on diameter for proper fit
+        drawText(this.points.toString(), this.pos, diameter * 0.4, BLACK, 0.05);
     }
 }
 
@@ -139,63 +139,79 @@ async function gameInit()
 
 function createTable()
 {
-    const hw = TABLE_WIDTH / 2;
-    const hh = TABLE_HEIGHT / 2;
+    const hw = TABLE_WIDTH / 2; // 6
+    const hh = TABLE_HEIGHT / 2; // 10
     
-    // Left wall
+    // Left wall - full height
     const leftWall = new Box2dStaticObject(vec2(-hw - WALL_THICKNESS/2, 0));
     leftWall.addBox(vec2(WALL_THICKNESS, TABLE_HEIGHT + 2));
     leftWall.color = hsl(0.55, 0.6, 0.4);
     
-    // Right wall (with gap for plunger lane)
-    const rightWallTop = new Box2dStaticObject(vec2(hw + WALL_THICKNESS/2 + 1, 5));
-    rightWallTop.addBox(vec2(WALL_THICKNESS, TABLE_HEIGHT - 10));
+    // Right wall - only above the plunger lane entrance (stops at y=hh-3)
+    const rightWallTop = new Box2dStaticObject(vec2(hw + WALL_THICKNESS/2, hh - 1.5));
+    rightWallTop.addBox(vec2(WALL_THICKNESS, 3));
     rightWallTop.color = hsl(0.55, 0.6, 0.4);
+    
+    // Lane separator (between main play area and plunger lane) - doesn't go all the way up
+    const laneSep = new Box2dStaticObject(vec2(hw, -2));
+    laneSep.addBox(vec2(WALL_THICKNESS, 14));
+    laneSep.color = hsl(0.55, 0.6, 0.4);
     
     // Plunger lane right wall
     const plungerWall = new Box2dStaticObject(vec2(hw + 1.5 + WALL_THICKNESS/2, -2));
-    plungerWall.addBox(vec2(WALL_THICKNESS, 14));
+    plungerWall.addBox(vec2(WALL_THICKNESS, 16));
     plungerWall.color = hsl(0.55, 0.6, 0.4);
     
-    // Top wall (curved would be nice but we'll use angled segments)
+    // Top wall
     const topWall = new Box2dStaticObject(vec2(0, hh + WALL_THICKNESS/2));
     topWall.addBox(vec2(TABLE_WIDTH + 3.5, WALL_THICKNESS));
     topWall.color = hsl(0.55, 0.6, 0.4);
     
-    // Top corner guides
+    // Top left corner guide (angled)
     const topLeftGuide = new Box2dStaticObject(vec2(-hw + 0.5, hh - 1.5));
     topLeftGuide.addPoly([vec2(0, 0), vec2(-1.5, -2), vec2(-1.5, 0)]);
     topLeftGuide.color = hsl(0.55, 0.6, 0.4);
     
-    const topRightGuide = new Box2dStaticObject(vec2(hw + 1, hh - 1.5));
-    topRightGuide.addPoly([vec2(0, 0), vec2(1.5, -2), vec2(1.5, 0)]);
-    topRightGuide.color = hsl(0.55, 0.6, 0.4);
+    // Curved top-right guide - series of polygon segments to loop ball from plunger lane
+    // This creates a quarter-circle arc from the plunger lane into play area
+    const curveSegments = 8;
+    const curveRadiusInner = 1.5;
+    const curveRadiusOuter = 2.0;
+    const curveCenter = vec2(hw, hh - 2);
     
-    // Lane separator at top right (between main area and plunger lane)
-    const laneSep = new Box2dStaticObject(vec2(hw, 4));
-    laneSep.addBox(vec2(WALL_THICKNESS, 12));
-    laneSep.color = hsl(0.55, 0.6, 0.4);
+    // Build the curve as connected polygon segments
+    for (let i = 0; i < curveSegments; i++)
+    {
+        const a1 = (i / curveSegments) * PI * 0.5; // 0 to 90 degrees
+        const a2 = ((i + 1) / curveSegments) * PI * 0.5;
+        
+        // Inner and outer points for this segment
+        const inner1 = vec2(Math.cos(a1) * curveRadiusInner, Math.sin(a1) * curveRadiusInner);
+        const inner2 = vec2(Math.cos(a2) * curveRadiusInner, Math.sin(a2) * curveRadiusInner);
+        const outer1 = vec2(Math.cos(a1) * curveRadiusOuter, Math.sin(a1) * curveRadiusOuter);
+        const outer2 = vec2(Math.cos(a2) * curveRadiusOuter, Math.sin(a2) * curveRadiusOuter);
+        
+        const seg = new Box2dStaticObject(curveCenter);
+        seg.addPoly([inner1, outer1, outer2, inner2]);
+        seg.color = hsl(0.55, 0.6, 0.4);
+    }
     
-    // Lane entrance curve at top
-    const laneEntry = new Box2dStaticObject(vec2(hw + 0.5, hh - 3));
-    laneEntry.addPoly([vec2(0, 0), vec2(0.8, 2), vec2(0.8, 0)]);
-    laneEntry.color = hsl(0.55, 0.6, 0.4);
-    
-    // Bottom slants leading to flippers
+    // Bottom slants leading to flippers - positioned to not interfere with plunger lane
     const leftSlant = new Box2dStaticObject(vec2(-hw + 1.2, -hh + 3.5));
     leftSlant.addPoly([vec2(-2, 3), vec2(-2, -1), vec2(0, -1)]);
     leftSlant.color = hsl(0.08, 0.7, 0.45);
     
-    const rightSlant = new Box2dStaticObject(vec2(hw - 1.2, -hh + 3.5));
+    // Right slant - moved left to avoid plunger lane
+    const rightSlant = new Box2dStaticObject(vec2(hw - 2.2, -hh + 3.5));
     rightSlant.addPoly([vec2(2, 3), vec2(2, -1), vec2(0, -1)]);
     rightSlant.color = hsl(0.08, 0.7, 0.45);
     
-    // Outlane walls
+    // Outlane walls (slingshot dividers)
     const leftOutlane = new Box2dStaticObject(vec2(-hw + 2.8, -hh + 2));
     leftOutlane.addBox(vec2(0.3, 3));
     leftOutlane.color = hsl(0.55, 0.6, 0.4);
     
-    const rightOutlane = new Box2dStaticObject(vec2(hw - 2.8, -hh + 2));
+    const rightOutlane = new Box2dStaticObject(vec2(hw - 3.8, -hh + 2));
     rightOutlane.addBox(vec2(0.3, 3));
     rightOutlane.color = hsl(0.55, 0.6, 0.4);
 }
@@ -206,57 +222,57 @@ function createFlippers()
     const flipperHeight = 0.4;
     const flipperY = -TABLE_HEIGHT/2 + 1.5;
     const flipperSpacing = 1.4;
+    const pivotOffset = flipperLength/2 - 0.3; // distance from center to pivot
     
-    // Left flipper
-    leftFlipper = new Box2dObject(vec2(-flipperSpacing, flipperY));
+    // Left flipper - pivot on left end, extends to the right
+    const leftPivotX = -flipperSpacing;
+    leftFlipper = new Box2dObject(vec2(leftPivotX + pivotOffset, flipperY));
     leftFlipper.addBox(vec2(flipperLength, flipperHeight));
     leftFlipper.color = hsl(0.0, 0.8, 0.5);
     
-    // Create revolute joint for left flipper
+    // Create revolute joint for left flipper - pivot at left end
     leftFlipperJoint = new Box2dRevoluteJoint(leftFlipper, groundBody, 
-        vec2(-flipperSpacing - flipperLength/2 + 0.3, flipperY));
-    //leftFlipperJoint.enableLimit(true);
-    leftFlipperJoint.setLimits(-0.1, 0.55);
+        vec2(leftPivotX, flipperY));
+    leftFlipperJoint.setLimits(-0.55, 0.1); // rest down, flip up
     leftFlipperJoint.enableMotor(true);
-    leftFlipperJoint.setMotorSpeed(-15);
+    leftFlipperJoint.setMotorSpeed(15); // positive to go down (rest position)
     leftFlipperJoint.setMaxMotorTorque(100);
     
-    // Right flipper
-    rightFlipper = new Box2dObject(vec2(flipperSpacing, flipperY));
+    // Right flipper - pivot on right end, extends to the left
+    const rightPivotX = flipperSpacing;
+    rightFlipper = new Box2dObject(vec2(rightPivotX - pivotOffset, flipperY));
     rightFlipper.addBox(vec2(flipperLength, flipperHeight));
     rightFlipper.color = hsl(0.0, 0.8, 0.5);
     
-    // Create revolute joint for right flipper
+    // Create revolute joint for right flipper - pivot at right end
     rightFlipperJoint = new Box2dRevoluteJoint(rightFlipper, groundBody,
-        vec2(flipperSpacing + flipperLength/2 - 0.3, flipperY));
-    //rightFlipperJoint.enableLimit(true);
-    rightFlipperJoint.setLimits(-0.55, 0.1);
+        vec2(rightPivotX, flipperY));
+    rightFlipperJoint.setLimits(-0.1, 0.55); // rest down, flip up
     rightFlipperJoint.enableMotor(true);
-    rightFlipperJoint.setMotorSpeed(15);
+    rightFlipperJoint.setMotorSpeed(-15); // negative to go down (rest position)
     rightFlipperJoint.setMaxMotorTorque(100);
 }
 
 function createPlunger()
 {
     const plungerX = TABLE_WIDTH/2 + 0.75;
-    const plungerY = -TABLE_HEIGHT/2 - 0.5;
+    const plungerY = -TABLE_HEIGHT/2 + 1;
     
-    // Plunger (dynamic body)
+    // Plunger (dynamic body) - positioned in the lane to push ball
     plunger = new Box2dObject(vec2(plungerX, plungerY));
-    plunger.addBox(vec2(1, 0.5));
+    plunger.addBox(vec2(0.8, 0.5));
     plunger.color = hsl(0.1, 0.8, 0.5);
     
-    // Prismatic joint to constrain plunger movement
+    // Prismatic joint to constrain plunger movement vertically
     plungerJoint = new Box2dPrismaticJoint(plunger, groundBody,
         vec2(plungerX, plungerY), vec2(0, 1));
-    //plungerJoint.enableLimit(true);
-    plungerJoint.setLimits(0, 2);
+    plungerJoint.setLimits(-2, 0); // can move 2 units down from rest
     plungerJoint.enableMotor(true);
-    plungerJoint.setMotorSpeed(5);
-    plungerJoint.setMaxMotorForce(20);
+    plungerJoint.setMotorSpeed(0);
+    plungerJoint.setMaxMotorForce(200);
     
-    // Plunger lane bottom
-    const plungerBottom = new Box2dStaticObject(vec2(plungerX, plungerY - 1.5));
+    // Plunger lane bottom stopper
+    const plungerBottom = new Box2dStaticObject(vec2(plungerX, -TABLE_HEIGHT/2 - 1));
     plungerBottom.addBox(vec2(1.5, 0.5));
     plungerBottom.color = hsl(0.55, 0.6, 0.3);
 }
@@ -285,9 +301,11 @@ function spawnBall()
         ball.destroy();
     
     const plungerX = TABLE_WIDTH/2 + 0.75;
+    // Spawn ball just above the plunger, in the plunger lane
     ball = new Box2dObject(vec2(plungerX, -TABLE_HEIGHT/2 + 2));
-    ball.addCircle(0.4);
+    ball.addCircle(0.35); // radius for collision
     ball.color = hsl(0, 0, 0.85);
+    ball.setLinearDamping(0.1);
     
     isPullingPlunger = false;
     plungerPower = 0;
@@ -318,24 +336,24 @@ function gameUpdate()
     // Control flippers via motor speed
     if (leftActive)
     {
-        leftFlipperJoint.setMotorSpeed(25);
+        leftFlipperJoint.setMotorSpeed(-25); // negative to flip up
         if (keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ'))
             sfxFlipper && sfxFlipper.play();
     }
     else
     {
-        leftFlipperJoint.setMotorSpeed(-15);
+        leftFlipperJoint.setMotorSpeed(15); // positive to rest down
     }
     
     if (rightActive)
     {
-        rightFlipperJoint.setMotorSpeed(-25);
+        rightFlipperJoint.setMotorSpeed(25); // positive to flip up
         if (keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash'))
             sfxFlipper && sfxFlipper.play();
     }
     else
     {
-        rightFlipperJoint.setMotorSpeed(15);
+        rightFlipperJoint.setMotorSpeed(-15); // negative to rest down
     }
     
     // Plunger controls
@@ -345,13 +363,13 @@ function gameUpdate()
     {
         isPullingPlunger = true;
         plungerPower = min(plungerPower + timeDelta * 2, 1);
-        plungerJoint.setMotorSpeed(-8);
+        plungerJoint.setMotorSpeed(-15); // pull down
     }
     else if (isPullingPlunger)
     {
-        // Release plunger!
-        const launchForce = 40 + plungerPower * 60;
-        plungerJoint.setMotorSpeed(launchForce);
+        // Release plunger! Launch with force proportional to power
+        const launchSpeed = 60 + plungerPower * 100;
+        plungerJoint.setMotorSpeed(launchSpeed);
         sfxLaunch && sfxLaunch.play();
         isPullingPlunger = false;
         plungerPower = 0;
@@ -427,22 +445,22 @@ function gameUpdatePost()
 function gameRender()
 {
     // Draw table background
-    drawRect(vec2(0, 0), vec2(TABLE_WIDTH + 1, TABLE_HEIGHT + 2), hsl(0.55, 0.4, 0.2));
+    drawRect(vec2(0.5, 0), vec2(TABLE_WIDTH + 3, TABLE_HEIGHT + 2), hsl(0.55, 0.4, 0.2));
     
-    // Draw playfield
+    // Draw main playfield
     drawRect(vec2(0, 0), vec2(TABLE_WIDTH - 0.5, TABLE_HEIGHT - 0.5), hsl(0.35, 0.5, 0.25));
     
-    // Draw plunger lane
-    drawRect(vec2(TABLE_WIDTH/2 + 0.75, -2), vec2(1.3, 14), hsl(0.35, 0.4, 0.2));
+    // Draw plunger lane background
+    drawRect(vec2(TABLE_WIDTH/2 + 0.75, 0), vec2(1.3, TABLE_HEIGHT), hsl(0.35, 0.4, 0.2));
     
-    // Draw decorative lines
+    // Draw decorative lines (guide rails visual)
     drawLine(vec2(-4, -3), vec2(-2, 6), 0.08, hsl(0.15, 0.6, 0.5));
-    drawLine(vec2(4, -3), vec2(2, 6), 0.08, hsl(0.15, 0.6, 0.5));
+    drawLine(vec2(3, -3), vec2(1.5, 6), 0.08, hsl(0.15, 0.6, 0.5));
     
     // Draw target zones
     drawCircle(vec2(0, 7), 1.5, hsl(0.6, 0.3, 0.3));
     drawCircle(vec2(-3.5, 2), 1, hsl(0.1, 0.3, 0.3));
-    drawCircle(vec2(3.5, 2), 1, hsl(0.1, 0.3, 0.3));
+    drawCircle(vec2(2.5, 2), 1, hsl(0.1, 0.3, 0.3));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -452,11 +470,11 @@ function gameRenderPost()
     for (const bumper of bumpers)
         bumper.render();
     
-    // Draw ball shine
+    // Draw ball shine - size is diameter
     if (ball)
     {
-        const shineOffset = vec2(-0.12, 0.12);
-        drawCircle(ball.pos.add(shineOffset), 0.15, hsl(0, 0, 1, 0.6));
+        const shineOffset = vec2(-0.1, 0.1);
+        drawCircle(ball.pos.add(shineOffset), 0.12, hsl(0, 0, 1, 0.6));
     }
     
     // Draw plunger power indicator
