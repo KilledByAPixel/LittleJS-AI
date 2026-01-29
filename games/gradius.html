@@ -628,7 +628,7 @@ function spawnEnemy(type = 0)
     {
         enemy = {
             pos: vec2(ENEMY_SPAWN_X, y),
-            vel: vec2(-4 - waveNumber * .3, 0),
+            vel: vec2(-8 - waveNumber * .5, 0),
             size: vec2(1, .8),
             health: 1,
             maxHealth: 1,
@@ -642,7 +642,7 @@ function spawnEnemy(type = 0)
     {
         enemy = {
             pos: vec2(ENEMY_SPAWN_X, y),
-            vel: vec2(-3, 0),
+            vel: vec2(-6, 0),
             size: vec2(1.2, .9),
             health: 2,
             maxHealth: 2,
@@ -658,7 +658,7 @@ function spawnEnemy(type = 0)
     {
         enemy = {
             pos: vec2(ENEMY_SPAWN_X, y),
-            vel: vec2(-6, 0),
+            vel: vec2(-10, 0),
             size: vec2(1, 1),
             health: 2,
             maxHealth: 2,
@@ -674,7 +674,7 @@ function spawnEnemy(type = 0)
     {
         enemy = {
             pos: vec2(ENEMY_SPAWN_X, y),
-            vel: vec2(-2, 0),
+            vel: vec2(-4, 0),
             size: vec2(1.5, 1.2),
             health: 5,
             maxHealth: 5,
@@ -846,12 +846,12 @@ function updateEnemies(dt)
                 const dir = player.pos.subtract(e.pos).normalize();
                 bullets.push({
                     pos: e.pos.copy(),
-                    vel: dir.scale(8 + waveNumber * .5),
+                    vel: dir.scale(14 + waveNumber * .8),
                     size: .25,
                     isPlayer: false
                 });
                 sfxEnemyShoot && sfxEnemyShoot.play(e.pos);
-                e.shootTimer = e.type === 3 ? 1 : rand(1.5, 3);
+                e.shootTimer = e.type === 3 ? .8 : rand(1.2, 2.5);
             }
         }
 
@@ -970,10 +970,11 @@ function spawnPowerup(pos)
         pos: pos.copy(),
         vel: vec2(-SCROLL_SPEED, 0),
         bounceCount: 0, // Track number of bounces
-        currentType: -1, // -1 = points, otherwise index into POWERUP_TYPES
+        currentType: -1, // -1 = points, otherwise power-up type
         size: 1.2,
         bobPhase: rand(0, PI * 2),
-        powerupIndex: 0 // Which power-up type to give next
+        powerupIndex: 0, // Which power-up type to give next
+        nextPowerupBounce: randInt(3, 6) // 3-5 bounces before first power-up
     });
 }
 
@@ -1010,14 +1011,14 @@ function updatePowerups(dt)
                 
                 p.bounceCount++;
                 
-                // Determine what type this bounce gives
-                // Pattern: points, points, POWER, points, points, POWER, ...
-                // Every 3rd bounce (bounce 2, 5, 8, etc.) gives a real power-up
-                if ((p.bounceCount % 3) === 2)
+                // Check if this bounce gives a power-up
+                if (p.bounceCount >= p.nextPowerupBounce)
                 {
-                    // Give a real power-up for this bounce
+                    // Give a real power-up for this bounce only
                     p.currentType = POWERUP_TYPES[p.powerupIndex % POWERUP_TYPES.length];
                     p.powerupIndex++;
+                    // Set next power-up to be 3-5 bounces away
+                    p.nextPowerupBounce = p.bounceCount + randInt(3, 6);
                 }
                 else
                 {
