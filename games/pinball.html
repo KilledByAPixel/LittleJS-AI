@@ -365,7 +365,7 @@ function gameUpdate()
     if (ball)
     {
         const ballPos = ball.pos;
-        const ballVel = ball.getVelocity();
+        const ballVel = ball.getLinearVelocity();
         const ballSpeed = ballVel.length();
         
         for (const bumper of bumpers)
