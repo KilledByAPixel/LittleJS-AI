@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.11/dist/littlejs.min.js"></script>
+<script src="../dist/littlejs.js"></script>
 <script>
 'use strict';
 
@@ -378,7 +378,7 @@ class Bullet extends EngineObject
 
     render()
     {
-        drawCircle(this.pos, .12, rgb(1,1,1), 0, true);
+        drawCircle(this.pos, .12, rgb(1,1,1));
     }
 }
 
@@ -623,13 +623,13 @@ function gameUpdatePost()
 function gameRender()
 {
     // background: subtle vignette
-    drawRect(cameraPos, worldSize.scale(1.2), rgb(.02,.02,.03), 0, true);
+    drawRect(cameraPos, worldSize.scale(1.2), rgb(.02,.02,.03), 0);
 
     // stars
     for (const s of stars)
     {
         const twinkle = .55 + .45*Math.sin((time*s.tw) + s.p.x*1.7);
-        drawCircle(s.p, s.s*twinkle, rgb(1,1,1, .65*twinkle), 0, true);
+        drawCircle(s.p, s.s*twinkle, rgb(1,1,1, .65*twinkle));
     }
 
     // faint border
