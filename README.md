@@ -29,18 +29,24 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Space Invaders | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) |
 | Mini Golf | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/miniGolf.html) |
 | Missile Command | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) |
-| Snood | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) |
+| Sokoban | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/sokoban.html) |
 | Asteroids | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/asteroids.html) |
 | Minesweeper | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/minesweeper.html) |
-| Breakout | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
 | Flappy Bird | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/flappyBird.html) |
+| Lunar Lander | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/lunarLander.html) |
+
+## 🕹️ Works in Progress
+
+| Game | Play |
+|------|------|
+| Snood | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) |
+| Breakout | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
 | Centipede | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) |
 | Columns | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) |
 | Combat | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/combat.html) |
 | Frogger | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/frogger.html) |
 | Geometry Dash | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/geometryDash.html) |
 | Kaboom | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/kaboom.html) |
-| Lunar Lander | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/lunarLander.html) |
 | Moon Patrol | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/moonPatrol.html) |
 | Pac-Man | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pacman.html) |
 | Pole Position | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
