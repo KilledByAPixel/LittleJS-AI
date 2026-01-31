@@ -1262,25 +1262,16 @@ function gameRenderPost()
 
         // Pulsing title effect
         const t = time;
-        const sizePulse = 110 + Math.sin(t * 2.5) * 8;
-        const huePulse = .58 + Math.sin(t * 1.8) * .08;
-        const litPulse = .65 + Math.sin(t * 3.2) * .15;
-        const satPulse = .9 + Math.sin(t * 2.0) * .1;
+        const huePulse = .4 + Math.sin(t * 1.8) * .08;
         
         // Glow layers behind title
-        drawTextScreen('ORBITSWARM', vec2(cx, cy - 110), sizePulse + 6, hsl(huePulse, .7, .4, .3), 14, hsl(0,0,0,0));
-        drawTextScreen('ORBITSWARM', vec2(cx, cy - 110), sizePulse + 3, hsl(huePulse, .8, .5, .5), 12, hsl(0,0,0,0));
-        
         // Main title with pulsing size and color
-        drawTextScreen('ORBITSWARM', vec2(cx, cy - 110), sizePulse, hsl(huePulse, satPulse, litPulse), 10, hsl(0,0,0));
+        for(let i = 0; i < 9; ++i)
+            drawTextScreen('ORBITSWARM', vec2(cx, cy - 0-i*8), 110 + Math.sin(t * 2.5+i) * 2+i*3, hsl(huePulse+i*.1, 1, i/11), 0, BLACK, undefined,undefined, 'bold');
         
-        drawTextScreen('STREAM COMBAT', vec2(cx, cy - 45), 40, hsl(0,0,1), 6, hsl(0,0,0));
+        drawTextScreen('Made With LittleJS AI', vec2(cx, cy + 80), 32, hsl(0,0,.8), 5, hsl(0,0,0));
 
-        drawTextScreen('Click or Press Space to Start', vec2(cx, cy + 40), 34, hsl(0,0,1), 6, hsl(0,0,0));
-        drawTextScreen('Ships launch & arrive one-by-one (fast stream)', vec2(cx, cy + 95), 24, hsl(0,0,1), 5, hsl(0,0,0));
-        drawTextScreen('Defense upgrade can block invaders (no defender loss)', vec2(cx, cy + 125), 22, hsl(0,0,1), 4, hsl(0,0,0));
-        drawTextScreen('1/2/3/4 = send %    Mouse Wheel = fine adjust', vec2(cx, cy + 155), 22, hsl(0,0,1), 4, hsl(0,0,0));
-        drawTextScreen('R = restart    Esc = title', vec2(cx, cy + 185), 22, hsl(0,0,1), 4, hsl(0,0,0));
+        drawTextScreen('Click to Start', vec2(cx, cy + 140), 34, hsl(0,0,1), 6, hsl(0,0,0));
         return;
     }
 
