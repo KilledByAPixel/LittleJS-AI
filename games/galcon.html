@@ -1009,6 +1009,24 @@ function updateUpgradeButtons()
     btnCapacity.visible = show;
     btnDefense.visible = show;
     
+    // Update button positions based on current canvas size (handles window resize)
+    const panelX = mainCanvasSize.x - panelW;
+    const cx = panelX + panelW/2 + 2;
+    const btnW = 210;
+    const btnH = 50;
+    let y = 380;
+    
+    btnProduction.pos = vec2(cx, y);
+    btnProduction.size = vec2(btnW, btnH);
+    y += 70;
+    
+    btnCapacity.pos = vec2(cx, y);
+    btnCapacity.size = vec2(btnW, btnH);
+    y += 70;
+    
+    btnDefense.pos = vec2(cx, y);
+    btnDefense.size = vec2(btnW, btnH);
+    
     if (show)
     {
         const p = selectedPlanet;
@@ -1216,8 +1234,18 @@ function gameRender()
     {
         const targetPos = dragTarget ? dragTarget.pos : mousePos;
         const beamHue = ownerHue(OWNER_PLAYER);
-        drawLine(dragSource.pos, targetPos, .14, hsl(beamHue, .9, .62, .9));
-        drawLine(dragSource.pos, targetPos, .05, hsl(beamHue, .9, .72, .8));
+        
+        // Pulsing effect for drag line
+        const pulse = .5 + .5 * Math.sin(time * 8);
+        const outerThick = .35 + pulse * .15;  // pulses between .35 and .50
+        const innerThick = .15 + pulse * .08;  // pulses between .15 and .23
+        const outerAlpha = .6 + pulse * .25;
+        const innerAlpha = .75 + pulse * .2;
+        
+        // Outer glow layer
+        drawLine(dragSource.pos, targetPos, outerThick, hsl(beamHue, .85, .55, outerAlpha));
+        // Inner bright core
+        drawLine(dragSource.pos, targetPos, innerThick, hsl(beamHue, .95, .78, innerAlpha));
 
         const sendCount = max(1, (dragSource.ships * dragPercent)|0);
         drawText((dragPercent*100|0) + '%  (' + sendCount + ')', mousePos.add(vec2(0, 2.2)),
