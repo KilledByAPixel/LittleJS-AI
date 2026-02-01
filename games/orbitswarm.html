@@ -1133,7 +1133,7 @@ function updateMenuButtons()
         const btnH = 70;
         const spacing = 90;
         
-        txtSelectDifficulty.pos = vec2(cx, cy + 10);
+        txtSelectDifficulty.pos = vec2(cx, cy + 0);
         txtSelectDifficulty.size = vec2(400, 50);
         
         btnEasy.pos = vec2(cx, cy + 60);
@@ -1522,7 +1522,7 @@ function gameRenderPost()
                 36, hsl(0,0,1), 5, hsl(0,0,0));
         }
 
-        drawTextScreen('Press Space or Esc for Menu',
+        drawTextScreen('Press Space or Escape',
             vec2(gameCenter, mainCanvasSize.y/2 + 100),
             28, hsl(0,0,.8), 5, hsl(0,0,0));
     }
