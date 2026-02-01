@@ -1,8 +1,5 @@
 # node files
 node_modules
 
-# example builds
-test.html
-
 # local files
-notes.txt
+local/

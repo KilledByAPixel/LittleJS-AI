@@ -9,7 +9,6 @@
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
-paused = false;
 debugKey = 'Backquote';
 
 // engine settings
@@ -24,12 +23,9 @@ cameraScale = 19;
 // - Click + drag from your planet to a target to send ships
 // - 1/2/3/4 sets send percent: 10/25/50/100
 // - Mouse wheel while dragging adjusts percent
-// - Click a blue planet to select it
-// - Q/W/E buy upgrades on selected planet (spend ships)
 // - R restarts, Esc returns to title
 //
-// Ships launch in a rapid stream (1-2s) and arrive/attack one at a time.
-// Defense upgrade: chance to "block" an invader with no defender loss.
+// Ships launch in a rapid stream and arrive/attack one at a time.
 //
 // NOTE: Sound effects are disabled for now.
 
@@ -40,17 +36,14 @@ const OWNER_NEUTRAL = 0;
 const OWNER_PLAYER  = 1;
 const OWNER_AI      = 2;
 
-const PANEL_WIDTH = 15;                 // world units for right panel
-const panelW = 230; // screen units for right panel
-const WORLD_SIZE = vec2(70, 40);
-const PLAY_AREA_X = WORLD_SIZE.x - PANEL_WIDTH;  // planets spawn in this width
+const WORLD_SIZE = vec2(60, 40);
 const PLANET_COUNT_DEFAULT = 15;
 
 const FLEET_SPEED = 1.9;                // world units per second
 const SHIP_DRAW_LIMIT = 180;            // max ship instances to draw per fleet
 
 // Capacity tuning
-const CAPACITY_SCALE = .5;              // scales ALL planet capacities (base + upgrades)
+const CAPACITY_SCALE = .5;              // scales ALL planet capacities
 const MAX_SHIPS = 300;                  // absolute hard cap (safety)
 
 // stream combat tuning
@@ -76,30 +69,21 @@ const DIFFICULTY_SETTINGS = {
         aiInterval: [2.5, 3.5],       // AI acts slower
         playerStartShips: 70,
         aiStartShips: 20,
-        playerMoneyRate: 0.6,         // Player earns money faster
-        aiMoneyRate: 0.35,            // AI earns money slower
         aiVisionError: 0.3,           // AI misjudges enemy ships by up to 30%
-        aiUpgradeChance: 0.25,        // AI less likely to upgrade
         planetCount: 10,              // fewer planets
     },
     medium: {
         aiInterval: [1.4, 2.0],
         playerStartShips: 50,
         aiStartShips: 30,
-        playerMoneyRate: 0.5,
-        aiMoneyRate: 0.5,
         aiVisionError: 0.12,
-        aiUpgradeChance: 0.45,
         planetCount: 15,
     },
     hard: {
         aiInterval: [0.7, 1.2],       // AI acts faster
         playerStartShips: 40,
         aiStartShips: 50,
-        playerMoneyRate: 0.4,         // Player earns slower
-        aiMoneyRate: 0.6,             // AI earns faster
         aiVisionError: 0,             // AI has perfect information
-        aiUpgradeChance: 0.6,         // AI upgrades more
         planetCount: 15,
     }
 };
@@ -112,17 +96,9 @@ const AI_SEND_FRACTION_LARGE = 0.7;   // AI sends 70% when it has lots of ships
 // debug display
 let debugShowStats = false;
 
-// UI buttons for upgrades
-let btnProduction, btnCapacity, btnDefense;
-
 // Menu buttons
 let btnEasy, btnMedium, btnHard;
 let txtSelectDifficulty;
-
-// Money system
-let playerMoney = 0;
-let aiMoney = 0;
-const MONEY_RATE = 0.5;  // money per production point per second
 
 const clamp01 = (v)=> clamp(v, 0, 1);
 function randInt(n){ return (rand(0, n))|0; }
@@ -145,69 +121,13 @@ const sfxBuy     = sfx;
 const sfxNope    = sfx;
 
 // -------------------------------------------------------------
-// Upgrades (spend money)
-
-const MAX_UPGRADE_LEVEL = 5;  // max level for all upgrades
-
-function prodCost(level){ return 40 + level * 30; }  // most expensive
-function capCost(level) { return 25 + level * 20; }  // second most expensive
-function defCost(level) { return 15 + level * 12; }  // cheapest
+// Planet stats
 
 function recalcPlanetStats(p)
 {
-    // upgrades apply on top of base stats
-    p.capacity = min(MAX_SHIPS, (p.baseCapacity + (p.upCap * (30*CAPACITY_SCALE))) | 0);
-    p.production = p.baseProduction * (1 + p.upProd * .22);
-
-    // defense: 10% block chance per level, max 50% at level 5
-    p.defChance = clamp(p.upDef * .10, 0, .50);
-
+    p.capacity = min(MAX_SHIPS, p.baseCapacity);
+    p.production = p.baseProduction;
     p.ships = min(p.capacity, p.ships);
-}
-
-function getOwnerMoney(owner)
-{
-    return owner == OWNER_PLAYER ? playerMoney : aiMoney;
-}
-
-function setOwnerMoney(owner, value)
-{
-    if (owner == OWNER_PLAYER) playerMoney = value;
-    else aiMoney = value;
-}
-
-function tryBuyUpgrade(p, kind, owner, playSfx)
-{
-    if (owner === undefined) owner = OWNER_PLAYER;
-    if (playSfx === undefined) playSfx = true;
-
-    // kind: 0=prod, 1=cap, 2=def
-    if (!p || p.owner != owner) return;
-
-    // Check if already maxed
-    if (kind == 0 && p.upProd >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
-    if (kind == 1 && p.upCap >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
-    if (kind == 2 && p.upDef >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
-
-    let cost = 0;
-    if (kind == 0) cost = prodCost(p.upProd);
-    if (kind == 1) cost = capCost(p.upCap);
-    if (kind == 2) cost = defCost(p.upDef);
-
-    const money = getOwnerMoney(owner);
-    if (money < cost)
-    {
-        if (playSfx) sfxNope.play();
-        return;
-    }
-
-    setOwnerMoney(owner, money - cost);
-    if (kind == 0) p.upProd++;
-    if (kind == 1) p.upCap++;
-    if (kind == 2) p.upDef++;
-
-    recalcPlanetStats(p);
-    if (playSfx) sfxBuy.play();
 }
 
 // -------------------------------------------------------------
@@ -225,15 +145,9 @@ class Planet
         this.baseProduction = radius * 1.0;
         this.baseCapacity = max((60*CAPACITY_SCALE)|0, (radius * 60 * CAPACITY_SCALE) | 0);
 
-        // upgrade levels
-        this.upProd = 0;
-        this.upCap = 0;
-        this.upDef = 0;
-
         // derived stats
         this.production = 0;
         this.capacity = 0;
-        this.defChance = 0;
 
         // ships
         this.ships = 0;
@@ -308,14 +222,6 @@ class Fleet
             return;
         }
 
-        // defending planet may block the invader without losing a ship
-        const chance = planet.defChance || 0;
-        if (chance > 0 && rand() < chance)
-        {
-            spawnBlockEffect(planet, this.dir);
-            return;
-        }
-
         // each invader reduces defender count by 1
         planet.ships = (planet.ships|0) - 1;
 
@@ -330,10 +236,6 @@ class Fleet
         {
             planet.owner = this.owner;
             planet.ships = min(planet.capacity, -planet.ships);
-            // Reset all upgrades on capture
-            planet.upProd = 0;
-            planet.upCap = 0;
-            planet.upDef = 0;
             recalcPlanetStats(planet);
             sfxCapture.play();
         }
@@ -534,65 +436,6 @@ function drawWedge(pos, dir, size, color)
 }
 
 // -------------------------------------------------------------
-// Defense block visuals
-
-let blockEffects = []; // {pos, origin, life, maxLife, seed}
-
-function fract(x){ return x - Math.floor(x); }
-function hash01(n){ return fract(Math.sin(n) * 43758.5453123); }
-
-function spawnBlockEffect(planet, incomingDir)
-{
-    const dir = incomingDir.normalize();
-    const perp = vec2(-dir.y, dir.x);
-
-    const edge = planet.pos.subtract(dir.scale(planet.radius + rand(.12, .35)));
-    const hitPos = edge.add(perp.scale(rand(-.40, .40)));
-
-    const ang = Math.atan2(-dir.y, -dir.x) + rand(-.9, .9);
-    const origin = planet.pos.add(vec2(Math.cos(ang), Math.sin(ang)).scale(planet.radius * rand(.7, 1.0)));
-
-    blockEffects.push({ pos: hitPos, origin: origin, life: 0, maxLife: rand(.18, .28), seed: randInt(1e9) });
-}
-
-function updateBlockEffects(dt)
-{
-    for (let i = blockEffects.length; i--;)
-    {
-        const e = blockEffects[i];
-        e.life += dt;
-        if (e.life >= e.maxLife)
-            blockEffects.splice(i, 1);
-    }
-}
-
-function renderBlockEffects()
-{
-    for (let j = 0; j < blockEffects.length; ++j)
-    {
-        const e = blockEffects[j];
-        const t = clamp01(e.life / e.maxLife);
-        const a = 1 - t;
-
-        drawLine(e.origin, e.pos, .12, hsl(0,0,1, .65*a));
-        drawLine(e.origin, e.pos, .04, hsl(0,0,1, .95*a));
-
-        drawCircle(e.pos, .65 + t*.25, hsl(0,0,1, .09*a));
-        drawCircle(e.pos, .20 + t*.08, hsl(0,0,1, .70*a));
-
-        const rays = 7;
-        for (let i = 0; i < rays; ++i)
-        {
-            const h = hash01(e.seed + i*97);
-            const ang2 = h * 6.28318 + t*2.4;
-            const len = (.45 + hash01(e.seed + i*191) * 1.1) * (1 - t);
-            const p2 = e.pos.add(vec2(Math.cos(ang2), Math.sin(ang2)).scale(len));
-            drawLine(e.pos, p2, .06, hsl(0,0,1, .60*a));
-        }
-    }
-}
-
-// -------------------------------------------------------------
 // Ship explosion effects
 
 let explosionEffects = []; // {pos, particles[]}
@@ -727,10 +570,7 @@ function goToTitle()
     sendPreset = 3;
     aiTimer = 0;
     selectedPlanet = null;
-    playerMoney = 0;
-    aiMoney = 0;
     initStarfield();
-    blockEffects.length = 0;
     explosionEffects.length = 0;
     updateMenuButtons();
 }
@@ -739,24 +579,6 @@ function goToMenu()
 {
     gameState = STATE_MENU;
     updateMenuButtons();
-}
-
-function applyRandomStartingUpgrades(p)
-{
-    if (p.owner != OWNER_NEUTRAL) return;
-    if (rand() > .45) return;
-
-    const upgrades = 1 + randInt(2); // 1..2
-    for (let i = 0; i < upgrades; ++i)
-    {
-        const k = randInt(3);
-        if (k == 0) p.upProd++;
-        else if (k == 1) p.upCap++;
-        else p.upDef++;
-    }
-
-    recalcPlanetStats(p);
-    p.ships = min(p.capacity, p.ships);
 }
 
 function resetGame()
@@ -769,9 +591,6 @@ function resetGame()
     sendPreset = 3;
     aiTimer = 0;
     selectedPlanet = null;
-    playerMoney = 0;
-    aiMoney = 0;
-    blockEffects.length = 0;
     explosionEffects.length = 0;
 
     initStarfield();
@@ -787,8 +606,8 @@ function resetGame()
     {
         const radius = rand(1.5, 2.8);  // smaller planets
         const pos = vec2(
-            rand(-WORLD_SIZE.x/2 + 8, -WORLD_SIZE.x/2 + PLAY_AREA_X - 4),
-            rand(-WORLD_SIZE.y/2 + 5,  WORLD_SIZE.y/2 - 5)
+            rand(-WORLD_SIZE.x/2 + 6, WORLD_SIZE.x/2 - 6),
+            rand(-WORLD_SIZE.y/2 + 5, WORLD_SIZE.y/2 - 5)
         );
 
         let ok = true;
@@ -830,7 +649,6 @@ function resetGame()
         if (p.owner == OWNER_NEUTRAL)
         {
             p.ships = min(p.capacity, (p.radius * rand(7, 13)) | 0);
-            applyRandomStartingUpgrades(p);
         }
     }
 
@@ -853,30 +671,6 @@ function sendFleet(from, to, owner, fraction)
 // -------------------------------------------------------------
 // AI
 
-function aiTryUpgrade()
-{
-    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
-    const aiPlanets = planets.filter(function(p){ return p.owner == OWNER_AI; });
-    if (!aiPlanets.length) return;
-    if (rand() > diffSettings.aiUpgradeChance) return;
-
-    // Pick a random AI planet to upgrade
-    const target = aiPlanets[randInt(aiPlanets.length)];
-    if (!target) return;
-
-    const options = [
-        {k:0, cost:prodCost(target.upProd)},
-        {k:1, cost:capCost(target.upCap)},
-        {k:2, cost:defCost(target.upDef)}
-    ].sort(function(a,b){ return a.cost - b.cost; });
-
-    for (let i = 0; i < options.length; ++i)
-    {
-        const o = options[i];
-        if (aiMoney >= o.cost + 10) { tryBuyUpgrade(target, o.k, OWNER_AI, false); break; }
-    }
-}
-
 function aiStep()
 {
     if (gameOver) return;
@@ -893,7 +687,6 @@ function aiStep()
         if (p.ships > most) { most = p.ships; source = p; }
     }
 
-    // Use constant strategy value, not difficulty-based
     if (!source || source.ships < AI_MIN_SHIPS_TO_ATTACK) return;
 
     let bestTarget = null;
@@ -905,13 +698,12 @@ function aiStep()
         if (t.owner == OWNER_AI) continue;
 
         const dist = max(1, source.pos.distance(t.pos));
-        const defFactor = 1 + (t.defChance || 0) * 1.2;
         
         // Apply vision error: AI misestimates enemy ship count
         const visionError = 1 + (rand() - 0.5) * 2 * diffSettings.aiVisionError;
         const perceivedShips = t.ships * visionError;
         
-        const defenders = (perceivedShips * defFactor) + (t.owner ? t.production * (dist / FLEET_SPEED) : 0);
+        const defenders = perceivedShips + (t.owner ? t.production * (dist / FLEET_SPEED) : 0);
 
         const value = t.production * (t.owner == OWNER_PLAYER ? 1.15 : 1.0);
         const score = value / (defenders + 5) * (1 / dist);
@@ -921,7 +713,6 @@ function aiStep()
 
     if (!bestTarget) return;
 
-    // Use constant strategy values, not difficulty-based
     const fraction = source.ships > 85 ? AI_SEND_FRACTION_LARGE : AI_SEND_FRACTION;
     sendFleet(source, bestTarget, OWNER_AI, fraction);
 }
@@ -1099,19 +890,11 @@ function drawPlanet(p)
         }
     }
 
-    // number + upgrade icons (player, and AI when debug mode enabled)
+    // number display (player, and AI when debug mode enabled)
     if (p.owner == OWNER_PLAYER || (p.owner == OWNER_AI && debugShowStats))
     {
         const textCol = p.owner == OWNER_PLAYER ? hsl(0,0,1) : hsl(.02, .9, .85);
-        
         drawText(p.ships|0, p.pos, 1.6, textCol, .18, hsl(0,0,0));
-
-        const parts = [];
-        if (p.upProd > 0) parts.push('⚡' + p.upProd);
-        if (p.upCap  > 0) parts.push('📦' + p.upCap);
-        if (p.upDef  > 0) parts.push('🛡️' + p.upDef);
-        if (parts.length)
-            drawText(parts.join(' '), p.pos.add(vec2(0, -p.radius*.55)), 1.05, textCol, .18, hsl(0,0,0));
     }
     
     // Show only ship count for neutral planets
@@ -1126,26 +909,12 @@ function drawPlanet(p)
 
 function selfTest()
 {
-    // ensure defense chance monotonic
-    const p = new Planet(vec2(0,0), 3);
-    p.upDef = 0; recalcPlanetStats(p); const c0 = p.defChance;
-    p.upDef = 2; recalcPlanetStats(p); const c2 = p.defChance;
-    p.upDef = 6; recalcPlanetStats(p); const c6 = p.defChance;
-    console.assert(c0 <= c2 && c2 <= c6, 'defChance should increase with upgrade');
-
     // fleet launch duration clamped
     const a = new Planet(vec2(-10,0), 3);
     const b = new Planet(vec2( 10,0), 3);
     a.owner = OWNER_PLAYER; a.ships = 50;
     const f = new Fleet(a,b,OWNER_PLAYER,40);
     console.assert(f.launchDuration >= LAUNCH_DUR_MIN && f.launchDuration <= LAUNCH_DUR_MAX, 'launchDuration clamp');
-
-    // block effect lifecycle
-    blockEffects.length = 0;
-    spawnBlockEffect(p, vec2(1,0));
-    console.assert(blockEffects.length == 1, 'block effect should spawn');
-    updateBlockEffects(10);
-    console.assert(blockEffects.length == 0, 'block effect should expire');
 
     // help string is safe (no raw newlines in source)
     const help = 'A\nB';
@@ -1164,59 +933,10 @@ function gameInit()
     uiSystem.defaultCornerRadius = 6;
     uiSystem.defaultLineWidth = 2;
     
-    // Create upgrade buttons
-    createUpgradeButtons();
-    
     // Create menu buttons
     createMenuButtons();
     
     goToTitle();
-}
-
-function createUpgradeButtons()
-{
-    const panelX = mainCanvasSize.x - panelW;
-    const cx = panelX + panelW/2+2;
-    const btnW = 210;
-    const btnH = 50;
-    let y = 380;
-    
-    // Production button
-    btnProduction = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[Q] Production');
-    btnProduction.color = hsl(.14, .6, .25);
-    btnProduction.hoverColor = hsl(.14, .7, .4);
-    btnProduction.textColor = hsl(0, 0, 1);
-    btnProduction.textLineColor = hsl(0, 0, 0);
-    btnProduction.textLineWidth = 3;
-    btnProduction.textHeight = 22;
-    btnProduction.visible = false;
-    btnProduction.onClick = () => tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
-    
-    y += 70;
-    
-    // Capacity button
-    btnCapacity = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[W] Capacity');
-    btnCapacity.color = hsl(.58, .6, .25);
-    btnCapacity.hoverColor = hsl(.58, .7, .4);
-    btnCapacity.textColor = hsl(0, 0, 1);
-    btnCapacity.textLineColor = hsl(0, 0, 0);
-    btnCapacity.textLineWidth = 3;
-    btnCapacity.textHeight = 22;
-    btnCapacity.visible = false;
-    btnCapacity.onClick = () => tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
-    
-    y += 70;
-    
-    // Defense button
-    btnDefense = new UIButton(vec2(cx, y), vec2(btnW, btnH), '[E] Defense');
-    btnDefense.color = hsl(.33, .6, .25);
-    btnDefense.hoverColor = hsl(.33, .7, .4);
-    btnDefense.textColor = hsl(0, 0, 1);
-    btnDefense.textLineColor = hsl(0, 0, 0);
-    btnDefense.textLineWidth = 3;
-    btnDefense.textHeight = 22;
-    btnDefense.visible = false;
-    btnDefense.onClick = () => tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
 }
 
 function createMenuButtons()
@@ -1301,79 +1021,11 @@ function updateMenuButtons()
     }
 }
 
-function updateUpgradeButtons()
-{
-    const show = selectedPlanet && selectedPlanet.owner == OWNER_PLAYER && gameState == STATE_PLAY && !gameOver;
-    
-    btnProduction.visible = show;
-    btnCapacity.visible = show;
-    btnDefense.visible = show;
-    
-    // Update button positions based on current canvas size (handles window resize)
-    const panelX = mainCanvasSize.x - panelW;
-    const cx = panelX + panelW/2 + 2;
-    const btnW = 210;
-    const btnH = 50;
-    let y = 380;
-    
-    btnProduction.pos = vec2(cx, y);
-    btnProduction.size = vec2(btnW, btnH);
-    y += 70;
-    
-    btnCapacity.pos = vec2(cx, y);
-    btnCapacity.size = vec2(btnW, btnH);
-    y += 70;
-    
-    btnDefense.pos = vec2(cx, y);
-    btnDefense.size = vec2(btnW, btnH);
-    
-    if (show)
-    {
-        const p = selectedPlanet;
-        const prodMaxed = p.upProd >= MAX_UPGRADE_LEVEL;
-        const capMaxed = p.upCap >= MAX_UPGRADE_LEVEL;
-        const defMaxed = p.upDef >= MAX_UPGRADE_LEVEL;
-        
-        const prodPrice = prodCost(p.upProd);
-        const capPrice = capCost(p.upCap);
-        const defPrice = defCost(p.upDef);
-        
-        btnProduction.text = prodMaxed ? '⚡ Prod  MAX' : '⚡ Prod  Cost ' + prodPrice;
-        btnCapacity.text = capMaxed ? '📦 Cap   MAX' : '📦 Cap   Cost ' + capPrice;
-        btnDefense.text = defMaxed ? '🛡️ Def   MAX' : '🛡️ Def   Cost ' + defPrice;
-        
-        // Gray out buttons if not enough money OR maxed
-        const canBuyProd = !prodMaxed && playerMoney >= prodPrice;
-        const canBuyCap = !capMaxed && playerMoney >= capPrice;
-        const canBuyDef = !defMaxed && playerMoney >= defPrice;
-        
-        btnProduction.color = canBuyProd ? hsl(.14, .6, .25) : hsl(0, 0, .2);
-        btnProduction.hoverColor = canBuyProd ? hsl(.14, .7, .4) : hsl(0, 0, .25);
-        btnProduction.textColor = canBuyProd ? hsl(0, 0, 1) : hsl(0, 0, .5);
-        
-        btnCapacity.color = canBuyCap ? hsl(.58, .6, .25) : hsl(0, 0, .2);
-        btnCapacity.hoverColor = canBuyCap ? hsl(.58, .7, .4) : hsl(0, 0, .25);
-        btnCapacity.textColor = canBuyCap ? hsl(0, 0, 1) : hsl(0, 0, .5);
-        
-        btnDefense.color = canBuyDef ? hsl(.33, .6, .25) : hsl(0, 0, .2);
-        btnDefense.hoverColor = canBuyDef ? hsl(.33, .7, .4) : hsl(0, 0, .25);
-        btnDefense.textColor = canBuyDef ? hsl(0, 0, 1) : hsl(0, 0, .5);
-    }
-}
-
 function gameUpdate()
 {
     // Debug toggle: show troop/defense stats on all planets
     if (keyWasPressed('KeyG'))
         debugShowStats = !debugShowStats;
-    
-    // Cheat: press M for money
-    if (keyWasPressed('KeyM'))
-        playerMoney += 1000;
-    
-    // Auto-pause when focus is lost
-    if (!document.hasFocus() && gameState == STATE_PLAY && !gameOver)
-        paused = true;
     
     if (keyWasPressed('Escape'))
     {
@@ -1408,11 +1060,6 @@ function gameUpdate()
     if (keyWasPressed('Digit3')) { sendPreset = 3; dragPercent = .50; }
     if (keyWasPressed('Digit4')) { sendPreset = 4; dragPercent = 1.00; }
 
-    // upgrade shortcuts
-    if (keyWasPressed('KeyQ')) tryBuyUpgrade(selectedPlanet, 0, OWNER_PLAYER, true);
-    if (keyWasPressed('KeyW')) tryBuyUpgrade(selectedPlanet, 1, OWNER_PLAYER, true);
-    if (keyWasPressed('KeyE')) tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
-
     if (gameOver)
     {
         if (keyWasPressed('Space') || keyWasPressed('Escape'))
@@ -1421,25 +1068,18 @@ function gameUpdate()
     }
 
     updateStarfield(timeDelta);
-    updateBlockEffects(timeDelta);
     updateExplosionEffects(timeDelta);
     
     // track play time
     gameTimer += timeDelta;
 
-    // planet production (ships and money)
-    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
+    // planet production (ships only)
     for (let i = 0; i < planets.length; ++i)
     {
         const p = planets[i];
         if (p.owner != OWNER_NEUTRAL)
         {
             p.ships = min(p.capacity, p.ships + p.production * timeDelta);
-            // Generate money based on production and difficulty-based rate
-            const rate = p.owner == OWNER_PLAYER ? diffSettings.playerMoneyRate : diffSettings.aiMoneyRate;
-            const moneyGain = p.production * rate * timeDelta;
-            if (p.owner == OWNER_PLAYER) playerMoney += moneyGain;
-            else aiMoney += moneyGain;
         }
     }
 
@@ -1503,7 +1143,6 @@ function gameUpdate()
     {
         const diffSettings = DIFFICULTY_SETTINGS[difficulty];
         aiTimer = rand(diffSettings.aiInterval[0], diffSettings.aiInterval[1]);
-        aiTryUpgrade();
         aiStep();
     }
 
@@ -1518,12 +1157,6 @@ function gameUpdate()
 function gameUpdatePost()
 {
     cameraPos = vec2(0, 0);
-    
-    // Pause toggle with P key (in gameUpdatePost so it works while paused)
-    if (keyWasPressed('KeyP') && gameState == STATE_PLAY && !gameOver)
-        paused = !paused;
-    
-    updateUpgradeButtons();
     
     // Update menu buttons on resize
     if (gameState == STATE_MENU)
@@ -1569,7 +1202,6 @@ function gameRender()
         }
     }
 
-    renderBlockEffects();
     renderExplosionEffects();
 
     // drag line + send preview
@@ -1621,87 +1253,22 @@ function gameRenderPost()
         return;
     }
 
-    // Right panel background (draw directly on overlay canvas)
-    const panelX = mainCanvasSize.x - panelW;
-    const panelH = mainCanvasSize.y;
+    // Simple HUD - controls at bottom
+    const cx = mainCanvasSize.x / 2;
+    const helpY = mainCanvasSize.y - 70;
     
-    // Use main context for screen-space rectangles
-    mainContext.fillStyle = 'rgba(15, 15, 20, 0.9)';
-    mainContext.fillRect(panelX, 0, panelW, panelH);
-    mainContext.fillStyle = 'rgba(80, 140, 180, 0.8)';
-    mainContext.fillRect(panelX, 0, 3, panelH);
-
-    // Money display at top of panel
-    const cx = panelX + panelW/2;
-    drawTextScreen('💰 CREDITS', vec2(cx, 30), 18, hsl(.14, .7, .7), 3, hsl(0,0,0));
-    drawTextScreen((playerMoney|0) + '', vec2(cx, 54), 32, hsl(.14, .9, .7), 5, hsl(0,0,0));
-
-    // Panel title
-    drawTextScreen('SELECTED PLANET', vec2(cx, 95), 22, hsl(.58, .7, .7), 4, hsl(0,0,0));
-
-    if (selectedPlanet && selectedPlanet.owner != OWNER_AI)
-    {
-        // Show info for owned and neutral planets (not enemy)
-        const p = selectedPlanet;
-        let y = 130;
-
-        // Planet stats
-        drawTextScreen('🚀 Ships', vec2(cx, y), 20, hsl(0,0,.7), 3, hsl(0,0,0));
-        drawTextScreen((p.ships|0) + ' / ' + (p.capacity|0), vec2(cx, y+26), 28, hsl(0,0,1), 5, hsl(0,0,0));
-        y += 70;
-
-        drawTextScreen('⚡ Production', vec2(cx, y), 18, hsl(.14, .7, .7), 3, hsl(0,0,0));
-        drawTextScreen((p.production).toFixed(1) + '/s', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
-        y += 60;
-
-        drawTextScreen('🛡️ Defense', vec2(cx, y), 18, hsl(.33, .7, .7), 3, hsl(0,0,0));
-        drawTextScreen(((p.defChance*100)|0) + '% block', vec2(cx, y+24), 26, hsl(0,0,1), 4, hsl(0,0,0));
-        
-        // Buttons are rendered by UI system (only for player planets)
-    }
-    else if (selectedPlanet && selectedPlanet.owner == OWNER_AI)
-    {
-        drawTextScreen('Enemy Planet', vec2(cx, 140), 20, hsl(.02, .7, .6), 3, hsl(0,0,0));
-        drawTextScreen('Info hidden', vec2(cx, 170), 18, hsl(0,0,.5), 3, hsl(0,0,0));
-    }
-    else
-    {
-        drawTextScreen('Click any planet', vec2(cx, 140), 18, hsl(0,0,.5), 3, hsl(0,0,0));
-        drawTextScreen('to select it', vec2(cx, 164), 18, hsl(0,0,.5), 3, hsl(0,0,0));
-    }
-
-    // Help text at bottom of panel
-    const helpY = mainCanvasSize.y - 120;
-    drawTextScreen('── CONTROLS ──', vec2(panelX + panelW/2, helpY), 16, hsl(0,0,.5), 2, hsl(0,0,0));
-    drawTextScreen('Drag: Send ships', vec2(panelX + panelW/2, helpY+24), 14, hsl(0,0,.6), 2, hsl(0,0,0));
-    drawTextScreen('Wheel: Adjust % send', vec2(panelX + panelW/2, helpY+44), 14, hsl(0,0,.6), 2, hsl(0,0,0));
-    drawTextScreen('Q: Prod  W: Cap  E: Def', vec2(panelX + panelW/2, helpY+64), 14, hsl(0,0,.6), 2, hsl(0,0,0));
-    drawTextScreen('R: Restart  Esc: Menu', vec2(panelX + panelW/2, helpY+84), 14, hsl(0,0,.6), 2, hsl(0,0,0));
+    drawTextScreen('Drag: Send Ships  |  1-4: Set %  |  R: Restart  |  Esc: Menu', 
+        vec2(cx, helpY), 18, hsl(0,0,.7), 3, hsl(0,0,0));
 
     // Debug mode indicator
     if (debugShowStats)
-        drawTextScreen('DEBUG MODE (G)', vec2(panelX + panelW/2, helpY - 20), 14, hsl(.14, .8, .6), 2, hsl(0,0,0));
-
-    // Pause overlay
-    if (paused && !gameOver)
-    {
-        const gameCenter = (mainCanvasSize.x - panelW)/2;
-        // Dim the screen
-        mainContext.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        mainContext.fillRect(0, 0, mainCanvasSize.x - panelW, mainCanvasSize.y);
-        
-        drawTextScreen('PAUSED', vec2(gameCenter, mainCanvasSize.y/2 - 20),
-            80, hsl(.58, .8, .7), 10, hsl(0,0,0));
-        drawTextScreen('Press P to Resume', vec2(gameCenter, mainCanvasSize.y/2 + 50),
-            28, hsl(0,0,.9), 5, hsl(0,0,0));
-    }
+        drawTextScreen('DEBUG MODE (G)', vec2(cx, 30), 18, hsl(.14, .8, .6), 3, hsl(0,0,0));
 
     if (gameOver)
     {
         const msg = gameOver == 1 ? 'YOU WIN!' : 'YOU LOSE!';
-        const gameCenter = (mainCanvasSize.x - 220)/2;
-        drawTextScreen(msg, vec2(gameCenter, mainCanvasSize.y/2 - 30),
-            90, hsl(gameOver==1?.33:.02, .9, .6), 10, hsl(0,0,0));
+        drawTextScreen(msg, vec2(cx, mainCanvasSize.y/2 - 30),
+            100, hsl(gameOver==1?.33:.02, .9, .6), 12, hsl(0,0,0));
         
         // Show time on win
         if (gameOver == 1)
@@ -1709,12 +1276,12 @@ function gameRenderPost()
             const mins = (gameTimer / 60) | 0;
             const secs = (gameTimer % 60) | 0;
             const timeStr = 'Time: ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
-            drawTextScreen(timeStr, vec2(gameCenter, mainCanvasSize.y/2 + 50),
-                36, hsl(0,0,1), 5, hsl(0,0,0));
+            drawTextScreen(timeStr, vec2(cx, mainCanvasSize.y/2 + 60),
+                40, hsl(0,0,1), 6, hsl(0,0,0));
         }
 
         drawTextScreen('Press Space or Escape',
-            vec2(gameCenter, mainCanvasSize.y/2 + 100),
+            vec2(cx, mainCanvasSize.y/2 + 120),
             28, hsl(0,0,.8), 5, hsl(0,0,0));
     }
 }
