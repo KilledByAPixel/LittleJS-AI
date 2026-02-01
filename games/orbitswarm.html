@@ -149,9 +149,9 @@ const sfxNope    = sfx;
 
 const MAX_UPGRADE_LEVEL = 5;  // max level for all upgrades
 
-function prodCost(level){ return 20 + level * 18; }
-function capCost(level) { return 30 + level * 24; }
-function defCost(level) { return 35 + level * 28; }
+function prodCost(level){ return 40 + level * 30; }  // most expensive
+function capCost(level) { return 25 + level * 20; }  // second most expensive
+function defCost(level) { return 15 + level * 12; }  // cheapest
 
 function recalcPlanetStats(p)
 {
@@ -1371,6 +1371,10 @@ function gameUpdate()
     if (keyWasPressed('KeyM'))
         playerMoney += 1000;
     
+    // Auto-pause when focus is lost
+    if (!document.hasFocus() && gameState == STATE_PLAY && !gameOver)
+        paused = true;
+    
     if (keyWasPressed('Escape'))
     {
         goToTitle();
@@ -1514,7 +1518,16 @@ function gameUpdate()
 function gameUpdatePost()
 {
     cameraPos = vec2(0, 0);
+    
+    // Pause toggle with P key (in gameUpdatePost so it works while paused)
+    if (keyWasPressed('KeyP') && gameState == STATE_PLAY && !gameOver)
+        paused = !paused;
+    
     updateUpgradeButtons();
+    
+    // Update menu buttons on resize
+    if (gameState == STATE_MENU)
+        updateMenuButtons();
 }
 
 function gameRender()
@@ -1601,8 +1614,8 @@ function gameRenderPost()
         
         if (gameState == STATE_TITLE)
         {
-            drawTextScreen('Made With LittleJS AI', vec2(cx, cy + 80), 28, hsl(0,0,.7), 4, hsl(0,0,0));
-            drawTextScreen('Click to Start', vec2(cx, cy + 130), 34, hsl(0,0,1), 6, hsl(0,0,0));
+            drawTextScreen('Made With LittleJS AI', vec2(cx, cy + 80), 36, hsl(0,0,.7), 5, hsl(0,0,0));
+            drawTextScreen('Click to Start', vec2(cx, cy + 140), 44, hsl(0,0,1), 7, hsl(0,0,0));
         }
         // Menu state: Select Difficulty text is rendered by UIText, buttons by UI system
         return;
@@ -1668,6 +1681,20 @@ function gameRenderPost()
     // Debug mode indicator
     if (debugShowStats)
         drawTextScreen('DEBUG MODE (G)', vec2(panelX + panelW/2, helpY - 20), 14, hsl(.14, .8, .6), 2, hsl(0,0,0));
+
+    // Pause overlay
+    if (paused && !gameOver)
+    {
+        const gameCenter = (mainCanvasSize.x - panelW)/2;
+        // Dim the screen
+        mainContext.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        mainContext.fillRect(0, 0, mainCanvasSize.x - panelW, mainCanvasSize.y);
+        
+        drawTextScreen('PAUSED', vec2(gameCenter, mainCanvasSize.y/2 - 20),
+            80, hsl(.58, .8, .7), 10, hsl(0,0,0));
+        drawTextScreen('Press P to Resume', vec2(gameCenter, mainCanvasSize.y/2 + 50),
+            28, hsl(0,0,.9), 5, hsl(0,0,0));
+    }
 
     if (gameOver)
     {
