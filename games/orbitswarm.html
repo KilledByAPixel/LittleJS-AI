@@ -65,13 +65,26 @@ const NEBULA_COUNT = 10;
 
 // game flow
 const STATE_TITLE = 0;
-const STATE_PLAY  = 1;
+const STATE_MENU  = 1;
+const STATE_PLAY  = 2;
+
+// difficulty settings
+let difficulty = 'medium'; // 'easy', 'medium', 'hard'
+const DIFFICULTY_SETTINGS = {
+    easy:   { aiInterval: [2.0, 3.0], aiShipsMin: 35, aiFraction: .35, playerStartShips: 60, aiStartShips: 20 },
+    medium: { aiInterval: [1.05, 1.65], aiShipsMin: 22, aiFraction: .45, playerStartShips: 50, aiStartShips: 30 },
+    hard:   { aiInterval: [0.6, 1.0], aiShipsMin: 15, aiFraction: .60, playerStartShips: 40, aiStartShips: 45 }
+};
 
 // debug display
 let debugShowStats = false;
 
 // UI buttons for upgrades
 let btnProduction, btnCapacity, btnDefense;
+
+// Menu buttons
+let btnEasy, btnMedium, btnHard;
+let txtSelectDifficulty;
 
 // Money system
 let playerMoney = 0;
@@ -520,7 +533,7 @@ let selectedPlanet = null;
 // -------------------------------------------------------------
 // Gameplay
 
-function startGame(){ resetGame(); gameState = STATE_PLAY; }
+function startGame(){ resetGame(); gameState = STATE_PLAY; updateMenuButtons(); }
 
 function goToTitle()
 {
@@ -537,6 +550,13 @@ function goToTitle()
     aiMoney = 0;
     initStarfield();
     blockEffects.length = 0;
+    updateMenuButtons();
+}
+
+function goToMenu()
+{
+    gameState = STATE_MENU;
+    updateMenuButtons();
 }
 
 function applyRandomStartingUpgrades(p)
@@ -609,13 +629,15 @@ function resetGame()
     const playerHome = planets[a];
     const aiHome = planets[b];
 
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
+    
     playerHome.owner = OWNER_PLAYER;
-    playerHome.ships = min(playerHome.capacity, 50);
+    playerHome.ships = min(playerHome.capacity, diffSettings.playerStartShips);
     playerHome.baseProduction *= 1.1;
     recalcPlanetStats(playerHome);
 
     aiHome.owner = OWNER_AI;
-    aiHome.ships = min(aiHome.capacity, 30);
+    aiHome.ships = min(aiHome.capacity, diffSettings.aiStartShips);
     recalcPlanetStats(aiHome);
 
     for (let i = 0; i < planets.length; ++i)
@@ -685,7 +707,8 @@ function aiStep()
         if (p.ships > most) { most = p.ships; source = p; }
     }
 
-    if (!source || source.ships < 22) return;
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
+    if (!source || source.ships < diffSettings.aiShipsMin) return;
 
     let bestTarget = null;
     let bestScore = -1;
@@ -707,7 +730,7 @@ function aiStep()
 
     if (!bestTarget) return;
 
-    const fraction = source.ships > 85 ? .7 : .45;
+    const fraction = source.ships > 85 ? .7 : diffSettings.aiFraction;
     sendFleet(source, bestTarget, OWNER_AI, fraction);
 }
 
@@ -952,6 +975,9 @@ function gameInit()
     // Create upgrade buttons
     createUpgradeButtons();
     
+    // Create menu buttons
+    createMenuButtons();
+    
     goToTitle();
 }
 
@@ -999,6 +1025,88 @@ function createUpgradeButtons()
     btnDefense.textHeight = 22;
     btnDefense.visible = false;
     btnDefense.onClick = () => tryBuyUpgrade(selectedPlanet, 2, OWNER_PLAYER, true);
+}
+
+function createMenuButtons()
+{
+    const cx = mainCanvasSize.x / 2;
+    const cy = mainCanvasSize.y / 2;
+    const btnW = 280;
+    const btnH = 70;
+    const spacing = 90;
+    
+    // Select Difficulty text
+    txtSelectDifficulty = new UIText(vec2(cx, cy + 10), vec2(400, 50), 'Select Difficulty');
+    txtSelectDifficulty.textColor = hsl(0, 0, 1);
+    txtSelectDifficulty.textLineColor = hsl(0, 0, 0);
+    txtSelectDifficulty.textLineWidth = 5;
+    txtSelectDifficulty.textHeight = 32;
+    txtSelectDifficulty.visible = false;
+    
+    // Easy button
+    btnEasy = new UIButton(vec2(cx, cy + 60), vec2(btnW, btnH), 'EASY');
+    btnEasy.color = hsl(.33, .6, .3);
+    btnEasy.hoverColor = hsl(.33, .8, .45);
+    btnEasy.textColor = hsl(0, 0, 1);
+    btnEasy.textLineColor = hsl(0, 0, 0);
+    btnEasy.textLineWidth = 4;
+    btnEasy.textHeight = 36;
+    btnEasy.visible = false;
+    btnEasy.onClick = () => { difficulty = 'easy'; startGame(); };
+    
+    // Medium button
+    btnMedium = new UIButton(vec2(cx, cy + 60 + spacing), vec2(btnW, btnH), 'MEDIUM');
+    btnMedium.color = hsl(.14, .6, .35);
+    btnMedium.hoverColor = hsl(.14, .8, .5);
+    btnMedium.textColor = hsl(0, 0, 1);
+    btnMedium.textLineColor = hsl(0, 0, 0);
+    btnMedium.textLineWidth = 4;
+    btnMedium.textHeight = 36;
+    btnMedium.visible = false;
+    btnMedium.onClick = () => { difficulty = 'medium'; startGame(); };
+    
+    // Hard button
+    btnHard = new UIButton(vec2(cx, cy + 60 + spacing * 2), vec2(btnW, btnH), 'HARD');
+    btnHard.color = hsl(.02, .6, .35);
+    btnHard.hoverColor = hsl(.02, .8, .5);
+    btnHard.textColor = hsl(0, 0, 1);
+    btnHard.textLineColor = hsl(0, 0, 0);
+    btnHard.textLineWidth = 4;
+    btnHard.textHeight = 36;
+    btnHard.visible = false;
+    btnHard.onClick = () => { difficulty = 'hard'; startGame(); };
+}
+
+function updateMenuButtons()
+{
+    const showMenu = gameState == STATE_MENU;
+    
+    txtSelectDifficulty.visible = showMenu;
+    btnEasy.visible = showMenu;
+    btnMedium.visible = showMenu;
+    btnHard.visible = showMenu;
+    
+    // Update positions based on canvas size
+    if (showMenu)
+    {
+        const cx = mainCanvasSize.x / 2;
+        const cy = mainCanvasSize.y / 2;
+        const btnW = 280;
+        const btnH = 70;
+        const spacing = 90;
+        
+        txtSelectDifficulty.pos = vec2(cx, cy + 10);
+        txtSelectDifficulty.size = vec2(400, 50);
+        
+        btnEasy.pos = vec2(cx, cy + 60);
+        btnEasy.size = vec2(btnW, btnH);
+        
+        btnMedium.pos = vec2(cx, cy + 60 + spacing);
+        btnMedium.size = vec2(btnW, btnH);
+        
+        btnHard.pos = vec2(cx, cy + 60 + spacing * 2);
+        btnHard.size = vec2(btnW, btnH);
+    }
 }
 
 function updateUpgradeButtons()
@@ -1073,7 +1181,17 @@ function gameUpdate()
     {
         updateStarfield(timeDelta);
         if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
-            startGame();
+        {
+            inputClear();
+            goToMenu();
+        }
+        return;
+    }
+    
+    if (gameState == STATE_MENU)
+    {
+        updateStarfield(timeDelta);
+        updateMenuButtons();
         return;
     }
 
@@ -1169,7 +1287,8 @@ function gameUpdate()
     aiTimer -= timeDelta;
     if (aiTimer <= 0)
     {
-        aiTimer = rand(1.05, 1.65);
+        const diffSettings = DIFFICULTY_SETTINGS[difficulty];
+        aiTimer = rand(diffSettings.aiInterval[0], diffSettings.aiInterval[1]);
         aiTryUpgrade();
         aiStep();
     }
@@ -1192,7 +1311,7 @@ function gameRender()
 {
     renderStarfield();
 
-    if (gameState == STATE_TITLE)
+    if (gameState == STATE_TITLE || gameState == STATE_MENU)
     {
         drawTitleDecor();
         return;
@@ -1255,7 +1374,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (gameState == STATE_TITLE)
+    if (gameState == STATE_TITLE || gameState == STATE_MENU)
     {
         const cx = mainCanvasSize.x/2;
         const cy = mainCanvasSize.y/2;
@@ -1264,14 +1383,17 @@ function gameRenderPost()
         const t = time;
         const huePulse = .4 + Math.sin(t * 1.8) * .08;
         
-        // Glow layers behind title
+        // Glow layers behind title (centered)
         // Main title with pulsing size and color
         for(let i = 0; i < 9; ++i)
-            drawTextScreen('ORBITSWARM', vec2(cx, cy - 0-i*8), 110 + Math.sin(t * 2.5+i) * 2+i*3, hsl(huePulse+i*.1, 1, i/11), 0, BLACK, undefined,undefined, 'bold');
+            drawTextScreen('ORBITSWARM', vec2(cx, cy - 60-i*8), 110 + Math.sin(t * 2.5+i) * 2+i*3, hsl(huePulse+i*.1, 1, i/11), 0, BLACK, undefined,undefined, 'bold');
         
-        drawTextScreen('Made With LittleJS AI', vec2(cx, cy + 80), 32, hsl(0,0,.8), 5, hsl(0,0,0));
-
-        drawTextScreen('Click to Start', vec2(cx, cy + 140), 34, hsl(0,0,1), 6, hsl(0,0,0));
+        if (gameState == STATE_TITLE)
+        {
+            drawTextScreen('Made With LittleJS AI', vec2(cx, cy + 80), 28, hsl(0,0,.7), 4, hsl(0,0,0));
+            drawTextScreen('Click to Start', vec2(cx, cy + 130), 34, hsl(0,0,1), 6, hsl(0,0,0));
+        }
+        // Menu state: Select Difficulty text is rendered by UIText, buttons by UI system
         return;
     }
 
