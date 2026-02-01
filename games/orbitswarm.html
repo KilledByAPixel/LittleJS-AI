@@ -44,7 +44,7 @@ const PANEL_WIDTH = 15;                 // world units for right panel
 const panelW = 230; // screen units for right panel
 const WORLD_SIZE = vec2(70, 40);
 const PLAY_AREA_X = WORLD_SIZE.x - PANEL_WIDTH;  // planets spawn in this width
-const PLANET_COUNT = 20;
+const PLANET_COUNT_DEFAULT = 15;
 
 const FLEET_SPEED = 1.9;                // world units per second
 const SHIP_DRAW_LIMIT = 180;            // max ship instances to draw per fleet
@@ -80,6 +80,7 @@ const DIFFICULTY_SETTINGS = {
         aiMoneyRate: 0.35,            // AI earns money slower
         aiVisionError: 0.3,           // AI misjudges enemy ships by up to 30%
         aiUpgradeChance: 0.25,        // AI less likely to upgrade
+        planetCount: 10,              // fewer planets
     },
     medium: {
         aiInterval: [1.4, 2.0],
@@ -89,6 +90,7 @@ const DIFFICULTY_SETTINGS = {
         aiMoneyRate: 0.5,
         aiVisionError: 0.12,
         aiUpgradeChance: 0.45,
+        planetCount: 15,
     },
     hard: {
         aiInterval: [0.7, 1.2],       // AI acts faster
@@ -98,6 +100,7 @@ const DIFFICULTY_SETTINGS = {
         aiMoneyRate: 0.6,             // AI earns faster
         aiVisionError: 0,             // AI has perfect information
         aiUpgradeChance: 0.6,         // AI upgrades more
+        planetCount: 15,
     }
 };
 
@@ -702,9 +705,12 @@ function resetGame()
     const triesMax = 2000;
     let tries = 0;
 
-    while (planets.length < PLANET_COUNT && tries++ < triesMax)
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
+    const planetCount = diffSettings.planetCount || PLANET_COUNT_DEFAULT;
+    
+    while (planets.length < planetCount && tries++ < triesMax)
     {
-        const radius = rand(1.8, 3.5);  // smaller planets to fit more
+        const radius = rand(1.5, 2.8);  // smaller planets
         const pos = vec2(
             rand(-WORLD_SIZE.x/2 + 8, -WORLD_SIZE.x/2 + PLAY_AREA_X - 4),
             rand(-WORLD_SIZE.y/2 + 5,  WORLD_SIZE.y/2 - 5)
@@ -714,7 +720,7 @@ function resetGame()
         for (let i = 0; i < planets.length; ++i)
         {
             const p = planets[i];
-            const minDist = p.radius + radius + 1.5;  // reduced spacing
+            const minDist = p.radius + radius + 1.8;
             if (p.pos.distance(pos) < minDist) { ok = false; break; }
         }
         if (!ok) continue;
@@ -733,8 +739,6 @@ function resetGame()
 
     const playerHome = planets[a];
     const aiHome = planets[b];
-
-    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
     
     playerHome.owner = OWNER_PLAYER;
     playerHome.ships = min(playerHome.capacity, diffSettings.playerStartShips);
