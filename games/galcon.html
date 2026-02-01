@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js"></script>
 <script>
+
 'use strict';
 
 // engine settings, do not remove
@@ -99,13 +100,6 @@ let debugShowStats = false;
 // Menu buttons
 let btnEasy, btnMedium, btnHard;
 let txtSelectDifficulty;
-
-const clamp01 = (v)=> clamp(v, 0, 1);
-function randInt(n){ return (rand(0, n))|0; }
-
-function isShiftDown(){ return keyIsDown('ShiftLeft') || keyIsDown('ShiftRight'); }
-function isCtrlDown() { return keyIsDown('ControlLeft') || keyIsDown('ControlRight'); }
-function isAltDown()  { return keyIsDown('AltLeft') || keyIsDown('AltRight'); }
 
 // -------------------------------------------------------------
 // Sound disabled (stubs)
@@ -492,7 +486,7 @@ function renderExplosionEffects()
         for (let j = 0; j < e.particles.length; ++j)
         {
             const p = e.particles[j];
-            const t = clamp01(p.life / p.maxLife);
+            const t = clamp(p.life / p.maxLife);
             const a = t;  // fade out
             const size = p.size * (1 + (1-t) * .5);  // grow slightly as it fades
             drawCircle(p.pos, size, hsl(p.hue, .9, .6, a));
@@ -779,6 +773,7 @@ function drawPlanet(p)
 {
     const hue = ownerHue(p.owner);
     const sel = p == selectedPlanet;
+    const isTarget = p == dragTarget;  // Check if this is the send target
 
     const baseSat0 = p.owner ? .7 : .18;
     const baseLit0 = p.owner ? .38 : .30;
@@ -792,6 +787,16 @@ function drawPlanet(p)
     {
         drawCircle(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .15));  // brighter glow
         drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .08));
+    }
+    
+    // Highlight send target planet with pulsing glow
+    if (isTarget && dragSource)
+    {
+        const targetPulse = .5 + .5 * Math.sin(time * 9);
+        const targetHue = ownerHue(OWNER_PLAYER);
+        drawCircle(p.pos, p.radius*2 + 1.8 + targetPulse * .4, hsl(targetHue, .9, .65, .35 + targetPulse * .15));
+        drawCircle(p.pos, p.radius*2 + 1.2 + targetPulse * .3, hsl(targetHue, .95, .75, .45 + targetPulse * .2));
+        drawCircle(p.pos, p.radius*2 + .6 + targetPulse * .2, hsl(targetHue, 1, .85, .55 + targetPulse * .25));
     }
 
     // Atmospheric halo (additive glow effect)
@@ -822,7 +827,7 @@ function drawPlanet(p)
     // capacity ring (player only)
     if (p.owner == OWNER_PLAYER)
     {
-        const frac = clamp01((p.ships|0) / max(1, p.capacity));
+        const frac = clamp((p.ships|0) / max(1, p.capacity));
         const capR = p.radius + .62;
         const thick = .24;
 
@@ -1097,12 +1102,8 @@ function gameUpdate()
             dragTarget = null;
             
             // Reset to 50% on every click
-            dragPercent = .5;
-            sendPreset = 3;
-
-            if (isAltDown())  dragPercent = .10;
-            if (isCtrlDown()) dragPercent = .25;
-            if (isShiftDown())dragPercent = 1.0;
+            //dragPercent = .5;
+            //sendPreset = 3;
         }
     }
 
@@ -1112,15 +1113,11 @@ function gameUpdate()
 
         if (mouseWheel)
         {
-            dragPercent = clamp01(dragPercent - mouseWheel * .05);
+            dragPercent = clamp(dragPercent - mouseWheel * .05);
             const snaps = [.10, .25, .50, 1.0];
             for (let i = 0; i < snaps.length; ++i)
                 if (abs(dragPercent - snaps[i]) < .03) dragPercent = snaps[i];
         }
-
-        if (isAltDown()) dragPercent = .10;
-        else if (isCtrlDown()) dragPercent = .25;
-        else if (isShiftDown()) dragPercent = 1.0;
 
         if (mouseWasReleased(0))
         {
@@ -1190,7 +1187,7 @@ function gameRender()
             if (localT <= 0) continue;
             if (localT >= f.travelTime) continue;
 
-            const tt = clamp01(localT / max(.001, f.travelTime));
+            const tt = clamp(localT / max(.001, f.travelTime));
             const wobble = Math.sin((tt*6.28) + f.swirl) * .18;
             const side = f.perp.scale(wobble);
 
@@ -1212,8 +1209,10 @@ function gameRender()
         
         // Pulsing effect for drag line
         const pulse = .5 + .5 * Math.sin(time * 8);
-        const outerThick = .35 + pulse * .15;  // pulses between .35 and .50
-        const innerThick = .15 + pulse * .08;  // pulses between .15 and .23
+        // Scale line thickness based on send percentage (10% to 100%)
+        const widthScale = .5 + dragPercent * 2;  // ranges from .5 to 2.5
+        const outerThick = (.35 + pulse * .15) * widthScale;  // pulses and scales
+        const innerThick = (.15 + pulse * .08) * widthScale;  // pulses and scales
         const outerAlpha = .6 + pulse * .25;
         const innerAlpha = .75 + pulse * .2;
         
@@ -1255,9 +1254,9 @@ function gameRenderPost()
 
     // Simple HUD - controls at bottom
     const cx = mainCanvasSize.x / 2;
-    const helpY = mainCanvasSize.y - 70;
+    const helpY = mainCanvasSize.y - 20;
     
-    drawTextScreen('Drag: Send Ships  |  1-4: Set %  |  R: Restart  |  Esc: Menu', 
+    drawTextScreen('Drag: Send Ships  |  Wheel or 1-4: Set %  |  R: Restart  |  Esc: Menu', 
         vec2(cx, helpY), 18, hsl(0,0,.7), 3, hsl(0,0,0));
 
     // Debug mode indicator
