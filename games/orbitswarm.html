@@ -551,6 +551,7 @@ let fleets = [];
 
 let gameOver = 0;
 let gameState = STATE_TITLE;
+let gameTimer = 0;  // tracks play time in seconds
 
 let dragSource = null;
 let dragTarget = null;
@@ -562,7 +563,7 @@ let selectedPlanet = null;
 // -------------------------------------------------------------
 // Gameplay
 
-function startGame(){ resetGame(); gameState = STATE_PLAY; updateMenuButtons(); }
+function startGame(){ resetGame(); gameState = STATE_PLAY; gameTimer = 0; updateMenuButtons(); }
 
 function goToTitle()
 {
@@ -1248,13 +1249,16 @@ function gameUpdate()
 
     if (gameOver)
     {
-        if (keyWasPressed('Space'))
-            resetGame();
+        if (keyWasPressed('Space') || keyWasPressed('Escape'))
+            goToMenu();
         return;
     }
 
     updateStarfield(timeDelta);
     updateBlockEffects(timeDelta);
+    
+    // track play time
+    gameTimer += timeDelta;
 
     // planet production (ships and money)
     const diffSettings = DIFFICULTY_SETTINGS[difficulty];
@@ -1284,6 +1288,10 @@ function gameUpdate()
             // Only allow drag from player planets
             dragSource = hover.owner == OWNER_PLAYER ? hover : null;
             dragTarget = null;
+            
+            // Reset to 50% on every click
+            dragPercent = .5;
+            sendPreset = 3;
 
             if (isAltDown())  dragPercent = .10;
             if (isCtrlDown()) dragPercent = .25;
@@ -1500,12 +1508,23 @@ function gameRenderPost()
     if (gameOver)
     {
         const msg = gameOver == 1 ? 'YOU WIN!' : 'YOU LOSE!';
-        drawTextScreen(msg, vec2((mainCanvasSize.x - 220)/2, mainCanvasSize.y/2 - 10),
+        const gameCenter = (mainCanvasSize.x - 220)/2;
+        drawTextScreen(msg, vec2(gameCenter, mainCanvasSize.y/2 - 30),
             90, hsl(gameOver==1?.33:.02, .9, .6), 10, hsl(0,0,0));
+        
+        // Show time on win
+        if (gameOver == 1)
+        {
+            const mins = (gameTimer / 60) | 0;
+            const secs = (gameTimer % 60) | 0;
+            const timeStr = 'Time: ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+            drawTextScreen(timeStr, vec2(gameCenter, mainCanvasSize.y/2 + 50),
+                36, hsl(0,0,1), 5, hsl(0,0,0));
+        }
 
-        drawTextScreen('Press Space or R to restart',
-            vec2((mainCanvasSize.x - 220)/2, mainCanvasSize.y/2 + 70),
-            32, hsl(0,0,1), 6, hsl(0,0,0));
+        drawTextScreen('Press Space or Esc for Menu',
+            vec2(gameCenter, mainCanvasSize.y/2 + 100),
+            28, hsl(0,0,.8), 5, hsl(0,0,0));
     }
 }
 
