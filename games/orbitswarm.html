@@ -319,6 +319,12 @@ class Fleet
         // each invader reduces defender count by 1
         planet.ships = (planet.ships|0) - 1;
 
+        // spawn explosion at planet edge
+        const arrivalPos = planet.pos.subtract(this.dir.scale(planet.radius + rand(.1, .5)))
+            .add(this.perp.scale(rand(-.4, .4)));
+        const defenderHue = ownerHue(planet.owner);
+        spawnExplosion(arrivalPos, defenderHue);
+
         // capture when count goes negative
         if (planet.ships < 0)
         {
@@ -587,6 +593,73 @@ function renderBlockEffects()
 }
 
 // -------------------------------------------------------------
+// Ship explosion effects
+
+let explosionEffects = []; // {pos, particles[]}
+
+function spawnExplosion(pos, hue)
+{
+    const particles = [];
+    const count = 6 + randInt(4);  // 6-9 particles
+    for (let i = 0; i < count; ++i)
+    {
+        const ang = rand(0, 6.28);
+        const speed = rand(.8, 2.5);
+        particles.push({
+            pos: pos.copy(),
+            vel: vec2(Math.cos(ang) * speed, Math.sin(ang) * speed),
+            size: rand(.08, .16),
+            life: rand(.15, .35),
+            maxLife: rand(.15, .35),
+            hue: hue
+        });
+    }
+    explosionEffects.push({ particles });
+}
+
+function updateExplosionEffects(dt)
+{
+    for (let i = explosionEffects.length; i--;)
+    {
+        const e = explosionEffects[i];
+        let alive = false;
+        for (let j = e.particles.length; j--;)
+        {
+            const p = e.particles[j];
+            p.life -= dt;
+            if (p.life <= 0)
+            {
+                e.particles.splice(j, 1);
+                continue;
+            }
+            alive = true;
+            p.pos = p.pos.add(p.vel.scale(dt));
+            p.vel = p.vel.scale(.92);  // friction
+        }
+        if (!alive)
+            explosionEffects.splice(i, 1);
+    }
+}
+
+function renderExplosionEffects()
+{
+    for (let i = 0; i < explosionEffects.length; ++i)
+    {
+        const e = explosionEffects[i];
+        for (let j = 0; j < e.particles.length; ++j)
+        {
+            const p = e.particles[j];
+            const t = clamp01(p.life / p.maxLife);
+            const a = t;  // fade out
+            const size = p.size * (1 + (1-t) * .5);  // grow slightly as it fades
+            drawCircle(p.pos, size, hsl(p.hue, .9, .6, a));
+            // bright core
+            drawCircle(p.pos, size * .5, hsl(p.hue, .5, .9, a * .8));
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // UI helpers
 
 function ownerHue(owner)
@@ -658,6 +731,7 @@ function goToTitle()
     aiMoney = 0;
     initStarfield();
     blockEffects.length = 0;
+    explosionEffects.length = 0;
     updateMenuButtons();
 }
 
@@ -698,6 +772,7 @@ function resetGame()
     playerMoney = 0;
     aiMoney = 0;
     blockEffects.length = 0;
+    explosionEffects.length = 0;
 
     initStarfield();
 
@@ -1343,6 +1418,7 @@ function gameUpdate()
 
     updateStarfield(timeDelta);
     updateBlockEffects(timeDelta);
+    updateExplosionEffects(timeDelta);
     
     // track play time
     gameTimer += timeDelta;
@@ -1481,6 +1557,7 @@ function gameRender()
     }
 
     renderBlockEffects();
+    renderExplosionEffects();
 
     // drag line + send preview
     if (dragSource)
