@@ -44,9 +44,9 @@ const PANEL_WIDTH = 15;                 // world units for right panel
 const panelW = 230; // screen units for right panel
 const WORLD_SIZE = vec2(70, 40);
 const PLAY_AREA_X = WORLD_SIZE.x - PANEL_WIDTH;  // planets spawn in this width
-const PLANET_COUNT = 11;
+const PLANET_COUNT = 20;
 
-const FLEET_SPEED = 1.25;               // world units per second (halved again)
+const FLEET_SPEED = 1.9;                // world units per second
 const SHIP_DRAW_LIMIT = 180;            // max ship instances to draw per fleet
 
 // Capacity tuning
@@ -60,8 +60,9 @@ const ARRIVAL_PROCESS_CAP = 40;         // max ships processed per frame per fle
 
 // background starfield
 const STAR_FIELD_SIZE = vec2(180, 110);
-const STAR_COUNT = 1400;
-const NEBULA_COUNT = 10;
+const STAR_COUNT = 1600;
+const NEBULA_CLUSTER_COUNT = 5;      // number of nebula clusters
+const NEBULA_BLOBS_PER_CLUSTER = 12; // blobs per cluster for realistic look
 
 // game flow
 const STATE_TITLE = 0;
@@ -143,6 +144,8 @@ const sfxNope    = sfx;
 // -------------------------------------------------------------
 // Upgrades (spend money)
 
+const MAX_UPGRADE_LEVEL = 5;  // max level for all upgrades
+
 function prodCost(level){ return 20 + level * 18; }
 function capCost(level) { return 30 + level * 24; }
 function defCost(level) { return 35 + level * 28; }
@@ -153,8 +156,8 @@ function recalcPlanetStats(p)
     p.capacity = min(MAX_SHIPS, (p.baseCapacity + (p.upCap * (30*CAPACITY_SCALE))) | 0);
     p.production = p.baseProduction * (1 + p.upProd * .22);
 
-    // defense: chance to block an invader without losing a ship
-    p.defChance = clamp(p.upDef * .08, 0, .55);
+    // defense: 10% block chance per level, max 50% at level 5
+    p.defChance = clamp(p.upDef * .10, 0, .50);
 
     p.ships = min(p.capacity, p.ships);
 }
@@ -177,6 +180,11 @@ function tryBuyUpgrade(p, kind, owner, playSfx)
 
     // kind: 0=prod, 1=cap, 2=def
     if (!p || p.owner != owner) return;
+
+    // Check if already maxed
+    if (kind == 0 && p.upProd >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
+    if (kind == 1 && p.upCap >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
+    if (kind == 2 && p.upDef >= MAX_UPGRADE_LEVEL) { if (playSfx) sfxNope.play(); return; }
 
     let cost = 0;
     if (kind == 0) cost = prodCost(p.upProd);
@@ -348,37 +356,99 @@ let stars = [];
 let nebulas = [];
 let starDrift = vec2(0, 0);
 
+// Star color temperatures (hue, saturation, lightness)
+const STAR_COLORS = [
+    { hue: 0,    sat: 0,   lit: 1 },     // white (most common)
+    { hue: 0,    sat: 0,   lit: .95 },   // white
+    { hue: 0,    sat: 0,   lit: .9 },    // white
+    { hue: .6,   sat: .5,  lit: .85 },   // blue-white
+    { hue: .58,  sat: .7,  lit: .8 },    // blue
+    { hue: .55,  sat: .8,  lit: .75 },   // deep blue
+    { hue: .08,  sat: .6,  lit: .8 },    // orange
+    { hue: .05,  sat: .7,  lit: .75 },   // orange-red
+    { hue: .0,   sat: .6,  lit: .7 },    // red
+];
+
 function initStarfield()
 {
+    // Random seed for each new game
+    const rng = new RandomGenerator(randInt(2147483647));
+    
     stars.length = 0;
     nebulas.length = 0;
     starDrift = vec2(0, 0);
 
+    // Generate stars with colors
     for (let i = 0; i < STAR_COUNT; ++i)
     {
-        const layer = randInt(3);
+        const layer = rng.int(3);
         const speed = layer == 0 ? 1.0 : layer == 1 ? .55 : .28;
-        const size = layer == 0 ? rand(.10, .18) : layer == 1 ? rand(.07, .13) : rand(.05, .09);
-        const tw = rand(0, 6.28);
+        const size = layer == 0 ? rng.float(.10, .18) : layer == 1 ? rng.float(.07, .13) : rng.float(.04, .08);
+        const tw = rng.float(0, 6.28);
+        
+        // Most stars white, some colored
+        const colorRoll = rng.float();
+        let colorIdx = 0;
+        if (colorRoll > .92) colorIdx = rng.int(3, 9);      // 8% colored
+        else if (colorRoll > .7) colorIdx = rng.int(0, 3);  // 22% various white
+        const starColor = STAR_COLORS[colorIdx];
 
         stars.push({
-            pos: vec2(rand(-STAR_FIELD_SIZE.x/2, STAR_FIELD_SIZE.x/2), rand(-STAR_FIELD_SIZE.y/2, STAR_FIELD_SIZE.y/2)),
+            pos: vec2(rng.float(-STAR_FIELD_SIZE.x/2, STAR_FIELD_SIZE.x/2), rng.float(-STAR_FIELD_SIZE.y/2, STAR_FIELD_SIZE.y/2)),
             speed: speed,
             size: size,
-            tw: tw
+            tw: tw,
+            hue: starColor.hue,
+            sat: starColor.sat,
+            lit: starColor.lit
         });
     }
 
-    for (let i = 0; i < NEBULA_COUNT; ++i)
+    // Generate nebula clusters - each cluster is a group of overlapping blobs
+    // This creates more realistic, cloud-like nebula structures
+    for (let c = 0; c < NEBULA_CLUSTER_COUNT; ++c)
     {
-        const r = rand(10, 22);
-        nebulas.push({
-            pos: vec2(rand(-STAR_FIELD_SIZE.x/2, STAR_FIELD_SIZE.x/2), rand(-STAR_FIELD_SIZE.y/2, STAR_FIELD_SIZE.y/2)),
-            r: r,
-            hue: rand(0, 1),
-            a: rand(.05, .12)
-        });
+        // Cluster center
+        const cx = rng.float(-STAR_FIELD_SIZE.x/2 + 20, STAR_FIELD_SIZE.x/2 - 20);
+        const cy = rng.float(-STAR_FIELD_SIZE.y/2 + 15, STAR_FIELD_SIZE.y/2 - 15);
+        
+        // Cluster base hue (with slight variation per blob)
+        const baseHue = rng.float(0, 1);
+        const clusterSize = rng.float(18, 35);  // overall cluster spread
+        
+        for (let b = 0; b < NEBULA_BLOBS_PER_CLUSTER; ++b)
+        {
+            // Blob position - gaussian-ish distribution around cluster center
+            const angle = rng.float(0, 6.28);
+            const dist = rng.float(0, clusterSize) * rng.float(0.3, 1);  // cluster toward center
+            const bx = cx + Math.cos(angle) * dist;
+            const by = cy + Math.sin(angle) * dist * 0.6;  // squish vertically
+            
+            // Blob size - varied
+            const r = rng.float(6, 18);
+            
+            // Blob color - slight hue variation from base
+            const hueShift = rng.float(-.08, .08);
+            const hue = (baseHue + hueShift + 1) % 1;
+            
+            // Blob opacity - outer blobs fainter
+            const distFromCenter = Math.sqrt((bx-cx)*(bx-cx) + (by-cy)*(by-cy));
+            const distFactor = 1 - (distFromCenter / (clusterSize * 1.2));
+            const a = rng.float(.03, .09) * Math.max(.3, distFactor);
+            
+            nebulas.push({
+                pos: vec2(bx, by),
+                r: r,
+                hue: hue,
+                sat: rng.float(.4, .7),
+                lit: rng.float(.12, .22),
+                a: a
+            });
+        }
     }
+    
+    // Sort nebulas by size (draw larger ones first for proper layering)
+    nebulas.sort((a, b) => b.r - a.r);
 }
 
 function wrapInField(p)
@@ -409,21 +479,26 @@ function updateStarfield(dt)
 
 function renderStarfield()
 {
-    drawRect(vec2(0, 0), vec2(500, 300), hsl(.62, .25, .04));
+    // Deep space background
+    drawRect(vec2(0, 0), vec2(500, 300), hsl(.62, .22, .03));
 
+    // Nebulas (sorted by size, larger first)
     for (let i = 0; i < nebulas.length; ++i)
     {
         const n = nebulas[i];
-        drawCircle(n.pos, n.r*2, hsl(n.hue, .55, .18, n.a));
-        drawCircle(n.pos.add(vec2(2, -1)), n.r*1.2, hsl(n.hue + .08, .55, .22, n.a*.7));
+        // Main blob
+        drawCircle(n.pos, n.r * 2, hsl(n.hue, n.sat, n.lit, n.a));
+        // Secondary glow offset
+        drawCircle(n.pos.add(vec2(n.r * .15, -n.r * .1)), n.r * 1.4, hsl(n.hue + .05, n.sat * .8, n.lit * 1.1, n.a * .5));
     }
 
+    // Stars using drawRect (faster than drawCircle)
     for (let i = 0; i < stars.length; ++i)
     {
         const s = stars[i];
-        const twinkle = 1 + Math.sin(s.tw) * .25;
+        const twinkle = 1 + Math.sin(s.tw) * .2;
         const d = s.size * twinkle;
-        drawCircle(s.pos, d, hsl(0, 0, 1, .75));
+        drawRect(s.pos, vec2(d, d), hsl(s.hue, s.sat, s.lit, .8));
     }
 }
 
@@ -629,17 +704,17 @@ function resetGame()
 
     while (planets.length < PLANET_COUNT && tries++ < triesMax)
     {
-        const radius = rand(2.3, 4.6);
+        const radius = rand(1.8, 3.5);  // smaller planets to fit more
         const pos = vec2(
-            rand(-WORLD_SIZE.x/2 + 10, -WORLD_SIZE.x/2 + PLAY_AREA_X - 5),
-            rand(-WORLD_SIZE.y/2 + 7,  WORLD_SIZE.y/2 - 7)
+            rand(-WORLD_SIZE.x/2 + 8, -WORLD_SIZE.x/2 + PLAY_AREA_X - 4),
+            rand(-WORLD_SIZE.y/2 + 5,  WORLD_SIZE.y/2 - 5)
         );
 
         let ok = true;
         for (let i = 0; i < planets.length; ++i)
         {
             const p = planets[i];
-            const minDist = p.radius + radius + 2.2;
+            const minDist = p.radius + radius + 1.5;  // reduced spacing
             if (p.pos.distance(pos) < minDist) { ok = false; break; }
         }
         if (!ok) continue;
@@ -1176,18 +1251,22 @@ function updateUpgradeButtons()
     if (show)
     {
         const p = selectedPlanet;
+        const prodMaxed = p.upProd >= MAX_UPGRADE_LEVEL;
+        const capMaxed = p.upCap >= MAX_UPGRADE_LEVEL;
+        const defMaxed = p.upDef >= MAX_UPGRADE_LEVEL;
+        
         const prodPrice = prodCost(p.upProd);
         const capPrice = capCost(p.upCap);
         const defPrice = defCost(p.upDef);
         
-        btnProduction.text = '⚡ Prod  Cost ' + prodPrice;
-        btnCapacity.text = '📦 Cap   Cost ' + capPrice;
-        btnDefense.text = '🛡️ Def   Cost ' + defPrice;
+        btnProduction.text = prodMaxed ? '⚡ Prod  MAX' : '⚡ Prod  Cost ' + prodPrice;
+        btnCapacity.text = capMaxed ? '📦 Cap   MAX' : '📦 Cap   Cost ' + capPrice;
+        btnDefense.text = defMaxed ? '🛡️ Def   MAX' : '🛡️ Def   Cost ' + defPrice;
         
-        // Gray out buttons if not enough money
-        const canBuyProd = playerMoney >= prodPrice;
-        const canBuyCap = playerMoney >= capPrice;
-        const canBuyDef = playerMoney >= defPrice;
+        // Gray out buttons if not enough money OR maxed
+        const canBuyProd = !prodMaxed && playerMoney >= prodPrice;
+        const canBuyCap = !capMaxed && playerMoney >= capPrice;
+        const canBuyDef = !defMaxed && playerMoney >= defPrice;
         
         btnProduction.color = canBuyProd ? hsl(.14, .6, .25) : hsl(0, 0, .2);
         btnProduction.hoverColor = canBuyProd ? hsl(.14, .7, .4) : hsl(0, 0, .25);
@@ -1208,6 +1287,10 @@ function gameUpdate()
     // Debug toggle: show troop/defense stats on all planets
     if (keyWasPressed('KeyG'))
         debugShowStats = !debugShowStats;
+    
+    // Cheat: press M for money
+    if (keyWasPressed('KeyM'))
+        playerMoney += 1000;
     
     if (keyWasPressed('Escape'))
     {
