@@ -71,10 +71,39 @@ const STATE_PLAY  = 2;
 // difficulty settings
 let difficulty = 'medium'; // 'easy', 'medium', 'hard'
 const DIFFICULTY_SETTINGS = {
-    easy:   { aiInterval: [2.0, 3.0], aiShipsMin: 35, aiFraction: .35, playerStartShips: 60, aiStartShips: 20 },
-    medium: { aiInterval: [1.05, 1.65], aiShipsMin: 22, aiFraction: .45, playerStartShips: 50, aiStartShips: 30 },
-    hard:   { aiInterval: [0.6, 1.0], aiShipsMin: 15, aiFraction: .60, playerStartShips: 40, aiStartShips: 45 }
+    easy: {
+        aiInterval: [2.5, 3.5],       // AI acts slower
+        playerStartShips: 70,
+        aiStartShips: 20,
+        playerMoneyRate: 0.6,         // Player earns money faster
+        aiMoneyRate: 0.35,            // AI earns money slower
+        aiVisionError: 0.3,           // AI misjudges enemy ships by up to 30%
+        aiUpgradeChance: 0.25,        // AI less likely to upgrade
+    },
+    medium: {
+        aiInterval: [1.4, 2.0],
+        playerStartShips: 50,
+        aiStartShips: 30,
+        playerMoneyRate: 0.5,
+        aiMoneyRate: 0.5,
+        aiVisionError: 0.12,
+        aiUpgradeChance: 0.45,
+    },
+    hard: {
+        aiInterval: [0.7, 1.2],       // AI acts faster
+        playerStartShips: 40,
+        aiStartShips: 50,
+        playerMoneyRate: 0.4,         // Player earns slower
+        aiMoneyRate: 0.6,             // AI earns faster
+        aiVisionError: 0,             // AI has perfect information
+        aiUpgradeChance: 0.6,         // AI upgrades more
+    }
 };
+
+// AI strategy constants (same across all difficulties)
+const AI_MIN_SHIPS_TO_ATTACK = 22;    // AI waits until it has this many ships
+const AI_SEND_FRACTION = 0.5;         // AI sends 50% of ships per attack
+const AI_SEND_FRACTION_LARGE = 0.7;   // AI sends 70% when it has lots of ships
 
 // debug display
 let debugShowStats = false;
@@ -671,9 +700,10 @@ function sendFleet(from, to, owner, fraction)
 
 function aiTryUpgrade()
 {
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
     const aiPlanets = planets.filter(function(p){ return p.owner == OWNER_AI; });
     if (!aiPlanets.length) return;
-    if (rand() > .45) return;
+    if (rand() > diffSettings.aiUpgradeChance) return;
 
     // Pick a random AI planet to upgrade
     const target = aiPlanets[randInt(aiPlanets.length)];
@@ -696,6 +726,7 @@ function aiStep()
 {
     if (gameOver) return;
 
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
     const aiPlanets = planets.filter(function(p){ return p.owner == OWNER_AI; });
     if (!aiPlanets.length) return;
 
@@ -707,8 +738,8 @@ function aiStep()
         if (p.ships > most) { most = p.ships; source = p; }
     }
 
-    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
-    if (!source || source.ships < diffSettings.aiShipsMin) return;
+    // Use constant strategy value, not difficulty-based
+    if (!source || source.ships < AI_MIN_SHIPS_TO_ATTACK) return;
 
     let bestTarget = null;
     let bestScore = -1;
@@ -720,7 +751,12 @@ function aiStep()
 
         const dist = max(1, source.pos.distance(t.pos));
         const defFactor = 1 + (t.defChance || 0) * 1.2;
-        const defenders = (t.ships * defFactor) + (t.owner ? t.production * (dist / FLEET_SPEED) : 0);
+        
+        // Apply vision error: AI misestimates enemy ship count
+        const visionError = 1 + (rand() - 0.5) * 2 * diffSettings.aiVisionError;
+        const perceivedShips = t.ships * visionError;
+        
+        const defenders = (perceivedShips * defFactor) + (t.owner ? t.production * (dist / FLEET_SPEED) : 0);
 
         const value = t.production * (t.owner == OWNER_PLAYER ? 1.15 : 1.0);
         const score = value / (defenders + 5) * (1 / dist);
@@ -730,7 +766,8 @@ function aiStep()
 
     if (!bestTarget) return;
 
-    const fraction = source.ships > 85 ? .7 : diffSettings.aiFraction;
+    // Use constant strategy values, not difficulty-based
+    const fraction = source.ships > 85 ? AI_SEND_FRACTION_LARGE : AI_SEND_FRACTION;
     sendFleet(source, bestTarget, OWNER_AI, fraction);
 }
 
@@ -1220,14 +1257,16 @@ function gameUpdate()
     updateBlockEffects(timeDelta);
 
     // planet production (ships and money)
+    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
     for (let i = 0; i < planets.length; ++i)
     {
         const p = planets[i];
         if (p.owner != OWNER_NEUTRAL)
         {
             p.ships = min(p.capacity, p.ships + p.production * timeDelta);
-            // Generate money based on production
-            const moneyGain = p.production * MONEY_RATE * timeDelta;
+            // Generate money based on production and difficulty-based rate
+            const rate = p.owner == OWNER_PLAYER ? diffSettings.playerMoneyRate : diffSettings.aiMoneyRate;
+            const moneyGain = p.production * rate * timeDelta;
             if (p.owner == OWNER_PLAYER) playerMoney += moneyGain;
             else aiMoney += moneyGain;
         }
