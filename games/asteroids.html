@@ -250,7 +250,7 @@ class Ship extends EngineObject
             // occasional thrust sound
             if (!thrustSoundTimer.isSet() || thrustSoundTimer.elapsed())
             {
-                sThrust.play(this.pos, .45, rand(.06, -.06));
+                sThrust.play(this.pos, .45);
                 thrustSoundTimer.set(.11);
             }
         }
@@ -264,7 +264,7 @@ class Ship extends EngineObject
         // hyperspace
         if ((!hyperTimer.isSet() || hyperTimer.elapsed()) && (keyWasPressed('ShiftLeft') || keyWasPressed('KeyX')))
         {
-            sZap.play(this.pos, .6, rand(.12, -.12));
+            sZap.play(this.pos, .6);
             this.pos = vec2(
                 rand(cameraPos.x + worldHalf.x - 2, cameraPos.x - worldHalf.x + 2),
                 rand(cameraPos.y + worldHalf.y - 2, cameraPos.y - worldHalf.y + 2)
@@ -300,7 +300,7 @@ class Ship extends EngineObject
         // bullets inherit only a little ship velocity so they don't feel "too fast" while drifting
         const v = this.velocity.scale(.25).add(dir.scale(BULLET_SPEED));
         new Bullet(p, v);
-        sShoot.play(p, .55, rand(.05, -.05));
+        sShoot.play(p, .55);
     }
 
     kill()
@@ -308,7 +308,7 @@ class Ship extends EngineObject
         if (this.dead) return;
         this.dead = true;
 
-        sBoom.play(this.pos, 1, rand(.08, -.08));
+        sBoom.play(this.pos, 1);
         explodeAt(this.pos, 1.15);
         this.destroy();
 
@@ -578,7 +578,7 @@ function handleCollisions()
             {
                 b.destroy();
 
-                sHit.play(r.pos, .85, rand(.08, -.08));
+                sHit.play(r.pos, .85);
                 explodeAt(r.pos, r.tier/3);
 
                 addScore(20 * r.tier);
