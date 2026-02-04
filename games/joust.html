@@ -482,7 +482,7 @@ function updateEnemyAI(enemy)
 
         // Horizontal movement toward player
         if (abs(dx) > 2)
-            enemy.moveHorizontal(sign(dx) * (0.15 + enemy.enemyType * 0.1));  // Reduced
+            enemy.moveHorizontal(sign(dx) * (2.0 + enemy.enemyType * 0.5));  // Reduced
 
         // Flap to get higher or chase
         if (dy > 0 || rand() < 0.3)
