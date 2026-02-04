@@ -1,0 +1,799 @@
+<!DOCTYPE html><head>
+<title>LittleJS Joust</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+setDebugKey('Backquote');
+
+gravity = vec2(0, -0.005);
+cameraPos = vec2(0, 0);
+cameraScale = 32;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Constants
+
+const LEVEL_WIDTH = 38;
+const LEVEL_HEIGHT = 22;
+const FLAP_FORCE = 0.09;  // Reduced from 0.35 for more deliberate movement
+const MAX_SPEED = 0.2;   // Reduced from 0.3 for slower pace
+const HORIZONTAL_ACCEL = 0.002;  // Reduced from 0.015 for more control
+const AIR_FRICTION = 0.999;
+const WRAP_MARGIN = 1;
+
+// Colors
+const PLAYER_COLOR = hsl(0.55, 0.8, 0.6);
+const PLAYER_BIRD_COLOR = hsl(0.12, 0.9, 0.7);
+const ENEMY_COLOR = hsl(0.0, 0.8, 0.55);
+const ENEMY_BIRD_COLOR = hsl(0.08, 0.6, 0.4);
+const SHADOW_RIDER_COLOR = hsl(0.75, 0.6, 0.4);
+const SHADOW_BIRD_COLOR = hsl(0.75, 0.3, 0.3);
+const PLATFORM_COLOR = hsl(0.08, 0.4, 0.35);
+const LAVA_COLOR = hsl(0.05, 1, 0.5);
+const EGG_COLOR = hsl(0.12, 0.3, 0.85);
+
+// Game state
+let player;
+let enemies = [];
+let eggs = [];
+let platforms = [];
+let particles = [];
+let score = 0;
+let lives = 3;
+let wave = 0;
+let gameState = 'title'; // title, playing, gameover, victory
+let waveTimer = 0;
+let spawnQueue = 0;
+
+// Sounds
+let sfxFlap, sfxJoust, sfxDie, sfxEgg, sfxSpawn, sfxWave;
+
+///////////////////////////////////////////////////////////////////////////////
+// Platform class
+
+class Platform
+{
+    constructor(x, y, width)
+    {
+        this.pos = vec2(x, y);
+        this.size = vec2(width, 0.5);
+    }
+
+    render()
+    {
+        // Main platform body
+        drawRect(this.pos, this.size, PLATFORM_COLOR);
+        // Top highlight
+        drawRect(this.pos.add(vec2(0, 0.15)), vec2(this.size.x, 0.2), PLATFORM_COLOR.scale(1.3, 1));
+        // Bottom shadow
+        drawRect(this.pos.add(vec2(0, -0.15)), vec2(this.size.x, 0.2), PLATFORM_COLOR.scale(0.7, 1));
+    }
+
+    collidesWith(pos, size)
+    {
+        return isOverlapping(pos, size, this.pos, this.size);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Rider class (base for player and enemies)
+
+class Rider
+{
+    constructor(x, y, isPlayer = false)
+    {
+        this.pos = vec2(x, y);
+        this.vel = vec2(0, 0);
+        this.size = vec2(1.2, 1.4);
+        this.isPlayer = isPlayer;
+        this.facingRight = true;
+        this.flapTimer = 0;
+        this.wingAngle = 0;
+        this.alive = true;
+        this.grounded = false;
+        this.invulnerable = 0;
+        
+        // Enemy AI
+        this.aiTimer = 0;
+        this.aiTarget = null;
+        this.enemyType = 0; // 0 = normal, 1 = shadow rider
+    }
+
+    update()
+    {
+        if (!this.alive) return;
+
+        // Apply gravity
+        this.vel.y += gravity.y;
+
+        // Air friction
+        this.vel = this.vel.scale(AIR_FRICTION);
+
+        // Clamp speed
+        this.vel.x = clamp(this.vel.x, -MAX_SPEED, MAX_SPEED);
+        this.vel.y = clamp(this.vel.y, -MAX_SPEED * 1.5, MAX_SPEED);
+
+        // Move
+        this.pos = this.pos.add(this.vel);
+
+        // Screen wrapping (horizontal)
+        if (this.pos.x < -WRAP_MARGIN)
+            this.pos.x = LEVEL_WIDTH + WRAP_MARGIN;
+        else if (this.pos.x > LEVEL_WIDTH + WRAP_MARGIN)
+            this.pos.x = -WRAP_MARGIN;
+
+        // Platform collision
+        this.grounded = false;
+        for (const platform of platforms)
+        {
+            if (this.vel.y <= 0 && this.checkPlatformCollision(platform))
+            {
+                this.pos.y = platform.pos.y + platform.size.y / 2 + this.size.y / 2;
+                this.vel.y = 0;
+                this.grounded = true;
+            }
+        }
+
+        // Lava death
+        if (this.pos.y < -1)
+        {
+            this.die();
+            return;
+        }
+
+        // Ceiling bounce
+        if (this.pos.y > LEVEL_HEIGHT - 1)
+        {
+            this.pos.y = LEVEL_HEIGHT - 1;
+            this.vel.y = -abs(this.vel.y) * 0.5;
+        }
+
+        // Update timers
+        if (this.flapTimer > 0) this.flapTimer -= timeDelta;
+        if (this.invulnerable > 0) this.invulnerable -= timeDelta;
+
+        // Animate wings
+        if (this.flapTimer > 0)
+            this.wingAngle = Math.sin(time * 30) * 0.8;
+        else if (!this.grounded)
+            this.wingAngle = Math.sin(time * 8) * 0.3;
+        else
+            this.wingAngle = 0;
+    }
+
+    checkPlatformCollision(platform)
+    {
+        const feetY = this.pos.y - this.size.y / 2;
+        const prevFeetY = feetY - this.vel.y;
+        const platformTop = platform.pos.y + platform.size.y / 2;
+
+        if (prevFeetY >= platformTop - 0.1 && feetY <= platformTop + 0.1)
+        {
+            if (abs(this.pos.x - platform.pos.x) < platform.size.x / 2 + this.size.x / 2 - 0.3)
+                return true;
+        }
+        return false;
+    }
+
+    flap()
+    {
+        if (!this.alive) return;
+        this.vel.y = FLAP_FORCE;
+        this.flapTimer = 0.15;
+        this.grounded = false;
+        sfxFlap && sfxFlap.play(this.pos);
+    }
+
+    moveHorizontal(dir)
+    {
+        if (!this.alive) return;
+        this.vel.x += dir * HORIZONTAL_ACCEL;
+        if (dir !== 0) this.facingRight = dir > 0;
+    }
+
+    die()
+    {
+        if (!this.alive) return;
+        this.alive = false;
+        sfxDie && sfxDie.play(this.pos);
+        
+        // Spawn death particles
+        for (let i = 0; i < 20; i++)
+        {
+            particles.push({
+                pos: this.pos.copy(),
+                vel: vec2(rand(-0.2, 0.2), rand(0.1, 0.3)),
+                life: rand(0.5, 1),
+                color: this.isPlayer ? PLAYER_COLOR : (this.enemyType === 1 ? SHADOW_RIDER_COLOR : ENEMY_COLOR),
+                size: rand(0.1, 0.3)
+            });
+        }
+    }
+
+    render()
+    {
+        if (!this.alive) return;
+        
+        const alpha = (this.invulnerable > 0 && Math.sin(time * 20) > 0) ? 0.5 : 1;
+        const mirror = !this.facingRight;
+        const riderColor = this.isPlayer ? PLAYER_COLOR : (this.enemyType === 1 ? SHADOW_RIDER_COLOR : ENEMY_COLOR);
+        const birdColor = this.isPlayer ? PLAYER_BIRD_COLOR : (this.enemyType === 1 ? SHADOW_BIRD_COLOR : ENEMY_BIRD_COLOR);
+
+        // Bird body
+        const birdPos = this.pos.add(vec2(0, -0.2));
+        drawEllipse(birdPos, vec2(1.0, 0.7), birdColor.scale(1, alpha));
+        
+        // Bird head
+        const headOffset = mirror ? -0.4 : 0.4;
+        const headPos = birdPos.add(vec2(headOffset, 0.2));
+        drawCircle(headPos, 0.35, birdColor.scale(1, alpha));
+        
+        // Beak
+        const beakOffset = mirror ? -0.25 : 0.25;
+        drawEllipse(headPos.add(vec2(beakOffset, -0.05)), vec2(0.25, 0.12), hsl(0.1, 0.9, 0.6, alpha));
+        
+        // Eye
+        const eyeOffset = mirror ? -0.08 : 0.08;
+        drawCircle(headPos.add(vec2(eyeOffset, 0.08)), 0.08, rgb(0, 0, 0, alpha));
+
+        // Wings
+        const wingX = mirror ? 0.3 : -0.3;
+        const wingY = this.wingAngle * 0.3;
+        const wingPos = birdPos.add(vec2(wingX, wingY));
+        drawEllipse(wingPos, vec2(0.4, 0.25), birdColor.scale(0.8, alpha), this.wingAngle * (mirror ? -1 : 1));
+
+        // Legs
+        const legColor = hsl(0.1, 0.7, 0.5, alpha);
+        drawLine(birdPos.add(vec2(-0.15, -0.3)), birdPos.add(vec2(-0.2, -0.55)), 0.08, legColor);
+        drawLine(birdPos.add(vec2(0.15, -0.3)), birdPos.add(vec2(0.2, -0.55)), 0.08, legColor);
+
+        // Rider body
+        const riderPos = this.pos.add(vec2(0, 0.35));
+        drawEllipse(riderPos, vec2(0.5, 0.6), riderColor.scale(1, alpha));
+        
+        // Rider head
+        drawCircle(riderPos.add(vec2(0, 0.4)), 0.25, riderColor.scale(1.2, alpha));
+        
+        // Helmet
+        drawEllipse(riderPos.add(vec2(0, 0.5)), vec2(0.3, 0.15), riderColor.scale(0.8, alpha));
+        
+        // Lance
+        const lanceDir = mirror ? -1 : 1;
+        const lanceStart = riderPos.add(vec2(lanceDir * 0.2, 0));
+        const lanceEnd = riderPos.add(vec2(lanceDir * 0.9, -0.3));
+        drawLine(lanceStart, lanceEnd, 0.08, hsl(0.08, 0.3, 0.6, alpha));
+        // Lance tip
+        drawCircle(lanceEnd, 0.1, hsl(0.08, 0.2, 0.8, alpha));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Egg class
+
+class Egg
+{
+    constructor(x, y, enemyType = 0)
+    {
+        this.pos = vec2(x, y);
+        this.vel = vec2(rand(-0.1, 0.1), rand(0, 0.1));
+        this.size = vec2(0.5, 0.6);
+        this.hatchTimer = 5 + rand(0, 3); // Time until it hatches
+        this.collected = false;
+        this.enemyType = enemyType;
+    }
+
+    update()
+    {
+        // Apply gravity
+        this.vel.y += gravity.y * 0.5;
+        this.vel = this.vel.scale(0.98);
+        this.pos = this.pos.add(this.vel);
+
+        // Platform collision
+        for (const platform of platforms)
+        {
+            const feetY = this.pos.y - this.size.y / 2;
+            const platformTop = platform.pos.y + platform.size.y / 2;
+            
+            if (this.vel.y <= 0 && feetY <= platformTop + 0.1 && feetY >= platformTop - 0.3)
+            {
+                if (abs(this.pos.x - platform.pos.x) < platform.size.x / 2)
+                {
+                    this.pos.y = platformTop + this.size.y / 2;
+                    this.vel.y = 0;
+                    this.vel.x *= 0.8;
+                }
+            }
+        }
+
+        // Lava
+        if (this.pos.y < 0)
+        {
+            this.collected = true;
+            return;
+        }
+
+        // Screen wrap
+        if (this.pos.x < -WRAP_MARGIN)
+            this.pos.x = LEVEL_WIDTH + WRAP_MARGIN;
+        else if (this.pos.x > LEVEL_WIDTH + WRAP_MARGIN)
+            this.pos.x = -WRAP_MARGIN;
+
+        // Check player collection
+        if (player && player.alive && isOverlapping(this.pos, this.size, player.pos, player.size))
+        {
+            this.collected = true;
+            score += 250;
+            sfxEgg && sfxEgg.play(this.pos);
+            
+            // Sparkle effect
+            for (let i = 0; i < 10; i++)
+            {
+                particles.push({
+                    pos: this.pos.copy(),
+                    vel: vec2(rand(-0.15, 0.15), rand(0.1, 0.25)),
+                    life: rand(0.3, 0.6),
+                    color: EGG_COLOR,
+                    size: rand(0.1, 0.2)
+                });
+            }
+            return;
+        }
+
+        // Hatch timer
+        this.hatchTimer -= timeDelta;
+        if (this.hatchTimer <= 0)
+        {
+            this.collected = true;
+            spawnEnemy(this.pos.x, this.pos.y + 0.5, this.enemyType);
+            sfxSpawn && sfxSpawn.play(this.pos);
+        }
+    }
+
+    render()
+    {
+        // Egg shape
+        const wobble = this.hatchTimer < 2 ? Math.sin(time * 15) * 0.1 : 0;
+        const eggColor = this.hatchTimer < 2 ? EGG_COLOR.lerp(ENEMY_COLOR, 0.3) : EGG_COLOR;
+        drawEllipse(this.pos, this.size, eggColor, wobble);
+        
+        // Spots
+        drawCircle(this.pos.add(vec2(-0.1, 0.1)), 0.08, eggColor.scale(0.85, 1));
+        drawCircle(this.pos.add(vec2(0.12, -0.05)), 0.06, eggColor.scale(0.85, 1));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Combat system
+
+function checkJoustCombat()
+{
+    if (!player || !player.alive) return;
+    if (player.invulnerable > 0) return;
+
+    for (const enemy of enemies)
+    {
+        if (!enemy.alive) continue;
+        if (!isOverlapping(player.pos, player.size, enemy.pos, enemy.size)) continue;
+
+        // Determine winner by height (higher lance wins)
+        const playerHeight = player.pos.y;
+        const enemyHeight = enemy.pos.y;
+        const heightDiff = playerHeight - enemyHeight;
+
+        if (heightDiff > 0.15)
+        {
+            // Player wins!
+            enemy.die();
+            // Spawn egg lower so it's not instantly collected
+            eggs.push(new Egg(enemy.pos.x, enemy.pos.y - 1.5, enemy.enemyType));
+            score += 500 + enemy.enemyType * 250;
+            sfxJoust && sfxJoust.play(enemy.pos);
+            
+            // Bounce player up slightly
+            player.vel.y = 0.05;  // Reduced from 0.2
+        }
+        else if (heightDiff < -0.15)
+        {
+            // Enemy wins
+            playerDeath();
+        }
+        else
+        {
+            // Draw - both bounce away
+            const bounceDir = sign(player.pos.x - enemy.pos.x) || 1;
+            player.vel.x = bounceDir * 0.05;  // Reduced from 0.2
+            enemy.vel.x = -bounceDir * 0.05;  // Reduced from 0.2
+            player.vel.y = 0.04;  // Reduced from 0.15
+            enemy.vel.y = 0.04;  // Reduced from 0.15
+        }
+    }
+}
+
+function playerDeath()
+{
+    player.die();
+    lives--;
+    
+    if (lives > 0)
+    {
+        // Respawn after delay
+        setTimeout(() => {
+            if (gameState === 'playing')
+            {
+                player = new Rider(LEVEL_WIDTH / 2, LEVEL_HEIGHT - 3, true);
+                player.invulnerable = 2;
+            }
+        }, 1500);
+    }
+    else
+    {
+        gameState = 'gameover';
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Enemy AI
+
+function updateEnemyAI(enemy)
+{
+    if (!enemy.alive || !player || !player.alive) return;
+
+    enemy.aiTimer -= timeDelta;
+    if (enemy.aiTimer <= 0)
+    {
+        enemy.aiTimer = rand(0.3, 0.8);
+        
+        // Simple AI: try to get above the player
+        const dx = player.pos.x - enemy.pos.x;
+        const dy = player.pos.y - enemy.pos.y;
+
+        // Horizontal movement toward player
+        if (abs(dx) > 2)
+            enemy.moveHorizontal(sign(dx) * (0.15 + enemy.enemyType * 0.1));  // Reduced
+
+        // Flap to get higher or chase
+        if (dy > 0 || rand() < 0.3)
+            enemy.flap();
+    }
+
+    // Random flapping to stay aloft
+    if (!enemy.grounded && rand() < 0.02 + enemy.enemyType * 0.01)
+        enemy.flap();
+    
+    // Move toward player
+    const dx = player.pos.x - enemy.pos.x;
+    enemy.moveHorizontal(sign(dx) * 0.1);  // Reduced from 0.3
+}
+
+function spawnEnemy(x, y, type = 0)
+{
+    const enemy = new Rider(x, y, false);
+    enemy.enemyType = type;
+    enemy.facingRight = rand() > 0.5;
+    enemies.push(enemy);
+}
+
+function spawnWave()
+{
+    wave++;
+    waveTimer = 3;
+    
+    // Number of enemies based on wave
+    const baseEnemies = min(wave + 2, 8);
+    const shadowRiders = wave >= 3 ? min(floor((wave - 2) / 2), 4) : 0;
+    
+    spawnQueue = baseEnemies + shadowRiders;
+    
+    sfxWave && sfxWave.play();
+}
+
+function processSpawnQueue()
+{
+    if (spawnQueue <= 0) return;
+    
+    waveTimer -= timeDelta;
+    if (waveTimer > 0) return;
+    
+    // Spawn one enemy
+    const spawnX = rand() > 0.5 ? rand(-2, 2) : rand(LEVEL_WIDTH - 2, LEVEL_WIDTH + 2);
+    const spawnY = rand(LEVEL_HEIGHT * 0.5, LEVEL_HEIGHT - 2);
+    const type = (wave >= 3 && rand() < 0.3) ? 1 : 0;
+    
+    spawnEnemy(spawnX, spawnY, type);
+    spawnQueue--;
+    waveTimer = 0.8;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Particle system
+
+function updateParticles()
+{
+    for (let i = particles.length - 1; i >= 0; i--)
+    {
+        const p = particles[i];
+        p.vel.y += gravity.y * 0.3;
+        p.pos = p.pos.add(p.vel);
+        p.life -= timeDelta;
+        
+        if (p.life <= 0)
+            particles.splice(i, 1);
+    }
+}
+
+function renderParticles()
+{
+    for (const p of particles)
+    {
+        const alpha = p.life;
+        drawRect(p.pos, vec2(p.size), p.color.scale(1, alpha));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Level setup
+
+function createPlatforms()
+{
+    platforms = [];
+    
+    // Ground platforms (with gaps for danger)
+    platforms.push(new Platform(5, 1, 8));
+    platforms.push(new Platform(LEVEL_WIDTH - 5, 1, 8));
+    
+    // Middle platforms
+    platforms.push(new Platform(LEVEL_WIDTH / 2, 5, 10));
+    platforms.push(new Platform(6, 8, 6));
+    platforms.push(new Platform(LEVEL_WIDTH - 6, 8, 6));
+    
+    // Upper platforms
+    platforms.push(new Platform(LEVEL_WIDTH / 2, 12, 8));
+    platforms.push(new Platform(4, 15, 5));
+    platforms.push(new Platform(LEVEL_WIDTH - 4, 15, 5));
+    
+    // Top platform
+    platforms.push(new Platform(LEVEL_WIDTH / 2, 18, 6));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game callbacks
+
+function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    cameraPos = vec2(LEVEL_WIDTH / 2, LEVEL_HEIGHT / 2);
+    
+    // Initialize sounds
+    sfxFlap = new SoundGenerator({ frequency: 180, release: 0.08, volume: 0.4, slide: 0.5 });
+    sfxJoust = new SoundGenerator({ frequency: 300, release: 0.15, volume: 0.6, noise: 0.2, slide: -0.5 });
+    sfxDie = new SoundGenerator({ frequency: 150, release: 0.3, volume: 0.5, noise: 0.4, slide: -0.8 });
+    sfxEgg = new SoundGenerator({ frequency: 600, release: 0.1, volume: 0.5, slide: 0.3, pitchJump: 200, pitchJumpTime: 0.05 });
+    sfxSpawn = new SoundGenerator({ frequency: 200, release: 0.2, volume: 0.4, slide: 0.5 });
+    sfxWave = new SoundGenerator({ frequency: 440, release: 0.4, volume: 0.5, slide: 0.2, pitchJump: 220, pitchJumpTime: 0.1 });
+    
+    createPlatforms();
+    resetGame();
+}
+
+function resetGame()
+{
+    player = new Rider(LEVEL_WIDTH / 2, 8, true);
+    enemies = [];
+    eggs = [];
+    particles = [];
+    score = 0;
+    lives = 3;
+    wave = 0;
+    spawnQueue = 0;
+    waveTimer = 0;
+}
+
+function gameUpdate()
+{
+    if (gameState === 'title')
+    {
+        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
+        {
+            gameState = 'playing';
+            resetGame();
+            spawnWave();
+        }
+        return;
+    }
+    
+    if (gameState === 'gameover' || gameState === 'victory')
+    {
+        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
+        {
+            gameState = 'title';
+        }
+        return;
+    }
+    
+    // Restart with R
+    if (keyWasPressed('KeyR'))
+    {
+        gameState = 'playing';
+        resetGame();
+        spawnWave();
+        return;
+    }
+    
+    // Player input
+    if (player && player.alive)
+    {
+        // Flapping
+        if (keyWasPressed('Space') || keyWasPressed('ArrowUp') || keyWasPressed('KeyW') || mouseWasPressed(0))
+            player.flap();
+        
+        // Horizontal movement
+        const moveDir = (keyIsDown('ArrowRight') || keyIsDown('KeyD') ? 1 : 0) - 
+                       (keyIsDown('ArrowLeft') || keyIsDown('KeyA') ? 1 : 0);
+        if (moveDir !== 0)
+            player.moveHorizontal(moveDir);
+    }
+    
+    // Update player
+    if (player)
+        player.update();
+    
+    // Update enemies
+    for (const enemy of enemies)
+    {
+        if (enemy.alive)
+        {
+            updateEnemyAI(enemy);
+            enemy.update();
+        }
+    }
+    
+    // Remove dead enemies (be more aggressive about cleanup)
+    enemies = enemies.filter(e => e.alive);
+    
+    // Update eggs
+    for (const egg of eggs)
+        egg.update();
+    eggs = eggs.filter(e => !e.collected);
+    
+    // Combat
+    checkJoustCombat();
+    
+    // Particles
+    updateParticles();
+    
+    // Wave management
+    processSpawnQueue();
+    
+    // Check for wave completion - count only alive enemies
+    const aliveEnemies = enemies.filter(e => e.alive).length;
+    if (aliveEnemies === 0 && eggs.length === 0 && spawnQueue === 0 && player && player.alive)
+    {
+        if (wave >= 10)
+        {
+            gameState = 'victory';
+        }
+        else
+        {
+            console.log(`Wave ${wave} complete! Starting wave ${wave + 1}`);
+            spawnWave();
+        }
+    }
+}
+
+function gameUpdatePost()
+{
+    cameraPos = vec2(LEVEL_WIDTH / 2, LEVEL_HEIGHT / 2);
+}
+
+function gameRender()
+{
+    // Background gradient
+    drawRect(cameraPos, vec2(100), rgb(0.05, 0.05, 0.15));
+    
+    // Lava at bottom
+    const lavaHeight = 1.5;
+    for (let i = 0; i < 3; i++)
+    {
+        const y = -0.5 + i * 0.3;
+        const wave = Math.sin(time * 2 + i) * 0.1;
+        const alpha = 1 - i * 0.3;
+        drawRect(vec2(LEVEL_WIDTH / 2, y + wave), vec2(LEVEL_WIDTH + 4, lavaHeight), LAVA_COLOR.scale(1, alpha));
+    }
+    
+    // Draw platforms
+    for (const platform of platforms)
+        platform.render();
+    
+    // Draw eggs
+    for (const egg of eggs)
+        egg.render();
+    
+    // Draw enemies
+    for (const enemy of enemies)
+        enemy.render();
+    
+    // Draw player
+    if (player)
+        player.render();
+    
+    // Draw particles
+    renderParticles();
+}
+
+function gameRenderPost()
+{
+    // HUD
+    if (gameState === 'playing')
+    {
+        drawTextScreen(`Score: ${score}`, vec2(20, 30), 28, WHITE, 4, BLACK, 'left');
+        drawTextScreen(`Lives: ${lives}`, vec2(mainCanvasSize.x - 20, 30), 28, WHITE, 4, BLACK, 'right');
+        drawTextScreen(`Wave ${wave}`, vec2(mainCanvasSize.x / 2, 30), 32, hsl(0.15, 0.8, 0.6), 4, BLACK);
+    }
+    
+    // Title screen
+    if (gameState === 'title')
+    {
+        drawTextScreen('JOUST', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.3), 100, hsl(0.55, 0.8, 0.6), 8, BLACK);
+        drawTextScreen('Defeat enemies by hitting them from above!', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.5), 28, WHITE, 4, BLACK);
+        drawTextScreen('Arrow Keys/WASD to move, Space/Click to flap', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.58), 24, hsl(0, 0, 0.8), 3, BLACK);
+        drawTextScreen('Click or Press Space to Start', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.75), 36, hsl(0.15, 0.9, 0.7), 5, BLACK);
+    }
+    
+    // Game over
+    if (gameState === 'gameover')
+    {
+        drawTextScreen('GAME OVER', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.35), 80, hsl(0, 0.9, 0.55), 8, BLACK);
+        drawTextScreen(`Final Score: ${score}`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.5), 40, WHITE, 5, BLACK);
+        drawTextScreen(`Reached Wave ${wave}`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.58), 32, hsl(0.15, 0.7, 0.6), 4, BLACK);
+        drawTextScreen('Click or Press Space to Continue', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.72), 28, hsl(0, 0, 0.8), 4, BLACK);
+    }
+    
+    // Victory
+    if (gameState === 'victory')
+    {
+        drawTextScreen('VICTORY!', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.35), 90, hsl(0.33, 0.9, 0.55), 8, BLACK);
+        drawTextScreen(`Final Score: ${score}`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.5), 40, WHITE, 5, BLACK);
+        drawTextScreen('You conquered all 10 waves!', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.58), 32, hsl(0.55, 0.8, 0.6), 4, BLACK);
+        drawTextScreen('Click or Press Space to Play Again', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.72), 28, hsl(0, 0, 0.8), 4, BLACK);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
