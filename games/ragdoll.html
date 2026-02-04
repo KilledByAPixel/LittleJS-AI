@@ -1,0 +1,444 @@
+<!DOCTYPE html><head>
+<title>LittleJS Ragdoll Physics</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js"></script>
+<script src="../dist/box2d.wasm.js"></script>
+<script>
+'use strict';
+
+// engine settings
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+setDebugKey('Backquote');
+
+gravity = vec2(0, -20);
+cameraPos = vec2(0, 10);
+cameraScale = 32;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Constants
+
+const WORLD_WIDTH = 40;
+const WORLD_HEIGHT = 30;
+
+// Ragdoll part sizes
+const HEAD_SIZE = 0.8;
+const TORSO_WIDTH = 1.2;
+const TORSO_HEIGHT = 1.8;
+const UPPER_ARM_LENGTH = 1.0;
+const LOWER_ARM_LENGTH = 0.9;
+const UPPER_LEG_LENGTH = 1.2;
+const LOWER_LEG_LENGTH = 1.1;
+const LIMB_WIDTH = 0.5;
+
+// Colors
+const SKIN_COLOR = hsl(0.08, 0.6, 0.7);
+const SHIRT_COLOR = hsl(0.55, 0.7, 0.5);
+const PANTS_COLOR = hsl(0.6, 0.6, 0.4);
+const PLATFORM_COLOR = hsl(0.12, 0.4, 0.35);
+
+// Game state
+let ragdolls = [];
+let mouseJoint = null;
+let grabbedBody = null;
+let sfxSpawn, sfxGrab, sfxRelease;
+
+///////////////////////////////////////////////////////////////////////////////
+// Ragdoll Class
+
+class Ragdoll
+{
+    constructor(x, y)
+    {
+        this.parts = {};
+        this.joints = [];
+        this.color = hsl(rand(0, 1), 0.6 + rand(-0.1, 0.1), 0.5 + rand(-0.1, 0.1));
+        
+        const headY = y + TORSO_HEIGHT / 2 + HEAD_SIZE / 2 + 0.1;
+        const torsoY = y;
+        
+        // Create head
+        this.parts.head = new Box2dObject(
+            vec2(x, headY),
+            vec2(HEAD_SIZE),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.head.addCircle(HEAD_SIZE);
+        
+        // Create torso
+        this.parts.torso = new Box2dObject(
+            vec2(x, torsoY),
+            vec2(TORSO_WIDTH, TORSO_HEIGHT),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.torso.addBox(vec2(TORSO_WIDTH, TORSO_HEIGHT));
+        
+        // Create arms
+        const shoulderY = torsoY + TORSO_HEIGHT / 2 - 0.2;
+        const upperArmX_L = x - TORSO_WIDTH / 2 - UPPER_ARM_LENGTH / 2;
+        const upperArmX_R = x + TORSO_WIDTH / 2 + UPPER_ARM_LENGTH / 2;
+        
+        this.parts.upperArmL = new Box2dObject(
+            vec2(upperArmX_L, shoulderY),
+            vec2(UPPER_ARM_LENGTH, LIMB_WIDTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.upperArmL.addBox(vec2(UPPER_ARM_LENGTH, LIMB_WIDTH));
+        
+        this.parts.upperArmR = new Box2dObject(
+            vec2(upperArmX_R, shoulderY),
+            vec2(UPPER_ARM_LENGTH, LIMB_WIDTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.upperArmR.addBox(vec2(UPPER_ARM_LENGTH, LIMB_WIDTH));
+        
+        const lowerArmX_L = upperArmX_L - UPPER_ARM_LENGTH / 2 - LOWER_ARM_LENGTH / 2;
+        const lowerArmX_R = upperArmX_R + UPPER_ARM_LENGTH / 2 + LOWER_ARM_LENGTH / 2;
+        
+        this.parts.lowerArmL = new Box2dObject(
+            vec2(lowerArmX_L, shoulderY),
+            vec2(LOWER_ARM_LENGTH, LIMB_WIDTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.lowerArmL.addBox(vec2(LOWER_ARM_LENGTH, LIMB_WIDTH));
+        
+        this.parts.lowerArmR = new Box2dObject(
+            vec2(lowerArmX_R, shoulderY),
+            vec2(LOWER_ARM_LENGTH, LIMB_WIDTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.lowerArmR.addBox(vec2(LOWER_ARM_LENGTH, LIMB_WIDTH));
+        
+        // Create legs
+        const hipY = torsoY - TORSO_HEIGHT / 2;
+        const hipX_L = x - TORSO_WIDTH / 4;
+        const hipX_R = x + TORSO_WIDTH / 4;
+        
+        this.parts.upperLegL = new Box2dObject(
+            vec2(hipX_L, hipY - UPPER_LEG_LENGTH / 2),
+            vec2(LIMB_WIDTH, UPPER_LEG_LENGTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.upperLegL.addBox(vec2(LIMB_WIDTH, UPPER_LEG_LENGTH));
+        
+        this.parts.upperLegR = new Box2dObject(
+            vec2(hipX_R, hipY - UPPER_LEG_LENGTH / 2),
+            vec2(LIMB_WIDTH, UPPER_LEG_LENGTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.upperLegR.addBox(vec2(LIMB_WIDTH, UPPER_LEG_LENGTH));
+        
+        const kneeY = hipY - UPPER_LEG_LENGTH;
+        this.parts.lowerLegL = new Box2dObject(
+            vec2(hipX_L, kneeY - LOWER_LEG_LENGTH / 2),
+            vec2(LIMB_WIDTH, LOWER_LEG_LENGTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.lowerLegL.addBox(vec2(LIMB_WIDTH, LOWER_LEG_LENGTH));
+        
+        this.parts.lowerLegR = new Box2dObject(
+            vec2(hipX_R, kneeY - LOWER_LEG_LENGTH / 2),
+            vec2(LIMB_WIDTH, LOWER_LEG_LENGTH),
+            0, 0, undefined, box2d.bodyTypeDynamic
+        );
+        this.parts.lowerLegR.addBox(vec2(LIMB_WIDTH, LOWER_LEG_LENGTH));
+        
+        // Create joints immediately
+        this.createJoints();
+    }
+    
+    createJoints()
+    {
+        if (!box2d.world) return;
+        
+        const b2 = box2d.instance;
+        
+        // Head to torso (neck)
+        const neckPos = this.parts.torso.pos.add(vec2(0, TORSO_HEIGHT / 2));
+        this.createRevoluteJoint(
+            this.parts.head, this.parts.torso,
+            neckPos, -0.5, 0.5
+        );
+        
+        // Shoulders
+        const shoulderL = this.parts.torso.pos.add(vec2(-TORSO_WIDTH / 2, TORSO_HEIGHT / 2 - 0.2));
+        const shoulderR = this.parts.torso.pos.add(vec2(TORSO_WIDTH / 2, TORSO_HEIGHT / 2 - 0.2));
+        
+        this.createRevoluteJoint(
+            this.parts.torso, this.parts.upperArmL,
+            shoulderL, -2, 2
+        );
+        this.createRevoluteJoint(
+            this.parts.torso, this.parts.upperArmR,
+            shoulderR, -2, 2
+        );
+        
+        // Elbows
+        const elbowL = this.parts.upperArmL.pos.add(vec2(-UPPER_ARM_LENGTH / 2, 0));
+        const elbowR = this.parts.upperArmR.pos.add(vec2(UPPER_ARM_LENGTH / 2, 0));
+        
+        this.createRevoluteJoint(
+            this.parts.upperArmL, this.parts.lowerArmL,
+            elbowL, -2.5, 0
+        );
+        this.createRevoluteJoint(
+            this.parts.upperArmR, this.parts.lowerArmR,
+            elbowR, 0, 2.5
+        );
+        
+        // Hips
+        const hipL = this.parts.torso.pos.add(vec2(-TORSO_WIDTH / 4, -TORSO_HEIGHT / 2));
+        const hipR = this.parts.torso.pos.add(vec2(TORSO_WIDTH / 4, -TORSO_HEIGHT / 2));
+        
+        this.createRevoluteJoint(
+            this.parts.torso, this.parts.upperLegL,
+            hipL, -0.5, 2.5
+        );
+        this.createRevoluteJoint(
+            this.parts.torso, this.parts.upperLegR,
+            hipR, -0.5, 2.5
+        );
+        
+        // Knees
+        const kneeL = this.parts.upperLegL.pos.add(vec2(0, -UPPER_LEG_LENGTH / 2));
+        const kneeR = this.parts.upperLegR.pos.add(vec2(0, -UPPER_LEG_LENGTH / 2));
+        
+        this.createRevoluteJoint(
+            this.parts.upperLegL, this.parts.lowerLegL,
+            kneeL, -2.5, 0
+        );
+        this.createRevoluteJoint(
+            this.parts.upperLegR, this.parts.lowerLegR,
+            kneeR, -2.5, 0
+        );
+    }
+    
+    createRevoluteJoint(bodyA, bodyB, anchor, lowerAngle, upperAngle)
+    {
+        if (!bodyA.body || !bodyB.body) return;
+        
+        const joint = new Box2dRevoluteJoint(bodyA, bodyB, anchor);
+        joint.enableLimit(true);
+        joint.setLimits(lowerAngle, upperAngle);
+        this.joints.push(joint);
+    }
+    
+    render()
+    {
+    }
+    
+    destroy()
+    {
+        // Destroy all joints first
+        for (const joint of this.joints)
+        {
+            if (joint) joint.destroy();
+        }
+        
+        // Destroy all body parts
+        for (const key in this.parts)
+        {
+            if (this.parts[key])
+                this.parts[key].destroy();
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Mouse interaction
+
+function handleMouseInput()
+{
+    const worldPos = mousePos;
+    
+    if (mouseWasPressed(0))
+    {
+        // Try to grab a body
+        grabbedBody = findBodyAtPoint(worldPos);
+        
+        if (grabbedBody)
+        {
+            createMouseJoint(grabbedBody, worldPos);
+            sfxGrab && sfxGrab.play(worldPos);
+        }
+    }
+    else if (mouseIsDown(0) && mouseJoint && grabbedBody)
+    {
+        // Update mouse joint target
+        updateMouseJoint(worldPos);
+    }
+    else if (mouseWasReleased(0) && mouseJoint)
+    {
+        // Release the body
+        destroyMouseJoint();
+        sfxRelease && sfxRelease.play(worldPos);
+        grabbedBody = null;
+    }
+}
+
+function findBodyAtPoint(pos)
+{
+    // Check all ragdoll parts
+    for (const ragdoll of ragdolls)
+    {
+        for (const key in ragdoll.parts)
+        {
+            const part = ragdoll.parts[key];
+            if (part && part.body)
+            {
+                const distance = pos.distance(part.pos);
+                const size = Math.max(part.size.x, part.size.y);
+                if (distance < size / 2)
+                    return part;
+            }
+        }
+    }
+    return null;
+}
+
+// Dummy fixed body for mouse joint
+let fixedBody = null;
+
+function createMouseJoint(body, target)
+{
+    if (!body.body || !box2d.world) return;
+    
+    // Create a fixed body if we don't have one
+    if (!fixedBody)
+        fixedBody = new Box2dStaticObject(vec2(0, 0), vec2(0.1, 0.1));
+    
+    mouseJoint = new Box2dTargetJoint(body, fixedBody, target);
+}
+
+function updateMouseJoint(target)
+{
+    if (!mouseJoint) return;
+    
+    mouseJoint.setTarget(target);
+}
+
+function destroyMouseJoint()
+{
+    if (mouseJoint)
+    {
+        mouseJoint.destroy();
+        mouseJoint = null;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Platform class
+
+function createPlatforms()
+{
+    // Ground only
+    const ground = new Box2dStaticObject(vec2(WORLD_WIDTH / 2, 5), vec2(WORLD_WIDTH, 1));
+    ground.addBox(vec2(WORLD_WIDTH, 1));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game functions
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    cameraPos = vec2(WORLD_WIDTH / 2, 15);
+    
+    // Initialize Box2D
+    await box2dInit();
+    
+    // Sounds
+    //sfxSpawn = new SoundGenerator({ frequency: 220, release: 0.15, volume: 0.4 });
+    //sfxGrab = new SoundGenerator({ frequency: 440, release: 0.08, volume: 0.3 });
+    //sfxRelease = new SoundGenerator({ frequency: 330, release: 0.1, volume: 0.3 });
+    
+    createPlatforms();
+    
+    // Spawn initial ragdoll
+    spawnRagdoll(WORLD_WIDTH / 2, 20);
+}
+
+function spawnRagdoll(x, y)
+{
+    const ragdoll = new Ragdoll(x, y);
+    ragdolls.push(ragdoll);
+    sfxSpawn && sfxSpawn.play(vec2(x, y));
+}
+
+function gameUpdate()
+{
+    // Clear all ragdolls with R and respawn one
+    if (keyWasPressed('KeyR'))
+    {
+        for (const ragdoll of ragdolls)
+            ragdoll.destroy();
+        ragdolls = [];
+        spawnRagdoll(WORLD_WIDTH / 2, 20);
+    }
+    
+    // Handle mouse dragging
+    handleMouseInput();
+}
+
+function gameUpdatePost()
+{
+    cameraPos = vec2(WORLD_WIDTH / 2, 15);
+}
+
+function gameRender()
+{
+    // Background
+    drawRect(cameraPos, vec2(100, 100), rgb(0.1, 0.15, 0.2));
+    
+    // Draw ragdolls
+    for (const ragdoll of ragdolls)
+        ragdoll.render();
+    
+    // Draw grab indicator
+    if (grabbedBody)
+    {
+        drawCircle(grabbedBody.pos, 0.8, hsl(0.15, 0.8, 0.6, 0.3), 0.08, hsl(0.15, 0.9, 0.7));
+    }
+}
+
+function gameRenderPost()
+{
+    // Instructions
+    drawTextScreen('Click & Drag to grab ragdoll parts', vec2(mainCanvasSize.x / 2, 50), 28, WHITE, 4, BLACK);
+    drawTextScreen('Press R to reset', vec2(mainCanvasSize.x / 2, 85), 22, hsl(0, 0, 0.8), 3, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
