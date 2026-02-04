@@ -1,0 +1,701 @@
+<!DOCTYPE html><head>
+<title>LittleJS Skiing</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 32;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game Constants
+
+const GAME_WIDTH = 40;
+const GAME_HEIGHT = 30;
+
+const PLAYER_SIZE = vec2(.8, 1.2);
+
+const LANE_WIDTH = 2.5;
+const NUM_LANES = 6;
+const WORLD_WIDTH = NUM_LANES * LANE_WIDTH;
+
+const MAX_SPEED = 80;        // maximum speed (4x faster)
+const ACCELERATION = 40;     // how fast you accelerate
+const FRICTION = 0.98;       // friction multiplier
+const TURN_SPEED = 4;        // how fast player rotates toward mouse
+
+const JUMP_POWER = 12;       // jump velocity
+const GRAVITY = -25;         // gravity when in air
+const AIR_TIME = .6;         // how long jumps last
+
+const GATE_SPACING = 12;     // distance between slalom gates
+const GATE_WIDTH = 2.8;      // width of gate opening
+const GATE_SCORE = 100;
+
+const OBSTACLE_SPACING = 8;  // average distance between obstacles
+const OBSTACLE_SPAWN_RADIUS = 35; // spawn obstacles this far ahead
+
+///////////////////////////////////////////////////////////////////////////////
+// Game State
+
+let player;
+let scrollSpeed = 0;
+let score = 0;
+let distance = 0;
+let gameTime = 0;
+let gameState = 'playing'; // 'playing', 'crashed', 'menu'
+let gameStarted = false;
+
+let obstacles = [];  // {pos, size, type: 'tree'|'rock'|'bump'|'ramp'}
+let gates = [];      // {pos, leftX, rightX, passed, missed}
+let particles = [];  // snow spray particles
+
+let nextGateY = -20;
+let treeSpawnTimer = 0;
+
+let snowTimer = 0;
+let bgLines = [];  // background slope lines
+
+// sounds
+let sfxWoosh, sfxGate, sfxCrash, sfxStart;
+
+///////////////////////////////////////////////////////////////////////////////
+// Player
+
+class Player
+{
+    constructor()
+    {
+        this.pos = vec2(0, 0);
+        this.vel = vec2(0, 0);
+        this.angle = 0;
+        this.targetAngle = 0;
+        this.crashed = false;
+        this.isJumping = false;
+        this.jumpTimer = 0;
+        this.jumpZ = 0;  // height off ground
+        this.jumpVelZ = 0;
+    }
+
+    update()
+    {
+        if (this.crashed) return;
+
+        // mouse directional control
+        const mouseDir = this.pos.subtract(mousePos);
+        this.targetAngle = mouseDir.angle();
+
+        this.targetAngle = clamp(this.targetAngle, -PI/2, PI/2); // limit to downward angles only
+        
+        // smoothly rotate toward target angle
+        let angleDiff = this.targetAngle - this.angle;
+        
+        this.angle += angleDiff * TURN_SPEED * timeDelta;
+
+        if (!this.isJumping)
+        {
+            // move in the direction you're facing
+            const moveDir = vec2(0,1).rotate(this.angle);
+            
+            // speed based on how much you're pointing downward
+            // sin(-PI/2) = -1 (straight down), sin(0) = 0 (right), sin(-PI) = 0 (left)
+            const downComponent = cos(this.angle);
+            
+            if (downComponent > 0.1) // pointing at least somewhat down
+            {
+                // accelerate when pointing down
+                const accel = -downComponent * ACCELERATION * timeDelta;
+                this.vel = this.vel.add(moveDir.scale(accel));
+            }
+            else
+            {
+                // slow down when horizontal
+                this.vel = this.vel.scale(0.92);
+            }
+
+            // apply friction
+            this.vel = this.vel.scale(FRICTION);
+
+            // clamp speed
+            const speed = this.vel.length();
+            if (speed > MAX_SPEED)
+                this.vel = this.vel.normalize(MAX_SPEED);
+            
+            // update position
+            this.pos = this.pos.add(this.vel.scale(timeDelta));
+
+            // jump on click
+            if (mouseWasPressed(0))
+                this.jump();
+        }
+        else
+        {
+            // in air - no control, just move forward
+            this.pos = this.pos.add(this.vel.scale(timeDelta));
+            
+            // update jump physics
+            this.jumpVelZ += GRAVITY * timeDelta;
+            this.jumpZ += this.jumpVelZ * timeDelta;
+            
+            if (this.jumpZ <= 0)
+            {
+                this.jumpZ = 0;
+                this.jumpVelZ = 0;
+                this.isJumping = false;
+            }
+        }
+
+        // snow spray particles
+        if (!this.isJumping && this.vel.length() > 2)
+        {
+            snowTimer -= timeDelta;
+            if (snowTimer <= 0)
+            {
+                snowTimer = .04;
+                this.spawnSnowSpray();
+            }
+        }
+    }
+
+    jump()
+    {
+        if (this.isJumping) return;
+        
+        this.isJumping = true;
+        this.jumpZ = 0.1;
+        this.jumpVelZ = JUMP_POWER;
+        sfxWoosh && sfxWoosh.play(this.pos);
+    }
+
+    hitRamp()
+    {
+        if (this.isJumping) return;
+        
+        this.isJumping = true;
+        this.jumpZ = 0.1;
+        this.jumpVelZ = JUMP_POWER * 1.8; // bigger jump from ramp
+        sfxWoosh && sfxWoosh.play(this.pos);
+    }
+
+    spawnSnowSpray()
+    {
+        const count = 2;
+        const backDir = vec2(Math.cos(this.angle + PI), Math.sin(this.angle + PI));
+        
+        for (let i = 0; i < count; i++)
+        {
+            const spread = rand(-.3, .3);
+            const vel = backDir.scale(rand(2, 4)).add(vec2(spread, spread));
+            
+            particles.push({
+                pos: this.pos.add(backDir.scale(.4)),
+                vel: vel,
+                life: rand(.3, .6),
+                maxLife: .6,
+                size: rand(.15, .3),
+                color: hsl(0, 0, 1, .8)
+            });
+        }
+    }
+
+    crash()
+    {
+        if (this.crashed) return;
+        this.crashed = true;
+        gameState = 'crashed';
+        sfxCrash && sfxCrash.play(this.pos);
+
+        // crash particles
+        for (let i = 0; i < 30; i++)
+        {
+            const angle = rand(0, Math.PI * 2);
+            const speed = rand(4, 12);
+            particles.push({
+                pos: this.pos.copy(),
+                vel: vec2(Math.cos(angle), Math.sin(angle)).scale(speed),
+                life: rand(.5, 1.2),
+                maxLife: 1.2,
+                size: rand(.2, .4),
+                color: hsl(.6, .8, .6, 1)
+            });
+        }
+    }
+
+    render()
+    {
+        const color = this.crashed ? hsl(0, .7, .5) : hsl(.6, .6, .5);
+        
+        // shadow when jumping
+        if (this.jumpZ > 0)
+        {
+            const shadowScale = 1 + this.jumpZ * .15;
+            drawCircle(this.pos, .6 * shadowScale, hsl(0, 0, 0, .3 / shadowScale));
+        }
+        
+        // offset position based on jump height
+        const renderPos = this.pos.add(vec2(0, this.jumpZ * .5));
+        
+        // skier body
+        drawRect(renderPos, vec2(0.5, .5), color, this.angle);
+        
+        // skis
+        const skiLength = 1.4;
+        const skiWidth = .15;
+        const skiOffset = .3;
+        
+        // left ski
+        drawRect(
+            renderPos.add(vec2(-skiOffset, 0).rotate(this.angle)),
+            vec2(skiWidth, skiLength),
+            hsl(0, 1, .6),
+            this.angle
+        );
+        
+        // right ski
+        drawRect(
+            renderPos.add(vec2(skiOffset, 0).rotate(this.angle)),
+            vec2(skiWidth, skiLength),
+            hsl(0, 1, .6),
+            this.angle
+        );
+
+        // goggles/face
+        drawCircle(
+            renderPos.add(vec2(0, .3).rotate(this.angle)),
+            .5,
+            hsl(.1, .9, .6)
+        );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Obstacles
+
+function spawnObstacleAt(pos, type)
+{
+    if (type === 'tree')
+    {
+        obstacles.push({
+            pos: pos.copy(),
+            size: vec2(1.2, 1.8),
+            type: 'tree'
+        });
+    }
+    else if (type === 'rock')
+    {
+        obstacles.push({
+            pos: pos.copy(),
+            size: vec2(1, .8),
+            type: 'rock'
+        });
+    }
+    else if (type === 'bump')
+    {
+        obstacles.push({
+            pos: pos.copy(),
+            size: vec2(1.5, .6),
+            type: 'bump'
+        });
+    }
+    else if (type === 'ramp')
+    {
+        obstacles.push({
+            pos: pos.copy(),
+            size: vec2(2, 1),
+            type: 'ramp'
+        });
+    }
+}
+
+function spawnObstaclesAround(centerPos)
+{
+    // spawn obstacles in a radius around the center position
+    const spawnDist = OBSTACLE_SPAWN_RADIUS;
+    
+    // check if we need obstacles in this area
+    const gridSize = 8;
+    const gridX = (centerPos.x / gridSize) | 0;
+    const gridY = (centerPos.y / gridSize) | 0;
+    
+    // spawn obstacles in a grid pattern to ensure coverage
+    for (let dy = -3; dy <= 3; dy++)
+    for (let dx = -3; dx <= 3; dx++)
+    {
+        const gx = gridX + dx;
+        const gy = gridY + dy;
+        
+        // check if this grid cell should have an obstacle
+        const seed = gx * 73856093 ^ gy * 19349663;
+        const rng = new RandomGenerator(seed);
+        
+        if (rng.float() < .25) // 25% chance of obstacle in each cell
+        {
+            const cellCenter = vec2(gx * gridSize + gridSize/2, gy * gridSize + gridSize/2);
+            const offset = vec2(rng.float(-3, 3), rng.float(-3, 3));
+            const pos = cellCenter.add(offset);
+            
+            // check if already exists
+            let exists = false;
+            for (const obs of obstacles)
+            {
+                if (obs.pos.distance(pos) < 2)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            
+            if (!exists)
+            {
+                const r = rng.float();
+                const type = r < .5 ? 'tree' : r < .75 ? 'rock' : r < .95 ? 'bump' : 'ramp';
+                spawnObstacleAt(pos, type);
+            }
+        }
+    }
+}
+
+function spawnGate(y)
+{
+    const laneOffset = (Math.random() * (NUM_LANES - 2) | 0) * LANE_WIDTH - WORLD_WIDTH / 2 + LANE_WIDTH * 1.5;
+    const leftX = laneOffset - GATE_WIDTH / 2;
+    const rightX = laneOffset + GATE_WIDTH / 2;
+    
+    gates.push({
+        pos: vec2(laneOffset, y),
+        leftX: leftX,
+        rightX: rightX,
+        passed: false,
+        missed: false
+    });
+}
+
+function updateObstacles()
+{
+    // spawn obstacles around player
+    spawnObstaclesAround(player.pos);
+    
+    // remove obstacles far from player
+    for (let i = obstacles.length - 1; i >= 0; i--)
+    {
+        const obs = obstacles[i];
+        const dist = obs.pos.distance(player.pos);
+        
+        if (dist > OBSTACLE_SPAWN_RADIUS * 1.5)
+        {
+            obstacles.splice(i, 1);
+            continue;
+        }
+
+        // collision check (more forgiving - 50% smaller collision)
+        const collisionScale = 0.5;
+        
+        if (!player.crashed && !player.isJumping &&
+            abs(obs.pos.x - player.pos.x) < (obs.size.x * collisionScale + PLAYER_SIZE.x * collisionScale) / 2 &&
+            abs(obs.pos.y - player.pos.y) < (obs.size.y * collisionScale + PLAYER_SIZE.y * collisionScale) / 2)
+        {
+            if (obs.type === 'bump')
+            {
+                player.jump();
+            }
+            else if (obs.type === 'ramp')
+            {
+                player.hitRamp();
+            }
+            else
+            {
+                player.crash();
+            }
+        }
+    }
+}
+
+function updateGates()
+{
+    // gates are disabled for now in SkiFree mode
+}
+
+function renderBgLines()
+{
+    // draw a grid pattern for depth
+    const gridSize = 5;
+    const centerPos = player ? player.pos : vec2(0, 0);
+    const offsetX = mod(centerPos.x, gridSize);
+    const offsetY = mod(centerPos.y, gridSize);
+    
+    const cam = cameraPos;
+    const size = getCameraSize();
+    
+    for (let y = -size.y/2; y < size.y/2; y += gridSize)
+    {
+        const worldY = cam.y + y - offsetY;
+        drawRect(vec2(cam.x, worldY), vec2(size.x, .12), hsl(.55, .3, .75, .25));
+    }
+    
+    for (let x = -size.x/2; x < size.x/2; x += gridSize)
+    {
+        const worldX = cam.x + x - offsetX;
+        drawRect(vec2(worldX, cam.y), vec2(.12, size.y), hsl(.55, .3, .75, .25));
+    }
+}
+
+function renderObstacles()
+{
+    // render in order: bumps, ramps, rocks, trees
+    const renderOrder = ['bump', 'ramp', 'rock', 'tree'];
+    
+    for (const type of renderOrder)
+    {
+        for (const obs of obstacles)
+        {
+            if (obs.type !== type) continue;
+            
+            if (obs.type === 'tree')
+            {
+                // tree trunk
+                drawRect(obs.pos, vec2(.4, obs.size.y * .6), hsl(.08, .4, .3));
+                
+                // tree foliage - layered triangles
+                const top = obs.pos.add(vec2(0, obs.size.y * .3));
+                drawRegularPoly(top, vec2(.9, .9), 3, hsl(.33, .6, .3));
+                drawRegularPoly(top.add(vec2(0, -.3)), vec2(1.1, 1.1), 3, hsl(.33, .6, .35));
+                drawRegularPoly(top.add(vec2(0, -.6)), vec2(1.3, 1.3), 3, hsl(.33, .6, .25));
+            }
+            else if (obs.type === 'rock')
+            {
+                // gray rock
+                drawCircle(obs.pos, obs.size.x * .6, hsl(0, 0, .4));
+                drawCircle(obs.pos.add(vec2(.15, .1)), obs.size.x * .4, hsl(0, 0, .5));
+            }
+            else if (obs.type === 'bump')
+            {
+                // small snow bump
+                drawEllipse(obs.pos, obs.size, hsl(.55, .2, .8));
+                drawEllipse(obs.pos, obs.size.scale(.7), hsl(.55, .1, .9));
+            }
+            else if (obs.type === 'ramp')
+            {
+                // rainbow ramp
+                const colors = [
+                    hsl(0, .9, .6),
+                    hsl(.15, .9, .6),
+                    hsl(.28, .9, .6),
+                    hsl(.55, .9, .6),
+                ];
+                
+                for (let i = 0; i < colors.length; i++)
+                {
+                    const offset = (i - 1.5) * .25;
+                    drawRect(obs.pos.add(vec2(offset, 0)), vec2(.3, obs.size.y), colors[i]);
+                }
+            }
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Particles
+
+function updateParticles()
+{
+    for (let i = particles.length - 1; i >= 0; i--)
+    {
+        const p = particles[i];
+        p.life -= timeDelta;
+        
+        if (p.life <= 0)
+        {
+            particles.splice(i, 1);
+            continue;
+        }
+
+        p.pos = p.pos.add(p.vel.scale(timeDelta));
+        p.vel = p.vel.scale(.95); // slow down
+        p.vel.y -= 8 * timeDelta; // gravity
+    }
+}
+
+function renderParticles()
+{
+    for (const p of particles)
+    {
+        const alpha = p.life / p.maxLife;
+        const c = p.color.copy();
+        c.a *= alpha;
+        drawCircle(p.pos, p.size, c);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game Logic
+
+function resetGame()
+{
+    player = new Player();
+    scrollSpeed = 0;
+    score = 0;
+    distance = 0;
+    gameTime = 0;
+    gameState = 'playing';
+    gameStarted = true;
+    
+    obstacles = [];
+    gates = [];
+    particles = [];
+    bgLines = [];
+    
+    nextGateY = -20;
+    treeSpawnTimer = 0;
+    snowTimer = 0;
+
+    // spawn initial obstacles around spawn
+    spawnObstaclesAround(player.pos);
+
+    sfxStart && sfxStart.play();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LittleJS Callbacks
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1440, 900));
+    cameraPos = vec2(0, 0);
+
+    // sounds
+    sfxWoosh = new SoundGenerator({frequency: 180, release: .15, noise: .1, volume: .3});
+    sfxGate = new SoundGenerator({frequency: 660, release: .08, pitchJump: 220, pitchJumpTime: .03, volume: .5});
+    sfxCrash = new SoundGenerator({frequency: 120, release: .4, noise: .3, volume: .6});
+    sfxStart = new SoundGenerator({frequency: 440, release: .15, slide: .3, volume: .4});
+}
+
+function gameUpdate()
+{
+    if (!gameStarted)
+    {
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
+            resetGame();
+        return;
+    }
+
+    if (gameState === 'crashed')
+    {
+        updateParticles();
+        
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || keyWasPressed('KeyR'))
+            resetGame();
+        return;
+    }
+
+    if (gameState === 'playing')
+    {
+        // track time and distance
+        gameTime += timeDelta;
+        const speed = player.vel.length();
+        distance += speed * timeDelta;
+
+        player.update();
+        updateObstacles();
+        updateGates();
+        updateParticles();
+    }
+}
+
+function gameUpdatePost()
+{
+    // camera follows player
+    if (player)
+        cameraPos = player.pos.copy();
+    else
+        cameraPos = vec2(0, 0);
+}
+
+function gameRender()
+{
+    // background - snowy slope
+    drawRect(cameraPos, getCameraSize(), hsl(.55, .3, .85));
+
+    // slope lines using grid
+    renderBgLines();
+
+    if (gameStarted)
+    {
+        renderObstacles();
+        renderParticles();
+        player.render();
+    }
+}
+
+function gameRenderPost()
+{
+    if (!gameStarted)
+    {
+        // title screen
+        drawTextScreen('DOWNHILL SKI', vec2(mainCanvasSize.x / 2, 200), 90, hsl(.6, .9, .6), 9, hsl(0, 0, 0));
+        drawTextScreen('SkiFree Style!', vec2(mainCanvasSize.x / 2, 310), 40, hsl(.55, .7, .7), 5, hsl(0, 0, 0));
+        drawTextScreen('Press SPACE or Click to Start', vec2(mainCanvasSize.x / 2, 450), 36, hsl(0, 0, 1), 4, hsl(0, 0, 0));
+        drawTextScreen('Move mouse to control direction', vec2(mainCanvasSize.x / 2, 580), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
+        drawTextScreen('Point downward to go faster!', vec2(mainCanvasSize.x / 2, 630), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
+        drawTextScreen('Click to jump', vec2(mainCanvasSize.x / 2, 680), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
+        drawTextScreen('Avoid trees and rocks', vec2(mainCanvasSize.x / 2, 730), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
+        return;
+    }
+
+    // HUD - top left
+    const speed = player.vel.length();
+    const minutes = (gameTime / 60) | 0;
+    const seconds = (gameTime % 60) | 0;
+    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    drawTextScreen(`Distance: ${distance.toFixed(0)}m`, vec2(20, 30), 32, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');
+    drawTextScreen(`Speed: ${speed.toFixed(1)}`, vec2(20, 70), 32, hsl(.6, .8, .7), 4, hsl(0, 0, 0), 'left');
+    drawTextScreen(`Time: ${timeStr}`, vec2(20, 110), 32, hsl(.55, .7, .7), 4, hsl(0, 0, 0), 'left');
+
+    if (gameState === 'crashed')
+    {
+        drawTextScreen('CRASHED!', vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 - 80), 100, hsl(0, .9, .5), 11, hsl(0, 0, 0));
+        drawTextScreen(`Distance: ${distance.toFixed(0)}m`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 + 40), 50, hsl(0, 0, 1), 6, hsl(0, 0, 0));
+        drawTextScreen(`Time: ${timeStr}`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 + 110), 40, hsl(0, 0, 1), 5, hsl(0, 0, 0));
+        drawTextScreen('Press SPACE or R to retry', vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2 + 200), 36, hsl(.6, .8, .7), 4, hsl(0, 0, 0));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
