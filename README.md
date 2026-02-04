@@ -34,6 +34,7 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Minesweeper | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/minesweeper.html) |
 | Flappy Bird | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/flappyBird.html) |
 | Lunar Lander | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/lunarLander.html) |
+| Othello | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/othello .html) |
 
 ## 🕹️ Works in Progress
 
@@ -54,3 +55,4 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | River Raid | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
 | Snake | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) |
+| Joust | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) |
