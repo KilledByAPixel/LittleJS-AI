@@ -65,10 +65,15 @@ let whiteScore = 2;
 let validMoves = [];
 let gameMode = 'menu'; // 'menu', 'pvp', 'ai'
 let passCount = 0;
+let aiDifficulty = 'medium'; // 'easy', 'medium', 'hard'
+let moveHistory = []; // For undo: {board, currentPlayer, blackScore, whiteScore}
+let lastMove = null; // {row, col} for highlighting
 
 // Animation
 let flippingDiscs = []; // {row, col, progress, fromColor}
 const FLIP_DURATION = 0.3;
+let placingDisc = null; // {row, col, progress} for spawn animation
+const PLACE_DURATION = 0.25;
 
 // UI
 let hoverCell = null;
@@ -104,6 +109,9 @@ function initBoard()
     whiteScore = 2;
     passCount = 0;
     flippingDiscs = [];
+    moveHistory = [];
+    lastMove = null;
+    placingDisc = null;
     
     updateValidMoves();
 }
@@ -204,7 +212,20 @@ function makeMove(row, col, player)
     if (flips.length === 0)
         return false;
     
+    // Save state for undo (deep copy)
+    moveHistory.push({
+        board: board.map(row => [...row]),
+        currentPlayer: currentPlayer,
+        blackScore: blackScore,
+        whiteScore: whiteScore,
+        lastMove: lastMove ? {...lastMove} : null
+    });
+    
     board[row][col] = player;
+    lastMove = {row, col};
+    
+    // Start placement animation
+    placingDisc = {row, col, progress: 0};
     
     // Start flip animations
     for (const flip of flips)
@@ -264,6 +285,32 @@ function updateScore()
                 whiteScore++;
         }
     }
+}
+
+function undoMove()
+{
+    if (moveHistory.length === 0 || gameOver)
+        return false;
+    
+    // In AI mode, undo both AI and player moves (2 states back)
+    const undoCount = (gameMode === 'ai' && moveHistory.length >= 2) ? 2 : 1;
+    
+    for (let i = 0; i < undoCount && moveHistory.length > 0; i++)
+    {
+        const state = moveHistory.pop();
+        board = state.board;
+        currentPlayer = state.currentPlayer;
+        blackScore = state.blackScore;
+        whiteScore = state.whiteScore;
+        lastMove = state.lastMove;
+    }
+    
+    flippingDiscs = [];
+    placingDisc = null;
+    passCount = 0;
+    updateValidMoves();
+    sfxSelect && sfxSelect.play();
+    return true;
 }
 
 function endGame()
@@ -352,8 +399,15 @@ function evaluateBoard(player)
 
 function findBestAIMove()
 {
-    let bestMove = null;
-    let bestScore = -Infinity;
+    if (validMoves.length === 0)
+        return null;
+    
+    // Easy: Random valid move
+    if (aiDifficulty === 'easy')
+        return validMoves[Math.floor(Math.random() * validMoves.length)];
+    
+    // Medium & Hard: Evaluate positions
+    const moves = [];
     
     for (const move of validMoves)
     {
@@ -365,19 +419,29 @@ function findBestAIMove()
         for (const flip of flips)
             board[flip.row][flip.col] = PLAYER_AI;
         
-        const score = evaluateBoard(PLAYER_AI);
+        let score = evaluateBoard(PLAYER_AI);
         
-        if (score > bestScore)
-        {
-            bestScore = score;
-            bestMove = move;
-        }
+        // Add flip count bonus for medium (values quantity)
+        if (aiDifficulty === 'medium')
+            score += flips.length * 3;
+        
+        moves.push({move, score});
         
         // Restore board
         board = oldBoard;
     }
     
-    return bestMove;
+    moves.sort((a, b) => b.score - a.score);
+    
+    // Medium: Occasionally pick 2nd or 3rd best (20% chance)
+    if (aiDifficulty === 'medium' && Math.random() < 0.2 && moves.length > 1)
+    {
+        const idx = Math.min(Math.floor(Math.random() * 3), moves.length - 1);
+        return moves[idx].move;
+    }
+    
+    // Hard: Always best move
+    return moves[0].move;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -473,15 +537,13 @@ function drawBoard()
         );
     }
     
-    // Corner dots
-    const dots = [
-        {row: 2, col: 2}, {row: 2, col: 5},
-        {row: 5, col: 2}, {row: 5, col: 5}
-    ];
-    for (const dot of dots)
+    // Last move highlight (drawn BEFORE discs so it's under them but above board) (drawn BEFORE discs so it's under them but above board)
+    if (lastMove && !gameOver)
     {
-        const pos = getCellWorldPos(dot.row, dot.col);
-        drawCircle(pos, 0.12, rgb(0.1, 0.35, 0.1));
+        const pos = getCellWorldPos(lastMove.row, lastMove.col);
+        const pulseSize = 1 + Math.sin(time * 5) * 0.12;
+        drawCircle(pos, DISC_RADIUS * 1.3 * pulseSize, rgb(1, 0.9, 0.1, 0.7));
+        drawCircle(pos, DISC_RADIUS * 1.1 * pulseSize, rgb(1, 1, 0.3, 0.5));
     }
     
     // Valid move indicators
@@ -497,6 +559,15 @@ function drawBoard()
                 rgb(0.8, 0.8, 0.8, isHover ? 0.6 : 0.3);
             
             drawCircle(pos, DISC_RADIUS * 0.4, color);
+            
+            // Show flip count on hover
+            if (isHover)
+            {
+                const flipCount = getFlipsForMove(move.row, move.col, currentPlayer).length;
+                const offsetY = 0.6;
+                drawText(`+${flipCount}`, pos.add(vec2(0, offsetY)), 0.5, 
+                    rgb(1, 1, 0.3), 0.15, rgb(0, 0, 0, 0.8));
+            }
         }
     }
     
@@ -512,7 +583,16 @@ function drawBoard()
                 // Check if this disc is flipping
                 const flipping = flippingDiscs.find(f => f.row === row && f.col === col);
                 
-                if (flipping)
+                // Check if this is the newly placed disc
+                const placing = placingDisc && placingDisc.row === row && placingDisc.col === col;
+                
+                if (placing)
+                {
+                    // Scale up animation for newly placed disc
+                    const scale = Math.min(placingDisc.progress * 1.3, 1);
+                    drawDisc(pos, board[row][col], scale);
+                }
+                else if (flipping)
                     drawFlippingDisc(pos, flipping.fromColor, board[row][col], flipping.progress);
                 else
                     drawDisc(pos, board[row][col]);
@@ -537,8 +617,20 @@ function drawUI()
             (currentPlayer === DISC_BLACK ? "Black's Turn" : "White's Turn");
         
         const color = currentPlayer === BLACK ? rgb(0.3, 0.3, 0.3) : rgb(0.95, 0.95, 0.95);
-        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');
+        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');        
+        // Show AI difficulty
+        if (gameMode === 'ai')
+        {
+            const diffText = `AI: ${aiDifficulty.toUpperCase()}`;
+            drawTextScreen(diffText, vec2(30, 145), 20, rgb(0.7, 0.7, 0.7), 2, BLACK, 'left');
+        }
     }
+    
+    // Undo availability
+    if (moveHistory.length > 0 && !gameOver)
+    {
+        drawTextScreen(`U: Undo (${moveHistory.length})`, vec2(30, 175), 18, 
+            rgb(0.6, 0.8, 1), 2, BLACK, 'left');    }
     
     // Game over message
     if (gameOver)
@@ -573,7 +665,10 @@ function drawUI()
     }
     
     // Controls
-    drawTextScreen('R: Restart | ESC: Menu', vec2(screenSize.x / 2, screenSize.y - 30), 20, 
+    const controls = gameMode === 'ai' ? 
+        'U: Undo | R: Restart | D: Difficulty | ESC: Menu' :
+        'U: Undo | R: Restart | ESC: Menu';
+    drawTextScreen(controls, vec2(screenSize.x / 2, screenSize.y - 30), 20, 
         rgb(0.7, 0.7, 0.7), 2, BLACK);
 }
 
@@ -590,13 +685,29 @@ function drawMenu()
         rgb(0.7, 0.7, 0.7), 3, BLACK);
     
     // Menu items
-    const menuY = 350;
-    const menuSpacing = 80;
+    const menuY = 320;
+    const menuSpacing = 70;
     
     drawTextScreen('1 - Player vs AI', vec2(screenSize.x / 2, menuY), 40, 
         WHITE, 4, BLACK);
     drawTextScreen('2 - Player vs Player', vec2(screenSize.x / 2, menuY + menuSpacing), 40, 
         WHITE, 4, BLACK);
+    
+    // AI Difficulty selector
+    drawTextScreen('AI Difficulty:', vec2(screenSize.x / 2, menuY + menuSpacing * 2 + 20), 28, 
+        rgb(0.8, 0.8, 0.8), 3, BLACK);
+    
+    const difficulties = ['easy', 'medium', 'hard'];
+    const diffY = menuY + menuSpacing * 2 + 60;
+    for (let i = 0; i < difficulties.length; i++)
+    {
+        const diff = difficulties[i];
+        const isSelected = aiDifficulty === diff;
+        const diffColor = isSelected ? rgb(0, 1, 0.5) : rgb(0.6, 0.6, 0.6);
+        const label = `${i + 3} - ${diff.toUpperCase()}`;
+        drawTextScreen(label, vec2(screenSize.x / 2, diffY + i * 40), 26, 
+            diffColor, isSelected ? 4 : 3, BLACK);
+    }
     
     // Instructions
     const instructY = screenSize.y - 150;
@@ -646,6 +757,21 @@ function gameUpdate()
             gameMode = 'pvp';
             initBoard();
         }
+        else if (keyWasPressed('Digit3'))
+        {
+            sfxSelect && sfxSelect.play();
+            aiDifficulty = 'easy';
+        }
+        else if (keyWasPressed('Digit4'))
+        {
+            sfxSelect && sfxSelect.play();
+            aiDifficulty = 'medium';
+        }
+        else if (keyWasPressed('Digit5'))
+        {
+            sfxSelect && sfxSelect.play();
+            aiDifficulty = 'hard';
+        }
         return;
     }
     
@@ -657,11 +783,33 @@ function gameUpdate()
             flippingDiscs.splice(i, 1);
     }
     
+    // Update placement animation
+    if (placingDisc)
+    {
+        placingDisc.progress += timeDelta / PLACE_DURATION;
+        if (placingDisc.progress >= 1)
+            placingDisc = null;
+    }
+    
     // Input
     if (keyWasPressed('KeyR'))
     {
         initBoard();
         aiThinkTimer = 0;
+    }
+    
+    if (keyWasPressed('KeyU'))
+    {
+        undoMove();
+        aiThinkTimer = 0;
+    }
+    
+    if (keyWasPressed('KeyD') && gameMode === 'ai')
+    {
+        const diffs = ['easy', 'medium', 'hard'];
+        const idx = (diffs.indexOf(aiDifficulty) + 1) % diffs.length;
+        aiDifficulty = diffs[idx];
+        sfxSelect && sfxSelect.play();
     }
     
     if (keyWasPressed('Escape'))
