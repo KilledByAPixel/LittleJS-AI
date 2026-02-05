@@ -21,11 +21,12 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 - [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker) - Use ChatGPT to make games without writing any code
 - [LittleJS AI Games Video](https://www.youtube.com/watch?v=xl8S1pSx1z0) - 20 quick game demos made with LittleJS AI
 
+
 ## 🕹️ Featured Games
 
-| Game | Play |
-|------|------|
-| Tetris | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) |
+| Game | Play | Mobile |
+|------|------|------|
+| Tetris | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) | Yes
 | Space Invaders | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) |
 | Mini Golf | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/miniGolf.html) |
 | Missile Command | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) |
@@ -35,8 +36,11 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Flappy Bird | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/flappyBird.html) |
 | Lunar Lander | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/lunarLander.html) |
 | Othello | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/othello.html) |
+| Orbitswarm | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) |
 
 ## 🕹️ Works in Progress
+
+These games are playable but need some iteration and polish to take them to the next level.
 
 | Game | Play |
 |------|------|
@@ -47,11 +51,8 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Combat | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/combat.html) |
 | Frogger | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/frogger.html) |
 | Geometry Dash | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/geometryDash.html) |
-| Kaboom | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/kaboom.html) |
-| Moon Patrol | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/moonPatrol.html) |
 | Pac-Man | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pacman.html) |
 | Pole Position | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
-| Pong | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pong.html) |
 | River Raid | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
 | Snake | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) |
