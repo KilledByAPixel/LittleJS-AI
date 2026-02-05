@@ -79,7 +79,7 @@ let hoverCell = null;
 let btnVsAI, btnVsPlayer;
 
 // Sounds
-let sfxPlace, sfxFlip, sfxWin, sfxLose, sfxSelect;
+let sfxPlaceWhite, sfxPlaceBlack, sfxWin, sfxLose, sfxSelect;
 
 ///////////////////////////////////////////////////////////////////////////////
 // BOARD LOGIC
@@ -242,9 +242,10 @@ function makeMove(row, col, player)
     updateScore();
     
     // Play sounds
-    sfxPlace && sfxPlace.play(getCellWorldPos(row, col));
-    if (flips.length > 0)
-        sfxFlip && sfxFlip.play(getCellWorldPos(row, col));
+    if (player === DISC_WHITE)
+        sfxPlaceWhite && sfxPlaceWhite.play();
+    else
+        sfxPlaceBlack && sfxPlaceBlack.play();
     
     // Switch player
     currentPlayer = getOpponent(currentPlayer);
@@ -540,8 +541,8 @@ function drawBoard()
     {
         const pos = getCellWorldPos(lastMove.row, lastMove.col);
         const pulseSize = 1 + Math.sin(time * 5) * 0.12;
-        drawCircle(pos, DISC_RADIUS * 2.3 * pulseSize, rgb(1, 0.9, 0.1, 0.7));
-        drawCircle(pos, DISC_RADIUS * 2.1 * pulseSize, rgb(1, 1, 0.3, 0.5));
+        drawCircle(pos, DISC_RADIUS * 2.3 * pulseSize, hsl(.15,1,.4));
+        drawCircle(pos, DISC_RADIUS * 2.1 * pulseSize, hsl(.15,1,.5));
     }
     
     // Valid move indicators
@@ -716,8 +717,8 @@ async function gameInit()
     btnVsPlayer.onClick = () => startGame('pvp');
     
     // Create sounds
-    sfxPlace = new SoundGenerator({frequency: 440, release: 0.1, volume: 0.5});
-    sfxFlip = new SoundGenerator({frequency: 330, release: 0.15, slide: -0.3, volume: 0.4});
+    sfxPlaceWhite = new SoundGenerator({frequency: 220, release: 0.05, volume: 0.3});
+    sfxPlaceBlack = new SoundGenerator({frequency: 440, release: 0.05, volume: 0.3});
     sfxWin = new SoundGenerator({frequency: 660, release: 0.3, pitchJump: 220, pitchJumpTime: 0.1, volume: 0.6});
     sfxLose = new SoundGenerator({frequency: 220, release: 0.35, slide: -0.5, volume: 0.5});
     sfxSelect = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
