@@ -477,23 +477,7 @@ function worldPosToCell(worldPos)
 
 function drawDisc(pos, color, scale = 1)
 {
-    const radius = DISC_RADIUS * scale;
-    
-    // Shadow
-    drawCircle(pos.add(vec2(0.08, -0.08)), radius * 2, rgb(0, 0, 0, 0.3));
-    
-    if (color === DISC_BLACK)
-    {
-        // Black disc with highlight
-        drawCircle(pos, radius*2, rgb(0.15, 0.15, 0.15));
-        drawCircle(pos.add(vec2(-0.15, 0.15)), radius * 0.6, rgb(0.4, 0.4, 0.4, 0.6));
-    }
-    else
-    {
-        // White disc with shading
-        drawCircle(pos, radius*2, rgb(0.95, 0.95, 0.95));
-        drawCircle(pos.add(vec2(-0.15, 0.15)), radius * 0.6, rgb(1, 1, 1, 0.8));
-    }
+    drawDiscFlip(pos, color, scale, scale);
 }
 
 function drawDiscFlip(pos, color, scaleX = 1, scaleY = 1)
@@ -503,19 +487,13 @@ function drawDiscFlip(pos, color, scaleX = 1, scaleY = 1)
     
     // Shadow (ellipse)
     drawEllipse(pos.add(vec2(0.08, -0.08)), vec2(radiusX * 2 * 0.95, radiusY * 2 * 0.95), rgb(0, 0, 0, 0.3));
+
+    const color1 = color === DISC_BLACK ? hsl(0, 0, 0.15) : hsl(0, 0, 0.95);
+    const color2 = color === DISC_BLACK ? hsl(0, 0, 0.15) : hsl(0, 0, 0.85);
     
-    if (color === DISC_BLACK)
-    {
-        // Black disc with highlight
-        drawEllipse(pos, vec2(radiusX * 2, radiusY * 2), rgb(0.15, 0.15, 0.15));
-        drawEllipse(pos.add(vec2(-0.15 * scaleX, 0.15 * scaleY)), vec2(radiusX * 2 * 0.3, radiusY * 2 * 0.3), rgb(0.4, 0.4, 0.4, 0.6));
-    }
-    else
-    {
-        // White disc with shading
-        drawEllipse(pos, vec2(radiusX * 2, radiusY * 2), rgb(0.95, 0.95, 0.95));
-        drawEllipse(pos.add(vec2(-0.15 * scaleX, 0.15 * scaleY)), vec2(radiusX * 2 * 0.3, radiusY * 2 * 0.3), rgb(1, 1, 1, 0.8));
-    }
+    // Disc with highlight
+    drawEllipse(pos, vec2(radiusX * 2, radiusY * 2), color1);
+    drawEllipse(pos.add(vec2(-0.15 * scaleX, 0.15 * scaleY)), vec2(radiusX * 2 * 0.3, radiusY * 2 * 0.3), color2);
 }
 
 function drawFlippingDisc(pos, fromColor, toColor, progress)
