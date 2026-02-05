@@ -76,6 +76,7 @@ const PLACE_DURATION = 0.25;
 
 // UI
 let hoverCell = null;
+let btnVsAI, btnVsPlayer;
 
 // Sounds
 let sfxPlace, sfxFlip, sfxWin, sfxLose, sfxSelect;
@@ -664,16 +665,7 @@ function drawMenu()
     const screenSize = vec2(mainCanvasSize.x, mainCanvasSize.y);
     
     // Title
-    drawTextScreen('OTHELLO', vec2(screenSize.x / 2, 230), 120, rgb(0, 0.8, 0.3), 8, BLACK);
-    
-    // Menu items
-    const menuY = 350;
-    const menuSpacing = 80;
-    
-    drawTextScreen('1 - Player vs AI', vec2(screenSize.x / 2, menuY), 40, 
-        WHITE, 4, BLACK);
-    drawTextScreen('2 - Player vs Player', vec2(screenSize.x / 2, menuY + menuSpacing), 40, 
-        WHITE, 4, BLACK);
+    drawTextScreen('OTHELLO', vec2(screenSize.x / 2, 230), 150, hsl(0, 0, 0.9), 8, hsl(0, 0, 0.2), 'center', undefined, 'bold');
     
     // Instructions
     const instructY = screenSize.y - 150;
@@ -696,6 +688,33 @@ async function gameInit()
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(0, 0);
     
+    // Initialize UI system
+    new UISystemPlugin();
+    uiSystem.defaultCornerRadius = 8;
+    uiSystem.defaultLineWidth = 3;
+    
+    // Create menu buttons
+    const cx = 640;
+    const cy = 360;
+    
+    btnVsAI = new UIButton(vec2(cx, cy), vec2(500, 100), 'PLAYER VS AI');
+    btnVsAI.color = hsl(.55, .7, .35);
+    btnVsAI.hoverColor = hsl(.55, .8, .5);
+    btnVsAI.textColor = WHITE;
+    btnVsAI.textLineColor = BLACK;
+    btnVsAI.textLineWidth = 6;
+    btnVsAI.soundClick = sfxSelect;
+    btnVsAI.onClick = () => startGame('ai');
+    
+    btnVsPlayer = new UIButton(vec2(cx, cy + 120), vec2(500, 100), 'PLAYER VS PLAYER');
+    btnVsPlayer.color = hsl(.02, .7, .4);
+    btnVsPlayer.hoverColor = hsl(.02, .8, .55);
+    btnVsPlayer.textColor = WHITE;
+    btnVsPlayer.textLineColor = BLACK;
+    btnVsPlayer.textLineWidth = 6;
+    btnVsPlayer.soundClick = sfxSelect;
+    btnVsPlayer.onClick = () => startGame('pvp');
+    
     // Create sounds
     sfxPlace = new SoundGenerator({frequency: 440, release: 0.1, volume: 0.5});
     sfxFlip = new SoundGenerator({frequency: 330, release: 0.15, slide: -0.3, volume: 0.4});
@@ -703,27 +722,31 @@ async function gameInit()
     sfxLose = new SoundGenerator({frequency: 220, release: 0.35, slide: -0.5, volume: 0.5});
     sfxSelect = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
     
+    // Apply sounds to buttons after creating them
+    btnVsAI.soundClick = sfxSelect;
+    btnVsPlayer.soundClick = sfxSelect;
+    
+    showMenuButtons(true);
     gameMode = 'menu';
+}
+
+function showMenuButtons(visible)
+{
+    btnVsAI.visible = visible;
+    btnVsPlayer.visible = visible;
+}
+
+function startGame(mode)
+{
+    gameMode = mode;
+    showMenuButtons(false);
+    initBoard();
 }
 
 function gameUpdate()
 {
     if (gameMode === 'menu')
-    {
-        if (keyWasPressed('Digit1'))
-        {
-            sfxSelect && sfxSelect.play();
-            gameMode = 'ai';
-            initBoard();
-        }
-        else if (keyWasPressed('Digit2'))
-        {
-            sfxSelect && sfxSelect.play();
-            gameMode = 'pvp';
-            initBoard();
-        }
         return;
-    }
     
     // Update flip animations
     for (let i = flippingDiscs.length - 1; i >= 0; i--)
@@ -757,6 +780,7 @@ function gameUpdate()
     if (keyWasPressed('Escape'))
     {
         gameMode = 'menu';
+        showMenuButtons(true);
         return;
     }
     
