@@ -24,9 +24,9 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 
 ## 🕹️ Featured Games
 
-| Game | Play | Mobile |
-|------|------|------|
-| Tetris | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) | Yes
+| Game | Play |
+|------|------|
+| Tetris | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) |
 | Space Invaders | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) |
 | Mini Golf | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/miniGolf.html) |
 | Missile Command | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) |
