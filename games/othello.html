@@ -65,8 +65,7 @@ let whiteScore = 2;
 let validMoves = [];
 let gameMode = 'menu'; // 'menu', 'pvp', 'ai'
 let passCount = 0;
-let aiDifficulty = 'medium'; // 'easy', 'medium', 'hard'
-let moveHistory = []; // For undo: {board, currentPlayer, blackScore, whiteScore}
+let moveHistory = [];
 let lastMove = null; // {row, col} for highlighting
 
 // Animation
@@ -77,7 +76,6 @@ const PLACE_DURATION = 0.25;
 
 // UI
 let hoverCell = null;
-let menuButtons = [];
 
 // Sounds
 let sfxPlace, sfxFlip, sfxWin, sfxLose, sfxSelect;
@@ -402,12 +400,8 @@ function findBestAIMove()
     if (validMoves.length === 0)
         return null;
     
-    // Easy: Random valid move
-    if (aiDifficulty === 'easy')
-        return validMoves[Math.floor(Math.random() * validMoves.length)];
-    
-    // Medium & Hard: Evaluate positions
-    const moves = [];
+    let bestMove = null;
+    let bestScore = -Infinity;
     
     for (const move of validMoves)
     {
@@ -419,29 +413,19 @@ function findBestAIMove()
         for (const flip of flips)
             board[flip.row][flip.col] = PLAYER_AI;
         
-        let score = evaluateBoard(PLAYER_AI);
+        const score = evaluateBoard(PLAYER_AI);
         
-        // Add flip count bonus for medium (values quantity)
-        if (aiDifficulty === 'medium')
-            score += flips.length * 3;
-        
-        moves.push({move, score});
+        if (score > bestScore)
+        {
+            bestScore = score;
+            bestMove = move;
+        }
         
         // Restore board
         board = oldBoard;
     }
     
-    moves.sort((a, b) => b.score - a.score);
-    
-    // Medium: Occasionally pick 2nd or 3rd best (20% chance)
-    if (aiDifficulty === 'medium' && Math.random() < 0.2 && moves.length > 1)
-    {
-        const idx = Math.min(Math.floor(Math.random() * 3), moves.length - 1);
-        return moves[idx].move;
-    }
-    
-    // Hard: Always best move
-    return moves[0].move;
+    return bestMove;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -489,7 +473,7 @@ function drawDiscFlip(pos, color, scaleX = 1, scaleY = 1)
     drawEllipse(pos.add(vec2(0.08, -0.08)), vec2(radiusX * 2 * 0.95, radiusY * 2 * 0.95), rgb(0, 0, 0, 0.3));
 
     const color1 = color === DISC_BLACK ? hsl(0, 0, 0.15) : hsl(0, 0, 0.95);
-    const color2 = color === DISC_BLACK ? hsl(0, 0, 0.15) : hsl(0, 0, 0.85);
+    const color2 = color === DISC_BLACK ? hsl(0, 0, 0.6) : hsl(0, 0, 0.8);
     
     // Disc with highlight
     drawEllipse(pos, vec2(radiusX * 2, radiusY * 2), color1);
@@ -630,19 +614,12 @@ function drawUI()
             (currentPlayer === DISC_BLACK ? "Black's Turn" : "White's Turn");
         
         const color = currentPlayer === BLACK ? rgb(0.3, 0.3, 0.3) : rgb(0.95, 0.95, 0.95);
-        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');        
-        // Show AI difficulty
-        if (gameMode === 'ai')
-        {
-            const diffText = `AI: ${aiDifficulty.toUpperCase()}`;
-            drawTextScreen(diffText, vec2(30, 145), 20, rgb(0.7, 0.7, 0.7), 2, BLACK, 'left');
-        }
-    }
+        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');    }
     
     // Undo availability
     if (moveHistory.length > 0 && !gameOver)
     {
-        drawTextScreen(`U: Undo (${moveHistory.length})`, vec2(30, 175), 18, 
+        drawTextScreen(`U: Undo (${moveHistory.length})`, vec2(30, 145), 18, 
             rgb(0.6, 0.8, 1), 2, BLACK, 'left');    }
     
     // Game over message
@@ -678,10 +655,7 @@ function drawUI()
     }
     
     // Controls
-    const controls = gameMode === 'ai' ? 
-        'U: Undo | R: Restart | D: Difficulty | ESC: Menu' :
-        'U: Undo | R: Restart | ESC: Menu';
-    drawTextScreen(controls, vec2(screenSize.x / 2, screenSize.y - 30), 20, 
+    drawTextScreen('U: Undo | R: Restart | ESC: Menu', vec2(screenSize.x / 2, screenSize.y - 30), 20, 
         rgb(0.7, 0.7, 0.7), 2, BLACK);
 }
 
@@ -698,29 +672,13 @@ function drawMenu()
         rgb(0.7, 0.7, 0.7), 3, BLACK);
     
     // Menu items
-    const menuY = 320;
-    const menuSpacing = 70;
+    const menuY = 350;
+    const menuSpacing = 80;
     
     drawTextScreen('1 - Player vs AI', vec2(screenSize.x / 2, menuY), 40, 
         WHITE, 4, BLACK);
     drawTextScreen('2 - Player vs Player', vec2(screenSize.x / 2, menuY + menuSpacing), 40, 
         WHITE, 4, BLACK);
-    
-    // AI Difficulty selector
-    drawTextScreen('AI Difficulty:', vec2(screenSize.x / 2, menuY + menuSpacing * 2 + 20), 28, 
-        rgb(0.8, 0.8, 0.8), 3, BLACK);
-    
-    const difficulties = ['easy', 'medium', 'hard'];
-    const diffY = menuY + menuSpacing * 2 + 60;
-    for (let i = 0; i < difficulties.length; i++)
-    {
-        const diff = difficulties[i];
-        const isSelected = aiDifficulty === diff;
-        const diffColor = isSelected ? rgb(0, 1, 0.5) : rgb(0.6, 0.6, 0.6);
-        const label = `${i + 3} - ${diff.toUpperCase()}`;
-        drawTextScreen(label, vec2(screenSize.x / 2, diffY + i * 40), 26, 
-            diffColor, isSelected ? 4 : 3, BLACK);
-    }
     
     // Instructions
     const instructY = screenSize.y - 150;
@@ -757,7 +715,6 @@ function gameUpdate()
 {
     if (gameMode === 'menu')
     {
-        // Menu input
         if (keyWasPressed('Digit1'))
         {
             sfxSelect && sfxSelect.play();
@@ -769,21 +726,6 @@ function gameUpdate()
             sfxSelect && sfxSelect.play();
             gameMode = 'pvp';
             initBoard();
-        }
-        else if (keyWasPressed('Digit3'))
-        {
-            sfxSelect && sfxSelect.play();
-            aiDifficulty = 'easy';
-        }
-        else if (keyWasPressed('Digit4'))
-        {
-            sfxSelect && sfxSelect.play();
-            aiDifficulty = 'medium';
-        }
-        else if (keyWasPressed('Digit5'))
-        {
-            sfxSelect && sfxSelect.play();
-            aiDifficulty = 'hard';
         }
         return;
     }
@@ -815,14 +757,6 @@ function gameUpdate()
     {
         undoMove();
         aiThinkTimer = 0;
-    }
-    
-    if (keyWasPressed('KeyD') && gameMode === 'ai')
-    {
-        const diffs = ['easy', 'medium', 'hard'];
-        const idx = (diffs.indexOf(aiDifficulty) + 1) % diffs.length;
-        aiDifficulty = diffs[idx];
-        sfxSelect && sfxSelect.play();
     }
     
     if (keyWasPressed('Escape'))
