@@ -80,7 +80,6 @@ class Ragdoll
     {
         this.parts = {};
         this.joints = [];
-        this.color = hsl(rand(0, 1), 0.6 + rand(-0.1, 0.1), 0.5 + rand(-0.1, 0.1));
         
         const headY = y + TORSO_HEIGHT / 2 + HEAD_SIZE / 2 + 0.1;
         const torsoY = y;
@@ -177,10 +176,6 @@ class Ragdoll
     
     createJoints()
     {
-        if (!box2d.world) return;
-        
-        const b2 = box2d.instance;
-        
         // Head to torso (neck)
         const neckPos = this.parts.torso.pos.add(vec2(0, TORSO_HEIGHT / 2));
         this.createRevoluteJoint(
