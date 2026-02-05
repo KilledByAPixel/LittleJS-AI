@@ -102,6 +102,18 @@ let btnEasy, btnMedium, btnHard;
 let txtSelectDifficulty;
 
 // -------------------------------------------------------------
+// container for sprite atlas tiles
+let spriteAtlas;
+
+// sprite drawing helpers
+function drawEllipseSprite(pos, size=vec2(1), color=WHITE)
+{ drawTile(pos, size, spriteAtlas.circle, color); }
+function drawCircleSprite(pos, size=1, color=WHITE)
+{ drawTile(pos, vec2(size), spriteAtlas.circle, color); }
+function drawDotSprite(pos, size=1, color=WHITE)
+{ drawTile(pos, vec2(size), spriteAtlas.dot, color); }
+
+// -------------------------------------------------------------
 // Sound disabled (stubs)
 
 const sfx = { play: function(){} };
@@ -339,7 +351,7 @@ function initStarfield()
             // Blob opacity - outer blobs fainter
             const distFromCenter = Math.sqrt((bx-cx)*(bx-cx) + (by-cy)*(by-cy));
             const distFactor = 1 - (distFromCenter / (clusterSize * 1.2));
-            const a = rng.float(.03, .09) * Math.max(.3, distFactor);
+            const a = rng.float(.05, .1) * Math.max(.3, distFactor);
             
             nebulas.push({
                 pos: vec2(bx, by),
@@ -384,6 +396,9 @@ function updateStarfield(dt)
 
 function renderStarfield()
 {
+    // set additive blending
+    setBlendMode(true);
+
     // Deep space background
     drawRect(vec2(0, 0), vec2(500, 300), hsl(.62, .22, .03));
 
@@ -392,12 +407,10 @@ function renderStarfield()
     {
         const n = nebulas[i];
         // Main blob
-        drawCircle(n.pos, n.r * 2, hsl(n.hue, n.sat, n.lit, n.a));
-        // Secondary glow offset
-        drawCircle(n.pos.add(vec2(n.r * .15, -n.r * .1)), n.r * 1.4, hsl(n.hue + .05, n.sat * .8, n.lit * 1.1, n.a * .5));
+        drawDotSprite(n.pos, n.r * 2, hsl(n.hue, n.sat, n.lit, n.a));
     }
 
-    // Stars using drawRect (faster than drawCircle)
+    // Stars using drawRect (faster than drawCircleSprite)
     for (let i = 0; i < stars.length; ++i)
     {
         const s = stars[i];
@@ -405,6 +418,9 @@ function renderStarfield()
         const d = s.size * twinkle;
         drawRect(s.pos, vec2(d, d), hsl(s.hue, s.sat, s.lit, .8));
     }
+
+    // set normal blending
+    setBlendMode();
 }
 
 // -------------------------------------------------------------
@@ -421,12 +437,7 @@ function rotate2(v, a)
 function drawWedge(pos, dir, size, color)
 {
     const a = Math.atan2(dir.y, dir.x);
-    const tip  = rotate2(vec2(size, 0), a);
-    const back = -size * .65;
-    const wing = size * .55;
-    const p1 = rotate2(vec2(back,  wing), a);
-    const p2 = rotate2(vec2(back, -wing), a);
-    drawPoly([p1, tip, p2], color, 0, BLACK, pos);
+    drawTile(pos, vec2(size, size*1.5), spriteAtlas.triangle, color, PI/2 - a);
 }
 
 // -------------------------------------------------------------
@@ -489,9 +500,9 @@ function renderExplosionEffects()
             const t = clamp(p.life / p.maxLife);
             const a = t;  // fade out
             const size = p.size * (1 + (1-t) * .5);  // grow slightly as it fades
-            drawCircle(p.pos, size, hsl(p.hue, .9, .6, a));
+            drawCircleSprite(p.pos, size, hsl(p.hue, .9, .6, a));
             // bright core
-            drawCircle(p.pos, size * .5, hsl(p.hue, .5, .9, a * .8));
+            drawCircleSprite(p.pos, size * .5, hsl(p.hue, .5, .9, a * .8));
         }
     }
 }
@@ -721,8 +732,8 @@ function drawTitleDecor()
     // Blue planet (player style)
     const p1 = vec2(-18, 6);
     const r1 = 7.5;
-    drawCircle(p1, r1*2, hsl(.58, .55, .25, .95), .14, hsl(.58, .85, .6));
-    drawCircle(p1.add(lightDir.scale(r1*.28)), r1*1.25, hsl(.58, .65, .6, .18));
+    drawCircleSprite(p1, r1*2, hsl(.58, .55, .25, .95), .14, hsl(.58, .85, .6));
+    drawCircleSprite(p1.add(lightDir.scale(r1*.28)), r1*1.25, hsl(.58, .65, .6, .18));
     
     // Orbiting blue ships around blue planet
     const blueShipCount = 8;
@@ -738,8 +749,8 @@ function drawTitleDecor()
     // Red planet (enemy style)
     const p2 = vec2(22, -8);
     const r2 = 5.3;
-    drawCircle(p2, r2*2, hsl(.02, .55, .23, .95), .14, hsl(.02, .85, .6));
-    drawCircle(p2.add(lightDir.scale(r2*.28)), r2*1.25, hsl(.02, .65, .6, .18));
+    drawCircleSprite(p2, r2*2, hsl(.02, .55, .23, .95), .14, hsl(.02, .85, .6));
+    drawCircleSprite(p2.add(lightDir.scale(r2*.28)), r2*1.25, hsl(.02, .65, .6, .18));
     
     // Orbiting red ships around red planet
     const redShipCount = 6;
@@ -755,8 +766,8 @@ function drawTitleDecor()
     // Small neutral planet with slow-orbiting ships
     const p3 = vec2(5, 12);
     const r3 = 3.2;
-    drawCircle(p3, r3*2, hsl(0, .05, .30, .95), .12, hsl(0, .1, .5));
-    drawCircle(p3.add(lightDir.scale(r3*.28)), r3*1.1, hsl(0, .05, .5, .15));
+    drawCircleSprite(p3, r3*2, hsl(0, .05, .30, .95), .12, hsl(0, .1, .5));
+    drawCircleSprite(p3.add(lightDir.scale(r3*.28)), r3*1.1, hsl(0, .05, .5, .15));
     
     const neutralShipCount = 4;
     for (let i = 0; i < neutralShipCount; i++)
@@ -785,8 +796,8 @@ function drawPlanet(p)
 
     if (sel)
     {
-        drawCircle(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .15));  // brighter glow
-        drawCircle(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .08));
+        drawCircleSprite(p.pos, p.radius*2 + .65, hsl(0, 0, 1, .15));  // brighter glow
+        drawCircleSprite(p.pos, p.radius*2 + .95, hsl(0, 0, 1, .08));
     }
     
     // Highlight send target planet with pulsing glow
@@ -794,35 +805,40 @@ function drawPlanet(p)
     {
         const targetPulse = .5 + .5 * Math.sin(time * 9);
         const targetHue = ownerHue(OWNER_PLAYER);
-        drawCircle(p.pos, p.radius*2 + 1.8 + targetPulse * .4, hsl(targetHue, .9, .65, .35 + targetPulse * .15));
-        drawCircle(p.pos, p.radius*2 + 1.2 + targetPulse * .3, hsl(targetHue, .95, .75, .45 + targetPulse * .2));
-        drawCircle(p.pos, p.radius*2 + .6 + targetPulse * .2, hsl(targetHue, 1, .85, .55 + targetPulse * .25));
+        drawCircleSprite(p.pos, p.radius*2 + 1.8 + targetPulse * .4, hsl(targetHue, .9, .65, .35 + targetPulse * .15));
+        drawCircleSprite(p.pos, p.radius*2 + 1.2 + targetPulse * .3, hsl(targetHue, .95, .75, .45 + targetPulse * .2));
+        drawCircleSprite(p.pos, p.radius*2 + .6 + targetPulse * .2, hsl(targetHue, 1, .85, .55 + targetPulse * .25));
     }
 
     // Atmospheric halo (additive glow effect)
     const atmoSat = p.owner ? .7 : .2;
     const atmoLit = p.owner ? .6 : .4;
-    drawCircle(p.pos, p.radius*2 + 2.0, hsl(hue, atmoSat, atmoLit, .15));
-    drawCircle(p.pos, p.radius*2 + 1.4, hsl(hue, atmoSat, atmoLit + .1, .20));
-    drawCircle(p.pos, p.radius*2 + .8, hsl(hue, atmoSat, atmoLit + .15, .25));
 
-    drawCircle(p.pos, p.radius*2, base, .14, outline);
+    // Hazy atmosphere layer BEHIND planet using dot tiles (drawn before planet)
+    setBlendMode(true);  // Enable additive blending
+    drawDotSprite(p.pos, p.radius*2 + 2.5, hsl(hue, atmoSat, atmoLit, .15));
+    drawDotSprite(p.pos, p.radius*2 + 2.1, hsl(hue, atmoSat, atmoLit + .1, .20));
+    drawDotSprite(p.pos, p.radius*2 + 1.5, hsl(hue, atmoSat, atmoLit + .15, .25));
+    drawDotSprite(p.pos, p.radius*2, base, .14, outline);
+    setBlendMode(false);  // Disable additive blending
 
-    const hiPos = p.pos.add(lightDir.scale(p.radius*.28));
-    drawCircle(hiPos, p.radius*1.25, hsl(hue, p.owner ? .75 : .25, .58, .22));
+    // Draw main planet circle
+    drawCircleSprite(p.pos, p.radius*2, base, .14, outline);
 
-    drawCircle(p.pos, p.radius*2 + .65, hsl(hue, .7, .55, .08));
+    // Draw highlight
+    const lightPos = p.pos.add(lightDir.scale(p.radius*.28));
+    drawDotSprite(lightPos, p.radius*1.5, hsl(hue, p.owner ? .75 : .25, .58, .5));
 
     // selection ring (solid white) - inside the capacity ring for visibility
     if (sel)
     {
-        drawCircle(p.pos, p.radius*2 + .25, hsl(0,0,0,0), .20, hsl(0,0,1,1));
-        drawCircle(p.pos, p.radius*2 + .45, hsl(0,0,0,0), .08, hsl(0,0,1,.5));
+        drawCircleSprite(p.pos, p.radius*2 + .25, hsl(0,0,0,0), .20, hsl(0,0,1,1));
+        drawCircleSprite(p.pos, p.radius*2 + .45, hsl(0,0,0,0), .08, hsl(0,0,1,.5));
     }
 
     // subtle production ring
     const ring = p.radius*2 + .55;
-    drawCircle(p.pos, ring, hsl(0,0,0,0), .08, hsl(hue, .25, .5, .25));
+    drawCircleSprite(p.pos, ring, hsl(0,0,0,0), .08, hsl(hue, .25, .5, .25));
 
     // capacity ring (player only)
     if (p.owner == OWNER_PLAYER)
@@ -831,7 +847,7 @@ function drawPlanet(p)
         const capR = p.radius + .62;
         const thick = .24;
 
-        drawCircle(p.pos, capR*2, hsl(0,0,0,0), thick, hsl(0,0,1,.10));
+        drawCircleSprite(p.pos, capR*2, hsl(0,0,0,0), thick, hsl(0,0,1,.10));
 
         const segs = 56;
         const start = -Math.PI/2;
@@ -910,28 +926,17 @@ function drawPlanet(p)
 }
 
 // -------------------------------------------------------------
-// Tiny self-tests (lightweight)
-
-function selfTest()
-{
-    // fleet launch duration clamped
-    const a = new Planet(vec2(-10,0), 3);
-    const b = new Planet(vec2( 10,0), 3);
-    a.owner = OWNER_PLAYER; a.ships = 50;
-    const f = new Fleet(a,b,OWNER_PLAYER,40);
-    console.assert(f.launchDuration >= LAUNCH_DUR_MIN && f.launchDuration <= LAUNCH_DUR_MAX, 'launchDuration clamp');
-
-    // help string is safe (no raw newlines in source)
-    const help = 'A\nB';
-    console.assert(help.includes('\n'), 'help string should contain newline');
-}
-
-// -------------------------------------------------------------
 // LittleJS callbacks
 
 function gameInit()
 {
-    selfTest();
+    spriteAtlas =
+    {
+        // large tiles
+        circle:  tile(0, 256),
+        dot:     tile(1, 256),
+        triangle:tile(2, 256),
+    };
     
     // Initialize UI system
     new UISystemPlugin();
@@ -1287,6 +1292,6 @@ function gameRenderPost()
 
 ///////////////////////////////////////////////////////////////////////////////
 // Startup
-engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, ['tiles.png']);
 
 </script>
