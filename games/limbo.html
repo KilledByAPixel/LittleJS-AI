@@ -154,6 +154,7 @@ class Player extends EngineObject
     {
         // Draw stick figure silhouette - simple and visible
         const p = this.pos;
+        const isMoving = abs(this.vel.x) > 0.1;
         
         // Head (bigger and more visible)
         drawCircle(p.add(vec2(0, 0.7)), 0.35, rgb(0, 0, 0));
@@ -161,13 +162,13 @@ class Player extends EngineObject
         // Body
         drawLine(p.add(vec2(0, 0.4)), p.add(vec2(0, -0.4)), 0.2, rgb(0, 0, 0));
         
-        // Arms
-        const armSwing = Math.sin(time * 10) * 0.15;
+        // Arms (only swing when moving)
+        const armSwing = isMoving ? Math.sin(time * 10) * 0.15 : 0;
         drawLine(p.add(vec2(0, 0.2)), p.add(vec2(-0.5, 0 + armSwing)), 0.15, rgb(0, 0, 0));
         drawLine(p.add(vec2(0, 0.2)), p.add(vec2(0.5, 0 - armSwing)), 0.15, rgb(0, 0, 0));
         
-        // Legs
-        const legSwing = this.onGround ? Math.sin(time * 12) * 0.25 : 0;
+        // Legs (only swing when moving and on ground)
+        const legSwing = (this.onGround && isMoving) ? Math.sin(time * 12) * 0.25 : 0;
         drawLine(p.add(vec2(0, -0.4)), p.add(vec2(-0.25, -0.9 + legSwing)), 0.15, rgb(0, 0, 0));
         drawLine(p.add(vec2(0, -0.4)), p.add(vec2(0.25, -0.9 - legSwing)), 0.15, rgb(0, 0, 0));
     }
