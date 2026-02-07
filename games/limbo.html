@@ -55,7 +55,6 @@ class Player extends EngineObject
         this.jumpPressed = false;
         this.renderOrder = 100;
         this.onGround = false;
-        console.log('Player created at', pos);
     }
     
     updatePhysics() {} // Disable built-in physics
@@ -262,9 +261,9 @@ class Rock extends EngineObject
 
     render()
     {
-        // Simple rock - just dark circles
-        drawCircle(this.pos, 0.3, rgb(0.15, 0.15, 0.15));
-        drawCircle(this.pos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0.1, 0.1, 0.1));
+        // Dark black rock silhouette (like Limbo style)
+        drawCircle(this.pos, 0.3, rgb(0, 0, 0));
+        drawCircle(this.pos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0, 0, 0));
     }
 }
 
@@ -393,10 +392,6 @@ async function gameInit()
     
     // Set camera to player position immediately
     cameraPos = vec2(-2, 3);
-    
-    console.log('Game initialized. Player:', player);
-    console.log('All engine objects:', engineObjects.length);
-    console.log('Camera pos:', cameraPos);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -480,13 +475,6 @@ function gameRenderPost()
     // Title
     drawTextScreen('LIMBO ISLAND', vec2(mainCanvasSize.x / 2, 40), 48, 
                    rgb(0.5, 0.6, 0.8), 3, rgb(0, 0, 0, 0.7));
-    
-    // DEBUG INFO
-    if (player)
-    {
-        const debugText = `Player: (${player.pos.x.toFixed(1)}, ${player.pos.y.toFixed(1)}) Camera: (${cameraPos.x.toFixed(1)}, ${cameraPos.y.toFixed(1)})`;
-        drawTextScreen(debugText, vec2(mainCanvasSize.x / 2, 80), 24, rgb(1, 1, 0), 2, rgb(0, 0, 0));
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
