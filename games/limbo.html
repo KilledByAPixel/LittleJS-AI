@@ -1,0 +1,466 @@
+<!DOCTYPE html><head>
+<title>Limbo Island</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1.18.0"></script>
+<script>
+'use strict';
+
+// engine settings
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, -25);
+cameraPos = vec2(0, 0);
+cameraScale = 48;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game Objects
+
+class Player extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(1, 2));
+        this.setCollision(false, false, false); // No physics - we do manual
+        this.vel = vec2(0, 0);
+        this.holdingRock = null;
+        this.jumpPressed = false;
+        this.renderOrder = 100;
+        this.onGround = false;
+        console.log('Player created at', pos);
+    }
+    
+    updatePhysics() {} // Disable built-in physics
+
+    update()
+    {
+        const dt = timeDelta;
+        const grav = -25; // gravity
+        
+        // Movement
+        const moveInput = keyDirection();
+        this.vel.x = moveInput.x * 6;
+
+        // Apply gravity
+        this.vel.y += grav * dt;
+        
+        // Move and collide
+        const newPos = this.pos.add(this.vel.scale(dt));
+        
+        // Check collision with island
+        this.onGround = false;
+        for (const obj of engineObjects)
+        {
+            if (obj instanceof Island)
+            {
+                if (obj.collidesWith(newPos, this.size))
+                {
+                    // If falling, land on top
+                    if (this.vel.y < 0)
+                    {
+                        newPos.y = obj.pos.y + obj.size.y / 2 + this.size.y / 2;
+                        this.vel.y = 0;
+                        this.onGround = true;
+                    }
+                }
+            }
+        }
+        
+        this.pos = newPos;
+
+        // Jump
+        const jumpInput = keyIsDown('Space') || keyIsDown('KeyW') || keyIsDown('ArrowUp');
+        if (jumpInput && !this.jumpPressed && this.onGround)
+        {
+            this.vel.y = 12;
+            sfxJump.play(this.pos);
+        }
+        this.jumpPressed = jumpInput;
+
+        // Pick up / throw rock
+        if (keyWasPressed('KeyE') || mouseWasPressed(0))
+        {
+            if (this.holdingRock)
+            {
+                // Throw rock
+                const throwDir = this.mirror ? -1 : 1;
+                this.holdingRock.vel = vec2(throwDir * 15, 8);
+                this.holdingRock.isHeld = false;
+                this.holdingRock = null;
+                sfxThrow.play(this.pos);
+            }
+            else
+            {
+                // Try to pick up nearby rock
+                for (const obj of engineObjects)
+                {
+                    if (obj instanceof Rock && !obj.isHeld)
+                    {
+                        const dist = this.pos.distance(obj.pos);
+                        if (dist < 2)
+                        {
+                            this.holdingRock = obj;
+                            obj.isHeld = true;
+                            sfxPickup.play(this.pos);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update held rock position
+        if (this.holdingRock)
+        {
+            const holdOffset = vec2((this.mirror ? -1 : 1) * 0.6, 0.8);
+            this.holdingRock.pos = this.pos.add(holdOffset);
+            this.holdingRock.vel = vec2(0, 0);
+        }
+
+        // Mirror sprite based on movement
+        if (moveInput.x > 0) this.mirror = false;
+        if (moveInput.x < 0) this.mirror = true;
+    }
+
+    render()
+    {
+        // TEMP: Draw bright white box so we can see the player
+        drawRect(this.pos, vec2(1, 2), rgb(1, 1, 1));
+        
+        // Draw stick figure silhouette - simple and visible
+        const p = this.pos;
+        
+        // Head (bigger and more visible)
+        drawCircle(p.add(vec2(0, 0.7)), 0.35, rgb(0, 0, 0));
+        
+        // Body
+        drawLine(p.add(vec2(0, 0.4)), p.add(vec2(0, -0.4)), 0.2, rgb(0, 0, 0));
+        
+        // Arms
+        const armSwing = Math.sin(time * 10) * 0.15;
+        drawLine(p.add(vec2(0, 0.2)), p.add(vec2(-0.5, 0 + armSwing)), 0.15, rgb(0, 0, 0));
+        drawLine(p.add(vec2(0, 0.2)), p.add(vec2(0.5, 0 - armSwing)), 0.15, rgb(0, 0, 0));
+        
+        // Legs
+        const legSwing = this.groundObject ? Math.sin(time * 12) * 0.25 : 0;
+        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(-0.25, -0.9 + legSwing)), 0.15, rgb(0, 0, 0));
+        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(0.25, -0.9 - legSwing)), 0.15, rgb(0, 0, 0));
+    }
+}
+
+class Rock extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(0.5, 0.5));
+        this.setCollision(false, false, false);
+        this.vel = vec2(0, 0);
+        this.isHeld = false;
+        this.renderOrder = 50;
+    }
+    
+    updatePhysics() {}
+
+    update()
+    {
+        if (this.isHeld) return;
+        
+        const dt = timeDelta;
+        const grav = -25;
+        
+        // Apply gravity
+        this.vel.y += grav * dt;
+        this.vel.x *= 0.98; // friction
+        this.vel.y *= 0.99;
+        
+        // Move
+        this.pos = this.pos.add(this.vel.scale(dt));
+        
+        // Collide with island
+        for (const obj of engineObjects)
+        {
+            if (obj instanceof Island && obj.collidesWith(this.pos, this.size))
+            {
+                if (this.vel.y < 0)
+                {
+                    this.pos.y = obj.pos.y + obj.size.y / 2 + this.size.y / 2;
+                    this.vel.y = 0;
+                    this.vel.x *= 0.8;
+                }
+            }
+        }
+        
+        // Splash in water
+        if (this.pos.y < waterLevel && !this.inWater)
+        {
+            this.inWater = true;
+            sfxSplash.play(this.pos);
+        }
+        
+        // Sink in water
+        if (this.inWater)
+        {
+            this.vel.y -= 5 * dt;
+        }
+    }
+
+    render()
+    {
+        // TEMP: Draw bright red so we can see rocks
+        drawCircle(this.pos, 0.4, rgb(1, 0, 0));
+        
+        // Simple rock - just dark circles
+        drawCircle(this.pos, 0.3, rgb(0.15, 0.15, 0.15));
+        drawCircle(this.pos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0.1, 0.1, 0.1));
+    }
+}
+
+class Island extends EngineObject
+{
+    constructor(pos, size)
+    {
+        super(pos, size);
+        this.setCollision(false, false, false); // No physics - we do manual collision
+        this.color = rgb(0.05, 0.05, 0.05);
+        this.renderOrder = 0;
+    }
+    
+    updatePhysics() {} // Disable built-in physics
+    
+    collidesWith(pos, size)
+    {
+        return abs(pos.x - this.pos.x) < (size.x + this.size.x) / 2 &&
+               abs(pos.y - this.pos.y) < (size.y + this.size.y) / 2;
+    }
+
+    render()
+    {
+        // Island ground (dark silhouette)
+        drawRect(this.pos, this.size, rgb(0.05, 0.05, 0.05));
+    }
+}
+
+class Tree extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(1, 4));
+        this.setCollision(false, false, false);
+        this.renderOrder = 10;
+    }
+    
+    updatePhysics() {}
+    update() {}
+
+    render()
+    {
+        // Tree trunk
+        drawRect(this.pos, vec2(0.4, 3), rgb(0.02, 0.02, 0.02));
+        
+        // Tree canopy (dark silhouette)
+        const top = this.pos.y + 2;
+        drawCircle(vec2(this.pos.x, top), 1.2, rgb(0, 0, 0));
+        drawCircle(vec2(this.pos.x - 0.5, top - 0.5), 0.8, rgb(0, 0, 0));
+        drawCircle(vec2(this.pos.x + 0.6, top - 0.3), 0.9, rgb(0, 0, 0));
+    }
+}
+
+// Rain particles - simple manual system
+class RainDrop
+{
+    constructor(x, y)
+    {
+        this.x = x;
+        this.y = y;
+        this.vx = rand(-1.5, -0.5);
+        this.vy = rand(-18, -14);
+        this.life = rand(1.5, 2.5);
+        this.maxLife = this.life;
+    }
+    
+    update(dt)
+    {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+        return this.life > 0;
+    }
+    
+    render()
+    {
+        const alpha = clamp(this.life / this.maxLife, 0, 1) * 0.4;
+        drawLine(vec2(this.x, this.y), vec2(this.x + this.vx * 0.1, this.y + this.vy * 0.1), 
+                0.08, rgb(0.5, 0.6, 0.7, alpha));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Game State
+
+let player;
+let rainDrops = [];
+let rainTimer = 0;
+const waterLevel = -1.5; // Below the island
+
+// Sounds
+let sfxJump, sfxPickup, sfxThrow, sfxSplash, sfxRain;
+
+///////////////////////////////////////////////////////////////////////////////
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    
+    // Sounds
+    sfxJump = new SoundGenerator({ frequency: 300, release: 0.15, slide: 0.5, volume: 0.3 });
+    sfxPickup = new SoundGenerator({ frequency: 450, release: 0.08, volume: 0.25 });
+    sfxThrow = new SoundGenerator({ frequency: 250, release: 0.12, slide: -0.3, volume: 0.3 });
+    sfxSplash = new SoundGenerator({ frequency: 180, release: 0.2, noise: 0.3, volume: 0.4 });
+    sfxRain = new SoundGenerator({ frequency: 200, release: 0.05, noise: 0.8, volume: 0.05 });
+    
+    // Create island - center at (0, 0), size (14, 3) means top surface at y=1.5
+    new Island(vec2(0, 0), vec2(14, 3));
+    
+    // Create tree on the island
+    new Tree(vec2(-4, 2.5));
+    
+    // Spawn rocks on the island surface (y = 1.5)
+    for (let i = 0; i < 8; i++)
+    {
+        const x = rand(-5, 5);
+        new Rock(vec2(x, 3));
+    }
+    
+    // Create player above the island so he falls onto it
+    player = new Player(vec2(-2, 5));
+    
+    // Set camera to player position immediately
+    cameraPos = vec2(-2, 3);
+    
+    console.log('Game initialized. Player:', player);
+    console.log('All engine objects:', engineObjects.length);
+    console.log('Camera pos:', cameraPos);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate()
+{
+    // Camera follows player smoothly
+    cameraPos.x = lerp(0.05, cameraPos.x, player.pos.x);
+    cameraPos.y = lerp(0.05, cameraPos.y, player.pos.y + 1);
+    
+    // Update rain drops
+    for (let i = rainDrops.length - 1; i >= 0; i--)
+    {
+        if (!rainDrops[i].update(timeDelta))
+            rainDrops.splice(i, 1);
+    }
+    
+    // Spawn new rain drops
+    rainTimer -= timeDelta;
+    if (rainTimer <= 0)
+    {
+        rainTimer = 0.015; // Spawn frequently
+        
+        // Spawn multiple drops per frame
+        for (let i = 0; i < 3; i++)
+        {
+            const rainX = cameraPos.x + rand(-18, 18);
+            const rainY = cameraPos.y + rand(10, 14);
+            rainDrops.push(new RainDrop(rainX, rainY));
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdatePost()
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRender()
+{
+    // Night sky gradient (bluish)
+    const skyTop = rgb(0.05, 0.1, 0.25);
+    const skyBottom = rgb(0.1, 0.15, 0.3);
+    const skyHeight = 20;
+    
+    for (let i = 0; i < 10; i++)
+    {
+        const t = i / 10;
+        const y = cameraPos.y + skyHeight * (0.5 - t);
+        const color = skyTop.lerp(skyBottom, t);
+        drawRect(vec2(cameraPos.x, y), vec2(100, skyHeight / 5), color);
+    }
+    
+    // Water
+    const waterY = waterLevel - 5;
+    drawRect(vec2(cameraPos.x, waterY), vec2(100, 10), rgb(0.08, 0.12, 0.2));
+    
+    // Water surface line (slightly lighter)
+    drawRect(vec2(cameraPos.x, waterLevel), vec2(100, 0.3), rgb(0.15, 0.2, 0.3));
+    
+    // Subtle water ripples
+    for (let i = 0; i < 5; i++)
+    {
+        const x = cameraPos.x - 20 + i * 8 + Math.sin(time * 2 + i) * 2;
+        drawRect(vec2(x, waterLevel - 0.5), vec2(2, 0.1), rgb(0.2, 0.25, 0.35, 0.3));
+    }
+    
+    // Render rain drops
+    for (const drop of rainDrops)
+        drop.render();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRenderPost()
+{
+    // Instructions
+    const screenCenter = vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40);
+    drawTextScreen('Arrow Keys/WASD: Move • Space: Jump • E/Click: Pick Up/Throw Rocks', 
+                   screenCenter, 24, rgb(0.7, 0.8, 0.9), 2, rgb(0, 0, 0, 0.5));
+    
+    // Title
+    drawTextScreen('LIMBO ISLAND', vec2(mainCanvasSize.x / 2, 40), 48, 
+                   rgb(0.5, 0.6, 0.8), 3, rgb(0, 0, 0, 0.7));
+    
+    // DEBUG INFO
+    if (player)
+    {
+        const debugText = `Player: (${player.pos.x.toFixed(1)}, ${player.pos.y.toFixed(1)}) Camera: (${cameraPos.x.toFixed(1)}, ${cameraPos.y.toFixed(1)})`;
+        drawTextScreen(debugText, vec2(mainCanvasSize.x / 2, 80), 24, rgb(1, 1, 0), 2, rgb(0, 0, 0));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
