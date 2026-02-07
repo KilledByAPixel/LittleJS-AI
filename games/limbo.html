@@ -168,8 +168,8 @@ class Player extends EngineObject
         
         // Legs (only swing when moving and on ground)
         const legSwing = (this.onGround && isMoving) ? Math.sin(time * 12) * 0.25 : 0;
-        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(-0.25, -0.9 + legSwing)), 0.15, rgb(0, 0, 0));
-        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(0.25, -0.9 - legSwing)), 0.15, rgb(0, 0, 0));
+        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(-0.25, -1.0 + legSwing)), 0.15, rgb(0, 0, 0));
+        drawLine(p.add(vec2(0, -0.4)), p.add(vec2(0.25, -1.0 - legSwing)), 0.15, rgb(0, 0, 0));
     }
 }
 
@@ -262,8 +262,10 @@ class Rock extends EngineObject
     render()
     {
         // Dark black rock silhouette (like Limbo style)
-        drawCircle(this.pos, 0.3, rgb(0, 0, 0));
-        drawCircle(this.pos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0, 0, 0));
+        // Offset down slightly so bottom touches ground
+        const renderPos = this.pos.add(vec2(0, -0.05));
+        drawCircle(renderPos, 0.3, rgb(0, 0, 0));
+        drawCircle(renderPos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0, 0, 0));
     }
 }
 
@@ -273,7 +275,7 @@ class Island extends EngineObject
     {
         super(pos, size);
         this.setCollision(false, false, false); // No physics - we do manual collision
-        this.color = rgb(0.05, 0.05, 0.05);
+        this.color = rgb(0, 0, 0);
         this.renderOrder = 0;
     }
     
@@ -287,8 +289,8 @@ class Island extends EngineObject
 
     render()
     {
-        // Island ground (dark silhouette)
-        drawRect(this.pos, this.size, rgb(0.05, 0.05, 0.05));
+        // Island ground (pure black silhouette)
+        drawRect(this.pos, this.size, rgb(0, 0, 0));
     }
 }
 
