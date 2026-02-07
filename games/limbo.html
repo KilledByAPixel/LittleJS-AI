@@ -152,9 +152,6 @@ class Player extends EngineObject
 
     render()
     {
-        // TEMP: Draw bright white box so we can see the player
-        drawRect(this.pos, vec2(1, 2), rgb(1, 1, 1));
-        
         // Draw stick figure silhouette - simple and visible
         const p = this.pos;
         
@@ -170,7 +167,7 @@ class Player extends EngineObject
         drawLine(p.add(vec2(0, 0.2)), p.add(vec2(0.5, 0 - armSwing)), 0.15, rgb(0, 0, 0));
         
         // Legs
-        const legSwing = this.groundObject ? Math.sin(time * 12) * 0.25 : 0;
+        const legSwing = this.onGround ? Math.sin(time * 12) * 0.25 : 0;
         drawLine(p.add(vec2(0, -0.4)), p.add(vec2(-0.25, -0.9 + legSwing)), 0.15, rgb(0, 0, 0));
         drawLine(p.add(vec2(0, -0.4)), p.add(vec2(0.25, -0.9 - legSwing)), 0.15, rgb(0, 0, 0));
     }
@@ -223,6 +220,36 @@ class Rock extends EngineObject
         {
             this.inWater = true;
             sfxSplash.play(this.pos);
+            
+            // Create splash particles
+            for (let i = 0; i < 12; i++)
+            {
+                const angle = rand(-Math.PI / 3, -Math.PI * 2 / 3); // Upward arc
+                const speed = rand(3, 7);
+                const vx = Math.cos(angle) * speed * (rand() < 0.5 ? 1 : -1);
+                const vy = Math.sin(angle) * speed;
+                
+                rainDrops.push({
+                    x: this.pos.x + rand(-0.3, 0.3),
+                    y: waterLevel,
+                    vx: vx,
+                    vy: -vy, // Negative because our coordinate system
+                    life: rand(0.3, 0.6),
+                    maxLife: rand(0.3, 0.6),
+                    update(dt) {
+                        this.x += this.vx * dt;
+                        this.y += this.vy * dt;
+                        this.vy -= 20 * dt; // Gravity on splash
+                        this.life -= dt;
+                        if (this.y < waterLevel) return false; // Stop at water
+                        return this.life > 0;
+                    },
+                    render() {
+                        const alpha = clamp(this.life / this.maxLife, 0, 1) * 0.6;
+                        drawCircle(vec2(this.x, this.y), 0.12, rgb(0.4, 0.5, 0.6, alpha));
+                    }
+                });
+            }
         }
         
         // Sink in water
@@ -234,9 +261,6 @@ class Rock extends EngineObject
 
     render()
     {
-        // TEMP: Draw bright red so we can see rocks
-        drawCircle(this.pos, 0.4, rgb(1, 0, 0));
-        
         // Simple rock - just dark circles
         drawCircle(this.pos, 0.3, rgb(0.15, 0.15, 0.15));
         drawCircle(this.pos.add(vec2(0.08, 0.08).rotate(this.angle)), 0.18, rgb(0.1, 0.1, 0.1));
@@ -311,6 +335,11 @@ class RainDrop
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.life -= dt;
+        
+        // Stop rain at water level
+        if (this.y < waterLevel)
+            return false;
+        
         return this.life > 0;
     }
     
@@ -328,7 +357,7 @@ class RainDrop
 let player;
 let rainDrops = [];
 let rainTimer = 0;
-const waterLevel = -1.5; // Below the island
+const waterLevel = -0.8; // Just below the island bottom
 
 // Sounds
 let sfxJump, sfxPickup, sfxThrow, sfxSplash, sfxRain;
@@ -420,6 +449,10 @@ function gameRender()
         drawRect(vec2(cameraPos.x, y), vec2(100, skyHeight / 5), color);
     }
     
+    // Render rain drops (before water so water covers them)
+    for (const drop of rainDrops)
+        drop.render();
+    
     // Water
     const waterY = waterLevel - 5;
     drawRect(vec2(cameraPos.x, waterY), vec2(100, 10), rgb(0.08, 0.12, 0.2));
@@ -433,10 +466,6 @@ function gameRender()
         const x = cameraPos.x - 20 + i * 8 + Math.sin(time * 2 + i) * 2;
         drawRect(vec2(x, waterLevel - 0.5), vec2(2, 0.1), rgb(0.2, 0.25, 0.35, 0.3));
     }
-    
-    // Render rain drops
-    for (const drop of rainDrops)
-        drop.render();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
