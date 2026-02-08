@@ -42,7 +42,7 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 
 These games are playable but need some iteration and polish to take them to the next level.
 
-Did you make a game you'd like to include? Send me a pull request!
+Did you make a game you think should be included? Send a pull request!
 
 | Game | Play |
 |------|------|
