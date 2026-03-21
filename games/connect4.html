@@ -1,0 +1,733 @@
+<!DOCTYPE html><head>
+<title>LittleJS Connect 4</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1.18.0"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 42;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CONNECT 4 GAME
+
+const ROWS = 6;
+const COLS = 7;
+const CELL_SIZE = 1.8;
+const DISC_RADIUS = 0.7;
+
+const DISC_EMPTY = 0;
+const DISC_RED = 1;
+const DISC_YELLOW = 2;
+
+const PLAYER_HUMAN = DISC_RED;
+const PLAYER_AI = DISC_YELLOW;
+
+// Game state
+let board = [];
+let currentPlayer = DISC_RED;
+let gameOver = false;
+let winner = null;
+let gameMode = 'menu'; // 'menu', 'pvp', 'ai'
+let moveHistory = [];
+let winningCells = []; // [{row, col}, ...] for highlighting
+
+// Animation
+let droppingDisc = null; // {col, targetRow, currentY, player}
+const DROP_SPEED = 25; // world units per second
+
+// UI
+let hoverCol = -1;
+let btnVsAI, btnVsPlayer;
+
+// Sounds
+let sfxDrop, sfxWin, sfxLose, sfxSelect;
+
+///////////////////////////////////////////////////////////////////////////////
+// BOARD LOGIC
+
+function initBoard()
+{
+    board = [];
+    for (let row = 0; row < ROWS; row++)
+    {
+        board[row] = [];
+        for (let col = 0; col < COLS; col++)
+            board[row][col] = DISC_EMPTY;
+    }
+
+    currentPlayer = DISC_RED;
+    gameOver = false;
+    winner = null;
+    winningCells = [];
+    moveHistory = [];
+    droppingDisc = null;
+}
+
+function getOpponent(player)
+{
+    return player === DISC_RED ? DISC_YELLOW : DISC_RED;
+}
+
+function getLowestEmptyRow(col)
+{
+    for (let row = 0; row < ROWS; row++)
+    {
+        if (board[row][col] === DISC_EMPTY)
+            return row;
+    }
+    return -1; // column full
+}
+
+function getValidColumns()
+{
+    const cols = [];
+    for (let col = 0; col < COLS; col++)
+    {
+        if (board[ROWS - 1][col] === DISC_EMPTY)
+            cols.push(col);
+    }
+    return cols;
+}
+
+function checkWinFrom(row, col, player)
+{
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+    for (const [dr, dc] of directions)
+    {
+        const cells = [{row, col}];
+
+        // Check positive direction
+        for (let i = 1; i < 4; i++)
+        {
+            const r = row + dr * i;
+            const c = col + dc * i;
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c] !== player)
+                break;
+            cells.push({row: r, col: c});
+        }
+
+        // Check negative direction
+        for (let i = 1; i < 4; i++)
+        {
+            const r = row - dr * i;
+            const c = col - dc * i;
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c] !== player)
+                break;
+            cells.push({row: r, col: c});
+        }
+
+        if (cells.length >= 4)
+            return cells;
+    }
+
+    return null;
+}
+
+function makeMove(col, player)
+{
+    const row = getLowestEmptyRow(col);
+    if (row < 0)
+        return false;
+
+    // Save state for undo
+    moveHistory.push({
+        board: board.map(r => [...r]),
+        currentPlayer: currentPlayer
+    });
+
+    board[row][col] = player;
+
+    // Start drop animation
+    const targetPos = getCellWorldPos(row, col);
+    const startY = getCellWorldPos(ROWS, col).y + CELL_SIZE;
+    droppingDisc = {col, targetRow: row, currentY: startY, targetY: targetPos.y, player};
+
+    sfxDrop && sfxDrop.play();
+
+    // Check for win
+    const win = checkWinFrom(row, col, player);
+    if (win)
+    {
+        gameOver = true;
+        winner = player;
+        winningCells = win;
+
+        if (gameMode === 'ai')
+        {
+            if (player === PLAYER_HUMAN)
+                sfxWin && sfxWin.play();
+            else
+                sfxLose && sfxLose.play();
+        }
+    }
+    else if (getValidColumns().length === 0)
+    {
+        // Draw
+        gameOver = true;
+        winner = null;
+    }
+
+    // Switch player
+    currentPlayer = getOpponent(currentPlayer);
+    return true;
+}
+
+function undoMove()
+{
+    if (moveHistory.length === 0 || gameOver)
+        return false;
+
+    const undoCount = (gameMode === 'ai' && moveHistory.length >= 2) ? 2 : 1;
+
+    for (let i = 0; i < undoCount && moveHistory.length > 0; i++)
+    {
+        const state = moveHistory.pop();
+        board = state.board;
+        currentPlayer = state.currentPlayer;
+    }
+
+    droppingDisc = null;
+    winningCells = [];
+    sfxSelect && sfxSelect.play();
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AI
+
+function evaluateBoard(player)
+{
+    let score = 0;
+    const opponent = getOpponent(player);
+
+    // Evaluate all windows of 4
+    for (let row = 0; row < ROWS; row++)
+    {
+        for (let col = 0; col < COLS; col++)
+        {
+            const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+            for (const [dr, dc] of directions)
+            {
+                let mine = 0, theirs = 0, empty = 0;
+
+                for (let i = 0; i < 4; i++)
+                {
+                    const r = row + dr * i;
+                    const c = col + dc * i;
+                    if (r < 0 || r >= ROWS || c < 0 || c >= COLS)
+                    {
+                        mine = -1;
+                        break;
+                    }
+                    if (board[r][c] === player) mine++;
+                    else if (board[r][c] === opponent) theirs++;
+                    else empty++;
+                }
+
+                if (mine < 0) continue;
+
+                if (mine === 4) score += 1000;
+                else if (mine === 3 && empty === 1) score += 50;
+                else if (mine === 2 && empty === 2) score += 10;
+                if (theirs === 3 && empty === 1) score -= 80;
+                if (theirs === 4) score -= 1000;
+            }
+        }
+    }
+
+    // Center column preference
+    for (let row = 0; row < ROWS; row++)
+    {
+        if (board[row][3] === player) score += 6;
+        if (board[row][3] === opponent) score -= 6;
+    }
+
+    return score;
+}
+
+function minimax(depth, alpha, beta, maximizing)
+{
+    const validCols = getValidColumns();
+
+    if (depth === 0 || validCols.length === 0)
+        return {score: evaluateBoard(PLAYER_AI), col: -1};
+
+    // Check for terminal states
+    for (let row = 0; row < ROWS; row++)
+    {
+        for (let col = 0; col < COLS; col++)
+        {
+            if (board[row][col] !== DISC_EMPTY)
+            {
+                if (checkWinFrom(row, col, board[row][col]))
+                {
+                    const winScore = board[row][col] === PLAYER_AI ? 10000 : -10000;
+                    return {score: winScore, col: -1};
+                }
+            }
+        }
+    }
+
+    let bestCol = validCols[Math.floor(Math.random() * validCols.length)];
+
+    if (maximizing)
+    {
+        let maxScore = -Infinity;
+        for (const col of validCols)
+        {
+            const row = getLowestEmptyRow(col);
+            board[row][col] = PLAYER_AI;
+            const result = minimax(depth - 1, alpha, beta, false);
+            board[row][col] = DISC_EMPTY;
+
+            if (result.score > maxScore)
+            {
+                maxScore = result.score;
+                bestCol = col;
+            }
+            alpha = Math.max(alpha, maxScore);
+            if (alpha >= beta) break;
+        }
+        return {score: maxScore, col: bestCol};
+    }
+    else
+    {
+        let minScore = Infinity;
+        for (const col of validCols)
+        {
+            const row = getLowestEmptyRow(col);
+            board[row][col] = PLAYER_HUMAN;
+            const result = minimax(depth - 1, alpha, beta, true);
+            board[row][col] = DISC_EMPTY;
+
+            if (result.score < minScore)
+            {
+                minScore = result.score;
+                bestCol = col;
+            }
+            beta = Math.min(beta, minScore);
+            if (alpha >= beta) break;
+        }
+        return {score: minScore, col: bestCol};
+    }
+}
+
+function findBestAIMove()
+{
+    const validCols = getValidColumns();
+    if (validCols.length === 0)
+        return -1;
+
+    // Check for immediate win
+    for (const col of validCols)
+    {
+        const row = getLowestEmptyRow(col);
+        board[row][col] = PLAYER_AI;
+        if (checkWinFrom(row, col, PLAYER_AI))
+        {
+            board[row][col] = DISC_EMPTY;
+            return col;
+        }
+        board[row][col] = DISC_EMPTY;
+    }
+
+    // Block immediate opponent win
+    for (const col of validCols)
+    {
+        const row = getLowestEmptyRow(col);
+        board[row][col] = PLAYER_HUMAN;
+        if (checkWinFrom(row, col, PLAYER_HUMAN))
+        {
+            board[row][col] = DISC_EMPTY;
+            return col;
+        }
+        board[row][col] = DISC_EMPTY;
+    }
+
+    const result = minimax(5, -Infinity, Infinity, true);
+    return result.col;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// RENDERING
+
+function getCellWorldPos(row, col)
+{
+    const boardOffset = vec2(
+        -(COLS * CELL_SIZE) / 2,
+        -(ROWS * CELL_SIZE) / 2
+    );
+
+    return vec2(
+        boardOffset.x + col * CELL_SIZE + CELL_SIZE / 2,
+        boardOffset.y + row * CELL_SIZE + CELL_SIZE / 2
+    );
+}
+
+function worldPosToCol(worldPos)
+{
+    const boardOffset = -(COLS * CELL_SIZE) / 2;
+    const col = Math.floor((worldPos.x - boardOffset) / CELL_SIZE);
+    if (col >= 0 && col < COLS)
+        return col;
+    return -1;
+}
+
+function getDiscColor(player)
+{
+    if (player === DISC_RED)
+        return hsl(0, .85, .5);
+    return hsl(.15, .95, .55);
+}
+
+function getDiscHighlight(player)
+{
+    if (player === DISC_RED)
+        return hsl(0, .6, .7);
+    return hsl(.15, .7, .75);
+}
+
+function drawDisc(pos, player, scale = 1)
+{
+    const r = DISC_RADIUS * scale;
+
+    // Shadow
+    drawCircle(pos.add(vec2(0.06, -0.06)), r * 2 * 0.95, rgb(0, 0, 0, 0.3));
+
+    // Main disc
+    drawCircle(pos, r * 2, getDiscColor(player));
+
+    // Highlight
+    drawCircle(pos.add(vec2(-0.12 * scale, 0.12 * scale)), r * 2 * 0.3, getDiscHighlight(player));
+}
+
+function drawBoard()
+{
+    const boardW = COLS * CELL_SIZE;
+    const boardH = ROWS * CELL_SIZE;
+    const boardCenter = vec2(0, 0);
+
+    // Board frame
+    drawRect(boardCenter, vec2(boardW + 0.5, boardH + 0.5), rgb(0.05, 0.05, 0.2));
+    drawRect(boardCenter, vec2(boardW, boardH), hsl(.62, .75, .35));
+
+    // Draw all holes behind pieces
+    for (let row = 0; row < ROWS; row++)
+    {
+        for (let col = 0; col < COLS; col++)
+        {
+            const pos = getCellWorldPos(row, col);
+            drawCircle(pos, DISC_RADIUS * 2, rgb(0.02, 0.02, 0.06));
+        }
+    }
+
+    // Draw placed discs on top
+    for (let row = 0; row < ROWS; row++)
+    {
+        for (let col = 0; col < COLS; col++)
+        {
+            if (board[row][col] !== DISC_EMPTY)
+            {
+                const pos = getCellWorldPos(row, col);
+                const isDropping = droppingDisc && droppingDisc.col === col && droppingDisc.targetRow === row;
+
+                if (isDropping)
+                    drawDisc(vec2(pos.x, droppingDisc.currentY), droppingDisc.player);
+                else
+                    drawDisc(pos, board[row][col]);
+            }
+        }
+    }
+
+    // Winning cells highlight
+    if (gameOver && winningCells.length > 0)
+    {
+        for (const cell of winningCells)
+        {
+            const pos = getCellWorldPos(cell.row, cell.col);
+            const pulse = 1 + Math.sin(time * 6) * 0.1;
+            drawCircle(pos, DISC_RADIUS * 2.2 * pulse, rgb(1, 1, 1, 0.4));
+        }
+    }
+
+    // Hover indicator at top
+    if (!gameOver && hoverCol >= 0 && !droppingDisc)
+    {
+        const isValid = board[ROWS - 1][hoverCol] === DISC_EMPTY;
+        if (isValid)
+        {
+            const topPos = getCellWorldPos(ROWS, hoverCol);
+            const bobY = Math.sin(time * 4) * 0.1;
+            drawDisc(topPos.add(vec2(0, bobY)), currentPlayer, 0.8);
+        }
+    }
+}
+
+function drawUI()
+{
+    const screenSize = vec2(mainCanvasSize.x, mainCanvasSize.y);
+
+    // Current player indicator
+    if (!gameOver)
+    {
+        let playerText;
+        if (gameMode === 'ai')
+            playerText = currentPlayer === PLAYER_HUMAN ? "Your Turn (Red)" : "AI Thinking...";
+        else
+            playerText = currentPlayer === DISC_RED ? "Red's Turn" : "Yellow's Turn";
+
+        const color = getDiscColor(currentPlayer);
+        drawTextScreen(playerText, vec2(screenSize.x / 2, 35), 32, color, 4, BLACK);
+    }
+
+    // Undo hint
+    if (moveHistory.length > 0 && !gameOver)
+    {
+        drawTextScreen(`U: Undo`, vec2(30, 30), 18,
+            rgb(0.6, 0.8, 1), 2, BLACK, 'left');
+    }
+
+    // Game over message
+    if (gameOver)
+    {
+        drawTextScreen('GAME OVER', vec2(screenSize.x / 2, screenSize.y / 2 - 60), 64,
+            rgb(1, 0.8, 0), 6, BLACK);
+
+        let resultText;
+        let resultColor;
+
+        if (winner === null)
+        {
+            resultText = "It's a Draw!";
+            resultColor = WHITE;
+        }
+        else if (gameMode === 'ai')
+        {
+            resultText = winner === PLAYER_HUMAN ? "You Win!" : "AI Wins!";
+            resultColor = winner === PLAYER_HUMAN ? rgb(0, 1, 0.3) : rgb(1, 0.3, 0.3);
+        }
+        else
+        {
+            resultText = winner === DISC_RED ? "Red Wins!" : "Yellow Wins!";
+            resultColor = getDiscColor(winner);
+        }
+
+        drawTextScreen(resultText, vec2(screenSize.x / 2, screenSize.y / 2), 48,
+            resultColor, 5, BLACK);
+
+        drawTextScreen('Press R to restart or ESC for menu', vec2(screenSize.x / 2, screenSize.y / 2 + 60), 24,
+            WHITE, 3, BLACK);
+    }
+
+    // Controls
+    drawTextScreen('U: Undo | R: Restart | ESC: Menu', vec2(screenSize.x / 2, screenSize.y - 30), 20,
+        rgb(0.7, 0.7, 0.7), 2, BLACK);
+}
+
+function drawMenu()
+{
+    const screenSize = vec2(mainCanvasSize.x, mainCanvasSize.y);
+
+    drawTextScreen('CONNECT 4', vec2(screenSize.x / 2, 230), 130, hsl(0, .85, .55), 8, hsl(0, 0, 0.2), 'center', undefined, 'bold');
+
+    const instructY = screenSize.y - 150;
+    drawTextScreen('How to Play:', vec2(screenSize.x / 2, instructY), 28,
+        rgb(0.8, 0.8, 0.8), 3, BLACK);
+    drawTextScreen('Drop discs into columns to connect four in a row', vec2(screenSize.x / 2, instructY + 40), 22,
+        rgb(0.7, 0.7, 0.7), 2, BLACK);
+    drawTextScreen('Horizontal, vertical, or diagonal!', vec2(screenSize.x / 2, instructY + 70), 22,
+        rgb(0.7, 0.7, 0.7), 2, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME LOOP
+
+let aiThinkTimer = 0;
+const AI_THINK_DELAY = 0.6;
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    cameraPos = vec2(0, 0);
+
+    new UISystemPlugin();
+    uiSystem.defaultCornerRadius = 8;
+    uiSystem.defaultLineWidth = 3;
+
+    const cx = 640;
+    const cy = 360;
+
+    btnVsAI = new UIButton(vec2(cx, cy), vec2(500, 100), 'PLAYER VS AI');
+    btnVsAI.color = hsl(.55, .7, .35);
+    btnVsAI.hoverColor = hsl(.55, .8, .5);
+    btnVsAI.textColor = WHITE;
+    btnVsAI.textLineColor = BLACK;
+    btnVsAI.textLineWidth = 6;
+    btnVsAI.onClick = () => startGame('ai');
+
+    btnVsPlayer = new UIButton(vec2(cx, cy + 120), vec2(500, 100), 'PLAYER VS PLAYER');
+    btnVsPlayer.color = hsl(.02, .7, .4);
+    btnVsPlayer.hoverColor = hsl(.02, .8, .55);
+    btnVsPlayer.textColor = WHITE;
+    btnVsPlayer.textLineColor = BLACK;
+    btnVsPlayer.textLineWidth = 6;
+    btnVsPlayer.onClick = () => startGame('pvp');
+
+    sfxDrop = new SoundGenerator({frequency: 180, release: 0.08, volume: 0.4});
+    sfxWin = new SoundGenerator({frequency: 660, release: 0.3, pitchJump: 220, pitchJumpTime: 0.1, volume: 0.6});
+    sfxLose = new SoundGenerator({frequency: 220, release: 0.35, slide: -0.5, volume: 0.5});
+    sfxSelect = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
+
+    btnVsAI.soundClick = sfxSelect;
+    btnVsPlayer.soundClick = sfxSelect;
+
+    showMenuButtons(true);
+    gameMode = 'menu';
+}
+
+function showMenuButtons(visible)
+{
+    btnVsAI.visible = visible;
+    btnVsPlayer.visible = visible;
+}
+
+function startGame(mode)
+{
+    gameMode = mode;
+    showMenuButtons(false);
+    initBoard();
+}
+
+function gameUpdate()
+{
+    if (gameMode === 'menu')
+        return;
+
+    // Update drop animation
+    if (droppingDisc)
+    {
+        droppingDisc.currentY -= DROP_SPEED * timeDelta;
+        if (droppingDisc.currentY <= droppingDisc.targetY)
+        {
+            droppingDisc.currentY = droppingDisc.targetY;
+            droppingDisc = null;
+        }
+    }
+
+    // Input
+    if (keyWasPressed('KeyR'))
+    {
+        initBoard();
+        aiThinkTimer = 0;
+    }
+
+    if (keyWasPressed('KeyU'))
+    {
+        undoMove();
+        aiThinkTimer = 0;
+    }
+
+    if (keyWasPressed('Escape'))
+    {
+        gameMode = 'menu';
+        showMenuButtons(true);
+        return;
+    }
+
+    if (gameOver)
+        return;
+
+    // Update hover column
+    hoverCol = worldPosToCol(mousePos);
+
+    // AI turn
+    if (gameMode === 'ai' && currentPlayer === PLAYER_AI && !gameOver && !droppingDisc)
+    {
+        aiThinkTimer += timeDelta;
+        if (aiThinkTimer >= AI_THINK_DELAY)
+        {
+            const col = findBestAIMove();
+            if (col >= 0)
+            {
+                makeMove(col, PLAYER_AI);
+                aiThinkTimer = 0;
+            }
+        }
+    }
+
+    // Human input
+    if ((gameMode === 'pvp' || currentPlayer === PLAYER_HUMAN) && mouseWasPressed(0) && !droppingDisc)
+    {
+        const col = worldPosToCol(mousePos);
+        if (col >= 0 && board[ROWS - 1][col] === DISC_EMPTY)
+        {
+            makeMove(col, currentPlayer);
+            aiThinkTimer = 0;
+        }
+    }
+}
+
+function gameUpdatePost()
+{
+    cameraPos = vec2(0, 0);
+}
+
+function gameRender()
+{
+    drawRect(cameraPos, vec2(100, 100), rgb(0.02, 0.02, 0.06));
+
+    if (gameMode === 'menu')
+        return;
+
+    drawBoard();
+}
+
+function gameRenderPost()
+{
+    if (gameMode === 'menu')
+        drawMenu();
+    else
+        drawUI();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
