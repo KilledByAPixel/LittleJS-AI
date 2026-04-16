@@ -13,7 +13,7 @@ paused = false;
 
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
-cameraScale = 24;
+cameraScale = 28;
 
 class SoundGenerator extends Sound
 {
@@ -40,6 +40,9 @@ const TERRAIN_GRASS     = 0;
 const TERRAIN_ROAD      = 1;
 const TERRAIN_ROAD_EDGE = 2;
 const TERRAIN_SAND      = 3;
+const TERRAIN_WALL      = 4;
+const WALL_THICKNESS    = 2;   // tiles
+const CAR_RADIUS        = 0.55;
 
 const TOTAL_LAPS  = 3;
 const NUM_AI      = 3;
@@ -56,6 +59,8 @@ const COL_ROAD    = hsl(0, 0, .28);
 const COL_ROAD_EDGE = hsl(0, 0, .38);
 const COL_FINISH_W = hsl(0, 0, .95);
 const COL_FINISH_B = hsl(0, 0, .05);
+const COL_WALL_R   = hsl(0, .85, .50);
+const COL_WALL_W   = hsl(0, 0, .92);
 
 // state
 let tileLayer;
@@ -71,6 +76,10 @@ let raceTime = 0, countdown = 3, countdownTimer = 0;
 let raceStarted = false, raceFinished = false, finalPlacements = [];
 
 let sndCount, sndGo, sndLap, sndBump, sndBoost, sndWin;
+
+// skid marks accumulated this frame — flushed to the tile layer once per frame
+let pendingSkids = [];
+const SKID_COLOR = hsl(0, 0, 0, 0.35);
 
 ///////////////////////////////////////////////////////////////////////////////
 // small deterministic PRNG so 'N' can regenerate with a new seed
@@ -99,6 +108,17 @@ function terrainAt(worldPos)
     const gx = Math.floor(worldPos.x - LAYER_POS.x);
     const gy = Math.floor(worldPos.y - LAYER_POS.y);
     return getTerrain(gx, gy);
+}
+
+// check if a car-sized disk at pos overlaps any wall tile
+function isWallAt(pos)
+{
+    if (terrainAt(pos) === TERRAIN_WALL) return true;
+    if (terrainAt(vec2(pos.x + CAR_RADIUS, pos.y)) === TERRAIN_WALL) return true;
+    if (terrainAt(vec2(pos.x - CAR_RADIUS, pos.y)) === TERRAIN_WALL) return true;
+    if (terrainAt(vec2(pos.x, pos.y + CAR_RADIUS)) === TERRAIN_WALL) return true;
+    if (terrainAt(vec2(pos.x, pos.y - CAR_RADIUS)) === TERRAIN_WALL) return true;
+    return false;
 }
 function setTerrainIfHigher(gx, gy, t)
 {
@@ -186,6 +206,32 @@ function generateTrack(seed)
     for (const p of trackPoints) stamp(p, ROAD_RADIUS + EDGE_WIDTH, TERRAIN_ROAD_EDGE);
     for (const p of trackPoints) stamp(p, ROAD_RADIUS, TERRAIN_ROAD);
 
+    // walls: dilate the non-grass region into grass, WALL_THICKNESS times
+    // each iteration, any grass tile adjacent to non-grass becomes a wall
+    for (let pass = 0; pass < WALL_THICKNESS; pass++)
+    {
+        const toWall = [];
+        for (let x = 0; x < GRID_W; x++)
+        for (let y = 0; y < GRID_H; y++)
+        {
+            if (terrain[tIndex(x, y)] !== TERRAIN_GRASS) continue;
+            let adj = false;
+            outer: for (let dx = -1; dx <= 1; dx++)
+            for (let dy = -1; dy <= 1; dy++)
+            {
+                if (dx === 0 && dy === 0) continue;
+                const t = getTerrain(x + dx, y + dy);
+                if (t !== TERRAIN_GRASS && t !== TERRAIN_WALL)
+                {
+                    adj = true;
+                    break outer;
+                }
+            }
+            if (adj) toWall.push([x, y]);
+        }
+        for (const [x, y] of toWall) terrain[tIndex(x, y)] = TERRAIN_WALL;
+    }
+
     // pick finish line at trackPoints[0]
     const gridFinish = trackPoints[0];
     finishPos = vec2(LAYER_POS.x + gridFinish.x, LAYER_POS.y + gridFinish.y);
@@ -237,6 +283,7 @@ function buildTileLayer()
         if (t === TERRAIN_ROAD)        col = COL_ROAD;
         else if (t === TERRAIN_ROAD_EDGE) col = COL_ROAD_EDGE;
         else if (t === TERRAIN_SAND)   col = COL_SAND;
+        else if (t === TERRAIN_WALL)   col = ((x + y) & 1) ? COL_WALL_R : COL_WALL_W;
         else
         {
             // grass variation: 3-tone hash for texture
@@ -275,7 +322,8 @@ class Car
         this.prevPos = startPos.copy();
         this.velocity = vec2(0, 0);
         this.angle = startAngle;
-        this.size = vec2(1.4, 0.8);
+        // car is long along its facing axis (y) and narrow across (x)
+        this.size = vec2(0.95, 1.9);
         this.color = color;
         this.isPlayer = !!isPlayer;
         this.lap = 0;
@@ -284,6 +332,7 @@ class Car
         this.progressIdx = progressIdx;   // nearest-track-index estimate
         this.boostTimer = 0;
         this.aiLaneOffset = 0;
+        this.bumpCooldown = 0;
     }
 
     forward() { return vec2().setAngle(this.angle, 1); }
@@ -312,30 +361,38 @@ class Car
         const onEdge = tType === TERRAIN_ROAD_EDGE;
         const onSand = tType === TERRAIN_SAND;
 
-        let MAX_SPEED = 0.42;
-        let ACCEL = 0.014;
-        let GRIP = 0.22;
-        let FRICTION = 0.985;
-        if (onEdge) { MAX_SPEED = 0.35; ACCEL = 0.012; GRIP = 0.18; FRICTION = 0.97; }
-        else if (onSand) { MAX_SPEED = 0.18; ACCEL = 0.008; GRIP = 0.12; FRICTION = 0.93; }
-        else if (!onRoad) { MAX_SPEED = 0.14; ACCEL = 0.007; GRIP = 0.07; FRICTION = 0.91; }
+        // base tuning (per-frame at 60fps; units are world/sec when *60)
+        // wheels coast — tiny forward friction; drift recovers via lateral damping only
+        let MAX_SPEED = 1.00;
+        let ACCEL     = 0.028;
+        let GRIP      = 0.10;    // lateral damping (drift recovery)
+        let FRICTION  = 0.998;   // forward damping (tiny — cars roll)
+        if (onEdge) { MAX_SPEED = 0.85; ACCEL = 0.024; GRIP = 0.09; FRICTION = 0.995; }
+        else if (onSand) { MAX_SPEED = 0.35; ACCEL = 0.012; GRIP = 0.18; FRICTION = 0.96; }
+        else if (!onRoad) { MAX_SPEED = 0.30; ACCEL = 0.011; GRIP = 0.14; FRICTION = 0.955; }
 
-        const BRAKE = 0.024;
-        const TURN_RATE = 0.08;
-        const TURN_FULL = 0.14;
+        const BRAKE     = 0.040;
+        const TURN_RATE = 0.085;
+        const TURN_FULL = 0.10;
 
-        // boost temporarily raises max speed and friction
+        // handbrake: space bar — huge grip drop so the car slides sideways
+        const handbrake = this.isPlayer && keyIsDown('Space');
+
         if (this.boostTimer > 0)
         {
-            MAX_SPEED = Math.max(MAX_SPEED, 0.62);
-            ACCEL *= 1.8;
+            MAX_SPEED = Math.max(MAX_SPEED, 1.35);
+            ACCEL *= 2.0;
             this.boostTimer -= 1/60;
         }
 
         const fwd = this.forward();
         const fwdSpeed = this.velocity.dot(fwd);
-        const vFwd = fwd.scale(fwdSpeed * FRICTION);
-        const vSide = this.velocity.subtract(fwd.scale(fwdSpeed)).scale(1 - GRIP);
+        // handbrake drops grip dramatically AND adds forward drag
+        const gripNow = handbrake ? Math.min(GRIP, 0.03) : GRIP;
+        const frictionNow = handbrake ? 0.96 : FRICTION;
+        const vFwd = fwd.scale(fwdSpeed * frictionNow);
+        const vSideVec = this.velocity.subtract(fwd.scale(fwdSpeed));
+        const vSide = vSideVec.scale(1 - gripNow);
         this.velocity = vFwd.add(vSide);
 
         if (throttle > 0 && fwdSpeed < MAX_SPEED)
@@ -345,10 +402,70 @@ class Car
 
         const speedNow = this.velocity.dot(fwd);
         const turnScale = clamp(Math.abs(speedNow) / TURN_FULL, 0, 1);
+        // handbrake lets you rotate the car without forward momentum
+        const turnBoost = handbrake ? 1.5 : 1;
         const dir = speedNow >= 0 ? 1 : -1;
-        this.angle += turn * TURN_RATE * turnScale * dir;
+        const dAngle = turn * TURN_RATE * turnScale * turnBoost * dir;
 
-        this.pos = this.pos.add(this.velocity);
+        // very subtle rear bias on the rotation pivot
+        const pivotBehind = this.size.y * 0.08;
+        const pivot = this.pos.subtract(fwd.scale(pivotBehind));
+        this.angle += dAngle;
+        this.pos = pivot.add(this.forward().scale(pivotBehind));
+
+        // apply velocity with wall collision resolution
+        this.bumpCooldown = Math.max(0, this.bumpCooldown - 1/60);
+        const preImpactSpeed = this.velocity.length();
+        const newPos = this.pos.add(this.velocity);
+        if (!isWallAt(newPos))
+        {
+            this.pos = newPos;
+        }
+        else
+        {
+            const xOnly = vec2(newPos.x, this.pos.y);
+            const yOnly = vec2(this.pos.x, newPos.y);
+            const xClear = !isWallAt(xOnly);
+            const yClear = !isWallAt(yOnly);
+            if (xClear)
+            {
+                this.pos = xOnly;
+                this.velocity = vec2(this.velocity.x * 0.92, -this.velocity.y * 0.25);
+            }
+            else if (yClear)
+            {
+                this.pos = yOnly;
+                this.velocity = vec2(-this.velocity.x * 0.25, this.velocity.y * 0.92);
+            }
+            else
+            {
+                // corner hit — stop and bounce slightly
+                this.velocity = this.velocity.scale(-0.2);
+            }
+            // only beep on real impacts, and rate-limit so grazes don't chatter
+            if (this.isPlayer && preImpactSpeed > 0.25 && this.bumpCooldown <= 0)
+            {
+                sndBump.play(this.pos);
+                this.bumpCooldown = 0.4;
+            }
+        }
+
+        // drift detection: sideways speed + on drivable surface = drop skid marks
+        const lateralSpeed = vSideVec.length();
+        const drifting = (onRoad || onEdge) && lateralSpeed > 0.06;
+        if (drifting)
+        {
+            // drop marks at the 4 tire positions, angled with the car body
+            const sideVec = vec2().setAngle(this.angle + Math.PI/2, this.size.x * 0.5 + 0.05);
+            const frontBack = this.size.y * 0.38;
+            const ang = this.angle;
+            for (const fy of [-frontBack, frontBack])
+            for (const sx of [-1, 1])
+            {
+                const p = this.pos.add(fwd.scale(fy)).add(sideVec.scale(sx));
+                pendingSkids.push({ pos: p, angle: ang });
+            }
+        }
 
         // update progress index (local search)
         this.progressIdx = findNearestIdx(this.pos, this.progressIdx);
@@ -357,10 +474,10 @@ class Car
         for (const pu of pickups)
         {
             if (pu.cooldown > 0) continue;
-            if (this.pos.distance(pu.pos) < 0.8)
+            if (this.pos.distance(pu.pos) < 1.1)
             {
                 pu.cooldown = 4;
-                this.boostTimer = 1.3;
+                this.boostTimer = 1.4;
                 if (this.isPlayer) sndBoost.play(this.pos);
             }
         }
@@ -424,27 +541,44 @@ class Car
 
     render()
     {
+        const fwd = this.forward();
+        const sideUnit = vec2().setAngle(this.angle + Math.PI/2, 1);
+        const black = hsl(0, 0, .08);
+
+        // wheels first (under body edges)
+        const wheelSize = vec2(0.22, 0.5);
+        const wheelFwd = this.size.y * 0.38;
+        const wheelSide = this.size.x * 0.5 + 0.02;
+        for (const fy of [-wheelFwd, wheelFwd])
+        for (const sx of [-wheelSide, wheelSide])
+        {
+            const wp = this.pos.add(fwd.scale(fy)).add(sideUnit.scale(sx));
+            drawRect(wp, wheelSize, black, this.angle);
+        }
+
         // body
         drawRect(this.pos, this.size, this.color, this.angle);
-        // windshield (forward half)
-        const fwd = this.forward();
-        drawRect(this.pos.add(fwd.scale(0.22)), vec2(0.5, 0.75), hsl(0,0,.9,.85), this.angle);
-        // wheels
-        const side = vec2().setAngle(this.angle + Math.PI/2, 0.45);
-        const black = hsl(0,0,.08);
-        for (const sx of [-0.45, 0.45])
-        for (const sy of [-1, 1])
-        {
-            const wp = this.pos.add(fwd.scale(sx)).add(side.scale(sy));
-            drawRect(wp, vec2(0.32, 0.18), black, this.angle);
-        }
+
+        // color stripe down the middle (a bit of flair)
+        drawRect(this.pos, vec2(this.size.x * 0.22, this.size.y * 0.92),
+            this.color.scale(1.3, 1), this.angle);
+
+        // windshield toward the front
+        drawRect(this.pos.add(fwd.scale(this.size.y * 0.22)),
+            vec2(this.size.x * 0.75, this.size.y * 0.28),
+            hsl(.55, .4, .25), this.angle);
+
+        // rear bumper hint
+        drawRect(this.pos.add(fwd.scale(-this.size.y * 0.46)),
+            vec2(this.size.x * 0.85, 0.12), black, this.angle);
+
         // boost flame
         if (this.boostTimer > 0)
         {
-            const flameLen = 0.8 + Math.random() * 0.4;
-            const flamePos = this.pos.add(fwd.scale(-0.7 - flameLen * 0.5));
-            drawRect(flamePos, vec2(flameLen, 0.4), hsl(0.08, .95, .55), this.angle);
-            drawRect(flamePos, vec2(flameLen * 0.6, 0.2), hsl(0.15, .95, .75), this.angle);
+            const flameLen = 1.1 + Math.random() * 0.5;
+            const flamePos = this.pos.add(fwd.scale(-this.size.y * 0.5 - flameLen * 0.5));
+            drawRect(flamePos, vec2(this.size.x * 0.6, flameLen), hsl(0.08, .95, .55), this.angle);
+            drawRect(flamePos, vec2(this.size.x * 0.35, flameLen * 0.6), hsl(0.15, .95, .75), this.angle);
         }
     }
 }
@@ -493,7 +627,7 @@ function setupRace()
         const gp = trackPoints[backIdx];
         const tan = trackTangents[backIdx];
         const side = vec2(-tan.y, tan.x);
-        const lateral = (col === 0 ? -1 : 1) * 1.4;
+        const lateral = (col === 0 ? -1 : 1) * 1.8;
         const worldPos = vec2(
             LAYER_POS.x + gp.x + side.x * lateral,
             LAYER_POS.y + gp.y + side.y * lateral
@@ -585,7 +719,7 @@ function gameUpdate()
         const a = cars[i], b = cars[j];
         const d = b.pos.subtract(a.pos);
         const dist = d.length();
-        const minDist = 1.2;
+        const minDist = 1.7;
         if (dist > 0.001 && dist < minDist)
         {
             const push = d.scale((minDist - dist) / dist / 2);
@@ -613,11 +747,27 @@ function gameUpdate()
 
 function gameUpdatePost()
 {
+    // bake all skid marks queued this frame into the tile layer
+    if (pendingSkids.length && tileLayer)
+    {
+        tileLayer.redrawStart(false);
+        const skidSize = vec2(TILE_PX * 0.22, TILE_PX * 0.55);
+        const half = skidSize.scale(0.5);
+        for (const s of pendingSkids)
+        {
+            const cx = (s.pos.x - LAYER_POS.x) * TILE_PX;
+            const cy = (s.pos.y - LAYER_POS.y) * TILE_PX;
+            tileLayer.drawLayerRect(vec2(cx - half.x, cy - half.y), skidSize, SKID_COLOR, s.angle);
+        }
+        tileLayer.redrawEnd();
+        pendingSkids.length = 0;
+    }
+
     // camera follows player, lead slightly in direction of travel
     const speed = player.velocity.length();
-    const lead = player.forward().scale(clamp(speed * 10, 2, 6));
+    const lead = player.forward().scale(clamp(speed * 8, 2, 7));
     const target = player.pos.add(lead);
-    cameraPos = cameraPos.lerp(target, 0.09);
+    cameraPos = cameraPos.lerp(target, 0.12);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -721,7 +871,7 @@ function gameRenderPost()
     // idle hints
     if (!raceStarted && !raceFinished)
     {
-        drawTextScreen('Arrow keys to drive — 3 laps — press N for new track',
+        drawTextScreen('Arrows drive — Space drifts — 3 laps — N new track',
             vec2(w/2, h - 40), 22, white, 3, black);
     }
 }
