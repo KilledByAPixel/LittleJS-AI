@@ -36,6 +36,8 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 | Flappy Bird | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/flappyBird.html) |
 | Lunar Lander | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/lunarLander.html) |
 | Othello | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/othello.html) |
+| Connect 4 | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/connect4.html) |
+| Checkers | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/checkers.html) |
 | Orbitswarm | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) |
 
 ## 🕹️ Works in Progress Made With AI
