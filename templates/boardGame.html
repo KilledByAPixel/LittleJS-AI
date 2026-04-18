@@ -1,0 +1,270 @@
+<!DOCTYPE html><head>
+<title>LittleJS Board Game Template</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+// engine settings, customize if necessary
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 42;
+
+// AI can use this class to make sound effects
+class SoundGenerator extends Sound
+{
+    constructor(params = {})
+    {
+        const {
+            volume = 1,
+            randomness = .05,
+            frequency = 220,
+            attack = 0,
+            release = .1,
+            shapeCurve = 1,
+            slide = 0,
+            pitchJump = 0,
+            pitchJumpTime = 0,
+            repeatTime = 0,
+            noise = 0,
+            bitCrush = 0,
+            delay = 0,
+        } = params;
+
+        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0,
+            pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// BOARD GAME TEMPLATE
+
+const BOARD_SIZE = 8;
+const CELL_SIZE = 1.8;
+const PIECE_DIAMETER = 1.4;
+
+const EMPTY = 0;
+const PLAYER_1 = 1; // human (in 'ai' mode)
+const PLAYER_2 = 2; // AI (in 'ai' mode)
+
+let board = [];
+let currentPlayer = PLAYER_1;
+let hoverCell = null;
+let gameMode = 'menu'; // 'menu' | 'pvp' | 'ai'
+
+let btnVsAI, btnVsPlayer;
+let sfxPlace, sfxSelect;
+
+const AI_THINK_DELAY = 0.5;
+let aiThinkTimer = 0;
+
+///////////////////////////////////////////////////////////////////////////////
+// BOARD HELPERS
+
+function initBoard()
+{
+    board = [];
+    for (let row = 0; row < BOARD_SIZE; row++)
+    {
+        board[row] = [];
+        for (let col = 0; col < BOARD_SIZE; col++)
+            board[row][col] = EMPTY;
+    }
+    currentPlayer = PLAYER_1;
+    aiThinkTimer = 0;
+}
+
+function isInBounds(row, col)
+{
+    return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+function getCellWorldPos(row, col)
+{
+    const offset = -(BOARD_SIZE * CELL_SIZE) / 2 + CELL_SIZE / 2;
+    return vec2(offset + col * CELL_SIZE, offset + (BOARD_SIZE - 1 - row) * CELL_SIZE);
+}
+
+function worldPosToCell(worldPos)
+{
+    const offset = -(BOARD_SIZE * CELL_SIZE) / 2;
+    const col = Math.floor((worldPos.x - offset) / CELL_SIZE);
+    const row = BOARD_SIZE - 1 - Math.floor((worldPos.y - offset) / CELL_SIZE);
+    return isInBounds(row, col) ? {row, col} : null;
+}
+
+function placePiece(row, col, player)
+{
+    // TODO: replace with your move validation (e.g. isValidMove)
+    if (board[row][col] !== EMPTY) return false;
+    board[row][col] = player;
+
+    // TODO: replace with your turn logic (e.g. skip turn, check win)
+    currentPlayer = currentPlayer === PLAYER_1 ? PLAYER_2 : PLAYER_1;
+
+    sfxPlace.play();
+    return true;
+}
+
+function aiMove()
+{
+    // TODO: replace with your AI move logic
+    const empties = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (board[r][c] === EMPTY) empties.push({row: r, col: c});
+    if (empties.length === 0) return;
+    const pick = empties[Math.floor(Math.random() * empties.length)];
+    placePiece(pick.row, pick.col, PLAYER_2);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MENU
+
+function showMenuButtons(visible)
+{
+    btnVsAI.visible = visible;
+    btnVsPlayer.visible = visible;
+}
+
+function startGame(mode)
+{
+    gameMode = mode;
+    showMenuButtons(false);
+    initBoard();
+}
+
+function returnToMenu()
+{
+    gameMode = 'menu';
+    showMenuButtons(true);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME LOOP
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+
+    sfxPlace = new SoundGenerator({frequency: 440, release: 0.05, volume: 0.3});
+    sfxSelect = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
+
+    new UISystemPlugin();
+    uiSystem.defaultCornerRadius = 8;
+    uiSystem.defaultLineWidth = 3;
+
+    const cx = 640, cy = 360;
+    btnVsAI = new UIButton(vec2(cx, cy), vec2(500, 100), 'PLAYER VS AI');
+    btnVsAI.color = hsl(.55, .7, .35);
+    btnVsAI.hoverColor = hsl(.55, .8, .5);
+    btnVsAI.textColor = WHITE;
+    btnVsAI.textLineColor = BLACK;
+    btnVsAI.textLineWidth = 6;
+    btnVsAI.soundClick = sfxSelect;
+    btnVsAI.onClick = () => startGame('ai');
+
+    btnVsPlayer = new UIButton(vec2(cx, cy + 120), vec2(500, 100), 'PLAYER VS PLAYER');
+    btnVsPlayer.color = hsl(.02, .7, .4);
+    btnVsPlayer.hoverColor = hsl(.02, .8, .55);
+    btnVsPlayer.textColor = WHITE;
+    btnVsPlayer.textLineColor = BLACK;
+    btnVsPlayer.textLineWidth = 6;
+    btnVsPlayer.soundClick = sfxSelect;
+    btnVsPlayer.onClick = () => startGame('pvp');
+
+    initBoard();
+    showMenuButtons(true);
+}
+
+function gameUpdate()
+{
+    if (gameMode === 'menu') return;
+
+    if (keyWasPressed('Escape')) { returnToMenu(); return; }
+    if (keyWasPressed('KeyR')) initBoard();
+
+    hoverCell = worldPosToCell(mousePos);
+
+    // AI turn
+    if (gameMode === 'ai' && currentPlayer === PLAYER_2)
+    {
+        aiThinkTimer += timeDelta;
+        if (aiThinkTimer >= AI_THINK_DELAY)
+        {
+            aiThinkTimer = 0;
+            aiMove();
+        }
+        return;
+    }
+
+    // Human input
+    if (mouseWasPressed(0) && hoverCell)
+        placePiece(hoverCell.row, hoverCell.col, currentPlayer);
+}
+
+function gameUpdatePost()
+{
+}
+
+function gameRender()
+{
+    // Background
+    drawRect(cameraPos, vec2(100, 100), rgb(0.05, 0.05, 0.08));
+
+    if (gameMode === 'menu') return;
+
+    const boardWorldSize = BOARD_SIZE * CELL_SIZE;
+
+    // Board background
+    drawRect(vec2(0, 0), vec2(boardWorldSize + 0.4), rgb(0.1, 0.1, 0.1));
+    drawRect(vec2(0, 0), vec2(boardWorldSize), rgb(0.15, 0.5, 0.15));
+
+    // Grid lines
+    for (let i = 1; i < BOARD_SIZE; i++)
+    {
+        const o = -boardWorldSize / 2 + i * CELL_SIZE;
+        drawLine(vec2(o, -boardWorldSize / 2), vec2(o, boardWorldSize / 2), 0.05, rgb(0.1, 0.35, 0.1));
+        drawLine(vec2(-boardWorldSize / 2, o), vec2(boardWorldSize / 2, o), 0.05, rgb(0.1, 0.35, 0.1));
+    }
+
+    // Hover highlight
+    if (hoverCell && board[hoverCell.row][hoverCell.col] === EMPTY)
+        drawRect(getCellWorldPos(hoverCell.row, hoverCell.col), vec2(CELL_SIZE * 0.95), rgb(1, 1, 1, 0.15));
+
+    // Pieces — TODO: replace with your piece rendering
+    for (let row = 0; row < BOARD_SIZE; row++)
+    for (let col = 0; col < BOARD_SIZE; col++)
+    {
+        const cell = board[row][col];
+        if (cell === EMPTY) continue;
+        const color = cell === PLAYER_1 ? hsl(0, 0, 0.15) : hsl(0, 0, 0.95);
+        drawCircle(getCellWorldPos(row, col), PIECE_DIAMETER, color);
+    }
+}
+
+function gameRenderPost()
+{
+    if (gameMode === 'menu')
+    {
+        drawTextScreen('BOARD GAME', vec2(mainCanvasSize.x / 2, 230), 120,
+            hsl(0, 0, 0.9), 8, hsl(0, 0, 0.2), 'center', undefined, 'bold');
+        return;
+    }
+
+    drawTextScreen('R: Restart   ESC: Menu',
+        vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 30), 22,
+        rgb(0.7, 0.7, 0.7), 2, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>

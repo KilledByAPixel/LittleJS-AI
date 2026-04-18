@@ -7,13 +7,13 @@ Core goals
 
 Project constraints
 - One self-contained HTML file per prototype. No build step, no bundler.
-- Start from templates/index.html. Use templates/indexBox2d.html only if the game needs Box2D physics (rigid bodies, joints, ragdolls).
-- Write each new prototype as its own .html file in games/ (named after the game). The only index.html lives in templates/.
+- Start from templates/game.html. Use templates/box2dGame.html only if the game needs Box2D physics (rigid bodies, joints, ragdolls).
+- Write each new prototype as its own .html file in games/ (named after the game).
 - Do not include any other libraries, only littlejs.
 - Do not change the html or css, only write JavaScript.
 - No external assets (no images, textures, spritesheets, audio files).
 - Untextured only: use solid-color primitives (rects, circles, lines). Do not use sprite/texture APIs.
-- Use SoundGenerator class provided in index.html to make sound effects.
+- Use SoundGenerator class provided in the template to make sound effects.
 - Use LittleJS provided math functions and Vector2 math when possible.
 - Prefer to use LittleJS world space drawing functions.
 
