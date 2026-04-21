@@ -217,20 +217,21 @@ const LEVELS = [
 
 let currentSolver = null;  // Active solver state
 
+// Push-level BFS: states are (player reachable region, box positions).
+// Much smaller search than move-level BFS because walking-around-equivalent
+// states are merged.
 function createSolverState(levelData)
 {
-    // Parse level into initial state
     let width = 0;
     const height = levelData.length;
     for (const row of levelData)
         width = Math.max(width, row.length);
-    
-    // Build initial state
-    let startPlayer = null;
+
+    let startPlayerKey = null;
     const startBoxes = new Set();
     const targets = new Set();
     const walls = new Set();
-    
+
     for (let y = 0; y < height; y++)
     {
         const row = levelData[y];
@@ -238,141 +239,195 @@ function createSolverState(levelData)
         {
             const char = x < row.length ? row[x] : ' ';
             const key = x + ',' + y;
-            
             switch(char)
             {
                 case '#': walls.add(key); break;
                 case '.': targets.add(key); break;
                 case '$': startBoxes.add(key); break;
                 case '*': startBoxes.add(key); targets.add(key); break;
-                case '@': startPlayer = {x, y}; break;
-                case '+': startPlayer = {x, y}; targets.add(key); break;
+                case '@': startPlayerKey = key; break;
+                case '+': startPlayerKey = key; targets.add(key); break;
             }
         }
     }
-    
-    if (!startPlayer || startBoxes.size === 0 || targets.size === 0)
+
+    if (!startPlayerKey || startBoxes.size === 0 || targets.size === 0)
         return { done: true, result: { solvable: false, moves: 0, reason: 'Invalid level', statesChecked: 0 } };
-    
+
     if (startBoxes.size !== targets.size)
         return { done: true, result: { solvable: false, moves: 0, reason: 'Box/target mismatch', statesChecked: 0 } };
-    
-    // Simple state encoding: player position + sorted box positions
-    function encodeState(px, py, boxes)
+
+    const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+
+    function parseKey(k)
     {
-        const sortedBoxes = Array.from(boxes).sort();
-        return px + ',' + py + '|' + sortedBoxes.join(';');
+        const c = k.indexOf(',');
+        return [+k.slice(0, c), +k.slice(c + 1)];
     }
-    
+
+    // Flood-fill reachable cells from a start key, avoiding walls and boxes.
+    // Returns { region, canon } where canon is the lex-smallest key in the
+    // region — two states share equivalence iff boxes match and canon matches.
+    function computeReachable(startKey, boxes)
+    {
+        const region = new Set();
+        region.add(startKey);
+        let canon = startKey;
+        const stack = [startKey];
+        while (stack.length)
+        {
+            const [cx, cy] = parseKey(stack.pop());
+            for (const [dx, dy] of dirs)
+            {
+                const nk = (cx + dx) + ',' + (cy + dy);
+                if (region.has(nk)) continue;
+                if (walls.has(nk) || boxes.has(nk)) continue;
+                region.add(nk);
+                if (nk < canon) canon = nk;
+                stack.push(nk);
+            }
+        }
+        return { region, canon };
+    }
+
+    // Corner deadlock: box wedged between two walls, not on a target.
+    function isCornerDeadlock(key)
+    {
+        if (targets.has(key)) return false;
+        const [bx, by] = parseKey(key);
+        const horiz = walls.has((bx-1) + ',' + by) || walls.has((bx+1) + ',' + by);
+        const vert  = walls.has(bx + ',' + (by-1)) || walls.has(bx + ',' + (by+1));
+        return horiz && vert;
+    }
+
+    // 2x2 freeze deadlock: any 2x2 square of walls+boxes means none of those
+    // boxes can ever move. If at least one box in the square is not on a
+    // target, the state is unwinnable.
+    function is2x2Deadlock(key, boxes)
+    {
+        const [bx, by] = parseKey(key);
+        function occupied(x, y)
+        {
+            const k = x + ',' + y;
+            return walls.has(k) || boxes.has(k);
+        }
+        function offTargetBox(x, y)
+        {
+            const k = x + ',' + y;
+            return boxes.has(k) && !targets.has(k);
+        }
+        for (const [ox, oy] of [[0,0],[-1,0],[0,-1],[-1,-1]])
+        {
+            const x0 = bx + ox, y0 = by + oy;
+            if (!occupied(x0, y0) || !occupied(x0+1, y0)
+             || !occupied(x0, y0+1) || !occupied(x0+1, y0+1)) continue;
+            if (offTargetBox(x0, y0) || offTargetBox(x0+1, y0)
+             || offTargetBox(x0, y0+1) || offTargetBox(x0+1, y0+1)) return true;
+        }
+        return false;
+    }
+
+    function boxesKey(boxes)
+    {
+        return Array.from(boxes).sort().join(';');
+    }
+
+    const startCanon = computeReachable(startPlayerKey, startBoxes).canon;
     const visited = new Set();
-    const queue = [{px: startPlayer.x, py: startPlayer.y, boxes: startBoxes, moves: 0}];
-    visited.add(encodeState(startPlayer.x, startPlayer.y, startBoxes));
-    
+    visited.add(startCanon + '|' + boxesKey(startBoxes));
+    const queue = [{ player: startCanon, boxes: startBoxes, pushes: 0 }];
+
     return {
         done: false,
         result: null,
         queue,
+        queueHead: 0,
         visited,
         walls,
         targets,
         statesChecked: 0,
-        maxStates: 1000000,
-        encodeState,
-        dirs: [[0, -1], [0, 1], [-1, 0], [1, 0]]
+        maxStates: 300000,
+        dirs,
+        parseKey,
+        computeReachable,
+        isCornerDeadlock,
+        is2x2Deadlock,
+        boxesKey
     };
 }
 
-// Process a batch of states, returns true if done
-function solverProcessBatch(solver, batchSize = 5000)
+// Process a batch of states, returns true if done.
+function solverProcessBatch(solver, batchSize = 500)
 {
     if (solver.done) return true;
-    
-    const { queue, visited, walls, targets, dirs, encodeState } = solver;
-    
-    // Check win condition
+
+    const { queue, visited, walls, targets, dirs, parseKey,
+            computeReachable, isCornerDeadlock, is2x2Deadlock, boxesKey } = solver;
+
     function isWin(boxes)
     {
         for (const t of targets)
             if (!boxes.has(t)) return false;
         return true;
     }
-    
-    // Deadlock detection: box in corner not on target
-    function isDeadlock(bx, by, boxes)
-    {
-        const key = bx + ',' + by;
-        if (targets.has(key)) return false;
-        
-        const left = walls.has((bx-1) + ',' + by);
-        const right = walls.has((bx+1) + ',' + by);
-        const up = walls.has(bx + ',' + (by-1));
-        const down = walls.has(bx + ',' + (by+1));
-        
-        if ((left || right) && (up || down))
-            return true;
-        
-        return false;
-    }
-    
+
     let processed = 0;
-    
-    while (queue.length > 0 && processed < batchSize && solver.statesChecked < solver.maxStates)
+    while (solver.queueHead < queue.length && processed < batchSize && solver.statesChecked < solver.maxStates)
     {
-        const state = queue.shift();
+        // Index pointer instead of queue.shift() — avoids O(n) per pop.
+        const state = queue[solver.queueHead];
+        queue[solver.queueHead] = null;  // let GC reclaim the state
+        solver.queueHead++;
         solver.statesChecked++;
         processed++;
-        
-        // Check win
+
         if (isWin(state.boxes))
         {
             solver.done = true;
-            solver.result = { solvable: true, moves: state.moves, statesChecked: solver.statesChecked };
+            solver.result = { solvable: true, moves: state.pushes, statesChecked: solver.statesChecked };
             return true;
         }
-        
-        // Try each direction
-        for (const [dx, dy] of dirs)
+
+        const { region } = computeReachable(state.player, state.boxes);
+
+        // For each box, try each push direction where the player can stand
+        // on the opposite side.
+        for (const boxKey of state.boxes)
         {
-            const nx = state.px + dx;
-            const ny = state.py + dy;
-            const nkey = nx + ',' + ny;
-            
-            if (walls.has(nkey)) continue;
-            
-            let newBoxes = state.boxes;
-            
-            if (state.boxes.has(nkey))
+            const [bx, by] = parseKey(boxKey);
+            for (const [dx, dy] of dirs)
             {
-                const bx = nx + dx;
-                const by = ny + dy;
-                const bkey = bx + ',' + by;
-                
-                if (walls.has(bkey) || state.boxes.has(bkey)) continue;
-                
-                newBoxes = new Set(state.boxes);
-                newBoxes.delete(nkey);
-                newBoxes.add(bkey);
-                
-                if (isDeadlock(bx, by, newBoxes)) continue;
+                const fromKey = (bx - dx) + ',' + (by - dy);
+                if (!region.has(fromKey)) continue;
+
+                const toKey = (bx + dx) + ',' + (by + dy);
+                if (walls.has(toKey) || state.boxes.has(toKey)) continue;
+
+                const newBoxes = new Set(state.boxes);
+                newBoxes.delete(boxKey);
+                newBoxes.add(toKey);
+
+                if (isCornerDeadlock(toKey)) continue;
+                if (is2x2Deadlock(toKey, newBoxes)) continue;
+
+                // Player lands on the box's old cell; canonicalize new region.
+                const newCanon = computeReachable(boxKey, newBoxes).canon;
+                const encoded = newCanon + '|' + boxesKey(newBoxes);
+                if (visited.has(encoded)) continue;
+                visited.add(encoded);
+
+                queue.push({ player: newCanon, boxes: newBoxes, pushes: state.pushes + 1 });
             }
-            
-            const encoded = encodeState(nx, ny, newBoxes);
-            if (visited.has(encoded)) continue;
-            visited.add(encoded);
-            
-            queue.push({px: nx, py: ny, boxes: newBoxes, moves: state.moves + 1});
         }
     }
-    
-    // Check if we're done
-    if (queue.length === 0 || solver.statesChecked >= solver.maxStates)
+
+    if (solver.queueHead >= queue.length || solver.statesChecked >= solver.maxStates)
     {
         solver.done = true;
         const reason = solver.statesChecked >= solver.maxStates ? 'Max states exceeded' : 'No solution';
         solver.result = { solvable: false, moves: 0, statesChecked: solver.statesChecked, reason };
         return true;
     }
-    
     return false;
 }
 
@@ -437,7 +492,7 @@ function updateSolver()
         });
         
         const status = result.solvable 
-            ? `SOLVABLE (${result.moves} moves, ${result.statesChecked} states, ${elapsed.toFixed(1)}ms)`
+            ? `SOLVABLE (${result.moves} pushes, ${result.statesChecked} states, ${elapsed.toFixed(1)}ms)`
             : `UNSOLVABLE - ${result.reason} (${result.statesChecked} states, ${elapsed.toFixed(1)}ms)`;
         console.log(`Level ${verifyLevelIndex + 1}: ${status}`);
         
@@ -975,7 +1030,7 @@ function gameRenderPost()
             
             const color = r.solvable ? hsl(.33, .7, .55) : hsl(0, .8, .55);
             const status = r.solvable 
-                ? `Level ${r.level}: SOLVABLE - ${r.moves} moves (${r.states} states, ${r.time}ms)`
+                ? `Level ${r.level}: SOLVABLE - ${r.moves} pushes (${r.states} states, ${r.time}ms)`
                 : `Level ${r.level}: FAILED - ${r.reason} (${r.states} states)`;
             
             drawTextScreen(status, vec2(mainCanvasSize.x / 2, yPos), 22, color, 2, rgb(0,0,0));
