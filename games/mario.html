@@ -601,7 +601,7 @@ function gameRenderPost()
     drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 20), 20, hsl(0,0,1), 4, hsl(0,0,0));
 
     // coins counter
-    drawTextScreen(`COINS ${coinsCollected}/${coinsTotal}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1,1,1), 4, rgb(0,0,0), 'center', 'monospace');
+    drawTextScreen(`COINS ${coinsCollected}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1,1,1), 4, rgb(0,0,0), 'center', 'monospace');
 
     if (player?.won)
         drawTextScreen('GOAL!', vec2(mainCanvasSize.x/2, 70), 80, hsl(.12,.9,.65), 6, hsl(0,0,0));
