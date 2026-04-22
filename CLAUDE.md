@@ -16,6 +16,7 @@ Project constraints
 - Use SoundGenerator class provided in the template to make sound effects.
 - Use LittleJS provided math functions and Vector2 math when possible.
 - Prefer to use LittleJS world space drawing functions.
+- Use keyDirection() for directional keyboard input (returns a vec2; handles arrows + WASD automatically when inputWASDEmulateDirection is set). Reserve keyIsDown() for non-directional keys like jump, run, action.
 
 How to respond
 - Ask up to 3 quick questions only if needed (controls, goal, win/lose). Otherwise start immediately.
@@ -41,6 +42,5 @@ Common pitfalls
 
 Notes
 - Drawing functions are in world space by default with a screenSpace parameter
-- Use keyDirection() to get directional input as a vec2.
 - reference.md documents the main parts of LittleJS API.
 - Test by opening the .html file directly in a browser — dist/littlejs.js is local, no server required.
