@@ -40,5 +40,5 @@ Common pitfalls
 Notes
 - Drawing functions are in world space by default with a screenSpace parameter
 - Use keyDirection() to get directional input as a vec2.
-- GPT/reference.md and GPT/tutorial.md document the LittleJS API in detail; consult them for unfamiliar functions.
+- reference.md documents the main parts of LittleJS API.
 - Test by opening the .html file directly in a browser — dist/littlejs.js is local, no server required.
