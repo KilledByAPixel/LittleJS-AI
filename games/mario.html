@@ -193,10 +193,6 @@ function spawnCoins()
         new Coin(vec2(x,y));
 }
 
-// --------- UI ---------
-const restartButtonPos  = vec2(110, 40);
-const restartButtonSize = vec2(190, 48);
-
 // sfx
 const sfxJump  = new SoundGenerator({ volume:.6, frequency:420, attack:0, release:.12, slide:.05, randomness:.02 });
 const sfxBump  = new SoundGenerator({ volume:.4, frequency:160, attack:0, release:.08, shapeCurve:0.6, noise:.1 });
@@ -506,17 +502,6 @@ function gameUpdate()
     // restart hotkey
     if (keyWasPressed('KeyR'))
         respawn();
-
-    // restart button (mouse/touch)
-    if (mouseWasPressed(0))
-    {
-        const mp = mousePosScreen;
-        if (abs(mp.x - restartButtonPos.x) < restartButtonSize.x/2 &&
-            abs(mp.y - restartButtonPos.y) < restartButtonSize.y/2)
-        {
-            respawn();
-        }
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -614,13 +599,6 @@ function gameRenderPost()
     // HUD
     const help = 'Arrow: Move   Space/Up: Jump   Shift: Run   R: Restart';
     drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 20), 20, hsl(0,0,1), 4, hsl(0,0,0));
-
-    // restart button
-    const hover = abs(mousePosScreen.x - restartButtonPos.x) < restartButtonSize.x/2 &&
-                  abs(mousePosScreen.y - restartButtonPos.y) < restartButtonSize.y/2;
-    drawRect(restartButtonPos, restartButtonSize, hover ? rgb(.2,.2,.2,.65) : rgb(.15,.15,.15,.55), 0, false, true);
-    drawRect(restartButtonPos, restartButtonSize.add(vec2(-6,-6)), rgb(.05,.05,.05,.35), 0, false, true);
-    drawTextScreen('RESTART', restartButtonPos, 22, rgb(1,1,1), 4, rgb(0,0,0));
 
     // coins counter
     drawTextScreen(`COINS ${coinsCollected}/${coinsTotal}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1,1,1), 4, rgb(0,0,0), 'center', 'monospace');
