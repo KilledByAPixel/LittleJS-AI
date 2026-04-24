@@ -7,7 +7,7 @@ Core goals
 
 Project constraints
 - One self-contained HTML file per prototype. No build step, no bundler.
-- Start from templates/game.html. Use templates/boardGame.html for grid/board games (has menu, hover, AI opponent scaffolding). Use templates/box2dGame.html only if the game needs Box2D physics (rigid bodies, joints, ragdolls).
+- Start from templates/game.html. Use templates/boardGame.html for grid/board games (has menu, hover, AI opponent scaffolding). Use templates/box2dGame.html only if the game needs Box2D physics (rigid bodies, joints, ragdolls). Use templates/uiGame.html for UI-heavy prototypes (menus, settings screens, dialog-driven games) — demonstrates UISystemPlugin with buttons, checkboxes, sliders, text input, tile images, confirm dialogs, and keyboard/gamepad navigation.
 - Write each new prototype as its own .html file in games/ (named after the game).
 - Do not include any other libraries, only littlejs.
 - Do not change the html or css, only write JavaScript.
