@@ -23,7 +23,7 @@ cameraScale = 64;
 //
 // Builds a 4x4 atlas of 500px tiles entirely from canvas draw ops via the
 // textureGenerator module. Press S to save the atlas PNG + prompt blob,
-// press L to swap to an "atlas-ai.png" sitting next to this file.
+// press L to swap to an "atlas.png" sitting next to this file.
 
 const sprites = {};
 
@@ -199,7 +199,7 @@ function gameUpdate()
         saveAtlasPrompt();
     }
     if (keyWasPressed('KeyL'))
-        useAtlasImage('atlas-ai.png');
+        useAtlasImage('atlas.png');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -232,7 +232,7 @@ function gameRenderPost()
 {
     drawTextScreen('Texture Atlas Template',
         vec2(mainCanvasSize.x / 2, 60), 50, WHITE, 4, BLACK);
-    drawTextScreen('S = save atlas + prompt   L = load atlas-ai.png',
+    drawTextScreen('S = save atlas + prompt   L = load atlas.png',
         vec2(mainCanvasSize.x / 2, 110), 24, hsl(0, 0, .7), 2, BLACK);
 }
 
