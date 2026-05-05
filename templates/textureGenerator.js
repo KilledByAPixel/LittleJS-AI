@@ -99,3 +99,19 @@ function saveAtlasPrompt(filename = 'atlas-prompt')
     const url = 'data:text/plain;charset=utf-8,' + encodeURIComponent(blob);
     saveDataURL(url, filename + '.txt');
 }
+
+function useAtlasImage(url)
+{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () =>
+    {
+        // mutate textureInfos[0] in place so existing TileInfos keep working
+        const tex = textureInfos[0];
+        tex.image = img;
+        tex.size = vec2(img.width, img.height);
+        tex.sizeInverse = vec2(1 / img.width, 1 / img.height);
+        tex.createWebGLTexture();
+    };
+    img.src = url;
+}
