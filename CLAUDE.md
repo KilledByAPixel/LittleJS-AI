@@ -15,6 +15,7 @@ Project constraints
 - Untextured only: use solid-color primitives (rects, circles, lines). Do not use sprite/texture APIs.
 - Use SoundGenerator class provided in the template to make sound effects.
 - Use LittleJS provided math functions and Vector2 math when possible.
+- Use Timer class for keeping track of timed events
 - Prefer to use LittleJS world space drawing functions.
 - Use keyDirection() for directional keyboard input (returns a vec2; handles arrows + WASD automatically when inputWASDEmulateDirection is set). Reserve keyIsDown() for non-directional keys like jump, run, action.
 
