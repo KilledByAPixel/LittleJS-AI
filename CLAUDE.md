@@ -12,8 +12,8 @@ Project constraints
 - Do not include any other libraries, only littlejs.
 - Do not change the html or css, only write JavaScript.
 - No external assets (no images, textures, spritesheets, audio files).
-- Untextured only: use solid-color primitives (rects, circles, lines). Do not use sprite/texture APIs.
 - Use SoundGenerator class (defined in templates/soundGenerator.js, loaded via a script tag in every template) to make sound effects. When copying a template into games/, change the `<script src="soundGenerator.js">` path to `<script src="../templates/soundGenerator.js">`.
+- Use the textureGenerator module (defined in templates/textureGenerator.js, loaded via a script tag in every template) to build sprite atlases from canvas 2D draw ops. Call `initDrawToTexture()` once in gameInit, then `drawToTexture(tileIndex, drawFn, description)` for each sprite (16 tiles available, indexed 0-15; drawFn paints in a 500x500 pixel space). `saveAtlasImage()` and `saveAtlasPrompt()` export the sheet + an AI prompt; `useAtlasImage(url)` swaps to a precached AI-generated 2048x2048 atlas. When copying a template into games/, change the `<script src="textureGenerator.js">` path to `<script src="../templates/textureGenerator.js">`. For prototypes that don't need sprites, solid-color primitives (rects, circles, lines) are still fine.
 - Use LittleJS provided math functions and Vector2 math when possible.
 - Use Timer class for keeping track of timed events
 - Prefer to use LittleJS world space drawing functions.
