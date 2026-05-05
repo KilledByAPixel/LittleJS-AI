@@ -13,7 +13,7 @@ Project constraints
 - Do not change the html or css, only write JavaScript.
 - No external assets (no images, textures, spritesheets, audio files).
 - Untextured only: use solid-color primitives (rects, circles, lines). Do not use sprite/texture APIs.
-- Use SoundGenerator class provided in the template to make sound effects.
+- Use SoundGenerator class (defined in templates/soundGenerator.js, loaded via a script tag in every template) to make sound effects. When copying a template into games/, change the `<script src="soundGenerator.js">` path to `<script src="../templates/soundGenerator.js">`.
 - Use LittleJS provided math functions and Vector2 math when possible.
 - Use Timer class for keeping track of timed events
 - Prefer to use LittleJS world space drawing functions.
@@ -33,7 +33,7 @@ Output format
 
 Common pitfalls
 - For drawCircle and drawEllipse, the size is the diameter not the radius.
-- Clockwise is positive for angles.
+- Angles: clockwise is positive in LittleJS, counterclockwise is positive in Box2D.
 - Y-axis is up-positive in world space (gravity.y is negative to fall down).
 - drawText uses world units (size ~3 is normal); drawTextScreen uses pixels (size ~80 is normal). Do not mix them up.
 - When using the Box2D template, call `await box2dInit()` at the top of gameInit before creating any bodies.
