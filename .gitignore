@@ -3,7 +3,7 @@ node_modules
 
 # local files
 local/
+docs/
 .github/
 .vscode/
 .claude/
-docs/superpowers/
