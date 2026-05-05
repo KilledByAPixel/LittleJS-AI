@@ -88,7 +88,7 @@ function saveAtlasImage(filename = 'atlas')
 function saveAtlasPrompt(filename = 'atlas-prompt')
 {
     let blob = 'A 2048x2048 sprite atlas, 4x4 grid of 500px tiles with ' +
-        '6px transparent gutters between tiles, transparent background. ' +
+        '6px gutters between tiles, transparent background. ' +
         'Tiles are numbered 0-15 left-to-right, top-to-bottom. Match each ' +
         'tile\'s silhouette and palette to the rough drawing.\n\n';
     for (let i = 0; i < TILE_COUNT; ++i)
