@@ -4,4 +4,5 @@ node_modules
 # local files
 local/
 .vscode/
+.claude/
 docs/superpowers
