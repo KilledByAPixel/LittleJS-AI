@@ -106,12 +106,11 @@ function useAtlasImage(url)
     img.crossOrigin = 'anonymous';
     img.onload = () =>
     {
-        // mutate textureInfos[0] in place so existing TileInfos keep working
-        const tex = textureInfos[0];
-        tex.image = img;
-        tex.size = vec2(img.width, img.height);
-        tex.sizeInverse = vec2(1 / img.width, 1 / img.height);
-        tex.createWebGLTexture();
+        // paint the loaded image into the 2048 atlasCanvas, scaling as needed
+        // so tile coordinates stay correct regardless of source image size
+        atlasCtx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
+        atlasCtx.drawImage(img, 0, 0, ATLAS_SIZE, ATLAS_SIZE);
+        textureInfos[0].createWebGLTexture();
     };
     img.src = url;
 }
