@@ -11,37 +11,12 @@
 </head>
 <body>
 <script src="../dist/littlejs.js?1.18.0"></script>
+<script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
 
 // ============================================================
 // Sound (no external assets)
-// ============================================================
-// AI can use this class to generate sounds (from the provided template)
-class SoundGenerator extends Sound 
-{
-    constructor(params = {})
-    {
-        const {
-            volume = 1,        // Volume scale (percent)
-            randomness = .05,  // How much to randomize frequency (percent Hz)
-            frequency = 220,   // Frequency of sound (Hz)
-            attack = 0,        // Attack time, how fast sound starts (seconds)
-            release = .1,      // Release time, how fast sound fades out (seconds)
-            shapeCurve = 1,    // Squareness of wave (0=square, 1=normal, 2=pointy)
-            slide = 0,         // How much to slide frequency (kHz/s)
-            pitchJump = 0,     // Frequency of pitch jump (Hz)
-            pitchJumpTime = 0, // Time of pitch jump (seconds)
-            repeatTime = 0,    // Resets some parameters periodically (seconds)
-            noise = 0,         // How much random noise to add (percent)
-            bitCrush = 0,      // Resamples at a lower frequency in (samples*100)
-            delay = 0,         // Overlap sound with itself for reverb and flanger effects (seconds)
-        } = params;
-        
-        super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0, pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
-    }
-}
-
 const sShoot  = new SoundGenerator({volume:.6, frequency:820, release:.06, slide:-1.6, shapeCurve:.6, noise:.02});
 const sBoom   = new SoundGenerator({volume:1,  frequency:90,  release:.35, slide:-.7,  shapeCurve:1.2, noise:.12, delay:.02});
 const sHit    = new SoundGenerator({volume:.8, frequency:220, release:.18, slide:-.4,  shapeCurve:1.1, noise:.08});

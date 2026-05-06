@@ -3,64 +3,13 @@
 <meta charset=utf-8>
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.0"></script>
+<script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
-
-// AI can use this class to make sound effects
-class SoundGenerator extends Sound 
-{
-    constructor(params = {})
-    {
-        // Generative retro sound synthesis (tiny wrapper around LittleJS Sound)
-        // params: {volume, randomness, frequency, attack, sustain, release, shape, slide, deltaSlide,
-        //          pitchJump, pitchJumpTime, repeatTime, noise, bitCrush, delay}
-        const p = {
-            volume: .35,
-            randomness: 0,
-            frequency: 700,
-            attack: .01,
-            sustain: .02,
-            release: .1,
-            shape: 0,        // 0=sine,1=triangle,2=saw,3=square
-            slide: 0,
-            deltaSlide: 0,
-            pitchJump: 0,
-            pitchJumpTime: 0,
-            repeatTime: 0,
-            noise: 0,
-            bitCrush: 0,
-            delay: 0,
-            ...params,
-        };
-
-        // LittleJS Sound constructor expects an array of parameters.
-        // Keep the order consistent with the starter template.
-        super([
-            p.volume,
-            p.randomness,
-            p.frequency,
-            p.attack,
-            p.sustain,
-            p.release,
-            p.shape,
-            p.slide,
-            p.deltaSlide,
-            p.pitchJump,
-            p.pitchJumpTime,
-            p.repeatTime,
-            p.noise,
-            0,              // modulation
-            p.bitCrush,
-            p.delay,
-            1,              // sustain volume
-            0, 0, 0         // reserved
-        ]);
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // SNOOD (bubble shooter) prototype

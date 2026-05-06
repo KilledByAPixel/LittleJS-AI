@@ -2,685 +2,467 @@
 <title>LittleJS AI Starter Project</title>
 <meta charset=utf-8>
 </head><body>
-<!-- Defer so we can install shims first (prevents "Script error" in restricted envs) -->
-<script defer crossorigin="anonymous" src="../dist/littlejs.js?1.18.0"></script>
+<script src="../dist/littlejs.js?1.18.0"></script>
+<script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
 
-// -----------------------------------------------------------------------------
-// BOOT SHIMS (run before the deferred LittleJS engine executes)
-//
-// Some embedded/preview environments lack WebAudio/OffscreenCanvas.
-// LittleJS initializes AudioContext at load time; if AudioContext is missing,
-// the engine throws (often reported as "Script error" with no stack).
-// We provide lightweight no-op shims so the engine can load and the game can run.
+// engine settings
+debugWatermark = false;
+showEngineVersion = false;
 
-// Capture errors early (helps when the browser hides stack traces)
-window.addEventListener('error', (e)=>{
-    console.error('Window error:', e.message, e.error);
-});
-window.addEventListener('unhandledrejection', (e)=>{
-    console.error('Unhandled rejection:', e.reason);
-});
+const sqrt = Math.sqrt;
 
-// OffscreenCanvas fallback
-if (typeof OffscreenCanvas === 'undefined')
+// signed shortest angle difference (b - a) in [-PI, PI]
+function distanceAngle(a, b)
 {
-    window.OffscreenCanvas = function(w, h)
+    let d = (b - a + PI) % (PI*2);
+    if (d < 0) d += PI*2;
+    return d - PI;
+}
+
+
+// -------------------------------------------------------------------------
+// Combat-style mini prototype (Atari 2600 inspired)
+
+const ARENA_SIZE = vec2(60, 34);
+
+const TANK_RADIUS = 1.2;
+const TANK_BODY   = vec2(2.3, 1.6);
+const TANK_BARREL = vec2(1.7, .35);
+
+const BULLET_RADIUS = .35;
+const BULLET_SPEED  = 1.15;   // per frame (60fps)
+const BULLET_LIFE   = 240;
+const BULLET_BOUNCES = 2;
+
+const TURN_SPEED    = 0.055;
+const ACCEL         = 0.06;   // reduced ~3x
+const MAX_SPEED     = 0.30;   // reduced ~3x
+const FRICTION      = 0.86;
+
+const RESPAWN_DELAY = 60;
+
+let walls = [];
+let bullets = [];
+let tanks = [];
+let scores = [0,0];
+
+let aiEnabled = true; // one player is AI by default
+let roundTimer = 0;
+let pausedLocal = false;
+
+// sounds (lazy)
+let sShoot, sBounce, sHit, sBlip;
+function initSounds()
+{
+    if (sShoot) return;
+    sShoot  = new SoundGenerator({ volume:.6,  frequency:420, attack:0, release:.08, shapeCurve:.2, slide:-.2 });
+    sBounce = new SoundGenerator({ volume:.35, frequency:260, attack:0, release:.05, shapeCurve:1.6, randomness:.15 });
+    sHit    = new SoundGenerator({ volume:.8,  frequency:90,  attack:0, release:.25, noise:.5, shapeCurve:2, bitCrush:3 });
+    sBlip   = new SoundGenerator({ volume:.25, frequency:520, attack:0, release:.05, shapeCurve:.6, randomness:.1 });
+}
+
+function randSign() { return randBool() ? 1 : -1; }
+
+function buildWalls()
+{
+    // Smaller/shorter interior obstacles (more like classic Combat)
+    walls = [
+        // center column
+        {pos:vec2(0,  0),   size:vec2(2, 10)},
+
+        // short rails (top/bottom left/right)
+        {pos:vec2(-12,  7), size:vec2(10, 2)},
+        {pos:vec2(-12, -7), size:vec2(10, 2)},
+        {pos:vec2( 12,  7), size:vec2(10, 2)},
+        {pos:vec2( 12, -7), size:vec2(10, 2)},
+
+        // side bumpers (shorter)
+        {pos:vec2(-24, 0),  size:vec2(2, 10)},
+        {pos:vec2( 24, 0),  size:vec2(2, 10)},
+
+        // small corner blocks
+        {pos:vec2(-22,  14), size:vec2(4, 2)},
+        {pos:vec2( 22,  14), size:vec2(4, 2)},
+        {pos:vec2(-22, -14), size:vec2(4, 2)},
+        {pos:vec2( 22, -14), size:vec2(4, 2)},
+    ];
+}
+
+// resolve a moving circle vs AABB by pushing out; returns {hit:boolean, normal:vec2}
+function resolveCircleAABB(pos, radius, boxPos, boxSize)
+{
+    const hx = boxSize.x/2, hy = boxSize.y/2;
+    const dx = pos.x - boxPos.x;
+    const dy = pos.y - boxPos.y;
+
+    const cx = clamp(dx, -hx, hx);
+    const cy = clamp(dy, -hy, hy);
+
+    const px = dx - cx;
+    const py = dy - cy;
+    const d2 = px*px + py*py;
+    const r2 = radius*radius;
+
+    if (d2 >= r2) return {hit:false, normal:vec2()};
+
+    let n = vec2(px, py);
+    const d = sqrt(d2) || 0.0001;
+    n = n.scale(1/d);
+
+    const push = radius - d;
+    pos.x += n.x*push;
+    pos.y += n.y*push;
+    return {hit:true, normal:n};
+}
+
+function resolveCircleArena(pos, radius)
+{
+    const hx = ARENA_SIZE.x/2 - radius;
+    const hy = ARENA_SIZE.y/2 - radius;
+
+    let hitN = vec2();
+    if (pos.x < -hx) { pos.x = -hx; hitN = vec2(1,0); }
+    else if (pos.x > hx) { pos.x = hx; hitN = vec2(-1,0); }
+    if (pos.y < -hy) { pos.y = -hy; hitN = vec2(0,1); }
+    else if (pos.y > hy) { pos.y = hy; hitN = vec2(0,-1); }
+    return hitN;
+}
+
+function lineIntersectsWall(a, b, wall)
+{
+    const steps = 14;
+    for (let i=0;i<=steps;i++)
     {
-        const c = document.createElement('canvas');
-        c.width  = w|0;
-        c.height = h|0;
-        return c;
-    };
+        const t = i/steps;
+        const p = a.lerp(b, t);
+        if (abs(p.x - wall.pos.x) <= wall.size.x/2 && abs(p.y - wall.pos.y) <= wall.size.y/2)
+            return true;
+    }
+    return false;
 }
 
-// WebAudio: Prefer webkitAudioContext if available
-if (typeof AudioContext === 'undefined' && typeof webkitAudioContext !== 'undefined')
-    window.AudioContext = webkitAudioContext;
-
-// Minimal no-op WebAudio graph to keep LittleJS from crashing when audio is unavailable.
-function _makeNoopNode()
+function hasLineOfSight(a, b)
 {
-    const node = {
-        connect(){ return node; },
-        disconnect(){},
-    };
-    // common AudioParam-like fields
-    node.gain = { value: 1, setValueAtTime(){}, linearRampToValueAtTime(){} };
-    node.pan  = { value: 0, setValueAtTime(){}, linearRampToValueAtTime(){} };
-    node.offset = { value: 0, setValueAtTime(){}, linearRampToValueAtTime(){} };
-    node.playbackRate = { value: 1, setValueAtTime(){}, linearRampToValueAtTime(){} };
-    node.detune = { value: 0, setValueAtTime(){}, linearRampToValueAtTime(){} };
-    node.start = function(){};
-    node.stop  = function(){};
-    return node;
+    for (const w of walls)
+        if (lineIntersectsWall(a, b, w))
+            return false;
+    return true;
 }
 
-if (typeof AudioContext === 'undefined')
+class Tank
 {
-    console.warn('AudioContext not available; using no-op audio shim (sounds disabled).');
-    window.AudioContext = class FakeAudioContext
+    constructor(index, pos, ang, color, keys)
     {
-        constructor(){ this.currentTime = 0; this.sampleRate = 44100; this.destination = _makeNoopNode(); }
-        createGain(){ return _makeNoopNode(); }
-        createStereoPanner(){ return _makeNoopNode(); }
-        createBuffer(){ return { getChannelData(){ return new Float32Array(1); } }; }
-        createBufferSource(){ return _makeNoopNode(); }
-        createBiquadFilter(){ return _makeNoopNode(); }
-        createDynamicsCompressor(){ return _makeNoopNode(); }
-        resume(){ return Promise.resolve(); }
-        suspend(){ return Promise.resolve(); }
-        close(){ return Promise.resolve(); }
-    };
-}
+        this.index = index;
+        this.pos = pos.copy();
+        this.vel = vec2();
+        this.ang = ang;
+        this.color = color;
+        this.keys = keys;
+        this.cooldown = 0;
+        this.respawn = 0;
+    }
 
-// StereoPannerNode fallback (LittleJS sometimes constructs nodes directly)
-if (typeof StereoPannerNode === 'undefined')
-{
-    window.StereoPannerNode = function(ctx, opts={})
+    get forward() { return vec2(Math.sin(this.ang), Math.cos(this.ang)); }
+
+    shoot()
     {
-        const node = ctx.createStereoPanner ? ctx.createStereoPanner() : (ctx.createGain ? ctx.createGain() : _makeNoopNode());
-        if (node.pan)
-            node.pan.value = opts.pan || 0;
-        return node;
-    };
-}
+        if (this.cooldown > 0 || this.respawn > 0) return;
 
-// ConstantSourceNode fallback (used by LittleJS capture code)
-if (typeof ConstantSourceNode === 'undefined')
-{
-    window.ConstantSourceNode = function(ctx, opts={})
+        this.cooldown = 18;
+        const muzzle = this.pos.add(this.forward.scale(TANK_BODY.y*.55 + 1.0));
+        const v = this.forward.scale(BULLET_SPEED);
+        bullets.push(new Bullet(this.index, muzzle, v));
+
+        initSounds();
+        sShoot.play();
+    }
+
+    damage(byIndex)
     {
-        const node = _makeNoopNode();
-        node.offset.value = opts.offset || 0;
-        return node;
-    };
-}
-
-// -----------------------------------------------------------------------------
-// WAIT FOR LITTLEJS, THEN START GAME
-
-function showFatal(msg)
-{
-    document.body.style.background = '#000';
-    document.body.style.color = '#fff';
-    document.body.style.fontFamily = 'monospace';
-    document.body.style.margin = '0';
-    document.body.innerHTML = `<pre style="padding:12px">${msg}</pre>`;
-}
-
-function whenLittleJSReady(start)
-{
-    let tries = 0;
-    const maxTries = 300; // ~5 seconds at 60fps
-    const timer = setInterval(() =>
-    {
-        // key globals we rely on
-        if (window.engineInit && window.vec2 && window.drawRect)
+        if (this.respawn > 0) return;
+        this.respawn = RESPAWN_DELAY;
+        if (byIndex >= 0)
         {
-            clearInterval(timer);
-            start();
+            scores[byIndex] += 1;
+            resetRound(byIndex);
+        }
+        else
+            resetRound(-1);
+    }
+
+    updateHuman()
+    {
+        const k = this.keys;
+
+        // turn direction: make left rotate left (counter-clockwise) in player feel
+        const turn = (keyIsDown(k.right)?1:0) - (keyIsDown(k.left)?1:0);
+        this.ang += TURN_SPEED*turn;
+
+        const thrust = (keyIsDown(k.up)?1:0) - (keyIsDown(k.down)?1:0);
+        if (thrust)
+        {
+            const accel = thrust > 0 ? ACCEL : ACCEL*.65;
+            this.vel = this.vel.add(this.forward.scale(accel*thrust));
+        }
+
+        if (keyWasPressed(k.fire))
+            this.shoot();
+    }
+
+    updateAI(target)
+    {
+        const to = target.pos.subtract(this.pos);
+        const desired = to.normalize();
+        const desiredAng = desired.angle();
+
+        let da = distanceAngle(this.ang, desiredAng);
+        da = clamp(da, -1, 1);
+        this.ang += TURN_SPEED*clamp(da*1.4, -1, 1);
+
+        const d2 = to.lengthSquared();
+        if (d2 > 140) this.vel = this.vel.add(this.forward.scale(ACCEL*.75));
+        else if (d2 < 80) this.vel = this.vel.add(this.forward.scale(-ACCEL*.55));
+
+        const lined = abs(da) < .18;
+        if (lined && hasLineOfSight(this.pos, target.pos) && this.cooldown==0)
+            this.shoot();
+    }
+
+    update()
+    {
+        if (this.respawn > 0)
+        {
+            this.respawn--;
             return;
         }
 
-        if (++tries >= maxTries)
+        if (this.cooldown > 0) this.cooldown--;
+
+        if (this.index === 1 && aiEnabled)
+            this.updateAI(tanks[0]);
+        else
+            this.updateHuman();
+
+        this.vel = this.vel.scale(FRICTION);
+        if (this.vel.length() > MAX_SPEED)
+            this.vel = this.vel.clampLength(MAX_SPEED);
+
+        this.pos = this.pos.add(this.vel);
+
+        const hitN = resolveCircleArena(this.pos, TANK_RADIUS);
+        if (hitN.lengthSquared())
+            this.vel = this.vel.scale(.5);
+
+        for (const w of walls)
         {
-            clearInterval(timer);
-            showFatal('LittleJS failed to initialize.\n\nOpen the console for details.\n(If this is in an embedded preview, the CDN may be blocked.)');
+            const r = resolveCircleAABB(this.pos, TANK_RADIUS, w.pos, w.size);
+            if (r.hit)
+                this.vel = this.vel.subtract(r.normal.scale(this.vel.dot(r.normal))).scale(.6);
         }
-    }, 16);
+    }
+
+    render()
+    {
+        if (this.respawn > 0 && (this.respawn%6)<3)
+            return;
+
+        drawRect(this.pos, TANK_BODY, this.color, this.ang);
+        const barrelPos = this.pos.add(this.forward.scale(TANK_BODY.y*.55));
+        drawRect(barrelPos, TANK_BARREL, this.color, this.ang);
+        drawRect(this.pos, TANK_BODY.add(vec2(.15,.15)), rgb(0,0,0,.35), this.ang);
+    }
 }
 
-whenLittleJSReady(startGame);
-
-// -----------------------------------------------------------------------------
-// GAME CODE (runs only after LittleJS is available)
-
-function startGame()
+class Bullet
 {
-    // engine settings
-    debugWatermark = false;
-    showEngineVersion = false;
-
-    // Local math helpers (avoid relying on LittleJS aliases like min/max/abs)
-    const PI = Math.PI;
-    const abs = Math.abs;
-    const sqrt = Math.sqrt;
-    const min = Math.min;
-    const max = Math.max;
-
-    const clamp = (v, a, b) => min(max(v, a), b);
-    const rand = (a=0, b=1) => a + Math.random()*(b-a);
-    const randBool = () => Math.random() < .5;
-    const sign = (x) => x < 0 ? -1 : 1;
-
-    // signed shortest angle difference (b - a) in [-PI, PI]
-    function distanceAngle(a, b)
+    constructor(owner, pos, vel)
     {
-        let d = (b - a + PI) % (PI*2);
-        if (d < 0) d += PI*2;
-        return d - PI;
+        this.owner = owner;
+        this.pos = pos.copy();
+        this.vel = vel.copy();
+        this.life = BULLET_LIFE;
+        this.bounces = BULLET_BOUNCES;
     }
 
-    // -------------------------------------------------------------------------
-    // SoundGenerator: safe wrapper around LittleJS Sound.
-    // If Sound is missing or audio is shimmed, this becomes a no-op.
-
-    const BaseSound = (typeof Sound !== 'undefined') ? Sound : class { constructor(){} play(){} };
-
-    class SoundGenerator extends BaseSound
+    update()
     {
-        constructor(params = {})
+        const subSteps = 2;
+        for (let s=0;s<subSteps;s++)
         {
-            const {
-                volume = 1,
-                randomness = .05,
-                frequency = 220,
-                attack = 0,
-                release = .1,
-                shapeCurve = 1,
-                slide = 0,
-                pitchJump = 0,
-                pitchJumpTime = 0,
-                repeatTime = 0,
-                noise = 0,
-                bitCrush = 0,
-                delay = 0,
-            } = params;
+            this.pos = this.pos.add(this.vel.scale(1/subSteps));
 
-            // Some environments still throw inside Sound constructor; catch and degrade gracefully.
-            try
-            {
-                super([volume, randomness, frequency, attack, 0, release, 0, shapeCurve, slide, 0, pitchJump, pitchJumpTime, repeatTime, noise, 0, bitCrush, delay, 1, 0, 0, 0]);
-                this._ok = true;
-            }
-            catch (e)
-            {
-                console.warn('Sound disabled:', e);
-                super();
-                this._ok = false;
-            }
-        }
-
-        play()
-        {
-            if (!this._ok) return;
-            try { super.play(); } catch(e) { /* ignore */ }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Combat-style mini prototype (Atari 2600 inspired)
-
-    const ARENA_SIZE = vec2(60, 34);
-
-    const TANK_RADIUS = 1.2;
-    const TANK_BODY   = vec2(2.3, 1.6);
-    const TANK_BARREL = vec2(1.7, .35);
-
-    const BULLET_RADIUS = .35;
-    const BULLET_SPEED  = 1.15;   // per frame (60fps)
-    const BULLET_LIFE   = 240;
-    const BULLET_BOUNCES = 2;
-
-    const TURN_SPEED    = 0.055;
-    const ACCEL         = 0.06;   // reduced ~3x
-    const MAX_SPEED     = 0.30;   // reduced ~3x
-    const FRICTION      = 0.86;
-
-    const RESPAWN_DELAY = 60;
-
-    let walls = [];
-    let bullets = [];
-    let tanks = [];
-    let scores = [0,0];
-
-    let aiEnabled = true; // one player is AI by default
-    let roundTimer = 0;
-    let pausedLocal = false;
-
-    // sounds (lazy)
-    let sShoot, sBounce, sHit, sBlip;
-    function initSounds()
-    {
-        if (sShoot) return;
-        sShoot  = new SoundGenerator({ volume:.6,  frequency:420, attack:0, release:.08, shapeCurve:.2, slide:-.2 });
-        sBounce = new SoundGenerator({ volume:.35, frequency:260, attack:0, release:.05, shapeCurve:1.6, randomness:.15 });
-        sHit    = new SoundGenerator({ volume:.8,  frequency:90,  attack:0, release:.25, noise:.5, shapeCurve:2, bitCrush:3 });
-        sBlip   = new SoundGenerator({ volume:.25, frequency:520, attack:0, release:.05, shapeCurve:.6, randomness:.1 });
-    }
-
-    function randSign() { return randBool() ? 1 : -1; }
-
-    function buildWalls()
-    {
-        // Smaller/shorter interior obstacles (more like classic Combat)
-        walls = [
-            // center column
-            {pos:vec2(0,  0),   size:vec2(2, 10)},
-
-            // short rails (top/bottom left/right)
-            {pos:vec2(-12,  7), size:vec2(10, 2)},
-            {pos:vec2(-12, -7), size:vec2(10, 2)},
-            {pos:vec2( 12,  7), size:vec2(10, 2)},
-            {pos:vec2( 12, -7), size:vec2(10, 2)},
-
-            // side bumpers (shorter)
-            {pos:vec2(-24, 0),  size:vec2(2, 10)},
-            {pos:vec2( 24, 0),  size:vec2(2, 10)},
-
-            // small corner blocks
-            {pos:vec2(-22,  14), size:vec2(4, 2)},
-            {pos:vec2( 22,  14), size:vec2(4, 2)},
-            {pos:vec2(-22, -14), size:vec2(4, 2)},
-            {pos:vec2( 22, -14), size:vec2(4, 2)},
-        ];
-    }
-
-    // resolve a moving circle vs AABB by pushing out; returns {hit:boolean, normal:vec2}
-    function resolveCircleAABB(pos, radius, boxPos, boxSize)
-    {
-        const hx = boxSize.x/2, hy = boxSize.y/2;
-        const dx = pos.x - boxPos.x;
-        const dy = pos.y - boxPos.y;
-
-        const cx = clamp(dx, -hx, hx);
-        const cy = clamp(dy, -hy, hy);
-
-        const px = dx - cx;
-        const py = dy - cy;
-        const d2 = px*px + py*py;
-        const r2 = radius*radius;
-
-        if (d2 >= r2) return {hit:false, normal:vec2()};
-
-        let n = vec2(px, py);
-        const d = sqrt(d2) || 0.0001;
-        n = n.scale(1/d);
-
-        const push = radius - d;
-        pos.x += n.x*push;
-        pos.y += n.y*push;
-        return {hit:true, normal:n};
-    }
-
-    function resolveCircleArena(pos, radius)
-    {
-        const hx = ARENA_SIZE.x/2 - radius;
-        const hy = ARENA_SIZE.y/2 - radius;
-
-        let hitN = vec2();
-        if (pos.x < -hx) { pos.x = -hx; hitN = vec2(1,0); }
-        else if (pos.x > hx) { pos.x = hx; hitN = vec2(-1,0); }
-        if (pos.y < -hy) { pos.y = -hy; hitN = vec2(0,1); }
-        else if (pos.y > hy) { pos.y = hy; hitN = vec2(0,-1); }
-        return hitN;
-    }
-
-    function lineIntersectsWall(a, b, wall)
-    {
-        const steps = 14;
-        for (let i=0;i<=steps;i++)
-        {
-            const t = i/steps;
-            const p = a.lerp(b, t);
-            if (abs(p.x - wall.pos.x) <= wall.size.x/2 && abs(p.y - wall.pos.y) <= wall.size.y/2)
-                return true;
-        }
-        return false;
-    }
-
-    function hasLineOfSight(a, b)
-    {
-        for (const w of walls)
-            if (lineIntersectsWall(a, b, w))
-                return false;
-        return true;
-    }
-
-    class Tank
-    {
-        constructor(index, pos, ang, color, keys)
-        {
-            this.index = index;
-            this.pos = pos.copy();
-            this.vel = vec2();
-            this.ang = ang;
-            this.color = color;
-            this.keys = keys;
-            this.cooldown = 0;
-            this.respawn = 0;
-        }
-
-        get forward() { return vec2(Math.sin(this.ang), Math.cos(this.ang)); }
-
-        shoot()
-        {
-            if (this.cooldown > 0 || this.respawn > 0) return;
-
-            this.cooldown = 18;
-            const muzzle = this.pos.add(this.forward.scale(TANK_BODY.y*.55 + 1.0));
-            const v = this.forward.scale(BULLET_SPEED);
-            bullets.push(new Bullet(this.index, muzzle, v));
-
-            initSounds();
-            sShoot.play();
-        }
-
-        damage(byIndex)
-        {
-            if (this.respawn > 0) return;
-            this.respawn = RESPAWN_DELAY;
-            if (byIndex >= 0)
-            {
-                scores[byIndex] += 1;
-                resetRound(byIndex);
-            }
-            else
-                resetRound(-1);
-        }
-
-        updateHuman()
-        {
-            const k = this.keys;
-
-            // turn direction: make left rotate left (counter-clockwise) in player feel
-            const turn = (keyIsDown(k.right)?1:0) - (keyIsDown(k.left)?1:0);
-            this.ang += TURN_SPEED*turn;
-
-            const thrust = (keyIsDown(k.up)?1:0) - (keyIsDown(k.down)?1:0);
-            if (thrust)
-            {
-                const accel = thrust > 0 ? ACCEL : ACCEL*.65;
-                this.vel = this.vel.add(this.forward.scale(accel*thrust));
-            }
-
-            if (keyWasPressed(k.fire))
-                this.shoot();
-        }
-
-        updateAI(target)
-        {
-            const to = target.pos.subtract(this.pos);
-            const desired = to.normalize();
-            const desiredAng = desired.angle();
-
-            let da = distanceAngle(this.ang, desiredAng);
-            da = clamp(da, -1, 1);
-            this.ang += TURN_SPEED*clamp(da*1.4, -1, 1);
-
-            const d2 = to.lengthSquared();
-            if (d2 > 140) this.vel = this.vel.add(this.forward.scale(ACCEL*.75));
-            else if (d2 < 80) this.vel = this.vel.add(this.forward.scale(-ACCEL*.55));
-
-            const lined = abs(da) < .18;
-            if (lined && hasLineOfSight(this.pos, target.pos) && this.cooldown==0)
-                this.shoot();
-        }
-
-        update()
-        {
-            if (this.respawn > 0)
-            {
-                this.respawn--;
-                return;
-            }
-
-            if (this.cooldown > 0) this.cooldown--;
-
-            if (this.index === 1 && aiEnabled)
-                this.updateAI(tanks[0]);
-            else
-                this.updateHuman();
-
-            this.vel = this.vel.scale(FRICTION);
-            if (this.vel.length() > MAX_SPEED)
-                this.vel = this.vel.clampLength(MAX_SPEED);
-
-            this.pos = this.pos.add(this.vel);
-
-            const hitN = resolveCircleArena(this.pos, TANK_RADIUS);
-            if (hitN.lengthSquared())
-                this.vel = this.vel.scale(.5);
+            const hx = ARENA_SIZE.x/2 - BULLET_RADIUS;
+            const hy = ARENA_SIZE.y/2 - BULLET_RADIUS;
+            if (this.pos.x < -hx) { this.pos.x = -hx; this.vel.x *= -1; this.bounces--; initSounds(); sBounce.play(); }
+            else if (this.pos.x > hx) { this.pos.x = hx; this.vel.x *= -1; this.bounces--; initSounds(); sBounce.play(); }
+            if (this.pos.y < -hy) { this.pos.y = -hy; this.vel.y *= -1; this.bounces--; initSounds(); sBounce.play(); }
+            else if (this.pos.y > hy) { this.pos.y = hy; this.vel.y *= -1; this.bounces--; initSounds(); sBounce.play(); }
 
             for (const w of walls)
             {
-                const r = resolveCircleAABB(this.pos, TANK_RADIUS, w.pos, w.size);
-                if (r.hit)
-                    this.vel = this.vel.subtract(r.normal.scale(this.vel.dot(r.normal))).scale(.6);
+                const expandedSize = w.size.add(vec2(BULLET_RADIUS*2));
+                if (abs(this.pos.x - w.pos.x) <= expandedSize.x/2 &&
+                    abs(this.pos.y - w.pos.y) <= expandedSize.y/2)
+                {
+                    const dx = this.pos.x - w.pos.x;
+                    const dy = this.pos.y - w.pos.y;
+                    const px = (w.size.x/2 + BULLET_RADIUS) - abs(dx);
+                    const py = (w.size.y/2 + BULLET_RADIUS) - abs(dy);
+                    if (px < py)
+                    {
+                        this.pos.x += sign(dx)*px;
+                        this.vel.x *= -1;
+                    }
+                    else
+                    {
+                        this.pos.y += sign(dy)*py;
+                        this.vel.y *= -1;
+                    }
+                    this.bounces--;
+                    initSounds();
+                    sBounce.play();
+                }
             }
-        }
 
-        render()
-        {
-            if (this.respawn > 0 && (this.respawn%6)<3)
-                return;
-
-            drawRect(this.pos, TANK_BODY, this.color, this.ang);
-            const barrelPos = this.pos.add(this.forward.scale(TANK_BODY.y*.55));
-            drawRect(barrelPos, TANK_BARREL, this.color, this.ang);
-            drawRect(this.pos, TANK_BODY.add(vec2(.15,.15)), rgb(0,0,0,.35), this.ang);
-        }
-    }
-
-    class Bullet
-    {
-        constructor(owner, pos, vel)
-        {
-            this.owner = owner;
-            this.pos = pos.copy();
-            this.vel = vel.copy();
-            this.life = BULLET_LIFE;
-            this.bounces = BULLET_BOUNCES;
-        }
-
-        update()
-        {
-            const subSteps = 2;
-            for (let s=0;s<subSteps;s++)
+            for (const t of tanks)
             {
-                this.pos = this.pos.add(this.vel.scale(1/subSteps));
-
-                const hx = ARENA_SIZE.x/2 - BULLET_RADIUS;
-                const hy = ARENA_SIZE.y/2 - BULLET_RADIUS;
-                if (this.pos.x < -hx) { this.pos.x = -hx; this.vel.x *= -1; this.bounces--; initSounds(); sBounce.play(); }
-                else if (this.pos.x > hx) { this.pos.x = hx; this.vel.x *= -1; this.bounces--; initSounds(); sBounce.play(); }
-                if (this.pos.y < -hy) { this.pos.y = -hy; this.vel.y *= -1; this.bounces--; initSounds(); sBounce.play(); }
-                else if (this.pos.y > hy) { this.pos.y = hy; this.vel.y *= -1; this.bounces--; initSounds(); sBounce.play(); }
-
-                for (const w of walls)
+                if (t.respawn > 0) continue;
+                if (t.index === this.owner) continue;
+                const r = TANK_RADIUS + BULLET_RADIUS;
+                if (this.pos.distanceSquared(t.pos) < r*r)
                 {
-                    const expandedSize = w.size.add(vec2(BULLET_RADIUS*2));
-                    if (abs(this.pos.x - w.pos.x) <= expandedSize.x/2 &&
-                        abs(this.pos.y - w.pos.y) <= expandedSize.y/2)
-                    {
-                        const dx = this.pos.x - w.pos.x;
-                        const dy = this.pos.y - w.pos.y;
-                        const px = (w.size.x/2 + BULLET_RADIUS) - abs(dx);
-                        const py = (w.size.y/2 + BULLET_RADIUS) - abs(dy);
-                        if (px < py)
-                        {
-                            this.pos.x += sign(dx)*px;
-                            this.vel.x *= -1;
-                        }
-                        else
-                        {
-                            this.pos.y += sign(dy)*py;
-                            this.vel.y *= -1;
-                        }
-                        this.bounces--;
-                        initSounds();
-                        sBounce.play();
-                    }
+                    t.damage(this.owner);
+                    this.life = 0;
+                    return;
                 }
-
-                for (const t of tanks)
-                {
-                    if (t.respawn > 0) continue;
-                    if (t.index === this.owner) continue;
-                    const r = TANK_RADIUS + BULLET_RADIUS;
-                    if (this.pos.distanceSquared(t.pos) < r*r)
-                    {
-                        t.damage(this.owner);
-                        this.life = 0;
-                        return;
-                    }
-                }
-
-                if (this.bounces < 0) { this.life = 0; return; }
             }
 
-            this.life--;
+            if (this.bounces < 0) { this.life = 0; return; }
         }
 
-        render()
-        {
-            drawCircle(this.pos, BULLET_RADIUS*2, rgb(1,1,1));
-        }
+        this.life--;
     }
 
-    function resetRound(scoredBy = -1)
+    render()
     {
-        bullets.length = 0;
-        roundTimer = 0;
-
-        tanks[0].pos = vec2(-ARENA_SIZE.x*.32, 0);
-        tanks[1].pos = vec2( ARENA_SIZE.x*.32, 0);
-        tanks[0].vel = vec2();
-        tanks[1].vel = vec2();
-        tanks[0].ang = randSign()*PI/2 + rand(-.3,.3);
-        tanks[1].ang = randSign()*PI/2 + rand(-.3,.3);
-
-        tanks[0].cooldown = 0;
-        tanks[1].cooldown = 0;
-
-        tanks[0].respawn = 0;
-        tanks[1].respawn = 0;
-
-        if (scoredBy >= 0)
-        {
-            initSounds();
-            sHit.play();
-        }
+        drawCircle(this.pos, BULLET_RADIUS*2, rgb(1,1,1));
     }
-
-    function initGameState()
-    {
-        buildWalls();
-        bullets = [];
-        scores = [0,0];
-        aiEnabled = true;
-
-        tanks = [
-            new Tank(0, vec2(-ARENA_SIZE.x*.32, 0), 0,  rgb(1, .25, .25), {up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', fire:'Space'}),
-            new Tank(1, vec2( ARENA_SIZE.x*.32, 0), PI, rgb(.25, .55, 1),  {up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', fire:'Enter'}),
-        ];
-
-        resetRound(-1);
-    }
-
-    // -------------------------------------------------------------------------
-    // Tests (console-based, non-fatal)
-
-    function runTests()
-    {
-        try
-        {
-            console.assert(typeof engineInit === 'function', 'engineInit should exist');
-            console.assert(typeof vec2 === 'function', 'vec2 should exist');
-            console.assert(typeof drawRect === 'function', 'drawRect should exist');
-
-            // distanceAngle sanity
-            console.assert(abs(distanceAngle(0, PI*1.5) + PI/2) < 1e-6, 'distanceAngle wrap should be -PI/2');
-
-            // circle vs AABB resolution: a point inside should be pushed out
-            const p = vec2(0,0);
-            const boxP = vec2(0,0);
-            const boxS = vec2(2,2);
-            const r = resolveCircleAABB(p, 1, boxP, boxS);
-            console.assert(r.hit, 'resolveCircleAABB should detect overlap');
-            console.assert(p.length() > 0, 'resolveCircleAABB should move point');
-        }
-        catch (e)
-        {
-            console.warn('Tests failed (non-fatal):', e);
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // LittleJS callbacks
-
-    function gameInit()
-    {
-        // low-res + pixelated for a 2600-ish vibe
-        setCanvasFixedSize(vec2(640, 360));
-        setCanvasPixelated(true);
-
-        initSounds();
-        runTests();
-        initGameState();
-    }
-
-    function gameUpdate()
-    {
-        if (keyWasPressed('KeyP')) { pausedLocal = !pausedLocal; initSounds(); sBlip.play(); }
-        if (keyWasPressed('KeyR')) { initGameState();           initSounds(); sBlip.play(); }
-        if (keyWasPressed('KeyT')) { aiEnabled = !aiEnabled;    initSounds(); sBlip.play(); }
-
-        if (pausedLocal) return;
-
-        roundTimer++;
-
-        for (const t of tanks) t.update();
-
-        for (const b of bullets) b.update();
-        bullets = bullets.filter(b=>b.life > 0);
-    }
-
-    function gameUpdatePost()
-    {
-        cameraPos = vec2(0,0);
-        cameraAngle = 0;
-        cameraScale = min(mainCanvasSize.x/ARENA_SIZE.x, mainCanvasSize.y/ARENA_SIZE.y) * 0.96;
-    }
-
-    function gameRender()
-    {
-        drawRect(cameraPos, ARENA_SIZE.add(vec2(6)), rgb(0,0,0));
-        drawRect(cameraPos, ARENA_SIZE, rgb(.08,.08,.08));
-
-        const hx = ARENA_SIZE.x/2, hy = ARENA_SIZE.y/2;
-        drawLine(vec2(-hx, -hy), vec2(hx, -hy), .2, rgb(.25,.25,.25));
-        drawLine(vec2(-hx,  hy), vec2(hx,  hy), .2, rgb(.25,.25,.25));
-        drawLine(vec2(-hx, -hy), vec2(-hx, hy), .2, rgb(.25,.25,.25));
-        drawLine(vec2( hx, -hy), vec2( hx, hy), .2, rgb(.25,.25,.25));
-
-        for (const w of walls)
-            drawRect(w.pos, w.size, rgb(.18,.18,.18));
-
-        for (const b of bullets) b.render();
-        for (const t of tanks) t.render();
-    }
-
-    function gameRenderPost()
-    {
-        drawTextScreen(`COMBAT-ish  |  Red ${scores[0]} - ${scores[1]} Blue`, vec2(mainCanvasSize.x/2, 18), 28, hsl(0,0,1), 3, hsl(0,0,0));
-
-        const controls =
-            `P1: WASD + Space     P2: AI (Blue)
-` +
-            `T: toggle AI (${aiEnabled?'ON':'OFF'})   R: reset   P: pause`;
-        drawTextScreen(controls, vec2(mainCanvasSize.x/2, mainCanvasSize.y-36), 18, hsl(0,0,.92), 3, hsl(0,0,0));
-
-        if (pausedLocal)
-            drawTextScreen('PAUSED', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 70, hsl(0,0,1), 6, hsl(0,0,0));
-
-        for (let y=0; y<mainCanvasSize.y; y+=2)
-            drawLine(vec2(0, y), vec2(mainCanvasSize.x, y), 1, rgb(0,0,0,.08), undefined, 0, undefined, true);
-    }
-
-    engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 }
+
+function resetRound(scoredBy = -1)
+{
+    bullets.length = 0;
+    roundTimer = 0;
+
+    tanks[0].pos = vec2(-ARENA_SIZE.x*.32, 0);
+    tanks[1].pos = vec2( ARENA_SIZE.x*.32, 0);
+    tanks[0].vel = vec2();
+    tanks[1].vel = vec2();
+    tanks[0].ang = randSign()*PI/2 + rand(-.3,.3);
+    tanks[1].ang = randSign()*PI/2 + rand(-.3,.3);
+
+    tanks[0].cooldown = 0;
+    tanks[1].cooldown = 0;
+
+    tanks[0].respawn = 0;
+    tanks[1].respawn = 0;
+
+    if (scoredBy >= 0)
+    {
+        initSounds();
+        sHit.play();
+    }
+}
+
+function initGameState()
+{
+    buildWalls();
+    bullets = [];
+    scores = [0,0];
+    aiEnabled = true;
+
+    tanks = [
+        new Tank(0, vec2(-ARENA_SIZE.x*.32, 0), 0,  rgb(1, .25, .25), {up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', fire:'Space'}),
+        new Tank(1, vec2( ARENA_SIZE.x*.32, 0), PI, rgb(.25, .55, 1),  {up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', fire:'Enter'}),
+    ];
+
+    resetRound(-1);
+}
+
+// -------------------------------------------------------------------------
+// LittleJS callbacks
+
+function gameInit()
+{
+    // low-res + pixelated for a 2600-ish vibe
+    setCanvasFixedSize(vec2(640, 360));
+    setCanvasPixelated(true);
+
+    initSounds();
+    initGameState();
+}
+
+function gameUpdate()
+{
+    if (keyWasPressed('KeyP')) { pausedLocal = !pausedLocal; initSounds(); sBlip.play(); }
+    if (keyWasPressed('KeyR')) { initGameState();           initSounds(); sBlip.play(); }
+    if (keyWasPressed('KeyT')) { aiEnabled = !aiEnabled;    initSounds(); sBlip.play(); }
+
+    if (pausedLocal) return;
+
+    roundTimer++;
+
+    for (const t of tanks) t.update();
+
+    for (const b of bullets) b.update();
+    bullets = bullets.filter(b=>b.life > 0);
+}
+
+function gameUpdatePost()
+{
+    cameraPos = vec2(0,0);
+    cameraAngle = 0;
+    cameraScale = min(mainCanvasSize.x/ARENA_SIZE.x, mainCanvasSize.y/ARENA_SIZE.y) * 0.96;
+}
+
+function gameRender()
+{
+    drawRect(cameraPos, ARENA_SIZE.add(vec2(6)), rgb(0,0,0));
+    drawRect(cameraPos, ARENA_SIZE, rgb(.08,.08,.08));
+
+    const hx = ARENA_SIZE.x/2, hy = ARENA_SIZE.y/2;
+    drawLine(vec2(-hx, -hy), vec2(hx, -hy), .2, rgb(.25,.25,.25));
+    drawLine(vec2(-hx,  hy), vec2(hx,  hy), .2, rgb(.25,.25,.25));
+    drawLine(vec2(-hx, -hy), vec2(-hx, hy), .2, rgb(.25,.25,.25));
+    drawLine(vec2( hx, -hy), vec2( hx, hy), .2, rgb(.25,.25,.25));
+
+    for (const w of walls)
+        drawRect(w.pos, w.size, rgb(.18,.18,.18));
+
+    for (const b of bullets) b.render();
+    for (const t of tanks) t.render();
+}
+
+function gameRenderPost()
+{
+    drawTextScreen(`COMBAT-ish  |  Red ${scores[0]} - ${scores[1]} Blue`, vec2(mainCanvasSize.x/2, 18), 28, hsl(0,0,1), 3, hsl(0,0,0));
+
+    const controls =
+        `P1: WASD + Space     P2: AI (Blue)
+` +
+        `T: toggle AI (${aiEnabled?'ON':'OFF'})   R: reset   P: pause`;
+    drawTextScreen(controls, vec2(mainCanvasSize.x/2, mainCanvasSize.y-36), 18, hsl(0,0,.92), 3, hsl(0,0,0));
+
+    if (pausedLocal)
+        drawTextScreen('PAUSED', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 70, hsl(0,0,1), 6, hsl(0,0,0));
+
+    for (let y=0; y<mainCanvasSize.y; y+=2)
+        drawLine(vec2(0, y), vec2(mainCanvasSize.x, y), 1, rgb(0,0,0,.08), undefined, 0, undefined, true);
+}
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 
 </script>
