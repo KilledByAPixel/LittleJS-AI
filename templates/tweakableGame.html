@@ -26,7 +26,7 @@ cameraScale = 32;
 
 // game state — these globals are tweakables
 let ballRadius = 1.5;
-let ballSpeed = 8;
+let ballSpeed = 1;
 let bounceCount = 5;
 let showTrail = true;
 let ballColor = hsl(.1, .8, .6);
@@ -40,7 +40,7 @@ async function gameInit()
     tweakEngineDefaults();
 
     tweak('ballRadius');                                  // no range -> number input only
-    tweak('ballSpeed', {min: 1, max: 30});                // slider
+    tweak('ballSpeed', {min: 0, max: 10});                // slider
     tweak('bounceCount', {min: 1, max: 20, step: 1});     // integer slider
     tweak('showTrail');                                   // boolean
     tweak('ballColor');                                   // color picker
@@ -75,7 +75,8 @@ function gameUpdate()
     {
         const dir = mousePos.subtract(ballPos);
         const len = dir.length() || 1;
-        ballVel = dir.scale(ballSpeed / len);
+        const speed = min(ballSpeed / len, .1);
+        ballVel = dir.scale(speed);
     }
 
     // trail
