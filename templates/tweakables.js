@@ -115,6 +115,13 @@ function initTweakSystem()
         'font:12px/1.4 monospace;padding:8px;border-radius:4px;' +
         'box-shadow:0 2px 12px rgba(0,0,0,.5);display:none;z-index:9999;';
 
+    // Stop input events from bubbling to LittleJS's document-level handlers,
+    // which would otherwise preventDefault() our clicks and block focus.
+    const stop = e => e.stopPropagation();
+    ['mousedown','mouseup','pointerdown','pointerup',
+     'touchstart','touchend','touchmove','wheel','click'].forEach(t =>
+        tweakPanelEl.addEventListener(t, stop));
+
     tweakRowsEl = document.createElement('div');
     tweakPanelEl.appendChild(tweakRowsEl);
 
