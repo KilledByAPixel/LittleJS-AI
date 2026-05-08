@@ -77,6 +77,7 @@ function tweak(path, options = {})
 
 function tweakEngineDefaults()
 {
+    const before = tweakRegistry.size;
     if (getByPath('gravity') instanceof Vector2)
         tweak('gravity', {min: -.05, max: .05});
     if (typeof getByPath('cameraScale') === 'number')
@@ -89,6 +90,18 @@ function tweakEngineDefaults()
         tweak('paused');
     if (typeof getByPath('debugOverlay') === 'boolean')
         tweak('debugOverlay');
+    if (tweakRegistry.size > before) tweakDivider();
+}
+
+function tweakDivider(label)
+{
+    initTweakSystem();
+    const div = document.createElement('div');
+    const pad = label ? '4px' : '0';
+    div.style.cssText = 'border-top:1px solid #444;margin:8px 0 4px;' +
+        'color:#888;font-size:11px;padding-top:' + pad + ';';
+    if (label) div.textContent = label;
+    tweakRowsEl.appendChild(div);
 }
 
 // --- internals ---
