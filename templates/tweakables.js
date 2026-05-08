@@ -77,7 +77,18 @@ function tweak(path, options = {})
 
 function tweakEngineDefaults()
 {
-    // implemented in a later task
+    if (window.gravity instanceof Vector2)
+        tweak('gravity', {min: -.05, max: .05});
+    if (typeof window.cameraScale === 'number')
+        tweak('cameraScale', {min: 4, max: 128, step: 1});
+    if (typeof window.soundVolume === 'number')
+        tweak('soundVolume', {min: 0, max: 1});
+    if (typeof window.glEnable === 'boolean')
+        tweak('glEnable');
+    if (typeof window.paused === 'boolean')
+        tweak('paused');
+    if (typeof window.debugOverlay === 'boolean')
+        tweak('debugOverlay');
 }
 
 // --- internals ---
