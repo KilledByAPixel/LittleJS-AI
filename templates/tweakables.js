@@ -78,18 +78,14 @@ function tweak(path, options = {})
 function tweakEngineDefaults()
 {
     const before = tweakRegistry.size;
-    if (getByPath('gravity') instanceof Vector2)
-        tweak('gravity', {min: -.05, max: .05});
+    if (typeof getByPath('glEnable') === 'boolean')
+        tweak('glEnable');
     if (typeof getByPath('cameraScale') === 'number')
         tweak('cameraScale', {min: 4, max: 128, step: 1});
     if (typeof getByPath('soundVolume') === 'number')
         tweak('soundVolume', {min: 0, max: 1});
-    if (typeof getByPath('glEnable') === 'boolean')
-        tweak('glEnable');
-    if (typeof getByPath('paused') === 'boolean')
-        tweak('paused');
-    if (typeof getByPath('debugOverlay') === 'boolean')
-        tweak('debugOverlay');
+    if (typeof getByPath('timeScale') === 'number')
+        tweak('timeScale', {min: 0, max: 2, step: 0.1});
     if (tweakRegistry.size > before) tweakDivider();
 }
 
