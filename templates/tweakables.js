@@ -49,6 +49,8 @@ function tweak(path, options = {})
         entry = buildNumberRow(path, codeDefault, options);
     else if (type === 'boolean')
         entry = buildBooleanRow(path, codeDefault, options);
+    else if (type === 'color')
+        entry = buildColorRow(path, codeDefault, options);
     else
     {
         console.warn('tweak: type "' + type + '" not yet implemented');
@@ -232,6 +234,57 @@ function buildBooleanRow(path, codeDefault, options)
     return {
         type: 'boolean',
         codeDefault: !!codeDefault,
+        options,
+        rowEl: row,
+        applyValue: apply,
+    };
+}
+
+function colorToHex(c)
+{
+    const toByte = (x) => Math.max(0, Math.min(255, Math.round(x * 255)));
+    const hex = (n) => n.toString(16).padStart(2, '0');
+    return '#' + hex(toByte(c.r)) + hex(toByte(c.g)) + hex(toByte(c.b));
+}
+
+function buildColorRow(path, codeDefault, options)
+{
+    const labelText = options.label || path;
+
+    const row = document.createElement('div');
+    row.style.cssText = 'margin:4px 0;display:flex;flex-direction:row;align-items:center;gap:6px;';
+
+    const labelEl = document.createElement('div');
+    labelEl.textContent = labelText;
+    labelEl.style.flex = '1';
+    row.appendChild(labelEl);
+
+    const picker = document.createElement('input');
+    picker.type = 'color';
+    picker.value = colorToHex(codeDefault);
+    row.appendChild(picker);
+
+    const writeFromHex = (hex) =>
+    {
+        const cur = getByPath(window, path);
+        cur.r = parseInt(hex.slice(1, 3), 16) / 255;
+        cur.g = parseInt(hex.slice(3, 5), 16) / 255;
+        cur.b = parseInt(hex.slice(5, 7), 16) / 255;
+        // alpha intentionally unchanged (v1 ignores alpha in the picker)
+    };
+
+    const apply = (c) =>
+    {
+        const cur = getByPath(window, path);
+        cur.r = c.r; cur.g = c.g; cur.b = c.b; cur.a = c.a;
+        picker.value = colorToHex(cur);
+    };
+
+    picker.addEventListener('input', () => writeFromHex(picker.value));
+
+    return {
+        type: 'color',
+        codeDefault: new Color(codeDefault.r, codeDefault.g, codeDefault.b, codeDefault.a),
         options,
         rowEl: row,
         applyValue: apply,
