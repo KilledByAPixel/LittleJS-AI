@@ -96,7 +96,7 @@ declare module "littlejsengine" {
      *  @type {number}
      *  @memberof Engine */
     export let time: number;
-    /** Actual clock time since start in seconds (not affected by pause or frame rate clamping)
+    /** Actual clock time since start in seconds (not affected by pause, timescale, or frame rate clamping)
      *  @type {number}
      *  @memberof Engine */
     export let timeReal: number;
@@ -1745,6 +1745,21 @@ declare module "littlejsengine" {
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawRectGradient(pos: Vector2, size?: Vector2, colorTop?: Color, colorBottom?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    /** Draw a texture tiled (wrapped) across a rectangle in world space.
+     *  Useful for backgrounds, repeating patterns, and seamless fills.
+     *  The whole texture is tiled — sub-region (TileInfo) wrapping is not supported.
+     *  @param {Vector2}  pos          - Center of the rect in world space
+     *  @param {Vector2}  size         - Size of the rect in world space
+     *  @param {Vector2}  wrapCount    - How many times the texture repeats (x, y)
+     *  @param {TextureInfo|number} [texture=0] - TextureInfo or texture index into textureInfos
+     *  @param {Color}    [color=WHITE] - Color to modulate with
+     *  @param {number}   [angle=0] - Angle to rotate by
+     *  @param {Color}    [additiveColor] - Additive color to be applied if any
+     *  @param {boolean}  [useWebGL=glEnable] - Use accelerated WebGL rendering?
+     *  @param {boolean}  [screenSpace=false] - Are pos and size in screen space?
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to
+     *  @memberof Draw */
+    export function drawTextureWrapped(pos: Vector2, size: Vector2, wrapCount: Vector2, texture?: TextureInfo | number, color?: Color, angle?: number, additiveColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Draw connected lines between a series of points
      *  @param {Array<Vector2>} points
      *  @param {number}  [width]
@@ -1955,9 +1970,8 @@ declare module "littlejsengine" {
     /** Set the WebGL texture, called automatically if using multiple textures
      *  - This may also flush the gl buffer resulting in more draw calls and worse performance
      *  @param {WebGLTexture} texture
-     *  @param {boolean} [wrap] - Should the texture wrap or clamp
      *  @memberof WebGL */
-    export function glSetTexture(texture: WebGLTexture, wrap?: boolean): void;
+    export function glSetTexture(texture: WebGLTexture): void;
     /** Compile WebGL shader of the given type, will throw errors if in debug mode
      *  @param {string} source
      *  @param {number} type
@@ -4897,4 +4911,164 @@ declare module "littlejsengine" {
      *  @param {number} [angle] - Angle to rotate by
      *  @memberof DrawUtilities */
     export function drawThreeSliceScreen(pos: Vector2, size: Vector2, startTile: TileInfo, borderSize?: number, extraSpace?: number, angle?: number): void;
+    /** A numeric tween: drives a callback with a value interpolated between
+     *  `start` and `end` over `duration` seconds. Pauses with the game by default.
+     *  @memberof TweenSystem
+     *  @example
+     *  // Animate a fade-out over 2 seconds with an ease-out sine curve.
+     *  new Tween((v) => obj.alpha = v, 1, 0, 2, { ease: Ease.OUT(Ease.SINE) });
+     */
+    export class Tween {
+        /** Create a new tween. The callback fires immediately with `start` so the
+         *  target snaps to the start value on the same frame the tween is created.
+         *
+         *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+         *  any object exposing a `lerp(other, percent) => sameType` method. The
+         *  callback receives the interpolated value (a number, or a fresh instance
+         *  for lerp-able types). Both endpoints must be the same type.
+         *  @param {function(number|Vector2|Color):void} callback - Called with the interpolated value each frame
+         *  @param {number|Vector2|Color} [start=0] - Starting value
+         *  @param {number|Vector2|Color} [end=1] - Ending value
+         *  @param {number} [duration=1] - Duration in seconds
+         *  @param {Object} [options]
+         *  @param {function(number):number} [options.ease] - Easing function (defaults to LINEAR)
+         *  @param {boolean} [options.useRealTime=false] - Advance even when the game is paused (matches Timer's useRealTime)
+         *  @param {boolean} [options.paused=false] - Start in paused state */
+        constructor(callback: (arg0: number | Vector2 | Color) => void, start?: number | Vector2 | Color, end?: number | Vector2 | Color, duration?: number, options?: {
+            ease?: (arg0: number) => number;
+            useRealTime?: boolean;
+            paused?: boolean;
+        });
+        callback: (arg0: number | Vector2 | Color) => void;
+        start: number | Vector2 | Color;
+        end: number | Vector2 | Color;
+        duration: number;
+        life: number;
+        ease: (arg0: number) => number;
+        useRealTime: boolean;
+        paused: boolean;
+        /** @private completion callback set by then(), loop(), pingPong(). */
+        private thenCallback;
+        /** @private remaining iterations including the current run (loop/pingPong only). */
+        private loopRemaining;
+        /** Set the easing curve and return this for chaining.
+         *  @param {function(number):number} easeFn
+         *  @returns {Tween}
+         *  @memberof TweenSystem */
+        setEase(easeFn: (arg0: number) => number): Tween;
+        /** Set a single completion callback. Calling `then` again replaces the
+         *  previous callback. Returns this for chaining.
+         *
+         *  Calling `then` after `loop` or `pingPong` overrides the loop chain
+         *  (last call wins).
+         *  @param {function():void} callback
+         *  @returns {Tween}
+         *  @memberof TweenSystem */
+        then(callback: () => void): Tween;
+        /** Repeat this tween `n` total times. After each iteration finishes, a
+         *  fresh tween with the same parameters takes over via the `then` slot.
+         *  `loop()` with no argument loops forever.
+         *
+         *  Mutually exclusive with `pingPong`; calling either replaces the other,
+         *  and calling `then` after either clears the loop (last call wins).
+         *  @param {number} [count=Infinity]
+         *  @returns {Tween}
+         *  @memberof TweenSystem */
+        loop(count?: number): Tween;
+        /** Like `loop`, but swap `start` and `end` between iterations so the value
+         *  bounces back and forth. `pingPong()` with no argument bounces forever.
+         *
+         *  Mutually exclusive with `loop`; calling either replaces the other, and
+         *  calling `then` after either clears the loop (last call wins).
+         *  @param {number} [count=Infinity]
+         *  @returns {Tween}
+         *  @memberof TweenSystem */
+        pingPong(count?: number): Tween;
+        /** Pause this tween. While paused, tweenUpdate skips it.
+         *  @memberof TweenSystem */
+        pause(): void;
+        /** Resume a paused tween.
+         *  @memberof TweenSystem */
+        resume(): void;
+        /** Reset this tween to the start: life back to duration, pause cleared,
+         *  re-added to the active list if previously stopped, and the callback
+         *  re-fired with the start value.
+         *  @memberof TweenSystem */
+        restart(): void;
+        /** True if this tween is in the active list and not paused.
+         *  @returns {boolean}
+         *  @memberof TweenSystem */
+        isActive(): boolean;
+        /** Get how far this tween has progressed, from 0 (just started) to 1
+         *  (completed). Clamped — overshoot past completion still reads 1.
+         *  @returns {number}
+         *  @memberof TweenSystem */
+        getPercent(): number;
+        /** Get the current interpolated value (the value most recently passed to
+         *  the callback). Returns a number, Vector2, or Color depending on the
+         *  tween's start/end types.
+         *  @returns {number|Vector2|Color}
+         *  @memberof TweenSystem */
+        getValue(): number | Vector2 | Color;
+        /** Compute the interpolated value at the given remaining `life`.
+         *  At life === duration the result is `start`; at life === 0 it is `end`.
+         *  @param {number} life
+         *  @returns {number}
+         *  @memberof TweenSystem */
+        interp(life: number): number;
+        /** Remove this tween from the active list and prevent any pending then-callback.
+         *  @memberof TweenSystem */
+        stop(): void;
+    }
+    /** Tween a property on an object by dot-path. Returns the underlying Tween
+     *  so all chaining methods (`setEase`, `then`, `loop`, `pingPong`, etc.)
+     *  remain available.
+     *
+     *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+     *  any object with a `lerp(other, percent) => sameType` method.
+     *  @param {Object} target - The object whose property is being animated
+     *  @param {string} propertyPath - Dot-separated path, e.g. `'pos.x'` or `'color'`
+     *  @param {number|Vector2|Color} start - Starting value
+     *  @param {number|Vector2|Color} end - Ending value
+     *  @param {number} [duration=1] - Duration in seconds
+     *  @param {Object} [options] - Same options as the Tween constructor
+     *  @returns {Tween}
+     *  @memberof TweenSystem
+     *  @example
+     *  // Numeric: slide an object's x with an ease-out sine curve
+     *  tweenProperty(player, 'pos.x', 0, 10, 2).setEase(Ease.OUT(Ease.SINE));
+     *  // Vector2: animate a position diagonally
+     *  tweenProperty(player, 'pos', vec2(-5, 0), vec2(5, 3), 2);
+     *  // Color: pulse between two colors
+     *  tweenProperty(sprite, 'color', RED, BLUE, 1).pingPong();
+     */
+    export function tweenProperty(target: any, propertyPath: string, start: number | Vector2 | Color, end: number | Vector2 | Color, duration?: number, options?: any): Tween;
+    /** Stop every active tween and clear their then-callbacks. Useful for resets
+     *  on level transitions or when changing scenes.
+     *  @memberof TweenSystem */
+    export function tweenStopAll(): void;
+    /** Engine plugin hook: advance every active tween by the appropriate delta.
+     *  Called once per render frame by the engine (no arguments). May also be
+     *  called explicitly with `(gameDelta, realDelta)` to drive tweens manually
+     *  — useful for headless tests or custom replay/scrubbing systems.
+     *  @param {number} [gameDelta] - Game-time delta in seconds; default: time - lastTime
+     *  @param {number} [realDelta] - Real-time delta in seconds; default: timeReal - lastTimeReal
+     *  @memberof TweenSystem */
+    export function tweenUpdate(gameDelta?: number, realDelta?: number): void;
+    export namespace Ease {
+        function LINEAR(x: number): number;
+        function POWER(n: number): (arg0: number) => number;
+        function SINE(x: number): number;
+        function CIRC(x: number): number;
+        function EXPO(x: number): number;
+        function BACK(x: number): number;
+        function ELASTIC(x: number): number;
+        function SPRING(x: number): number;
+        function BOUNCE(x: number): number;
+        function IN(f: (arg0: number) => number): (arg0: number) => number;
+        function OUT(f: (arg0: number) => number): (arg0: number) => number;
+        function IN_OUT(f: (arg0: number) => number): (arg0: number) => number;
+        function PIECEWISE(...fns: ((arg0: number) => number)[]): (arg0: number) => number;
+        function BEZIER(x1: number, y1: number, x2: number, y2: number): (arg0: number) => number;
+    }
 }

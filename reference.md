@@ -134,6 +134,7 @@ Timer.valueOf()       // Get how long since elapsed, 0 if not set
 drawTile(pos, size, tileInfo, color=WHITE, angle=0, mirror, additiveColor)
 drawRect(pos, size, color=WHITE, angle=0)
 drawRectGradient(pos, size, colorTop=WHITE, colorBottom=BLACK, angle=0)
+drawTextureWrapped(pos, size, wrapCount, texture=0, color=WHITE, angle=0, additiveColor)
 drawLine(posA, posB, width=.1, color=WHITE, pos=(0,0), angle=0)
 drawLineList(points, width=.1, color, wrap=false, pos=(0,0), angle=0)
 drawPoly(points, color=WHITE, lineWidth=0, lineColor=BLACK, pos, angle=0)
@@ -251,10 +252,10 @@ soundDefaultTaper = .7  // Default range percent to taper off sound (0-1)
 
 ```javascript
 // Keyboard
-keyIsDown(key)       // Is key down?
-keyWasPressed(key)   // Was key pressed this frame?
-keyWasReleased(key)  // Was key released this frame?
-keyDirection()       // Get input vector from arrow keys or wasd
+keyIsDown(key)                        // Is key down?
+keyWasPressed(key)                    // Was key pressed this frame?
+keyWasReleased(key)                   // Was key released this frame?
+keyDirection(up, down, left, right)   // Get input vector from arrow keys or wasd
 
 // Mouse / Touch
 mousePos                              // World space mouse position
@@ -412,6 +413,52 @@ ParticleEmitter.emitParticle()           // Spawn one particle
 
 // Particle Settings
 particleEmitRateScale = 1 // Scales particles emit rate
+```
+
+## LittleJS Tween System
+- Animate numbers, Vector2, Color, or any value with a `.lerp(other, percent)` method
+- Pauses with the game by default; opt-in real-time mode keeps tweens running while paused
+- Easing curves with looping, ping-pong, and chained completion callbacks
+- Auto-registers via `engineAddPlugin` — no setup needed
+- See `examples/tweenSystem` for a full visual demo
+
+```javascript
+// Tween a property by dot-path (common case)
+tweenProperty(target, propertyPath, start, end, duration=1, options)
+
+// Tween via custom callback
+new Tween(callback, start=0, end=1, duration=1, options)
+Tween.setEase(easeFn)          // Set easing curve, returns this
+Tween.then(callback)           // Completion callback, returns this
+Tween.loop(count=Infinity)     // Repeat n times, returns this
+Tween.pingPong(count=Infinity) // Bounce between endpoints, returns this
+Tween.pause()                  // Pause this tween
+Tween.resume()                 // Resume a paused tween
+Tween.restart()                // Reset to start and replay
+Tween.stop()                   // Remove from active list
+Tween.isActive()               // True if running and not paused
+Tween.getPercent()             // Progress 0..1
+Tween.getValue()               // Current interpolated value
+
+// Easing curves — pass to setEase or options.ease
+Ease.LINEAR, Ease.SINE, Ease.CIRC, Ease.EXPO
+Ease.BACK, Ease.ELASTIC, Ease.SPRING, Ease.BOUNCE
+Ease.POWER(n)                  // Returns x => x**n
+Ease.BEZIER(x1, y1, x2, y2)    // CSS cubic-bezier solver
+
+// Direction modifiers — wrap a curve to flip its direction
+Ease.OUT(curve)                // Reverse to ease-out
+Ease.IN_OUT(curve)             // Symmetric S-curve
+Ease.IN(curve)                 // No-op (curves are already ease-in)
+Ease.PIECEWISE(...curves)      // Run different curves over equal sections
+
+// Tween options
+options.ease         // Easing function (default Ease.LINEAR)
+options.useRealTime  // Advance even when game is paused (default false)
+options.paused       // Start in paused state (default false)
+
+// Global helper
+tweenStopAll()                 // Stop every active tween (e.g. on level reset)
 ```
 
 ## LittleJS Debugging System

@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.3';
+const engineVersion = '1.18.4';
 
 /** Frames per second to update
  *  @type {number}
@@ -69,7 +69,7 @@ let frame = 0;
  *  @memberof Engine */
 let time = 0;
 
-/** Actual clock time since start in seconds (not affected by pause or frame rate clamping)
+/** Actual clock time since start in seconds (not affected by pause, timescale, or frame rate clamping)
  *  @type {number}
  *  @memberof Engine */
 let timeReal = 0;
@@ -201,9 +201,11 @@ async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, game
         const debugSpeedUp   = debug && keyIsDown('Equal'); // +
         const debugSpeedDown = debug && keyIsDown('Minus'); // -
         const debugScale = debugSpeedUp ? 10 : debugSpeedDown ? .1 : 1;
+
+        // apply time deltas
+        timeReal += frameTimeDeltaMS * debugScale / 1e3;
         const combinedScale = timeScale * debugScale;
         frameTimeDeltaMS *= combinedScale;
-        timeReal += frameTimeDeltaMS / 1e3;
         frameTimeBufferMS += paused ? 0 : frameTimeDeltaMS;
         if (combinedScale <= 1)
             frameTimeBufferMS = min(frameTimeBufferMS, 50); // clamp min framerate
@@ -3340,6 +3342,12 @@ let textureInfos = [];
  *  @memberof Draw */
 let drawCount;
 
+// internal predicates for tint short-circuiting in canvas2D draw paths
+// isWhite ignores alpha because alpha is applied via globalAlpha, not multiply
+// isBlack includes alpha so additive colors that only contribute alpha are not skipped
+/** @param {Color} c */ function isWhite(c) { return c.r >= 1 && c.g >= 1 && c.b >= 1; }
+/** @param {Color} c */ function isBlack(c) { return c.r <= 0 && c.g <= 0 && c.b <= 0 && c.a <= 0; }
+
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -3667,6 +3675,96 @@ function drawRectGradient(pos, size, colorTop=WHITE, colorBottom=BLACK, angle=0,
             context.fillRect(-.5, -.5, 1, 1);
         }, screenSpace, context);
     }
+}
+
+/** Draw a texture tiled (wrapped) across a rectangle in world space.
+ *  Useful for backgrounds, repeating patterns, and seamless fills.
+ *  The whole texture is tiled — sub-region (TileInfo) wrapping is not supported.
+ *  @param {Vector2}  pos          - Center of the rect in world space
+ *  @param {Vector2}  size         - Size of the rect in world space
+ *  @param {Vector2}  wrapCount    - How many times the texture repeats (x, y)
+ *  @param {TextureInfo|number} [texture=0] - TextureInfo or texture index into textureInfos
+ *  @param {Color}    [color=WHITE] - Color to modulate with
+ *  @param {number}   [angle=0] - Angle to rotate by
+ *  @param {Color}    [additiveColor] - Additive color to be applied if any
+ *  @param {boolean}  [useWebGL=glEnable] - Use accelerated WebGL rendering?
+ *  @param {boolean}  [screenSpace=false] - Are pos and size in screen space?
+ *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to
+ *  @memberof Draw */
+function drawTextureWrapped(pos, size, wrapCount, texture=0, color=WHITE,
+    angle=0, additiveColor, useWebGL=glEnable, screenSpace=false, context)
+{
+    ASSERT(isVector2(pos), 'pos must be a vec2');
+    ASSERT(isVector2(size), 'size must be a vec2');
+    ASSERT(isVector2(wrapCount), 'wrapCount must be a vec2');
+    ASSERT(isColor(color), 'color is invalid');
+    ASSERT(isNumber(angle), 'angle must be a number');
+    ASSERT(!additiveColor || isColor(additiveColor), 'additiveColor must be a color');
+    ASSERT(!context || !useWebGL, 'context only supported in canvas 2D mode');
+    ASSERT(!(texture instanceof TileInfo),
+        'pass a TextureInfo or texture index, not a TileInfo — use tileInfo.textureInfo');
+
+    // short-circuit before texture lookup — textureInfos[0] is undefined in headless mode
+    if (headlessMode) return;
+
+    // resolve texture argument: TextureInfo or index
+    const textureInfo = typeof texture === 'number' ? textureInfos[texture] : texture;
+    ASSERT(textureInfo instanceof TextureInfo, 'texture not loaded');
+    ASSERT(textureInfo.size.x > 0, 'texture not loaded');
+
+    if (useWebGL && glEnable)
+    {
+        ASSERT(!!glContext, 'WebGL is not enabled!');
+        if (screenSpace)
+            [pos, size, angle] = screenToWorldTransform(pos, size, angle);
+        glSetTexture(textureInfo.glTexture);
+        glDraw(pos.x, pos.y, size.x, size.y, angle,
+            0, 0, wrapCount.x, wrapCount.y,
+            color.rgbaInt(), additiveColor && additiveColor.rgbaInt());
+        return;
+    }
+
+    // Canvas2D path — increment drawCount here (WebGL batch counts via glBatchCount)
+    ++drawCount;
+
+    if (!screenSpace)
+    {
+        pos = worldToScreen(pos);
+        size = size.scale(cameraScale);
+        angle -= cameraAngle;
+    }
+
+    // pick image source: raw, or tinted bake. Match drawImageColor's
+    // "no tint needed" predicate so behavior stays consistent.
+    const noTint = !canvasColorTiles ||
+        (additiveColor
+            ? isWhite(color.add(additiveColor)) && additiveColor.a <= 0
+            : isWhite(color));
+    // alpha is baked into pixels by bakeTintedImage's additive branch;
+    // in that case globalAlpha must NOT also apply color.a
+    const alphaBaked = !noTint && additiveColor && !isBlack(additiveColor);
+    const source = noTint
+        ? textureInfo.image
+        : bakeTintedImage(textureInfo.image, color, additiveColor);
+
+    context = context || drawContext;
+    context.save();
+    context.translate(pos.x + .5, pos.y + .5);
+    context.rotate(angle);
+    context.globalAlpha = alphaBaked ? 1 : color.a;
+
+    const pattern = context.createPattern(source, 'repeat');
+    // map pattern-source pixels into user space so the rect contains
+    // wrapCount.x × wrapCount.y repeats
+    const m = new DOMMatrix()
+        .translate(-size.x/2, -size.y/2)
+        .scale(size.x / (wrapCount.x * source.width),
+               size.y / (wrapCount.y * source.height));
+    pattern.setTransform(m);
+    context.fillStyle = pattern;
+    context.fillRect(-size.x/2, -size.y/2, size.x, size.y);
+    context.globalAlpha = 1;
+    context.restore();
 }
 
 /** Draw connected lines between a series of points
@@ -4192,6 +4290,43 @@ function combineCanvases()
     mainContext.drawImage(workCanvas, 0, 0);
 }
 
+// Internal: bake a color/additive-color tint into workReadCanvas at the
+// image's native resolution. Returns the work canvas, suitable for
+// passing to context.createPattern. Used by drawTextureWrapped's
+// Canvas2D path. Caller is responsible for short-circuiting when no
+// tint is needed (i.e. color is white and additiveColor is black/none).
+function bakeTintedImage(image, color, additiveColor)
+{
+    const w = image.width|0, h = image.height|0;
+    workReadCanvas.width = w;
+    workReadCanvas.height = h;
+    workReadContext.drawImage(image, 0, 0);
+
+    const imageData = workReadContext.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    if (additiveColor && !isBlack(additiveColor))
+    {
+        // multiply + additive (slower)
+        const colorMultiply = [color.r, color.g, color.b, color.a];
+        const colorAdd = [additiveColor.r * 255, additiveColor.g * 255,
+                          additiveColor.b * 255, additiveColor.a * 255];
+        for (let i = 0; i < data.length; ++i)
+            data[i] = data[i] * colorMultiply[i&3] + colorAdd[i&3] |0;
+    }
+    else
+    {
+        // RGB only, faster — alpha left intact for the caller
+        for (let i = 0; i < data.length; i+=4)
+        {
+            data[i  ] *= color.r;
+            data[i+1] *= color.g;
+            data[i+2] *= color.b;
+        }
+    }
+    workReadContext.putImageData(imageData, 0, 0);
+    return workReadCanvas;
+}
+
 /** Helper function to draw an image with color and additive color applied
  *  This is slower then normal drawImage when color is applied
     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} context
@@ -4210,8 +4345,6 @@ function combineCanvases()
  *  @memberof Draw */
 function drawImageColor(context, image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight, color, additiveColor, bleed=0)
 {
-    function isWhite(c) { return c.r >= 1 && c.g >= 1 && c.b >= 1; }
-    function isBlack(c) { return c.r <= 0 && c.g <= 0 && c.b <= 0 && c.a <= 0; }
     const sx2 = bleed;
     const sy2 = bleed;
     sWidth  = max(1,sWidth|0);
@@ -7681,9 +7814,8 @@ function glClearCanvas()
 /** Set the WebGL texture, called automatically if using multiple textures
  *  - This may also flush the gl buffer resulting in more draw calls and worse performance
  *  @param {WebGLTexture} texture
- *  @param {boolean} [wrap] - Should the texture wrap or clamp
  *  @memberof WebGL */
-function glSetTexture(texture, wrap=false)
+function glSetTexture(texture)
 {
     // must flush cache with the old texture to set a new one
     if (!glContext || texture === glActiveTexture) return;
@@ -7691,11 +7823,6 @@ function glSetTexture(texture, wrap=false)
     glFlush();
     glActiveTexture = texture;
     glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture);
-
-    // set wrap mode
-    const wrapMode = wrap ? glContext.REPEAT : glContext.CLAMP_TO_EDGE;
-    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, wrapMode);
-    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, wrapMode);
 }
 
 /** Compile WebGL shader of the given type, will throw errors if in debug mode
@@ -7770,6 +7897,8 @@ function glCreateTexture(image)
     const minFilter = mipMap ? glContext.LINEAR_MIPMAP_LINEAR : magFilter;
     glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MAG_FILTER, magFilter);
     glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, minFilter);
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, glContext.REPEAT);
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, glContext.REPEAT);
     if (mipMap)
         glContext.generateMipmap(glContext.TEXTURE_2D);
 
@@ -12427,3 +12556,511 @@ function drawThreeSlice(pos, size, startTile, color, borderSize=1, additiveColor
         drawTile(pos.add(cornerPos.rotate(rotateAngle)), cornerSize, cornerTile, color, a, false, additiveColor, useWebGL, screenSpace, context);
     }
 }
+/**
+ * LittleJS Tween System Plugin
+ * - Lightweight tweens for numbers, Vector2, Color, or any .lerp-able type
+ * - Chainable easing, looping, and ping-pong
+ * - Property-path helper for the common case of animating an object field
+ * - Auto-updates via engineAddPlugin; pauses with the game by default
+ * @namespace TweenSystem
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Module-private list of tweens currently running.
+const tweenActive = [];
+
+// Time tracking for delta computation between engine plugin calls.
+let lastTime = 0;
+let lastTimeReal = 0;
+
+// True if the value is an instance of a class that exposes a numeric-percent
+// `lerp(other, percent)` method (Vector2, Color, or any future class).
+function isLerpable(v) { return v && typeof v.lerp === 'function'; }
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** A numeric tween: drives a callback with a value interpolated between
+ *  `start` and `end` over `duration` seconds. Pauses with the game by default.
+ *  @memberof TweenSystem
+ *  @example
+ *  // Animate a fade-out over 2 seconds with an ease-out sine curve.
+ *  new Tween((v) => obj.alpha = v, 1, 0, 2, { ease: Ease.OUT(Ease.SINE) });
+ */
+class Tween
+{
+    /** Create a new tween. The callback fires immediately with `start` so the
+     *  target snaps to the start value on the same frame the tween is created.
+     *
+     *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+     *  any object exposing a `lerp(other, percent) => sameType` method. The
+     *  callback receives the interpolated value (a number, or a fresh instance
+     *  for lerp-able types). Both endpoints must be the same type.
+     *  @param {function(number|Vector2|Color):void} callback - Called with the interpolated value each frame
+     *  @param {number|Vector2|Color} [start=0] - Starting value
+     *  @param {number|Vector2|Color} [end=1] - Ending value
+     *  @param {number} [duration=1] - Duration in seconds
+     *  @param {Object} [options]
+     *  @param {function(number):number} [options.ease] - Easing function (defaults to LINEAR)
+     *  @param {boolean} [options.useRealTime=false] - Advance even when the game is paused (matches Timer's useRealTime)
+     *  @param {boolean} [options.paused=false] - Start in paused state */
+    constructor(callback, start = 0, end = 1, duration = 1, options = {})
+    {
+        ASSERT(typeof callback === 'function', 'Tween callback must be a function');
+        if (isLerpable(start))
+        {
+            ASSERT(start.constructor === end.constructor,
+                'Tween start and end must be the same type');
+        }
+        else
+        {
+            ASSERT(isNumber(start), 'Tween start must be a number or have a .lerp method');
+            ASSERT(isNumber(end),   'Tween end must be a number when start is a number');
+        }
+        ASSERT(isNumber(duration) && duration > 0, 'Tween duration must be > 0');
+
+        this.callback = callback;
+        this.start = start;
+        this.end = end;
+        this.duration = duration;
+        this.life = duration;
+        this.ease = options.ease || Ease.LINEAR;
+        this.useRealTime = !!options.useRealTime;
+        this.paused = !!options.paused;
+
+        /** @private completion callback set by then(), loop(), pingPong(). */
+        this.thenCallback = undefined;
+        /** @private remaining iterations including the current run (loop/pingPong only). */
+        this.loopRemaining = 0;
+
+        tweenActive.push(this);
+        // Snap target to start immediately.
+        callback(this.interp(duration));
+    }
+
+    /** Set the easing curve and return this for chaining.
+     *  @param {function(number):number} easeFn
+     *  @returns {Tween}
+     *  @memberof TweenSystem */
+    setEase(easeFn)
+    {
+        this.ease = easeFn;
+        return this;
+    }
+
+    /** Set a single completion callback. Calling `then` again replaces the
+     *  previous callback. Returns this for chaining.
+     *
+     *  Calling `then` after `loop` or `pingPong` overrides the loop chain
+     *  (last call wins).
+     *  @param {function():void} callback
+     *  @returns {Tween}
+     *  @memberof TweenSystem */
+    then(callback)
+    {
+        this.thenCallback = callback;
+        this.loopRemaining = 0;
+        return this;
+    }
+
+    /** Repeat this tween `n` total times. After each iteration finishes, a
+     *  fresh tween with the same parameters takes over via the `then` slot.
+     *  `loop()` with no argument loops forever.
+     *
+     *  Mutually exclusive with `pingPong`; calling either replaces the other,
+     *  and calling `then` after either clears the loop (last call wins).
+     *  @param {number} [count=Infinity]
+     *  @returns {Tween}
+     *  @memberof TweenSystem */
+    loop(count = Infinity)
+    {
+        this.loopRemaining = count;
+        this.thenCallback = () => loopContinuation(this);
+        return this;
+    }
+
+    /** Like `loop`, but swap `start` and `end` between iterations so the value
+     *  bounces back and forth. `pingPong()` with no argument bounces forever.
+     *
+     *  Mutually exclusive with `loop`; calling either replaces the other, and
+     *  calling `then` after either clears the loop (last call wins).
+     *  @param {number} [count=Infinity]
+     *  @returns {Tween}
+     *  @memberof TweenSystem */
+    pingPong(count = Infinity)
+    {
+        this.loopRemaining = count;
+        this.thenCallback = () => pingPongContinuation(this);
+        return this;
+    }
+
+    /** Pause this tween. While paused, tweenUpdate skips it.
+     *  @memberof TweenSystem */
+    pause() { this.paused = true; }
+
+    /** Resume a paused tween.
+     *  @memberof TweenSystem */
+    resume() { this.paused = false; }
+
+    /** Reset this tween to the start: life back to duration, pause cleared,
+     *  re-added to the active list if previously stopped, and the callback
+     *  re-fired with the start value.
+     *  @memberof TweenSystem */
+    restart()
+    {
+        this.life = this.duration;
+        this.paused = false;
+        if (tweenActive.indexOf(this) < 0) tweenActive.push(this);
+        this.callback(this.interp(this.duration));
+    }
+
+    /** True if this tween is in the active list and not paused.
+     *  @returns {boolean}
+     *  @memberof TweenSystem */
+    isActive()
+    {
+        return !this.paused && tweenActive.indexOf(this) >= 0;
+    }
+
+    /** Get how far this tween has progressed, from 0 (just started) to 1
+     *  (completed). Clamped — overshoot past completion still reads 1.
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    getPercent()
+    {
+        return percent(this.duration - this.life, 0, this.duration);
+    }
+
+    /** Get the current interpolated value (the value most recently passed to
+     *  the callback). Returns a number, Vector2, or Color depending on the
+     *  tween's start/end types.
+     *  @returns {number|Vector2|Color}
+     *  @memberof TweenSystem */
+    getValue()
+    {
+        return this.interp(this.life);
+    }
+
+    /** Compute the interpolated value at the given remaining `life`.
+     *  At life === duration the result is `start`; at life === 0 it is `end`.
+     *  @param {number} life
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    interp(life)
+    {
+        const x = this.ease((this.duration - life) / this.duration);
+        if (isLerpable(this.start))
+            return this.start.lerp(this.end, x);
+        return this.start + (this.end - this.start) * x;
+    }
+
+    /** Remove this tween from the active list and prevent any pending then-callback.
+     *  @memberof TweenSystem */
+    stop()
+    {
+        const i = tweenActive.indexOf(this);
+        if (i >= 0) tweenActive.splice(i, 1);
+        this.thenCallback = undefined;
+    }
+}
+
+/** Library of named easing curves and direction modifiers.
+ *  All curves accept `x` in [0,1] and return [0,1] (with possible overshoot
+ *  for ELASTIC/BACK/SPRING/BOUNCE). Curves are values you pass to `setEase`
+ *  or compose via the IN/OUT/IN_OUT/PIECEWISE/BEZIER modifiers.
+ *  @memberof TweenSystem
+ *  @example
+ *  // Use a basic curve
+ *  new Tween(callback, 0, 10, 1).setEase(Ease.SINE);
+ *  // Use a modifier on a curve
+ *  new Tween(callback, 0, 10, 1).setEase(Ease.OUT(Ease.BACK));
+ */
+const Ease =
+{
+    /** Linear (identity) curve.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    LINEAR: (x) => x,
+
+    /** Power curve factory: `Ease.POWER(n)` returns `x => x**n`.
+     *  Use n=2 for quadratic, n=3 for cubic, etc.
+     *  @param {number} n
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem */
+    POWER: (n) => (x) => x ** n,
+
+    /** Sine ease-in curve: starts slow, ends fast.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    SINE: (x) => 1 - Math.cos(x * (Math.PI / 2)),
+
+    /** Circular ease-in curve.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    CIRC: (x) => 1 - Math.sqrt(1 - x * x),
+
+    /** Exponential ease-in curve (`2^(10x-10)`).
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    EXPO: (x) => 2 ** (10 * x - 10),
+
+    /** Back ease-in: overshoots backward at the start before snapping forward.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    BACK: (x) => x * x * (2.70158 * x - 1.70158),
+
+    /** Elastic ease-in: oscillates with decreasing amplitude.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    ELASTIC: (x) =>
+        -(2 ** (10 * x - 10)) * Math.sin(((37 - 40 * x) * Math.PI) / 6),
+
+    /** Spring-like ease-out: oscillates outward after passing the target.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem */
+    SPRING: (x) =>
+        1 -
+        (Math.sin(Math.PI * (1 - x) * (0.2 + 2.5 * (1 - x) ** 3)) *
+            Math.pow(x, 2.2) +
+            (1 - x)) *
+            (1.0 + 1.2 * x),
+
+    /** Bouncing ease-in: slow ramp with bouncing impacts near the end.
+     *  Symmetric with the other base curves, which are all ease-in. To get the
+     *  classic "object falls and hits the ground" shape (bounces near x=1),
+     *  wrap with `Ease.OUT`: `Ease.OUT(Ease.BOUNCE)`.
+     *  @param {number} x
+     *  @returns {number}
+     *  @memberof TweenSystem
+     *  @example
+     *  Ease.BOUNCE                  // ease-in bounce (slow, then bouncy at end)
+     *  Ease.OUT(Ease.BOUNCE)        // ease-out bounce (object hits ground)
+     *  Ease.IN_OUT(Ease.BOUNCE)     // bounces at both ends
+     */
+    BOUNCE: (x) =>
+    {
+        // Inverted form of the standard easeOutBounce: 1 - bounceOut(1 - x).
+        let t = 1 - x, f;
+        if (t < 4 / 11) f = 7.5625 * t * t;
+        else if (t < 8 / 11) f = 7.5625 * (t -= 6 / 11) * t + 0.75;
+        else if (t < 10 / 11) f = 7.5625 * (t -= 9 / 11) * t + 0.9375;
+        else f = 7.5625 * (t -= 10.5 / 11) * t + 0.984375;
+        return 1 - f;
+    },
+
+    /** Ease-in direction modifier: returns the curve unchanged. Symmetric
+     *  with `OUT` and `IN_OUT`. Base curves are already ease-in by
+     *  convention, so wrapping a curve in `IN` is a no-op — useful when
+     *  picking the direction programmatically.
+     *  @param {function(number):number} f - Curve to use as ease-in (returned unchanged)
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem
+     *  @example
+     *  // Pick direction at runtime
+     *  const dir = bouncyMode ? Ease.OUT : Ease.IN;
+     *  new Tween(cb, 0, 10, 1).setEase(dir(Ease.BACK));
+     */
+    IN: (f) => f,
+
+    /** Reverse a curve so it eases out instead of in: `x => 1 - f(1 - x)`.
+     *  @param {function(number):number} f
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem
+     *  @example
+     *  Ease.OUT(Ease.POWER(2)) // ease-out quadratic
+     */
+    OUT: (f) => (x) => 1 - f(1 - x),
+
+    /** Combine the first half of `f` with `Ease.OUT(f)` for a symmetric curve.
+     *  Bug-fix vs the original library: the original referenced an undefined
+     *  global `Piecewise`; this implementation routes through `Ease.PIECEWISE`.
+     *  @param {function(number):number} f
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem */
+    IN_OUT: (f) => Ease.PIECEWISE(f, Ease.OUT(f)),
+
+    /** Split [0,1] into N equal sections and run a different curve in each.
+     *  Each curve is mapped to its section: section i runs over [i/n, (i+1)/n]
+     *  and its output is mapped to [i/n, (i+1)/n] of the overall range.
+     *  @param {...function(number):number} fns
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem */
+    PIECEWISE: (...fns) =>
+    {
+        const n = fns.length;
+        return (x) =>
+        {
+            const i = (x * n - 1e-9) >> 0;
+            return (fns[i]((x - i / n) * n) + i) / n;
+        };
+    },
+
+    /** Cubic Bezier curve solver in the style of CSS `cubic-bezier`.
+     *  Control points (0,0), (x1,y1), (x2,y2), (1,1).
+     *  @param {number} x1
+     *  @param {number} y1
+     *  @param {number} x2
+     *  @param {number} y2
+     *  @returns {function(number):number}
+     *  @memberof TweenSystem
+     *  @example
+     *  Ease.BEZIER(0.25, 0.1, 0.25, 1) // CSS "ease"
+     */
+    BEZIER: (x1, y1, x2, y2) =>
+    {
+        // Parametric cubic Bezier with implicit (0,0) and (1,1) endpoints.
+        const curve = (t) =>
+        {
+            const u = 1 - t;
+            const c1 = 3 * u * u * t;
+            const c2 = 3 * u * t * t;
+            const t3 = t ** 3;
+            return [c1 * x1 + c2 * x2 + t3, c1 * y1 + c2 * y2 + t3];
+        };
+        return (x) =>
+        {
+            // Binary search for t such that curve(t).x ≈ x, then return curve(t).y.
+            let t0 = 0, t1 = 1;
+            for (let i = 0; i < 128; i++)
+            {
+                const tMid = (t0 + t1) / 2;
+                const [bx, by] = curve(tMid);
+                if (Math.abs(bx - x) < 1e-5) return by;
+                if (bx < x) t0 = tMid; else t1 = tMid;
+            }
+            return curve((t0 + t1) / 2)[1];
+        };
+    },
+};
+
+/** Tween a property on an object by dot-path. Returns the underlying Tween
+ *  so all chaining methods (`setEase`, `then`, `loop`, `pingPong`, etc.)
+ *  remain available.
+ *
+ *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+ *  any object with a `lerp(other, percent) => sameType` method.
+ *  @param {Object} target - The object whose property is being animated
+ *  @param {string} propertyPath - Dot-separated path, e.g. `'pos.x'` or `'color'`
+ *  @param {number|Vector2|Color} start - Starting value
+ *  @param {number|Vector2|Color} end - Ending value
+ *  @param {number} [duration=1] - Duration in seconds
+ *  @param {Object} [options] - Same options as the Tween constructor
+ *  @returns {Tween}
+ *  @memberof TweenSystem
+ *  @example
+ *  // Numeric: slide an object's x with an ease-out sine curve
+ *  tweenProperty(player, 'pos.x', 0, 10, 2).setEase(Ease.OUT(Ease.SINE));
+ *  // Vector2: animate a position diagonally
+ *  tweenProperty(player, 'pos', vec2(-5, 0), vec2(5, 3), 2);
+ *  // Color: pulse between two colors
+ *  tweenProperty(sprite, 'color', RED, BLUE, 1).pingPong();
+ */
+function tweenProperty(target, propertyPath, start, end, duration = 1, options = {})
+{
+    ASSERT(target != null && typeof target === 'object', 'tweenProperty target must be an object');
+    ASSERT(isString(propertyPath) && propertyPath.length > 0, 'tweenProperty propertyPath must be a non-empty string');
+
+    const parts = propertyPath.split('.');
+    const lastKey = parts.pop();
+    const callback = (value) =>
+    {
+        let obj = target;
+        for (const k of parts) obj = obj[k];
+        obj[lastKey] = value;
+    };
+    return new Tween(callback, start, end, duration, options);
+}
+
+// Continuation that schedules the next loop iteration when one finishes.
+// Called from the completed tween's `then` slot. Decrements the counter and
+// only spawns a new tween if more iterations remain.
+function loopContinuation(prev)
+{
+    if (prev.loopRemaining !== Infinity && prev.loopRemaining <= 1) return;
+    const next = new Tween(prev.callback, prev.start, prev.end, prev.duration,
+        { ease: prev.ease, useRealTime: prev.useRealTime });
+    next.loopRemaining = prev.loopRemaining === Infinity
+        ? Infinity
+        : prev.loopRemaining - 1;
+    next.thenCallback = () => loopContinuation(next);
+}
+
+// Continuation for pingPong: spawns a new tween with start and end swapped.
+function pingPongContinuation(prev)
+{
+    if (prev.loopRemaining !== Infinity && prev.loopRemaining <= 1) return;
+    const next = new Tween(prev.callback, prev.end, prev.start, prev.duration,
+        { ease: prev.ease, useRealTime: prev.useRealTime });
+    next.loopRemaining = prev.loopRemaining === Infinity
+        ? Infinity
+        : prev.loopRemaining - 1;
+    next.thenCallback = () => pingPongContinuation(next);
+}
+
+/** Engine plugin hook: advance every active tween by the appropriate delta.
+ *  Called once per render frame by the engine (no arguments). May also be
+ *  called explicitly with `(gameDelta, realDelta)` to drive tweens manually
+ *  — useful for headless tests or custom replay/scrubbing systems.
+ *  @param {number} [gameDelta] - Game-time delta in seconds; default: time - lastTime
+ *  @param {number} [realDelta] - Real-time delta in seconds; default: timeReal - lastTimeReal
+ *  @memberof TweenSystem */
+function tweenUpdate(gameDelta, realDelta)
+{
+    if (gameDelta === undefined)
+    {
+        // Engine path: compute deltas from engine time globals.
+        gameDelta = time - lastTime;
+        realDelta = timeReal - lastTimeReal;
+        lastTime = time;
+        lastTimeReal = timeReal;
+    }
+    else if (realDelta === undefined)
+    {
+        // Manual path with one arg: real and game advance together.
+        realDelta = gameDelta;
+    }
+
+    // Iterate in reverse so removals don't disturb iteration.
+    for (let i = tweenActive.length; i--;)
+    {
+        const t = tweenActive[i];
+        if (t.paused) continue;
+        const dt = t.useRealTime ? realDelta : gameDelta;
+        if (dt <= 0) continue;
+
+        t.life -= dt;
+        if (t.life > 0)
+        {
+            t.callback(t.interp(t.life));
+        }
+        else
+        {
+            // Completion: fire end value, remove from active, fire then-callback.
+            t.callback(t.interp(0));
+            tweenActive.splice(i, 1);
+            const cb = t.thenCallback;
+            t.thenCallback = undefined;
+            if (cb) cb();
+        }
+    }
+}
+
+/** Stop every active tween and clear their then-callbacks. Useful for resets
+ *  on level transitions or when changing scenes.
+ *  @memberof TweenSystem */
+function tweenStopAll()
+{
+    for (const t of tweenActive) t.thenCallback = undefined;
+    tweenActive.length = 0;
+}
+
+// Register with the engine so tweens auto-advance.
+engineAddPlugin(tweenUpdate);
+
