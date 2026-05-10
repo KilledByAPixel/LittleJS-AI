@@ -1,6 +1,7 @@
 <!DOCTYPE html><head>
 <title>LittleJS Menu System Template</title>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 /* Override any CSS variable on #littlejs-menus to re-skin all menus
    and toolbars. Uncomment to try a different look — the helper itself
@@ -31,6 +32,9 @@ paused = false;
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
 cameraScale = 32;
+// Default LittleJS canvas cap is 1920x1080 — raise it so the canvas
+// fills modern high-res monitors instead of letterboxing.
+canvasMaxSize = vec2(2048, 2048);
 
 ///////////////////////////////////////////////////////////////////////////////
 // MENU SYSTEM TEMPLATE
@@ -81,14 +85,21 @@ async function gameInit()
         activate: () => sound_activate.play(),
     });
 
-    // ----- title menu (not dismissable: clicking off shouldn't start the game) -----
+    // ----- title menu -----
+    // dismissable: true lets the player Esc / B back to the canvas prompt;
+    // attachClickToReveal (set up at the end of gameInit) re-shows the
+    // menu on the next click / Space / Enter / A / Start.
+    // onStart wires gamepad Start to launch "play" directly without the
+    // player having to navigate to the PLAY item first.
+    const playFromTitle = () => { setPlaying(true); titleMenu.hide(); };
     const titleMenu = createMenu({
         id: 'title',
         title: 'MENU DEMO',
-        dismissable: false,
+        dismissable: true,
+        onStart: playFromTitle,
         items: [
             {type:'label',  text:'A demo of menus.js'},
-            {type:'button', label:'PLAY',    onClick: () => { setPlaying(true); titleMenu.hide(); }},
+            {type:'button', label:'PLAY',    onClick: playFromTitle},
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
             {type:'button', label:'MEDALS',  onClick: () => pushMenu('medals')},
             {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
@@ -109,7 +120,7 @@ async function gameInit()
 
     const medalCellOf = m => ({
         icon: m.icon, label: m.name, title: m.description, earned: m.unlocked,
-        onClick: () => showAlertDialog(m.name + '\n\n' + m.description),
+        onClick: () => showAlertDialog({title: m.name, icon: m.icon, message: m.description}),
     });
 
     createMenu({
@@ -145,6 +156,11 @@ async function gameInit()
 
     // ----- options menu (shared between title and pause) -----
     // Demonstrates separators grouping audio / display / back.
+    // The `persist:'key'` flag on slider / checkbox / color / input items
+    // auto-loads from localStorage on init and auto-saves on every change.
+    // onChange also fires once at init time with the resolved value, so
+    // the consumer's effect (e.g. setSoundVolume) applies the saved value
+    // before the first menu sound plays.
     let musicOn = true;
     createMenu({
         id: 'options',
@@ -152,16 +168,21 @@ async function gameInit()
         onHide: popMenu,
         items: [
             {type:'slider',   id:'volume', label:'VOLUME',       value: 0.8, min:0, max:1,
+                persist:'menuDemo.volume',
                 onChange: v => setSoundVolume(v)},
             {type:'checkbox', id:'music',  label:'MUSIC',        value: musicOn,
-                onChange: v => { musicOn = v; getToolbar('hud').getItem('music').setValue(v); }},
+                persist:'menuDemo.music',
+                onChange: v => { musicOn = v; getToolbar('hud')?.getItem('music')?.setValue(v); }},
             {type:'separator'},
             {type:'checkbox', id:'shake',  label:'SCREEN SHAKE', value: true,
+                persist:'menuDemo.shake',
                 onChange: v => console.log('shake ->', v)},
             {type:'color',    id:'bg',     label:'BG COLOR',     value:'#264d40',
+                persist:'menuDemo.bg',
                 title:'Pick the canvas background color',
                 onChange: c => canvasClearColor = new Color().setHex(c)},
             {type:'input',    id:'name',   label:'NAME',         value:'Player',
+                persist:'menuDemo.name',
                 placeholder:'Enter a name', maxLength:16,
                 title:'Demo of the text input item type',
                 onChange: v => console.log('name ->', v)},
@@ -198,12 +219,15 @@ async function gameInit()
             {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
             {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
             {
-                showConfirmDialog('Quit to title?', () =>
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                    setPlaying(false);
-                    showMenu('title');
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: () =>
+                    {
+                        clearSubmenuStack();
+                        hideAllMenus();
+                        setPlaying(false);
+                        showMenu('title');
+                    },
                 });
             }},
         ],
@@ -215,6 +239,12 @@ async function gameInit()
         anchor:    'top-right',
         direction: 'horizontal',
         items: [
+            // Order: music, fullscreen, menu. Anchor is top-right so the
+            // LAST item sits on the far right — putting the hamburger
+            // (always shown, primary action) on the corner under the thumb.
+            {type:'toggle', id:'music', label:'♪', title:'Toggle music', value: musicOn,
+                onChange: v => { musicOn = v; getMenu('options').getItem('music').setValue(v); }},
+            {type:'button', id:'fs',    label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen},
             {type:'button', id:'menu',  label:'☰', title:'Menu', onClick: () =>
             {
                 // ☰ toggles between gameplay and the pause-menu flow. If any
@@ -227,24 +257,26 @@ async function gameInit()
                 }
                 else showMenu('pause');
             }},
-            {type:'toggle', id:'music', label:'♪', title:'Toggle music', value: musicOn,
-                onChange: v => { musicOn = v; getMenu('options').getItem('music').setValue(v); }},
-            {type:'button', id:'fs',    label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen},
         ],
     });
 
-    titleMenu.show();
+    // Wait for first user interaction (click / touch / Space / Enter / A /
+    // Start) before showing the title menu. Mirrors the pinball pattern:
+    // the canvas shows a "CLICK TO PLAY" prompt while !isPlaying and no
+    // menu is up; the listener re-arms after Esc/B dismisses the title.
+    // The () => !isPlaying gate keeps clicks during gameplay from
+    // accidentally re-revealing the title menu.
+    attachClickToReveal('title', () => !isPlaying);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
     // gameUpdate only runs when paused=false, which only happens when no
-    // menu is visible — so we can move/handle Esc/Start without checking again.
-    // Esc on keyboard, Start (button 9) on gamepad both open the pause menu.
-    // playMenuSound('activate') matches the click sound of the toolbar's ☰
-    // button so opening pause feels the same regardless of input source.
-    if (keyWasPressed('Escape') || gamepadWasPressed(9))
+    // menu is visible. Gate on isPlaying so the Esc/Start pause shortcut
+    // doesn't fire from the "CLICK TO PLAY" pre-play state — title-menu
+    // reveal owns Esc/Start there via attachClickToReveal.
+    if (isPlaying && (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         playMenuSound('activate');
         showMenu('pause');
@@ -254,8 +286,11 @@ function gameUpdate()
         inputClearKey(9, 1, false, true, false);
     }
 
-    const dir = keyDirection();
-    playerPos = playerPos.add(dir.scale(.2));
+    if (isPlaying)
+    {
+        const dir = keyDirection();
+        playerPos = playerPos.add(dir.scale(.2));
+    }
 }
 
 function gameUpdatePost()
@@ -264,13 +299,30 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    drawRect(playerPos, playerSize, hsl(.13, 1, .6));
+    // Draw gameplay content only while actually playing — the pre-play
+    // / post-quit "title screen" state shows just the prompt below.
+    if (isPlaying)
+        drawRect(playerPos, playerSize, hsl(.13, 1, .6));
 }
 
 function gameRenderPost()
 {
-    drawTextScreen('Menu System Demo', vec2(mainCanvasSize.x/2, 30),
-        24, hsl(0, 0, 1), 4, hsl(0, 0, 0));
+    // "Menu System Demo" header — title-screen banner only. Hide once
+    // the player is actually playing.
+    if (!isPlaying)
+        drawTextScreen('Menu System Demo', vec2(mainCanvasSize.x/2, 150),
+            32, hsl(0, 0, 1), 4, hsl(0, 0, 0));
+
+    // Pre-play / post-quit prompt — only when not playing AND no menu
+    // is up. Pulses opacity so it reads as "do something". Adapts to
+    // touch devices via isTouchDevice.
+    if (!isPlaying && !isMenuVisible())
+    {
+        const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
+        const a = 0.5 + 0.5 * Math.sin(time * 3);
+        drawTextScreen(prompt, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2),
+            48, hsl(0, 0, 1, a), 6, hsl(0, 0, 0, a));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -28,13 +28,37 @@
 //              (focusable: true to opt in).
 // Tooltips:    pass `title:'...'` on any item; grids fall back to label.
 //
-// Sub-menu nav:    pushMenu(id), popMenu (wire as child's onHide),
-//                  clearSubmenuStack (e.g. for QUIT-to-title flows).
-// One-shot modals: showAlertDialog(msg, onOk, okLabel='BACK'),
-//                  showConfirmDialog(msg, onYes, onNo).
-// Toasts:          showMenuToast({icon, title, text, duration}) — DOM
-//                  notification in the top-left, queued. MenuMedal
-//                  (extends LittleJS Medal) auto-toasts on unlock().
+// Per-item flags (any item type unless noted):
+//   onUpdate(el)        — fires per frame while the parent menu is visible.
+//                         Live counters, animated labels, custom DOM.
+//   persist:'storeKey'  — slider/toggle/checkbox/color/input only. Auto-
+//                         loads from localStorage on init, auto-saves on
+//                         change. onChange ALSO fires once at init via a
+//                         microtask so consumer effects (setSoundVolume,
+//                         etc.) apply the persisted value.
+// Per-item flag (works on menu items AND toolbar items):
+//   hideOnTouch:true    — auto-hide on touch devices. For fullscreen /
+//                         music style items that don't make sense there.
+//
+// Sub-menu nav:    pushMenu(id), popMenu (wire as child's onHide which
+//                  receives reason='push'|'dismiss'), clearSubmenuStack
+//                  (e.g. for QUIT-to-title flows).
+// Title reveal:    attachClickToReveal(menuId, canReveal?) installs a
+//                  pointerdown/Space/Enter/A/Start listener that shows
+//                  the named menu when the user interacts with the canvas.
+//                  Predicate gates reveal on game state (e.g.
+//                  () => onTitleScreen). Works for mouse, touch, keyboard,
+//                  AND gamepad.
+// Per-menu hook:   `onStart` (createMenu) runs when gamepad Start is
+//                  pressed instead of the default dismiss-on-Start.
+//                  Useful for title screens where Start should launch
+//                  the game.
+// One-shot modals: showAlertDialog({message, title, icon, onOk, okLabel}),
+//                  showConfirmDialog({message, title, icon, onYes, onNo,
+//                                     yesLabel, noLabel}).
+// Toasts:          showMenuToast({icon, title, text, duration, position}) —
+//                  DOM notification in any corner (top-left default), queued.
+//                  MenuMedal (extends LittleJS Medal) auto-toasts on unlock().
 // Lookups:         getMenu(id), getToolbar(id), getTopMenu(),
 //                  isMenuVisible(), showMenu(id), hideMenu(id),
 //                  hideAllMenus().
@@ -49,6 +73,11 @@
 // modality so pointer-mode opens don't drag a stale outline around.
 // Toolbars are pointer-only.
 //
+// `dismissable: false` (createMenu) suppresses Esc / gamepad B / gamepad
+// Start / backdrop click — useful for title screens (clicking off
+// shouldn't start the game) and confirm dialogs (force an explicit
+// Yes/No choice). Default is `true`.
+//
 // Sounds: setMenuSounds({select, activate}) wires global UI sounds.
 // `select` fires on keyboard/gamepad nav; `activate` on click / Enter / A.
 // playMenuSound('activate') lets game code (e.g. Esc -> showMenu('pause'))
@@ -59,10 +88,52 @@
 //   #littlejs-menus {
 //       --menu-bg:           rgba(20, 0, 30, 0.95);
 //       --menu-accent:       #f0a;
-//       --menu-font:         'Orbitron', sans-serif;
+//       --menu-font:         'Orbitron', sans-serif;   /* font everywhere */
 //       --menu-border-width: 4px;
 //   }
+// `--menu-font` controls every text element in the menu system (titles,
+// items, buttons, toolbar icons, toasts) — it's the only knob you need
+// to touch to set a custom font. Per-menu CSS via the `data-menu-id` /
+// `data-item-id` attributes that panels and items carry from cfg.id:
+//   #littlejs-menus .ljs-menu-panel[data-menu-id="title"] { top: 65%; }
+//   #littlejs-menus .ljs-menu-item[data-item-id="hi"] { color: #ff0; }
 // See injectStyles() below for the full list of variables.
+//
+// ----------------------------------------------------------------------------
+// Audio integration (LittleJS Sound + setMenuSounds)
+// ----------------------------------------------------------------------------
+//
+// menus.js doesn't know how to play sounds itself — wire it via setMenuSounds
+// once in gameInit. The shape:
+//
+//   const sound_select   = new Sound([.5,,910,,,.02,2,...]);   // zzfx params
+//   const sound_activate = new Sound([.7,,30,.01,,.02,1,...]);
+//   setMenuSounds({
+//       select:   () => sound_select.play(),
+//       activate: () => sound_activate.play(),
+//   });
+//
+// Wrapping zzfx params with `new Sound(...)` and calling `.play()` from the
+// hook (rather than calling zzfx() directly) routes the audio through the
+// engine's audio graph — so the master volume slider, the engine's mute
+// state, and the user-gesture-required-before-audio gating all just work.
+//
+// `select` fires on keyboard / d-pad nav; `activate` fires on click / Enter
+// / A. Toolbar buttons play `activate` automatically. Game code that opens
+// a menu without going through a focusable item (e.g. Esc -> showMenu(
+// 'pause')) should call `playMenuSound('activate')` so the open feels the
+// same as a toolbar-button-driven open.
+//
+// Persistent volume slider:
+//   {type:'slider', id:'volume', persist:'mygame.volume', value: 0.8,
+//    min:0, max:1, onChange: v => setSoundVolume(v)}
+// On reload, persist re-applies the saved value via onChange before any
+// menu sound has a chance to play, so the very first nav sound is at the
+// user-visible volume.
+//
+// MenuMedal extends LittleJS's Medal so unlocks fire a DOM toast (top-left)
+// instead of the engine's canvas overlay. Same `medalsInit('SaveName')`
+// call, same `medals[id]` map — just a different display path.
 
 function createMenu(config)
 {
@@ -84,17 +155,30 @@ function createMenu(config)
     backdrop.className = 'ljs-menu-backdrop';
     menuSystemRoot.appendChild(backdrop);
 
-    // panel element
+    // panel element. data-menu-id mirrors cfg.id so consumers can target a
+    // specific panel from CSS (e.g. shift the title-screen menu off-center
+    // without affecting other menus): `.ljs-menu-panel[data-menu-id="title"]`
     const panel = document.createElement('div');
     panel.className = 'ljs-menu-panel';
+    if (cfg.id) panel.dataset.menuId = cfg.id;
     menuSystemRoot.appendChild(panel);
 
+    let titleEl = null;
     if (cfg.title)
     {
-        const t = document.createElement('div');
-        t.className = 'ljs-menu-title';
-        t.textContent = cfg.title;
-        panel.appendChild(t);
+        titleEl = document.createElement('div');
+        titleEl.className = 'ljs-menu-title';
+        titleEl.textContent = cfg.title;
+        panel.appendChild(titleEl);
+    }
+    // Optional subtitle below the title — small, all-caps-ish, hugs tight to
+    // the title above. Useful for "TITLE / Tagline" pairings.
+    if (cfg.subtitle)
+    {
+        const s = document.createElement('div');
+        s.className = 'ljs-menu-subtitle';
+        s.textContent = cfg.subtitle;
+        panel.appendChild(s);
     }
 
     const itemHandles = {};
@@ -104,9 +188,23 @@ function createMenu(config)
         const built = buildMenuItem(item);
         if (!built) continue;
         built.itemId = item.id || null;
+        // Mirror cfg.id onto the panel via data-menu-id and item.id onto the
+        // item el via data-item-id, so consumers can target individual items
+        // from CSS without poking handle internals:
+        //   .ljs-menu-panel[data-menu-id="title"]
+        //     .ljs-menu-item[data-item-id="highScore"] { color: yellow; }
+        if (item.id) built.el.dataset.itemId = item.id;
+        // onUpdate(el) on any item — fires per frame while the parent
+        // menu is visible and this item isn't setVisible(false). Useful
+        // for live-counting labels, animated custom elements, etc.
+        if (item.onUpdate) built.onUpdate = item.onUpdate;
         panel.appendChild(built.el);
         itemList.push(built);
         if (item.id) itemHandles[item.id] = built.handle;
+        // hideOnTouch: same convenience flag toolbar items have. Useful for
+        // FULLSCREEN buttons (mobile browsers' fullscreen story is messy)
+        // and similar mouse-keyboard-only menu items.
+        if (item.hideOnTouch && isTouchDevice) built.handle.setVisible(false);
     }
 
     let visible = false;
@@ -135,7 +233,13 @@ function createMenu(config)
             if (cfg.onShow) cfg.onShow();
             fireMenuVisibility();
         },
-        hide()
+        // `reason` distinguishes the "user explicitly dismissed me" path
+        // (Esc / B / backdrop / explicit hideMenu) from "I'm being hidden
+        // so a sub-menu can take over" (pushMenu calls hide('push')).
+        // Defaults to 'dismiss' so existing callers see the user-driven
+        // case. onHide(reason) can branch on it — see pinball's title menu
+        // for the canonical example (don't reset titleMenuRevealed on push).
+        hide(reason)
         {
             if (!visible) return;
             visible = false;
@@ -144,12 +248,19 @@ function createMenu(config)
             panel.classList.remove('visible');
             const i = allMenus.indexOf(handle);
             if (i >= 0) allMenus.splice(i, 1);
-            if (cfg.onHide) cfg.onHide();
+            if (cfg.onHide) cfg.onHide(reason || 'dismiss');
             fireMenuVisibility();
         },
         toggle() { visible ? handle.hide() : handle.show(); },
         isVisible() { return visible; },
         getItem(id) { return itemHandles[id]; },
+        // The .ljs-menu-title element rendered from cfg.title (or null if
+        // cfg.title was omitted). Exposed so consumers can drive per-frame
+        // animation on it via the menu-level onUpdate hook — animating
+        // text-shadow with CSS @keyframes can flicker on high-DPR mobile
+        // displays; a JS-driven path that sets el.style each frame stays
+        // smooth (same pattern works fine for custom-item onUpdate).
+        getTitleEl() { return titleEl; },
         destroy()
         {
             if (cfg.id && menusById[cfg.id] === handle) delete menusById[cfg.id];
@@ -199,6 +310,10 @@ function createToolbar(config)
         if (!built) continue;
         el.appendChild(built.el);
         if (item.id) itemHandles[item.id] = built.handle;
+        // hideOnTouch: convenience flag for fullscreen / music style buttons
+        // that don't make sense on touch (mute via OS, already-fullscreen).
+        // Equivalent to calling getItem(id).setVisible(false) post-construction.
+        if (item.hideOnTouch && isTouchDevice) built.handle.setVisible(false);
     }
 
     let visible = false;
@@ -244,7 +359,7 @@ function pushMenu(id)
         // wired (i.e. a sub-sub-menu chain) would pop the stack we just
         // pushed, undoing the navigation.
         suppressPopMenu = true;
-        cur.hide();
+        cur.hide('push');   // tells the parent's onHide this isn't a real dismiss
         suppressPopMenu = false;
     }
     showMenu(id);
@@ -260,6 +375,71 @@ function popMenu()
 function clearSubmenuStack() { submenuStack.length = 0; }
 
 // ============================================================================
+// Click-to-reveal helper.
+// ============================================================================
+//
+// Standard "title screen" pattern: the canvas shows your game's title art
+// with a "CLICK TO PLAY" prompt drawn on it, and the first user interaction
+// brings the menu up. After dismissal (Esc, etc.) the prompt comes back and
+// the next click re-opens the menu.
+//
+//   const stop = attachClickToReveal('title');             // unconditional
+//   const stop = attachClickToReveal('title',              // gated reveal
+//       () => onTitleScreen);                              //   only on title
+//   stop();                                                // disable
+//
+// Reveal triggers on any document click, Space, or Enter — except on the
+// menus.js root (so clicks inside a different visible menu don't bubble in).
+// Self-cancels while the menu is already visible. The optional `canReveal`
+// predicate lets callers gate reveal on game state (e.g. only during the
+// title screen) so the listener can stay attached for the whole game.
+// Combine with the menu's `onShow` hook to start title music, etc.
+
+// Active reveal handlers — the per-frame gamepad poll in menusUpdate
+// walks this list so A / Start can trigger reveal even though gamepad
+// input is poll-based and doesn't fire DOM events.
+const clickToRevealHandlers = [];
+
+function attachClickToReveal(menuId, canReveal)
+{
+    initMenuSystem();
+    const handler = {
+        menuId,
+        reveal()
+        {
+            if (canReveal && !canReveal()) return;
+            const m = getMenu(menuId);
+            if (!m || m.isVisible()) return;
+            if (isMenuVisible()) return; // some other menu is up; don't intrude
+            m.show();
+        },
+    };
+    clickToRevealHandlers.push(handler);
+    // pointerdown (not click) so this works on touch devices: LittleJS calls
+    // preventDefault() on canvas touch events which can suppress the
+    // synthesized click event entirely on mobile. pointerdown is the
+    // unified mouse + touch + pen event and fires regardless.
+    const onPointer = e =>
+    {
+        if (menuSystemRoot && menuSystemRoot.contains(e.target)) return;
+        handler.reveal();
+    };
+    const onKey = e =>
+    {
+        if (e.key === ' ' || e.key === 'Enter') handler.reveal();
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () =>
+    {
+        const i = clickToRevealHandlers.indexOf(handler);
+        if (i >= 0) clickToRevealHandlers.splice(i, 1);
+        document.removeEventListener('pointerdown', onPointer);
+        document.removeEventListener('keydown', onKey);
+    };
+}
+
+// ============================================================================
 // Dialog helpers.
 // ============================================================================
 //
@@ -269,21 +449,31 @@ function clearSubmenuStack() { submenuStack.length = 0; }
 // (so the caller's panel doesn't bleed through visually) and restore the
 // caller via popMenu when dismissed.
 //
-//   showAlertDialog('Saved.');                         // single OK/BACK
-//   showConfirmDialog('Quit to title?', quitToTitle);  // YES/NO
+//   showAlertDialog({message: 'Saved.'});                              // single OK/BACK
+//   showConfirmDialog({message: 'Quit to title?', onYes: quitToTitle}); // YES/NO
 
 // Single-button info dialog. For "you got a medal", "saved", "level
 // description" — anywhere the player just needs to acknowledge. Default
-// label is BACK because that matches the dismissal action in game menus.
+// button label is BACK to match the dismissal action in game menus.
+//
+//   showAlertDialog({message, title?, icon?, onOk?, okLabel?})
+//
+// `title`  optional menu-title-style header.
+// `icon`   optional emoji rendered prominently above the message.
+// `onOk`   fires after the dialog closes (click / Enter / Esc all path
+//          through this since dismissable is true).
+// `okLabel` defaults to 'BACK'.
 // ============================================================================
 // Toasts and achievement medals.
 // ============================================================================
 //
-// `showMenuToast({icon, title, text, duration})` renders a DOM notification
-// in the top-left (opposite corner from the standard top-right HUD toolbar).
-// Toasts queue and play one at a time; later calls during a visible toast
-// are appended. Pointer-events are disabled so toasts never intercept game
-// clicks. Duration defaults to 5 seconds (slide-out included).
+// `showMenuToast({icon, title, text, duration, position})` renders a DOM
+// notification in a corner of the viewport. Position is one of 'top-left'
+// (default), 'top-right', 'bottom-left', 'bottom-right' — the slide-in
+// direction follows the position so toasts always slide in from the
+// nearest edge. Toasts queue and play one at a time; later calls during a
+// visible toast are appended. Pointer-events are disabled so toasts never
+// intercept game clicks. Duration defaults to 5 seconds (slide-out included).
 //
 // `MenuMedal` is a drop-in subclass of LittleJS's `Medal` that overrides
 // unlock() to fire a toast instead of pushing to the engine's canvas queue.
@@ -313,7 +503,8 @@ function processToastQueue()
     const opts = toastQueue.shift();
 
     const el = document.createElement('div');
-    el.className = 'ljs-toast';
+    const position = opts.position || 'top-left';
+    el.className = 'ljs-toast pos-' + position;
 
     if (opts.icon)
     {
@@ -383,25 +574,37 @@ class MenuMedal extends Medal
     }
 }
 
-function showAlertDialog(message, onOk, okLabel)
+function showAlertDialog(opts)
 {
+    opts = opts || {};
     const id = '__ljs-alert-' + (Math.random() * 1e9 | 0);
+    const message = opts.message || '';
     const useText = message.length > 40 || message.includes('\n');
+    const items = [];
+    // Optional big icon above the message — useful for medal/achievement
+    // detail dialogs where the cell's icon should re-appear in the popup.
+    if (opts.icon)
+    {
+        const iconEl = document.createElement('div');
+        iconEl.className = 'ljs-dialog-icon';
+        iconEl.textContent = opts.icon;
+        items.push({type:'custom', el: iconEl});
+    }
+    items.push(useText
+        ? {type:'text',  text: message}
+        : {type:'label', text: message});
+    items.push({type:'button', id:'ok', label: opts.okLabel || 'BACK', onClick: () =>
+    {
+        dialog.destroy();    // hide -> onHide -> restore parent
+        if (opts.onOk) opts.onOk();
+    }});
     const dialog = createMenu({
         id,
+        title:         opts.title || null,
         dismissable:   true,         // BACK / Esc / B / backdrop all close it
         initialItemId: 'ok',
         onHide:        popMenu,
-        items: [
-            useText
-                ? {type:'text',  text: message}
-                : {type:'label', text: message},
-            {type:'button', id:'ok', label: okLabel || 'BACK', onClick: () =>
-            {
-                dialog.destroy();    // hide -> onHide -> restore parent
-                if (onOk) onOk();
-            }},
-        ],
+        items,
     });
     pushMenu(id);
 }
@@ -409,31 +612,48 @@ function showAlertDialog(message, onOk, okLabel)
 // Two-button confirmation. Defaults selection to NO (safe choice). YES
 // clears the submenu stack so the caller can branch (e.g. QUIT to title);
 // NO closes the dialog and restores the parent.
-function showConfirmDialog(message, onYes, onNo)
+//
+//   showConfirmDialog({message, title?, icon?, onYes?, onNo?,
+//                      yesLabel?, noLabel?})
+//
+// `dismissable` is false — Esc/B/Start/backdrop all do nothing, forcing
+// an explicit choice. yesLabel / noLabel default to 'YES' / 'NO'.
+
+function showConfirmDialog(opts)
 {
+    opts = opts || {};
     const id = '__ljs-confirm-' + (Math.random() * 1e9 | 0);
+    const message = opts.message || '';
     const useText = message.length > 40 || message.includes('\n');
+    const items = [];
+    if (opts.icon)
+    {
+        const iconEl = document.createElement('div');
+        iconEl.className = 'ljs-dialog-icon';
+        iconEl.textContent = opts.icon;
+        items.push({type:'custom', el: iconEl});
+    }
+    items.push(useText
+        ? {type:'text',  text: message}
+        : {type:'label', text: message});
+    items.push({type:'button', id:'yes', label: opts.yesLabel || 'YES', onClick: () =>
+    {
+        clearSubmenuStack();   // YES means caller decides what's next
+        dialog.destroy();
+        if (opts.onYes) opts.onYes();
+    }});
+    items.push({type:'button', id:'no', label: opts.noLabel || 'NO', onClick: () =>
+    {
+        dialog.destroy();      // hide -> onHide -> restore parent
+        if (opts.onNo) opts.onNo();
+    }});
     const dialog = createMenu({
         id,
+        title:         opts.title || null,
         dismissable:   false,
         initialItemId: 'no',
         onHide:        popMenu,
-        items: [
-            useText
-                ? {type:'text',  text: message}
-                : {type:'label', text: message},
-            {type:'button', id:'yes', label:'YES', onClick: () =>
-            {
-                clearSubmenuStack();   // YES means caller decides what's next
-                dialog.destroy();
-                if (onYes) onYes();
-            }},
-            {type:'button', id:'no',  label:'NO',  onClick: () =>
-            {
-                dialog.destroy();      // hide -> onHide -> restore parent
-                if (onNo) onNo();
-            }},
-        ],
+        items,
     });
     pushMenu(id);
 }
@@ -483,7 +703,20 @@ let menuVisibilityCallback = null;
 function setMenuVisibilityCallback(cb) { menuVisibilityCallback = cb || null; }
 function fireMenuVisibility()
 {
-    if (menuVisibilityCallback) menuVisibilityCallback(isMenuVisible());
+    const v = isMenuVisible();
+    // When the last menu closes, clear stale mouse-button state in LittleJS's
+    // input table. We stopPropagation on pointer events at the menu DOM root
+    // (so menu widgets like sliders work), which means a mouse RELEASE that
+    // happens over the menu never reaches the engine's document-level
+    // listener. The engine's "down" state for that button stays latched, and
+    // gameplay code that polls mouseIsDown sees a phantom hold after the
+    // menu closes (e.g. a pinball flipper that the player was mouse-holding
+    // when they hit Esc stays raised even after they release in the menu).
+    // Clearing on the last-close transition also covers the equivalent
+    // touch-end case for the same reason.
+    if (!v && typeof inputClearKey === 'function')
+        for (let b = 0; b < 3; b++) inputClearKey(b, 0, true, true, true);
+    if (menuVisibilityCallback) menuVisibilityCallback(v);
 }
 
 // Currently arrow/d-pad-selected element. Independent of DOM focus — DOM
@@ -516,17 +749,26 @@ function injectStyles()
 {
     const css = `
 #littlejs-menus {
+    /* Viewport-responsive base font-size. All size variables below are em-
+       based so the entire UI scales with this. The clamp range is narrow on
+       purpose: mobile sites must include <meta name="viewport" content=
+       "width=device-width,initial-scale=1"> for the floor to land at real
+       device size — without it, mobile browsers shrink-to-fit a 980px
+       layout viewport and the menu ends up tiny. Override --menu-base-size
+       on #littlejs-menus to pick a different scale. */
+    font-size: var(--menu-base-size, clamp(16px, 2vmin, 18px));
+
     /* shared */
     --menu-bg:           rgba(0, 0, 0, 0.85);
     --menu-fg:           #fff;
     --menu-accent:       #6cf;
     --menu-disabled:     #666;
-    --menu-radius:       12px;
+    --menu-radius:       0.75em;
     --menu-font:         monospace;
     --menu-border-color: var(--menu-accent);
     --menu-border-width: 2px;
-    --menu-title-size:   28px;
-    --menu-item-size:    18px;
+    --menu-title-size:   1.75em;
+    --menu-item-size:    1.125em;
 
     /* button fill */
     --menu-item-bg:       rgba(255, 255, 255, 0.06);
@@ -534,26 +776,31 @@ function injectStyles()
 
     /* modal menus */
     --menu-backdrop:     rgba(0, 0, 0, 0.5);
-    --menu-padding:      24px;
-    --menu-item-gap:     10px;
-    --menu-min-width:    min(320px, 90vw);
-    --menu-max-width:    min(90vw, 480px);
+    --menu-padding:      1.5em;
+    --menu-item-gap:     0.625em;
+    --menu-min-width:    min(20em, 90vw);
+    --menu-max-width:    min(90vw, 30em);
     --menu-max-height:   90vh;
 
     /* toolbars */
-    --toolbar-gap:       6px;
-    --toolbar-margin:    12px;
-    --toolbar-icon-size: 48px;
-    --toolbar-bg:        transparent;
+    --toolbar-gap:        0.4em;
+    --toolbar-margin:     0.5em;
+    --toolbar-icon-size:  3em;     /* button frame (tappable area) */
+    --toolbar-glyph-size: 2em;   /* icon glyph inside the button */
+    --toolbar-bg:         transparent;
 
     /* toasts (achievement / notification pop-ups, top-left) */
-    --toast-margin:      12px;
-    --toast-min-width:   240px;
-    --toast-max-width:   320px;
-    --toast-padding:     10px 14px;
-    --toast-icon-size:   32px;
-    --toast-title-size:  14px;
-    --toast-text-size:   12px;
+    --toast-margin:      0.75em;
+    --toast-min-width:   15em;
+    --toast-max-width:   20em;
+    --toast-padding:     0.625em 0.875em;
+    --toast-icon-size:   2em;
+    --toast-title-size:  0.875em;
+    --toast-text-size:   0.75em;
+
+    /* big icon at the top of showAlertDialog / showConfirmDialog */
+    --dialog-icon-size:    3em;
+    --dialog-icon-padding: 0;
 }
 /* Single visibility class wins over every display rule below. setVisible()
    on every item type — and the toolbar parent — toggles this class. */
@@ -583,32 +830,48 @@ function injectStyles()
 .ljs-menu-panel.visible { display: flex; }
 .ljs-menu-title {
     font-size: var(--menu-title-size); font-weight: bold; text-align: center;
-    color: var(--menu-accent); margin-bottom: 8px;
+    color: var(--menu-accent); margin-bottom: 0.5em;
+}
+.ljs-menu-subtitle {
+    font-size: 0.875em; font-weight: bold; text-align: center;
+    letter-spacing: 0.15em; color: var(--menu-fg); opacity: 0.85;
+    /* Pull tight under the title (cancels the title's margin-bottom plus
+       the panel's flex gap). Tune via your own CSS override per menu. */
+    margin-top: -1.5em; margin-bottom: -.5em;
 }
 .ljs-menu-item {
+    font-family: var(--menu-font);
     font-size: var(--menu-item-size); text-align: center;
-    padding: 10px 14px; box-sizing: border-box;
+    padding: 0.625em 0.875em; box-sizing: border-box;
 }
 .ljs-menu-item.disabled { color: var(--menu-disabled); pointer-events: none; }
 button.ljs-menu-item, input.ljs-menu-item {
     font-family: inherit; font-size: inherit;
     background: var(--menu-item-bg); color: inherit;
-    border: 2px solid transparent; border-radius: 8px;
+    border: 2px solid transparent; border-radius: 0.5em;
     cursor: pointer;
 }
 /* Hover shows the accent border + brighter fill (mouse feedback). The
    selection outline shows when arrow/d-pad nav has explicitly selected
-   an item (.ljs-selected) or when the browser's native keyboard focus
-   traversal is in use (:focus-visible — Tab nav). Mouse-clicking a
-   button does not produce an outline — the click is enough feedback. */
-button.ljs-menu-item:hover {
-    background: var(--menu-item-hover-bg);
-    border-color: var(--menu-accent); outline: none;
+   an item (.ljs-selected). We do NOT use :focus-visible — Safari/iOS
+   sometimes treats a touch tap as a keyboard-like focus and keeps
+   :focus-visible after the synthesized click (and our blur() inside
+   wireActivate doesn't reliably clear it on every browser), which
+   leaves an outline stuck on a tapped toggle. .ljs-selected is set
+   explicitly by menus.js's own arrow/d-pad nav code and cleared on
+   any pointer interaction, so we get a consistent indicator across
+   mouse, touch, and gamepad without depending on browser heuristics. */
+/* Gate all :hover rules on a hover-capable device. iOS Safari (and most
+   mobile browsers) leave :hover stuck after a tap until the user taps
+   elsewhere — that was the "stuck selection" on touch we were chasing. */
+@media (hover: hover) and (pointer: fine) {
+    button.ljs-menu-item:hover {
+        background: var(--menu-item-hover-bg);
+        border-color: var(--menu-accent); outline: none;
+    }
 }
 .ljs-menu-item.ljs-selected,
-button.ljs-menu-item:focus-visible,
-.ljs-grid-cell.ljs-selected,
-.ljs-grid-cell:focus-visible {
+.ljs-grid-cell.ljs-selected {
     border-color: var(--menu-accent); outline: none;
 }
 button.ljs-menu-item:disabled { color: var(--menu-disabled); cursor: default; }
@@ -621,21 +884,21 @@ button.ljs-menu-item:disabled { color: var(--menu-disabled); cursor: default; }
 }
 .ljs-menu-item.ljs-checkbox .ljs-checkbox-box {
     width: 1.2em; height: 1.2em;
-    border: 2px solid currentColor; border-radius: 4px;
+    border: 2px solid currentColor; border-radius: 0.25em;
     display: inline-flex; align-items: center; justify-content: center;
 }
 .ljs-menu-item.ljs-color {
     display: flex; justify-content: space-between; align-items: center;
 }
 .ljs-menu-item.ljs-input {
-    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5em;
 }
 .ljs-input-field {
     flex: 1; min-width: 0;
     background: var(--menu-item-bg); color: inherit;
     font-family: inherit; font-size: inherit;
-    border: 2px solid transparent; border-radius: 4px;
-    padding: 4px 8px; box-sizing: border-box;
+    border: 2px solid transparent; border-radius: 0.25em;
+    padding: 0.25em 0.5em; box-sizing: border-box;
 }
 .ljs-input-field:focus,
 .ljs-input-field.ljs-selected { border-color: var(--menu-accent); outline: none; }
@@ -653,33 +916,44 @@ button.ljs-menu-item:disabled { color: var(--menu-disabled); cursor: default; }
 .ljs-menu-item.ljs-menu-text {
     white-space: pre-wrap; text-align: left; line-height: 1.4;
 }
+/* showAlertDialog / showConfirmDialog top icon. Override --dialog-icon-size
+   for size and --dialog-icon-padding for the spacing around it. The
+   .ljs-menu-item.ljs-dialog-icon double-class beats the bare .ljs-menu-item
+   padding default. */
+.ljs-menu-item.ljs-dialog-icon {
+    font-size: var(--dialog-icon-size);
+    padding: var(--dialog-icon-padding);
+    text-align: center; line-height: 1;
+}
 .ljs-menu-item.ljs-menu-separator {
-    padding: 0; margin: 4px 0; height: 0;
+    padding: 0; margin: 0.25em 0; height: 0;
     border-top: 1px solid var(--menu-border-color);
     opacity: 0.4;
 }
 .ljs-menu-item.ljs-menu-grid {
     display: grid;
     grid-template-columns: repeat(var(--ljs-grid-cols, 3), minmax(0, 1fr));
-    gap: var(--menu-grid-gap, 8px);
-    padding: 4px 0;
+    gap: var(--menu-grid-gap, 0.5em);
+    padding: 0.25em 0;
 }
 .ljs-grid-cell {
     display: flex; flex-direction: column; align-items: center;
-    gap: 4px; padding: 10px 6px;
-    border: 2px solid transparent; border-radius: 8px; text-align: center;
+    gap: 0.25em; padding: 0.625em 0.375em;
+    border: 2px solid transparent; border-radius: 0.5em; text-align: center;
     background: transparent; color: inherit;
     font-family: inherit; font-size: inherit;
     transition: opacity 0.2s, filter 0.2s, background 0.15s;
 }
 button.ljs-grid-cell { cursor: pointer; }
-button.ljs-grid-cell:hover {
-    background: var(--menu-item-hover-bg); border-color: var(--menu-accent);
-    outline: none;
+@media (hover: hover) and (pointer: fine) {
+    button.ljs-grid-cell:hover {
+        background: var(--menu-item-hover-bg); border-color: var(--menu-accent);
+        outline: none;
+    }
 }
 .ljs-grid-cell.unearned { opacity: 0.3; filter: grayscale(1); }
-.ljs-grid-icon  { font-size: var(--menu-grid-icon-size, 32px); line-height: 1; }
-.ljs-grid-label { font-size: 11px; color: var(--menu-fg); word-break: break-word; }
+.ljs-grid-icon  { font-size: var(--menu-grid-icon-size,  2em);     line-height: 1; }
+.ljs-grid-label { font-size: var(--menu-grid-label-size, 0.6875em); color: var(--menu-fg); word-break: break-word; }
 .ljs-menu-toolbar {
     position: fixed; z-index: 1000;
     display: flex; gap: var(--toolbar-gap);
@@ -691,32 +965,48 @@ button.ljs-grid-cell:hover {
 .ljs-menu-toolbar.anchor-bottom-right { bottom: var(--toolbar-margin); right: var(--toolbar-margin); }
 .ljs-menu-toolbar.dir-vertical { flex-direction: column; }
 .ljs-menu-toolbar button {
+    /* font-size stays at 1em so the em-based width/height resolve against
+       the parent's base font-size, not against a bumped button size. The
+       inner .ljs-toolbar-icon span carries the visible glyph size. */
     width: var(--toolbar-icon-size); height: var(--toolbar-icon-size);
-    font-family: var(--menu-font); font-size: 28px;
+    font-family: var(--menu-font); font-size: 1em;
     color: var(--menu-fg); background: transparent;
-    border: none; border-radius: 8px; cursor: pointer;
+    border: none; border-radius: 0.25em; cursor: pointer;
     outline: none;        /* toolbars are pointer-only; never draw focus rings */
+    display: inline-flex; align-items: center; justify-content: center;
 }
+.ljs-toolbar-icon { font-family: inherit; font-size: var(--toolbar-glyph-size); line-height: 1; }
 .ljs-menu-toolbar button:focus-visible { outline: none; }
-.ljs-menu-toolbar button:hover { background: rgba(255,255,255,0.15); }
+@media (hover: hover) and (pointer: fine) {
+    .ljs-menu-toolbar button:hover { background: rgba(255,255,255,0.15); }
+}
 .ljs-menu-toolbar button.toolbar-toggle-off { opacity: 0.4; }
 
-/* Toast: top-left, slides in/out, never intercepts clicks (so it can't
-   block gameplay even if the player aims through that area). */
+/* Toast: corner-anchored (position option picks which corner), slides in
+   from the nearest horizontal edge. Pointer-events disabled so toasts
+   never intercept game clicks. */
 .ljs-toast {
-    position: fixed; top: var(--toast-margin); left: var(--toast-margin);
-    z-index: 10000; pointer-events: none;
+    position: fixed; z-index: 10000; pointer-events: none;
     background: var(--menu-bg); color: var(--menu-fg);
     font-family: var(--menu-font);
     border: var(--menu-border-width) solid var(--menu-border-color);
     border-radius: var(--menu-radius);
     padding: var(--toast-padding); box-sizing: border-box;
     min-width: var(--toast-min-width); max-width: var(--toast-max-width);
-    display: flex; gap: 10px; align-items: center;
+    display: flex; gap: 0.625em; align-items: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    transform: translateX(calc(-100% - var(--toast-margin) * 2));
     transition: transform 0.3s ease-out;
 }
+.ljs-toast.pos-top-left     { top:    var(--toast-margin); left:  var(--toast-margin); }
+.ljs-toast.pos-top-right    { top:    var(--toast-margin); right: var(--toast-margin); }
+.ljs-toast.pos-bottom-left  { bottom: var(--toast-margin); left:  var(--toast-margin); }
+.ljs-toast.pos-bottom-right { bottom: var(--toast-margin); right: var(--toast-margin); }
+/* Slide in from the nearest horizontal edge (left-anchored toasts slide
+   in from the left, right-anchored from the right). */
+.ljs-toast.pos-top-left,
+.ljs-toast.pos-bottom-left  { transform: translateX(calc(-100% - var(--toast-margin) * 2)); }
+.ljs-toast.pos-top-right,
+.ljs-toast.pos-bottom-right { transform: translateX(calc( 100% + var(--toast-margin) * 2)); }
 .ljs-toast.visible { transform: translateX(0); }
 .ljs-toast-icon { font-size: var(--toast-icon-size); line-height: 1; }
 .ljs-toast-content { flex: 1; min-width: 0; }
@@ -725,7 +1015,13 @@ button.ljs-grid-cell:hover {
 `;
     const style = document.createElement('style');
     style.textContent = css;
-    document.head.appendChild(style);
+    // Insert at the START of <head> so any user <style> block (which
+    // typically lives AFTER this script tag in source order, or is
+    // appended later via JS) wins cascade ties for theme variables.
+    // appendChild here would let helper defaults override user overrides
+    // on `#littlejs-menus { --menu-accent: ... }` etc., which is very
+    // rarely what the consumer wants.
+    document.head.insertBefore(style, document.head.firstChild);
 }
 
 function initMenuSystem()
@@ -898,8 +1194,22 @@ function focusBy(menu, delta)
                 return;
             }
         }
-        // Off the grid edge — fall through to sequential step which exits
-        // the grid into the next/prev focusable item in the menu.
+        // Off the top/bottom edge of the grid — exit the grid block
+        // entirely. The naive `cur + delta` step here would land on the
+        // next cell in the flat list (i.e. sideways inside the grid),
+        // which feels like LEFT/RIGHT to the player. Skip past the grid
+        // to the first non-grid item in the travel direction (wrapping
+        // around the menu if needed).
+        const gridStart = items.findIndex(it => it.item === grid);
+        let gridEnd = gridStart;
+        while (gridEnd + 1 < items.length && items[gridEnd + 1].item === grid)
+            gridEnd++;
+        const exit = delta > 0
+            ? (gridEnd   + 1                  ) % items.length
+            : (gridStart - 1 + items.length   ) % items.length;
+        setSelected(items[exit].focusEl);
+        if (menuSounds.select) menuSounds.select();
+        return;
     }
 
     const next = cur < 0
@@ -1054,11 +1364,22 @@ function handleGamepad()
     let dpadActed = false;
 
     if (gamepadWasPressed(0, gp)) { activateFocused(menu); gamepadClear(0, gp); }
-    if (gamepadWasPressed(1, gp) || gamepadWasPressed(9, gp))
+    // B (1) is the back/dismiss button.
+    if (gamepadWasPressed(1, gp))
     {
-        // Both B and Start back out of the current menu (when dismissable).
         if (menu._cfg.dismissable) menu.hide();
         gamepadClear(1, gp);
+    }
+    // Start (9): if the menu defines onStart, run it (e.g. title menu's
+    // PLAY shortcut). Otherwise fall through to dismiss like B does.
+    if (gamepadWasPressed(9, gp))
+    {
+        if (menu._cfg.onStart)
+        {
+            if (menuSounds.activate) menuSounds.activate();
+            menu._cfg.onStart();
+        }
+        else if (menu._cfg.dismissable) menu.hide();
         gamepadClear(9, gp);
     }
     if (gamepadWasPressed(12, gp)) { focusBy(menu, -1);       gamepadClear(12, gp); dpadActed = true; }
@@ -1115,6 +1436,37 @@ function menusUpdate()
 {
     handleKeyboard();
     handleGamepad();
+    // Gamepad-driven click-to-reveal: A (0) or Start (9) when no menu is
+    // up should reveal the registered menu(s) so the player isn't stuck on
+    // the title art with no way back. Gamepad has no DOM event so we have
+    // to poll here.
+    if (clickToRevealHandlers.length && !isMenuVisible())
+    {
+        const gp = 0;
+        const a = gamepadWasPressed(0, gp);
+        const start = gamepadWasPressed(9, gp);
+        if (a || start)
+        {
+            for (const h of clickToRevealHandlers) h.reveal();
+            if (a) gamepadClear(0, gp);
+            if (start) gamepadClear(9, gp);
+        }
+    }
+    // Per-frame onUpdate hooks for visible menus. Skip hidden items so
+    // a setVisible(false) custom item doesn't keep ticking. The
+    // menu-level cfg.onUpdate fires before item-level ones — useful for
+    // animating built-ins like the title element (cfg.onUpdate receives
+    // the menu handle so it can grab getTitleEl() / getItem() / etc).
+    for (const menu of allMenus)
+    {
+        if (menu._cfg.onUpdate) menu._cfg.onUpdate(menu);
+        for (const item of menu._items)
+        {
+            if (!item.onUpdate) continue;
+            if (item.el.classList.contains('ljs-hidden')) continue;
+            item.onUpdate(item.el);
+        }
+    }
 }
 
 function isMenuVisible()
@@ -1328,6 +1680,8 @@ function buildCustom(item)
     // Opt-in keyboard/gamepad nav. The user is responsible for the click
     // handler and any activation behavior on focusEl (defaults to el).
     // The user should also call menuSounds.activate?.() if a sound is wanted.
+    // (onUpdate is wired centrally in createMenu's item loop — works on any
+    // item type including custom.)
     return item.focusable
         ? { el, handle, focusable: true, focusEl: item.focusEl || el }
         : { el, handle, focusable: false, focusEl: null };
@@ -1372,12 +1726,47 @@ function buildButton(item)
     return { el, handle, focusable: true, focusEl: el };
 }
 
+// ============================================================================
+// Persistent settings.
+// ============================================================================
+//
+// slider / toggle / checkbox / color / input items accept `persist: 'key'`.
+// The value is auto-loaded from localStorage on init and auto-saved on every
+// change. When `persist` is set, onChange ALSO fires once at init time with
+// the resolved value, so consumer effects (e.g. setSoundVolume) apply the
+// persisted value immediately on load — you don't need a separate `applyX(
+// getMenu(...).getItem(...).getValue())` call after createMenu.
+//
+//   {type:'slider', id:'volume', persist:'mygame.volume', value: 0.8,
+//                   onChange: v => setSoundVolume(v)},
+
+function persistedRead(key, defaultValue, kind)
+{
+    if (!key) return defaultValue;
+    try
+    {
+        const raw = localStorage.getItem(key);
+        if (raw === null) return defaultValue;
+        if (kind === 'number')  return Number.isFinite(+raw) ? +raw : defaultValue;
+        if (kind === 'boolean') return raw === 'true';
+        return raw;
+    }
+    catch (e) { return defaultValue; }
+}
+
+function persistedWrite(key, value)
+{
+    if (!key) return;
+    try { localStorage.setItem(key, String(value)); }
+    catch (e) { /* quota / privacy / disabled storage — ignore */ }
+}
+
 function buildToggle(item)
 {
     const el = document.createElement('button');
     el.className = 'ljs-menu-item';
     if (item.title) el.title = item.title;
-    let value = !!item.value;
+    let value = persistedRead(item.persist, !!item.value, 'boolean');
     let baseLabel = item.label || '';
     const render = () => { el.textContent = baseLabel + ': ' + (value ? 'ON' : 'OFF'); };
     render();
@@ -1385,18 +1774,25 @@ function buildToggle(item)
     {
         value = !value;
         render();
+        persistedWrite(item.persist, value);
         if (item.onChange) item.onChange(value);
     });
     const handle = {
         type: 'toggle',
         setLabel(t)    { baseLabel = t; render(); },
-        setValue(v)    { value = !!v; render(); },
+        setValue(v)    { value = !!v; render(); persistedWrite(item.persist, value); },
         getValue()     { return value; },
         setDisabled(d) { el.disabled = !!d; el.classList.toggle('disabled', !!d); },
         isDisabled()   { return el.disabled; },
         setVisible(v)  { el.classList.toggle('ljs-hidden', !v); },
     };
     if (item.disabled) handle.setDisabled(true);
+    // Defer init onChange to a microtask so cross-references in the
+    // consumer's handler (e.g. `getToolbar('hud').getItem(...)`) resolve
+    // — by the time the microtask fires, the rest of gameInit has run
+    // and any toolbars / sibling menus exist.
+    if (item.persist && item.onChange)
+        Promise.resolve().then(() => item.onChange(value));
     return { el, handle, focusable: true, focusEl: el };
 }
 
@@ -1425,7 +1821,7 @@ function buildSlider(item)
     slider.step = item.step !== undefined
         ? String(item.step)
         : String(((item.max ?? 1) - (item.min ?? 0)) / 100);
-    slider.value = String(item.value ?? 0);
+    slider.value = String(persistedRead(item.persist, item.value ?? 0, 'number'));
     wrap.appendChild(slider);
 
     const renderValue = () => { valueEl.textContent = (+slider.value).toFixed(2); };
@@ -1434,19 +1830,34 @@ function buildSlider(item)
     slider.addEventListener('input', () =>
     {
         renderValue();
+        persistedWrite(item.persist, +slider.value);
         if (item.onChange) item.onChange(+slider.value);
     });
 
     const handle = {
         type: 'slider',
         setLabel(t)    { labelEl.textContent = t; },
-        setValue(v)    { slider.value = String(v); renderValue(); },
+        // Defensive clamp + NaN guard. The browser also clamps `<input
+        // type="range">`, but explicit clamp here keeps persistedWrite
+        // honest and avoids surprising behavior if min/max change later.
+        setValue(v)
+        {
+            const n = +v;
+            const clamped = Number.isFinite(n)
+                ? Math.max(+slider.min, Math.min(+slider.max, n))
+                : +slider.min;
+            slider.value = String(clamped);
+            renderValue();
+            persistedWrite(item.persist, clamped);
+        },
         getValue()     { return +slider.value; },
         setDisabled(d) { slider.disabled = !!d; wrap.classList.toggle('disabled', !!d); },
         isDisabled()   { return slider.disabled; },
         setVisible(v)  { wrap.classList.toggle('ljs-hidden', !v); },
     };
     if (item.disabled) handle.setDisabled(true);
+    if (item.persist && item.onChange)
+        Promise.resolve().then(() => item.onChange(+slider.value));
     return { el: wrap, handle, focusable: true, focusEl: slider };
 }
 
@@ -1463,7 +1874,7 @@ function buildCheckbox(item)
     wrap.appendChild(labelEl);
     wrap.appendChild(boxEl);
 
-    let value = !!item.value;
+    let value = persistedRead(item.persist, !!item.value, 'boolean');
     const render = () => { boxEl.textContent = value ? '✓' : ''; };
     render();
 
@@ -1471,19 +1882,26 @@ function buildCheckbox(item)
     {
         value = !value;
         render();
+        persistedWrite(item.persist, value);
         if (item.onChange) item.onChange(value);
     });
 
     const handle = {
         type: 'checkbox',
         setLabel(t)    { labelEl.textContent = t; },
-        setValue(v)    { value = !!v; render(); },
+        setValue(v)    { value = !!v; render(); persistedWrite(item.persist, value); },
         getValue()     { return value; },
         setDisabled(d) { wrap.disabled = !!d; wrap.classList.toggle('disabled', !!d); },
         isDisabled()   { return wrap.disabled; },
         setVisible(v)  { wrap.classList.toggle('ljs-hidden', !v); },
     };
     if (item.disabled) handle.setDisabled(true);
+    // Defer init onChange to a microtask so cross-references in the
+    // consumer's handler (e.g. `getToolbar('hud').getItem(...)`) resolve
+    // — by the time the microtask fires, the rest of gameInit has run
+    // and any toolbars / sibling menus exist.
+    if (item.persist && item.onChange)
+        Promise.resolve().then(() => item.onChange(value));
     return { el: wrap, handle, focusable: true, focusEl: wrap };
 }
 
@@ -1499,7 +1917,7 @@ function buildInput(item)
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'ljs-input-field';
-    input.value = item.value || '';
+    input.value = persistedRead(item.persist, item.value || '', 'string');
     if (item.placeholder) input.placeholder = item.placeholder;
     if (item.maxLength) input.maxLength = item.maxLength;
     if (item.title) input.title = item.title;
@@ -1511,19 +1929,22 @@ function buildInput(item)
     // this input is focused, so typing is unaffected by menu nav.
     input.addEventListener('input', () =>
     {
+        persistedWrite(item.persist, input.value);
         if (item.onChange) item.onChange(input.value);
     });
 
     const handle = {
         type: 'input',
         setLabel(t)    { labelEl.textContent = t; },
-        setValue(v)    { input.value = v == null ? '' : String(v); },
+        setValue(v)    { input.value = v == null ? '' : String(v); persistedWrite(item.persist, input.value); },
         getValue()     { return input.value; },
         setDisabled(d) { input.disabled = !!d; wrap.classList.toggle('disabled', !!d); },
         isDisabled()   { return input.disabled; },
         setVisible(v)  { wrap.classList.toggle('ljs-hidden', !v); },
     };
     if (item.disabled) handle.setDisabled(true);
+    if (item.persist && item.onChange)
+        Promise.resolve().then(() => item.onChange(input.value));
     return { el: wrap, handle, focusable: true, focusEl: input };
 }
 
@@ -1539,7 +1960,7 @@ function buildColor(item)
     const input = document.createElement('input');
     input.type = 'color';
     input.className = 'ljs-color-input';
-    input.value = item.value || '#000000';
+    input.value = persistedRead(item.persist, item.value || '#000000', 'string');
     if (item.title) input.title = item.title;
 
     wrap.appendChild(labelEl);
@@ -1549,6 +1970,7 @@ function buildColor(item)
     // only on commit. Continuous feels right for a live preview.
     input.addEventListener('input', () =>
     {
+        persistedWrite(item.persist, input.value);
         if (item.onChange) item.onChange(input.value);
     });
     // Activate sound on click — but don't blur (would close the picker).
@@ -1562,13 +1984,15 @@ function buildColor(item)
     const handle = {
         type: 'color',
         setLabel(t)    { labelEl.textContent = t; },
-        setValue(v)    { input.value = v; },
+        setValue(v)    { input.value = v; persistedWrite(item.persist, input.value); },
         getValue()     { return input.value; },
         setDisabled(d) { input.disabled = !!d; wrap.classList.toggle('disabled', !!d); },
         isDisabled()   { return input.disabled; },
         setVisible(v)  { wrap.classList.toggle('ljs-hidden', !v); },
     };
     if (item.disabled) handle.setDisabled(true);
+    if (item.persist && item.onChange)
+        Promise.resolve().then(() => item.onChange(input.value));
     return { el: wrap, handle, focusable: true, focusEl: input };
 }
 
@@ -1576,10 +2000,25 @@ function buildColor(item)
 // Toolbar item builders.
 // ============================================================================
 
+// Toolbar buttons wrap the label in a span so the icon glyph can scale
+// independently of the button frame. CSS sets the button's font-size to
+// 1em (so width/height in em stay correct) and the inner span to a larger
+// em for the actual glyph rendering. Without this split, bumping the
+// button's own font-size to enlarge the glyph would also rescale its
+// em-based width/height — buttons grow when the icon does.
+function buildToolbarLabelSpan(text)
+{
+    const span = document.createElement('span');
+    span.className = 'ljs-toolbar-icon';
+    span.textContent = text || '';
+    return span;
+}
+
 function buildToolbarButton(item)
 {
     const el = document.createElement('button');
-    el.textContent = item.label || '';
+    const labelEl = buildToolbarLabelSpan(item.label);
+    el.appendChild(labelEl);
     if (item.title) el.title = item.title;
     el.addEventListener('click', () =>
     {
@@ -1592,7 +2031,7 @@ function buildToolbarButton(item)
     });
     const handle = {
         type: 'button',
-        setLabel(t)    { el.textContent = t; },
+        setLabel(t)    { labelEl.textContent = t; },
         setValue()     {},
         getValue()     { return undefined; },
         setDisabled(d) { el.disabled = !!d; },
@@ -1606,7 +2045,8 @@ function buildToolbarButton(item)
 function buildToolbarToggle(item)
 {
     const el = document.createElement('button');
-    el.textContent = item.label || '';
+    const labelEl = buildToolbarLabelSpan(item.label);
+    el.appendChild(labelEl);
     if (item.title) el.title = item.title;
     let value = !!item.value;
     const render = () => el.classList.toggle('toolbar-toggle-off', !value);
@@ -1621,7 +2061,7 @@ function buildToolbarToggle(item)
     });
     const handle = {
         type: 'toggle',
-        setLabel(t)    { el.textContent = t; },
+        setLabel(t)    { labelEl.textContent = t; },
         setValue(v)    { value = !!v; render(); },
         getValue()     { return value; },
         setDisabled(d) { el.disabled = !!d; },
