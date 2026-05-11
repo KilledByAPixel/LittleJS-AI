@@ -4,12 +4,14 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.0"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
+paused = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // SNOOD (bubble shooter) prototype
@@ -26,6 +28,7 @@ const ROWS_VISIBLE = 16;        // camera framing + lose line
 const START_ROWS   = 7;
 
 const ADD_ROW_EVERY_SHOTS = 6;
+const ADD_ROW_EVERY_SECONDS = 12;             // auto-descend cadence (real time)
 const MIN_SHOT_ANGLE = 10 * PI/180;            // radians from +X
 const MAX_SHOT_ANGLE = 170 * PI/180;
 
@@ -52,7 +55,7 @@ const COLORS = [
 const OUTLINE = hsl(0,0,0,.8);
 
 // Sounds
-let sShoot, sPop, sDrop, sLose, sWin;
+let sShoot, sPop, sDrop, sLose, sWin, sTick;
 
 // Game state
 let grid;
@@ -60,6 +63,8 @@ let aimAngle;
 let projectile; // {pos, vel, colorIndex}
 let currentColorIndex, nextColorIndex;
 let score, shots, gameOver, gameWin;
+let descendTimer;     // Timer that fires the auto-descend
+let isPlaying = false; // gameplay vs. title-screen state
 
 // Camera framing
 let fieldH;
@@ -95,6 +100,10 @@ function resetGame()
     nextColorIndex    = pickShootColor();
 
     fieldH = (ROWS_VISIBLE-1)*ROW_STEP_Y + (TOP_Y - SHOOT_Y) + 2;
+
+    // start the auto-descend timer (game time, so it pauses with the engine)
+    if (!descendTimer) descendTimer = new Timer();
+    descendTimer.set(ADD_ROW_EVERY_SECONDS);
 }
 
 function pickShootColor()
@@ -289,6 +298,7 @@ function resolveAfterPlacement(r, c)
         gameWin = true;
         gameOver = true;
         sWin.play();
+        showGameOverDialog();
     }
 }
 
@@ -303,6 +313,11 @@ function addRow()
     for (let c=0; c<COLS; ++c)
         grid[0][c] = rand() < .12 ? null : randInt(COLORS.length);
 
+    // reset the auto-descend cadence whenever a row is added (from any path)
+    descendTimer.set(ADD_ROW_EVERY_SECONDS);
+
+    sTick && sTick.play();
+
     // lose check (too low)
     const loseRow = ROWS_VISIBLE-1;
     for (let c=0; c<COLS; ++c)
@@ -316,6 +331,7 @@ function triggerLose()
     gameOver = true;
     gameWin = false;
     sLose.play();
+    showGameOverDialog();
 }
 
 function shoot()
@@ -408,6 +424,37 @@ function placeProjectile(worldPos)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+function setPlaying(p)
+{
+    isPlaying = p;
+    const hud = getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+function startNewGame()
+{
+    resetGame();
+    setPlaying(true);
+    hideAllMenus();
+}
+
+function showGameOverDialog()
+{
+    // Surface a menus.js dialog so pause-callback drives `paused` for us.
+    showAlertDialog({
+        title: gameWin ? 'YOU WIN!' : 'GAME OVER',
+        icon:  gameWin ? '🏆' : '💥',
+        message: 'Score: ' + score + '\nShots: ' + shots,
+        okLabel: 'OK',
+        onOk: () =>
+        {
+            // Kick back to the title menu so the player can choose to play again.
+            setPlaying(false);
+            showMenu('title');
+        },
+    });
+}
+
 function gameInit()
 {
     // called once after the engine starts up
@@ -421,21 +468,152 @@ function gameInit()
     sDrop  = new SoundGenerator({volume:.25, frequency:180, attack:.001, sustain:.02, release:.18, shape:1, slide:-.15});
     sLose  = new SoundGenerator({volume:.5,  frequency:120, attack:.01,  sustain:.08, release:.35, shape:3, slide:-.25, noise:.06});
     sWin   = new SoundGenerator({volume:.45, frequency:640, attack:.01,  sustain:.05, release:.25, shape:0, slide:.15, repeatTime:.08});
+    sTick  = new SoundGenerator({volume:.30, frequency:300, attack:.001, sustain:.02, release:.10, shape:2, slide:-.10, noise:.02});
+
+    // ----- menus.js wiring -----
+    setMenuVisibilityCallback(v => paused = v);
+
+    // global UI sounds
+    const sound_select   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sound_activate = new Sound([.6,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
+
+    // ----- title menu -----
+    createMenu({
+        id: 'title',
+        title: 'SNOOD',
+        subtitle: 'Bubble Shooter',
+        dismissable: true,
+        onStart: startNewGame,
+        items: [
+            {type:'label',  text:'Match 3+ to pop. Clear the field!'},
+            {type:'button', label:'PLAY',    onClick: startNewGame},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- options menu -----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value:.8, min:0, max:1,
+                persist:'snood.volume', onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ----- about menu -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Aim with the mouse and click to shoot.\n\n' +
+                'Match 3 or more bubbles of the same color to pop them. ' +
+                'Disconnected clusters fall away for bonus points.\n\n' +
+                'A new row of bubbles drops in every ' + ADD_ROW_EVERY_SECONDS +
+                ' seconds, or every ' + ADD_ROW_EVERY_SHOTS + ' shots. ' +
+                'Don\'t let bubbles cross the danger line!'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ----- pause menu -----
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button', id:'restart', label:'RESTART',       onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Restart current game?',
+                    onYes: () => { clearSubmenuStack(); startNewGame(); },
+                });
+            }},
+            {type:'button', id:'quit', label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: () =>
+                    {
+                        clearSubmenuStack();
+                        hideAllMenus();
+                        setPlaying(false);
+                        showMenu('title');
+                    },
+                });
+            }},
+        ],
+    });
+
+    // ----- HUD toolbar -----
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else showMenu('pause');
+            }},
+        ],
+    });
 
     resetGame();
+    setPlaying(false);
+    attachClickToReveal('title', () => !isPlaying && !gameOver);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
     // called every frame at 60 frames per second
+    // Note: gameUpdate only runs when paused=false (no menu visible).
 
-    // restart
+    // pause shortcut — only meaningful while actually playing
+    if (isPlaying && !gameOver && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    {
+        playMenuSound('activate');
+        showMenu('pause');
+        inputClearKey('Escape');
+        inputClearKey(9, 1, false, true, false);
+        return;
+    }
+
+    if (!isPlaying) return;
+
+    // restart shortcut
     if (keyWasPressed('KeyR'))
-        resetGame();
+    {
+        startNewGame();
+        return;
+    }
 
     if (!gameOver)
     {
+        // auto-descend on timer
+        if (descendTimer.elapsed())
+            addRow();
+
         // mouse aim (updates every frame)
         const shooterPos = vec2(0, SHOOT_Y);
         if (mouseInWindow)
@@ -491,6 +669,22 @@ function gameRender()
     // lose line indicator
     const loseY = TOP_Y - (ROWS_VISIBLE-1)*ROW_STEP_Y;
     drawLine(vec2(FIELD_LEFT, loseY), vec2(FIELD_RIGHT, loseY), .06, hsl(0,1,.45,.4));
+
+    // descend timer progress bar (sits just above the top wall)
+    if (isPlaying && !gameOver && descendTimer && descendTimer.isSet())
+    {
+        const pct = clamp(descendTimer.getPercent(), 0, 1);
+        const barY = TOP_Y + 0.6;
+        const barW = FIELD_W;
+        const barH = .25;
+        // background
+        drawRect(vec2(0, barY), vec2(barW, barH), hsl(0,0,.15));
+        // fill — color shifts from green to red as time runs out
+        const fillW = barW * pct;
+        const fillX = -barW/2 + fillW/2;
+        const hue = (1 - pct) * 0.33;  // 0.33 (green) -> 0 (red)
+        drawRect(vec2(fillX, barY), vec2(fillW, barH), hsl(hue, 1, .5));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -526,35 +720,26 @@ function gameRenderPost()
     const nextPos = shooterPos.add(vec2(2.1, -0.2));
     drawCircle(nextPos, .7, COLORS[nextColorIndex], .05, OUTLINE);
 
-    // UI (screen space)
-    drawTextScreen(
-        `Score ${score}   Shots ${shots}
-Move Mouse: Aim   Click: Shoot   R: Restart`,
-        vec2(mainCanvasSize.x/2, 34),
-        28,
-        hsl(0,0,1),
-        4,
-        hsl(0,0,0)
-    );
-
-    if (gameOver)
+    // UI (screen space) — only while actually playing
+    if (isPlaying)
     {
         drawTextScreen(
-            gameWin ? 'YOU WIN!' : 'GAME OVER',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20),
-            90,
-            gameWin ? hsl(.33,1,.6) : hsl(0,1,.6),
-            10,
-            hsl(0,0,0)
-        );
-        drawTextScreen(
-            'Press R to restart',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 60),
-            40,
+            `Score ${score}   Shots ${shots}
+Aim: Mouse   Shoot: Click   Pause: Esc`,
+            vec2(mainCanvasSize.x/2, 34),
+            28,
             hsl(0,0,1),
-            6,
+            4,
             hsl(0,0,0)
         );
+    }
+    else if (!isMenuVisible())
+    {
+        // Pre-play prompt — pulses so it reads as actionable.
+        const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
+        const a = 0.5 + 0.5 * Math.sin(time * 3);
+        drawTextScreen(prompt, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2),
+            48, hsl(0, 0, 1, a), 6, hsl(0, 0, 0, a));
     }
 }
 

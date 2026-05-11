@@ -1,0 +1,620 @@
+<!DOCTYPE html><head>
+<title>LittleJS Plinko</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+#littlejs-menus {
+    --menu-bg:           rgba(8, 12, 28, 0.92);
+    --menu-fg:           #fff;
+    --menu-accent:       #ffd23f;
+    --menu-border-width: 3px;
+}
+</style>
+</head><body style="background:#000">
+<script src="../dist/littlejs.js"></script>
+<script src="../dist/box2d.wasm.js"></script>
+<script src="../templates/menus.js"></script>
+<script src="../templates/soundGenerator.js"></script>
+<script>
+'use strict';
+
+///////////////////////////////////////////////////////////////////////////////
+// Engine settings
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, 0); // overridden in gameInit after box2dInit
+cameraPos = vec2(0, 0);
+cameraScale = 32;
+canvasMaxSize = vec2(2048, 2048);
+
+///////////////////////////////////////////////////////////////////////////////
+// Board layout (world units, y is up)
+const BOARD_WIDTH    = 22;
+const BOARD_HEIGHT   = 30;
+const PEG_ROWS       = 10;
+const PEG_COLS_TOP   = 4;          // pegs in top row
+const PEG_RADIUS     = 0.32;
+const PEG_SPACING    = 1.9;        // distance between peg centers
+const SLOT_COUNT     = 9;
+const BALL_RADIUS    = 0.55;
+const DROP_LINE_Y    = BOARD_HEIGHT/2 - 1.5;
+const FLOOR_Y        = -BOARD_HEIGHT/2;
+const SLOT_TOP_Y     = FLOOR_Y + 4;
+const SLOT_VALUES    = [100, 50, 20, 10, 5, 10, 20, 50, 100]; // edges = high
+const SLOT_COLORS    = SLOT_VALUES.map(v =>
+    hsl(percent(v, 5, 100) * .12 + .55, .9, .55));
+const BALL_COLORS    = [
+    hsl(.02, .9, .6), hsl(.10, .9, .6), hsl(.30, .9, .55),
+    hsl(.55, .9, .6), hsl(.78, .9, .65), hsl(.92, .9, .6),
+];
+
+///////////////////////////////////////////////////////////////////////////////
+// Game state
+let isPlaying      = false;
+let score          = 0;
+let bestScore      = +(localStorage.getItem('plinko.best') || 0);
+let dropCount      = 0;
+let aimX           = 0;
+let dropCooldown   = new Timer();
+let pegs           = [];          // Box2dStaticObject[]
+let slots          = [];          // {x, value, flashTimer}
+let balls          = [];          // PlinkoBall[]
+let scorePops      = [];          // {pos, value, life, color}
+
+///////////////////////////////////////////////////////////////////////////////
+// Sounds
+let sndPeg, sndDrop, sndScore, sndBig;
+let sndMenuSelect, sndMenuActivate;
+
+function initSounds()
+{
+    sndPeg = new SoundGenerator({
+        volume: .3, frequency: 600, attack: .002, release: .07,
+        shapeCurve: 1, randomness: .15, slide: -2,
+    });
+    sndDrop = new SoundGenerator({
+        volume: .4, frequency: 220, attack: .002, release: .12,
+        shapeCurve: 1.5, slide: 4,
+    });
+    sndScore = new SoundGenerator({
+        volume: .3, frequency: 520, attack: .005, release: .22,
+        shapeCurve: 1.2,
+    });
+    sndBig = new SoundGenerator({
+        volume: .5, frequency: 520, attack: .005, release: .4,
+        shapeCurve: 1.2, pitchJump: 260, pitchJumpTime: .12,
+    });
+
+    sndMenuSelect   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    sndMenuActivate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Plinko ball — uses the Box2D contact callback to make peg-hit SFX & pops.
+class PlinkoBall extends Box2dObject
+{
+    constructor(pos, color)
+    {
+        super(pos, vec2(BALL_RADIUS*2), undefined, 0, color);
+        this.addCircle(BALL_RADIUS*2, vec2(), 1, .1, .55);
+        this.body.SetLinearDamping(0.05);
+        this.body.SetBullet(true); // continuous collision so fast balls
+                                   // can't tunnel through pegs
+        this.scored = false;
+        this.lineColor = hsl(0, 0, 0, .6);
+        this.lineWidth = .08;
+        this.pegSoundCooldown = new Timer();
+    }
+
+    beginContact(other)
+    {
+        if (other && other.isPeg)
+        {
+            const speed = this.getLinearVelocity().length();
+
+            // skip soft taps and per-ball-throttle so a single ball can't
+            // spam the speakers when it nestles between two pegs
+            if (speed > 2.5 && !this.pegSoundCooldown.active())
+            {
+                const pitch = clamp(.7 + speed * .03, .7, 1.6);
+                const vol   = clamp(.05 + speed * .02, .15, .55);
+                sndPeg.play(this.pos, vol, pitch);
+                this.pegSoundCooldown.set(.05);
+            }
+
+            // brief peg flash (always — visual feedback is fine even on soft hits)
+            other.flashTimer.set(.18);
+
+            // tiny burst of sparks
+            for (let i = 4; i--;)
+            {
+                scorePops.push({
+                    pos:   this.pos.copy(),
+                    value: '',
+                    life:  .35,
+                    maxLife: .35,
+                    vel:   randVec2(rand(.05, .15)),
+                    color: hsl(rand(.1, .15), 1, .8),
+                    size:  .25,
+                });
+            }
+        }
+    }
+
+    render()
+    {
+        // glossy ball — base color + subtle highlight
+        drawCircle(this.pos, BALL_RADIUS*2, this.color, .08, hsl(0,0,0,.5));
+        drawCircle(this.pos.add(vec2(-BALL_RADIUS*.35, BALL_RADIUS*.35)),
+            BALL_RADIUS*.55, hsl(0, 0, 1, .35));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Build the pegs, walls, slot dividers, and floor.
+function buildBoard()
+{
+    // clear previous
+    pegs.forEach(p => p.destroy());
+    pegs = [];
+    slots = [];
+
+    // Outer walls (one big static body with three edges)
+    const walls = new Box2dStaticObject(vec2(0, 0));
+    walls.color = hsl(0, 0, .15);
+    walls.lineColor = hsl(.13, .9, .55);
+    walls.lineWidth = .12;
+    const left  = -BOARD_WIDTH/2;
+    const right =  BOARD_WIDTH/2;
+    const top   =  BOARD_HEIGHT/2;
+    const bot   =  FLOOR_Y;
+    walls.addEdge(vec2(left,  top), vec2(left,  bot), 0, .2, .3);
+    walls.addEdge(vec2(right, top), vec2(right, bot), 0, .2, .3);
+    walls.addEdge(vec2(left,  bot), vec2(right, bot), 0, .2, .3);
+    pegs.push(walls);
+
+    // Pegs in a triangular grid (each row +1 peg, alternating offset)
+    for (let row = 0; row < PEG_ROWS; row++)
+    {
+        const y = DROP_LINE_Y - 2.5 - row * PEG_SPACING * .9;
+        if (y < SLOT_TOP_Y + 1.2) break; // leave room above slots
+        const colsInRow = PEG_COLS_TOP + row;
+        const totalW = (colsInRow - 1) * PEG_SPACING;
+        const startX = -totalW / 2;
+        for (let c = 0; c < colsInRow; c++)
+        {
+            const x = startX + c * PEG_SPACING;
+            if (x < left + .8 || x > right - .8) continue;
+            const peg = new Box2dStaticObject(vec2(x, y));
+            peg.color = hsl(.13, .9, .8);
+            peg.lineColor = hsl(.13, .8, .4);
+            peg.lineWidth = .08;
+            peg.addCircle(PEG_RADIUS*2, vec2(), 0, .05, .65);
+            peg.isPeg = true;
+            peg.flashTimer = new Timer();
+            pegs.push(peg);
+        }
+    }
+
+    // Slot dividers (vertical walls between slots)
+    const slotWidth = BOARD_WIDTH / SLOT_COUNT;
+    for (let i = 0; i <= SLOT_COUNT; i++)
+    {
+        const x = left + i * slotWidth;
+        const divider = new Box2dStaticObject(vec2(x, SLOT_TOP_Y - 1.5));
+        divider.color = hsl(.6, .3, .3);
+        divider.lineColor = hsl(.6, .4, .15);
+        divider.addBox(vec2(.25, 3));
+        pegs.push(divider);
+    }
+
+    // Slot scoring zones (logical only — the floor catches the ball)
+    for (let i = 0; i < SLOT_COUNT; i++)
+    {
+        const x = left + slotWidth * (i + .5);
+        slots.push({
+            x:          x,
+            width:      slotWidth - .3,
+            value:      SLOT_VALUES[i],
+            color:      SLOT_COLORS[i],
+            flashTimer: new Timer(),
+        });
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Drop a ball at the current aim position.
+function dropBall()
+{
+    if (dropCooldown.active()) return;
+    dropCooldown.set(.12);
+
+    const x = clamp(aimX, -BOARD_WIDTH/2 + 1, BOARD_WIDTH/2 - 1);
+    const ball = new PlinkoBall(
+        vec2(x, DROP_LINE_Y),
+        BALL_COLORS[dropCount % BALL_COLORS.length]);
+    // tiny random nudge so identical drops don't always go the same place
+    ball.body.SetLinearVelocity(box2d.vec2dTo(vec2(rand(-.5, .5), 0)));
+    balls.push(ball);
+    dropCount++;
+    sndDrop.play(vec2(x, DROP_LINE_Y), .6, 1 + rand(-.05, .05));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Check each ball — when it falls past the slot tops, score it & remove it.
+function checkScoring()
+{
+    for (let i = balls.length; i--;)
+    {
+        const b = balls[i];
+        if (b.destroyed) { balls.splice(i, 1); continue; }
+        if (b.scored) continue;
+
+        // ball reached the bottom — find which slot it landed in
+        if (b.pos.y < SLOT_TOP_Y - 1.5)
+        {
+            const slotWidth = BOARD_WIDTH / SLOT_COUNT;
+            const idx = clamp(
+                Math.floor((b.pos.x + BOARD_WIDTH/2) / slotWidth),
+                0, SLOT_COUNT - 1);
+            const slot = slots[idx];
+            score += slot.value;
+            slot.flashTimer.set(.6);
+            b.scored = true;
+
+            // popup text
+            scorePops.push({
+                pos:     vec2(slot.x, SLOT_TOP_Y - 1),
+                value:   '+' + slot.value,
+                life:    1.2,
+                maxLife: 1.2,
+                vel:     vec2(0, .04),
+                color:   slot.color,
+                size:    1.5,
+            });
+
+            // sound — bigger sound for jackpot slots, gentler pitch curve
+            if (slot.value >= 100)
+                sndBig.play(b.pos, .7, 1);
+            else
+                sndScore.play(b.pos, .55, .85 + (slot.value/100) * .5);
+
+            // mark for cleanup after a short visible settle
+            b.cleanupTimer = new Timer(.4);
+        }
+
+        // remove balls that finished settling, or that fell off the world
+        if (b.cleanupTimer && b.cleanupTimer.elapsed())
+        {
+            if (!b.destroyed) b.destroy();
+            balls.splice(i, 1);
+        }
+        else if (b.pos.y < FLOOR_Y - 5)
+        {
+            // safety net — somehow escaped
+            if (!b.destroyed) b.destroy();
+            balls.splice(i, 1);
+        }
+    }
+
+    // best score persistence
+    if (score > bestScore)
+    {
+        bestScore = score;
+        localStorage.setItem('plinko.best', bestScore);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Score popups — animated drifting text above the slots.
+function updatePops()
+{
+    for (let i = scorePops.length; i--;)
+    {
+        const p = scorePops[i];
+        p.life -= 1/60;
+        p.pos = p.pos.add(p.vel);
+        if (p.life <= 0) scorePops.splice(i, 1);
+    }
+}
+
+function drawPops()
+{
+    scorePops.forEach(p =>
+    {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        if (p.value)
+        {
+            const c = p.color.copy(); c.a = a;
+            const oc = hsl(0,0,0,a);
+            drawText(p.value, p.pos, p.size, c, .15, oc);
+        }
+        else
+        {
+            const c = p.color.copy(); c.a = a;
+            drawCircle(p.pos, p.size * a, c);
+        }
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Reset the run.
+function resetGame()
+{
+    balls.forEach(b => { if (!b.destroyed) b.destroy(); });
+    balls = [];
+    scorePops = [];
+    score = 0;
+    dropCount = 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Set isPlaying & sync HUD visibility.
+function setPlaying(p)
+{
+    isPlaying = p;
+    const hud = getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+async function gameInit()
+{
+    // Box2D first — every body needs the world to exist.
+    await box2dInit();
+
+    canvasClearColor = new Color().setHex('#0a0e1a');
+    gravity = vec2(0, -50);
+
+    setSoundVolume(.7);
+    setMenuVisibilityCallback(v => paused = v);
+
+    initSounds();
+    setMenuSounds({
+        select:   () => sndMenuSelect.play(),
+        activate: () => sndMenuActivate.play(),
+    });
+
+    buildBoard();
+
+    // ---------- Title ----------
+    const playFromTitle = () =>
+    {
+        resetGame();
+        setPlaying(true);
+        hideMenu('title');
+    };
+    createMenu({
+        id: 'title',
+        title: 'PLINKO',
+        subtitle: 'Drop. Bounce. Score.',
+        dismissable: true,
+        onStart: playFromTitle,
+        items: [
+            {type:'label',  text:'Best: ' + bestScore, id:'bestLabel'},
+            {type:'button', label:'PLAY',    onClick: playFromTitle},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+        ],
+        onShow: () =>
+        {
+            const lbl = getMenu('title').getItem('bestLabel');
+            lbl && lbl.setLabel('Best: ' + bestScore);
+        },
+    });
+
+    // ---------- Options ----------
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value:.7, min:0, max:1,
+                persist:'plinko.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'button', label:'RESET BEST',
+                onClick: () => showConfirmDialog({
+                    message: 'Erase your best score?',
+                    onYes: () =>
+                    {
+                        bestScore = 0;
+                        localStorage.removeItem('plinko.best');
+                        const lbl = getMenu('title').getItem('bestLabel');
+                        lbl && lbl.setLabel('Best: 0');
+                    },
+                })},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ---------- About ----------
+    createMenu({
+        id: 'about',
+        title: 'HOW TO PLAY',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:
+                'Move the aimer with the MOUSE or LEFT/RIGHT (A/D) keys.\n\n' +
+                'CLICK or press SPACE to drop a ball. Multiple balls allowed!\n\n' +
+                'Edge slots score 100, center scores 5. Stack up the score.\n\n' +
+                'ESC or START to pause.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ---------- Pause ----------
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'label',  text:'', id:'pauseScore'},
+            {type:'button', id:'resume',  label:'RESUME',  onClick: () => hideMenu('pause')},
+            {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Quit to title? Your run will end.',
+                    onYes: () =>
+                    {
+                        clearSubmenuStack();
+                        hideAllMenus();
+                        setPlaying(false);
+                        resetGame();
+                        showMenu('title');
+                    },
+                });
+            }},
+        ],
+        onShow: () =>
+        {
+            const lbl = getMenu('pause').getItem('pauseScore');
+            lbl && lbl.setLabel('Score: ' + score);
+        },
+    });
+
+    // ---------- HUD toolbar ----------
+    createToolbar({
+        id:        'hud',
+        anchor:    'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen',
+                onClick: toggleFullscreen, hideOnTouch: true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else showMenu('pause');
+            }},
+        ],
+    });
+
+    setPlaying(false);
+
+    // First click reveals title menu.
+    attachClickToReveal('title', () => !isPlaying);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate()
+{
+    // Pause on Esc / Start (mirrors menuGame template pattern).
+    if (isPlaying && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    {
+        playMenuSound('activate');
+        showMenu('pause');
+        inputClearKey('Escape');
+        inputClearKey(9, 1, false, true, false);
+        return;
+    }
+
+    if (!isPlaying) return;
+
+    // Aim follows the mouse X by default; arrow / A-D keys override and
+    // nudge it (last input wins).
+    const dir = keyDirection();
+    if (dir.x)
+        aimX += dir.x * .35;
+    else
+        aimX = mousePos.x;
+    aimX = clamp(aimX, -BOARD_WIDTH/2 + 1, BOARD_WIDTH/2 - 1);
+
+    if (mouseWasPressed(0) || keyWasPressed('Space') || gamepadWasPressed(0))
+        dropBall();
+
+    checkScoring();
+    updatePops();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdatePost() {}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRender()
+{
+    // Background gradient panel behind the board.
+    drawRectGradient(vec2(0, 0), vec2(BOARD_WIDTH, BOARD_HEIGHT),
+        hsl(.62, .5, .15), hsl(.7, .6, .05));
+
+    if (!isPlaying) return;
+
+    // Slot floor — colored bands matching SLOT_COLORS, with flashing pulse.
+    const slotWidth = BOARD_WIDTH / SLOT_COUNT;
+    slots.forEach(s =>
+    {
+        const t = s.flashTimer.active() ? s.flashTimer.getPercent() : 0;
+        const flash = 1 - t;
+        const c = s.color.copy();
+        c.a = .65 + flash * .35;
+        drawRect(vec2(s.x, SLOT_TOP_Y - 2.5), vec2(s.width, 2.5), c);
+        // value text inside the slot
+        drawText(String(s.value),
+            vec2(s.x, SLOT_TOP_Y - 1.7),
+            1.1 + flash * .4,
+            hsl(0, 0, 1), .15, hsl(0, 0, 0));
+    });
+
+    // Aim guide — dotted line + ball preview at top of the board.
+    const aimClamped = clamp(aimX, -BOARD_WIDTH/2 + 1, BOARD_WIDTH/2 - 1);
+    const a = .35 + .2 * Math.sin(time * 4);
+    drawLine(vec2(aimClamped, DROP_LINE_Y - 1),
+             vec2(aimClamped, DROP_LINE_Y - 3),
+             .12, hsl(.13, .9, .7, a));
+    drawCircle(vec2(aimClamped, DROP_LINE_Y),
+        BALL_RADIUS*2, hsl(.13, .9, .7, .4), .08, hsl(.13, .9, .7));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRenderPost()
+{
+    // Peg flash — fade overlay highlight on hit pegs (drawn over body).
+    pegs.forEach(p =>
+    {
+        if (p.isPeg && p.flashTimer.active())
+        {
+            const t = 1 - p.flashTimer.getPercent();
+            drawCircle(p.pos, PEG_RADIUS*2 + t*.5,
+                hsl(.13, 1, .8, t * .7));
+        }
+    });
+
+    // Score popups & particle pops.
+    drawPops();
+
+    if (isPlaying)
+    {
+        // Score HUD
+        drawTextScreen('SCORE  ' + score,
+            vec2(mainCanvasSize.x/2, 50), 50,
+            hsl(.13, 1, .7), 5, hsl(0, 0, 0));
+        drawTextScreen('BEST  ' + bestScore,
+            vec2(mainCanvasSize.x/2, 95), 24,
+            hsl(0, 0, .85), 3, hsl(0, 0, 0));
+        drawTextScreen('BALLS  ' + dropCount,
+            vec2(mainCanvasSize.x/2, 125), 20,
+            hsl(0, 0, .7), 2, hsl(0, 0, 0));
+    }
+    else if (!isMenuVisible())
+    {
+        // Pre-play prompt — pulses to invite a click.
+        const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
+        const aPulse = 0.5 + 0.5 * Math.sin(time * 3);
+        drawTextScreen(prompt,
+            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2),
+            48, hsl(0, 0, 1, aPulse), 6, hsl(0, 0, 0, aPulse));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>

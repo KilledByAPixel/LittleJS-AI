@@ -1,67 +1,87 @@
 <!DOCTYPE html><head>
- <title>LittleJS AI Starter Project</title>
+ <title>LittleJS Columns</title>
  <meta charset=utf-8>
- </head><body>
+ </head><body style="background:#000">
  <script src="../dist/littlejs.js?1.18.0"></script>
+ <script src="../templates/menus.js"></script>
  <script src="../templates/soundGenerator.js"></script>
  <script>
  'use strict';
- 
+
  // engine settings
- debugWatermark = false; // Hide debug watermark in corner
- showEngineVersion = false; // Hide engine version console display
- 
+ debugWatermark = false;
+ showEngineVersion = false;
+ paused = false;
+
 ///////////////////////////////////////////////////////////////////////////////
- // Columns (SEGA) - tiny untextured prototype
- // Controls: Left/Right move, Up rotate, Down soft drop, Space hard drop, R restart
- 
+ // Columns (SEGA) - LittleJS prototype
+ // Controls: Left/Right move, Up rotate, Down soft drop, Space hard drop, R restart, ESC menu
+
  const COLS = 6;
  const ROWS = 13;
- const PANEL_W = 4.5;
+ const PANEL_W = 5;
  const HIDDEN_ROWS = 3; // spawn buffer
- 
+
  const EMPTY = -1;
  let grid;
- 
+
  let piece, nextPiece;
  let fallCounter = 0;
  let score = 0;
  let level = 1;
  let combo = 0;
  let gameOver = false;
- 
+
+ // playing state — gates gameplay update from menu/title states
+ let isPlaying = false;
+
+ // visual feedback (don't affect gameplay timing)
+ let particles = [];
+ let screenShake = vec2(0, 0);
+ let screenShakeTime = 0;
+ let clearFlashTimer = 0;
+ let lastChainCount = 0;
+ let chainPopTimer = 0;
+
  // sounds
- let sfxMove, sfxRotate, sfxLock, sfxClear, sfxGameOver;
- 
- // palette (bright, arcade-y)
+ let sfxMove, sfxRotate, sfxLock, sfxClear, sfxLevelUp, sfxGameOver;
+
+ // jewel palette (bright, arcade-y)
  const JEWEL_COLORS = [
      rgb(0.95, 0.30, 0.25), // red
-     rgb(0.25, 0.75, 0.35), // green
-     rgb(0.25, 0.55, 0.95), // blue
-     rgb(0.95, 0.85, 0.25), // yellow
-     rgb(0.75, 0.35, 0.90), // purple
-     rgb(0.25, 0.90, 0.90), // cyan
+     rgb(0.30, 0.80, 0.35), // green
+     rgb(0.30, 0.55, 0.95), // blue
+     rgb(0.98, 0.85, 0.25), // yellow
+     rgb(0.78, 0.38, 0.95), // purple
+     rgb(1.00, 0.55, 0.15), // orange
  ];
 
- // each color gets a fruit emoji overlay (browser font dependent)
- const FRUIT_EMOJIS = [
-     '🍒', // red
-     '🍏', // green
-     '🥥', // blue
-     '🍌', // yellow
-     '🍇', // purple
-     '🍑', // cyan-ish
- ];
- 
- function colorLighten(c, a)
+ ///////////////////////////////////////////////////////////////////////////////
+ // HELPERS
+
+ function frand(min=0, max=1){ return min + Math.random()*(max-min); }
+ function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+ function clampVal(v, a, b){ return v < a ? a : v > b ? b : v; }
+
+ function shadeColor(c, amount)
  {
-     return rgb(Math.min(1, c.r + a), Math.min(1, c.g + a), Math.min(1, c.b + a), c.a);
+     const out = c.copy();
+     out.r = clampVal(out.r + amount, 0, 1);
+     out.g = clampVal(out.g + amount, 0, 1);
+     out.b = clampVal(out.b + amount, 0, 1);
+     return out;
  }
- function colorDarken(c, a)
+
+ function withAlpha(c, a)
  {
-     return rgb(Math.max(0, c.r - a), Math.max(0, c.g - a), Math.max(0, c.b - a), c.a);
+     const out = c.copy();
+     out.a = a;
+     return out;
  }
- 
+
+ ///////////////////////////////////////////////////////////////////////////////
+ // GAME LOGIC (untouched — gameplay stays exactly the same)
+
  function makeEmptyGrid()
  {
      grid = new Array(COLS);
@@ -72,9 +92,9 @@
              grid[x][y] = EMPTY;
      }
  }
- 
+
  function randJewel() { return randInt(JEWEL_COLORS.length); }
- 
+
  function makePiece()
  {
      return {
@@ -83,7 +103,7 @@
          c: [randJewel(), randJewel(), randJewel()], // bottom, mid, top
      };
  }
- 
+
  function restartGame()
  {
      makeEmptyGrid();
@@ -92,29 +112,32 @@
      combo = 0;
      fallCounter = 0;
      gameOver = false;
+     particles = [];
+     clearFlashTimer = 0;
+     chainPopTimer = 0;
+     lastChainCount = 0;
+     screenShake = vec2(0,0);
+     screenShakeTime = 0;
      nextPiece = makePiece();
      spawnPiece();
  }
- 
+
  function spawnPiece()
  {
      piece = nextPiece;
      piece.x = (COLS/2|0);
      piece.y = ROWS + HIDDEN_ROWS;
      nextPiece = makePiece();
- 
-     // if immediately blocked at spawn, game over
+
      if (!canMove(0, 0))
          triggerGameOver();
  }
- 
+
  function fallInterval()
  {
-     // frames per cell drop
-     // levels speed up: 30 -> 6
      return Math.max(6, 30 - (level-1)*2);
  }
- 
+
  function canMove(dx, dy)
  {
      const x0 = piece.x + dx;
@@ -122,43 +145,38 @@
      {
          const x = x0;
          const y = piece.y + dy + i;
-         if (x < 0 || x >= COLS)
-             return false;
-         if (y < 0)
-             return false;
-         if (y < ROWS && grid[x][y] !== EMPTY)
-             return false;
+         if (x < 0 || x >= COLS) return false;
+         if (y < 0) return false;
+         if (y < ROWS && grid[x][y] !== EMPTY) return false;
      }
      return true;
  }
- 
+
  function tryMove(dx, dy)
  {
-     if (!canMove(dx, dy))
-         return false;
+     if (!canMove(dx, dy)) return false;
      piece.x += dx;
      piece.y += dy;
      return true;
  }
- 
+
  function rotatePiece()
  {
-     // cycle jewels in the stack
      piece.c.unshift(piece.c.pop());
  }
- 
+
  function hardDrop()
  {
      let moved = false;
-     while (tryMove(0, -1))
-         moved = true;
+     while (tryMove(0, -1)) moved = true;
+     // tiny screen shake on hard drop
+     startShake(0.18);
      lockPiece();
      return moved;
  }
- 
+
  function lockPiece()
  {
-     // place into grid
      for (let i=0; i<3; i++)
      {
          const x = piece.x;
@@ -172,40 +190,61 @@
              grid[x][y] = piece.c[i];
      }
      sfxLock.play();
- 
-     // resolve clears + gravity (chains)
+
+     // resolve clears + gravity (chains) — same logic, just track chain count for visuals
      combo = 0;
+     let totalChain = 0;
      while (true)
      {
          const cleared = findAndClearMatches();
-         if (!cleared)
-             break;
+         if (!cleared) break;
          combo++;
+         totalChain++;
          applyGravity();
      }
- 
-     // update level gently
+
+     if (totalChain > 0)
+     {
+         lastChainCount = totalChain;
+         chainPopTimer = 0.8;
+         clearFlashTimer = 0.18;
+         startShake(0.25 + totalChain * 0.05);
+     }
+
+     // update level — detect level changes for level-up sfx
+     const oldLevel = level;
      level = 1 + Math.floor(score / 600);
- 
+     if (level > oldLevel) sfxLevelUp.play();
+
      if (!gameOver)
          spawnPiece();
  }
- 
+
  function triggerGameOver()
  {
      if (gameOver) return;
      gameOver = true;
      sfxGameOver.play();
+     // surface a game-over dialog via menus.js
+     showAlertDialog({
+         title: 'GAME OVER',
+         icon: '💎',
+         message: 'Score: ' + score + '\nLevel: ' + level,
+         okLabel: 'PLAY AGAIN',
+         onOk: () =>
+         {
+             restartGame();
+         },
+     });
  }
- 
+
  function inBounds(x, y)
  {
      return x >= 0 && x < COLS && y >= 0 && y < ROWS;
  }
- 
+
  function findAndClearMatches()
  {
-     // mark cells to clear
      const mark = new Array(COLS);
      for (let x=0; x<COLS; x++)
      {
@@ -213,29 +252,26 @@
          for (let y=0; y<ROWS; y++)
              mark[x][y] = false;
      }
- 
+
      const dirs = [
-         [1, 0],  // horizontal
-         [0, 1],  // vertical
-         [1, 1],  // diag up-right
-         [1,-1],  // diag down-right
+         [1, 0],
+         [0, 1],
+         [1, 1],
+         [1,-1],
      ];
- 
+
      let any = false;
      for (let x=0; x<COLS; x++)
      for (let y=0; y<ROWS; y++)
      {
          const v = grid[x][y];
-         if (v === EMPTY)
-             continue;
- 
+         if (v === EMPTY) continue;
+
          for (const [dx, dy] of dirs)
          {
-             // only start from the beginning of a run
              const px = x - dx, py = y - dy;
-             if (inBounds(px, py) && grid[px][py] === v)
-                 continue;
- 
+             if (inBounds(px, py) && grid[px][py] === v) continue;
+
              let count = 0;
              let xx = x, yy = y;
              while (inBounds(xx, yy) && grid[xx][yy] === v)
@@ -244,7 +280,7 @@
                  xx += dx;
                  yy += dy;
              }
- 
+
              if (count >= 3)
              {
                  any = true;
@@ -258,29 +294,29 @@
              }
          }
      }
- 
-     if (!any)
-         return 0;
- 
-     // clear and score
+
+     if (!any) return 0;
+
+     // clear and score — also spawn particles for visual feedback
      let clearedCount = 0;
      for (let x=0; x<COLS; x++)
      for (let y=0; y<ROWS; y++)
      {
          if (mark[x][y])
          {
+             const colorIndex = grid[x][y];
+             spawnClearParticles(x, y, colorIndex);
              grid[x][y] = EMPTY;
              clearedCount++;
          }
      }
- 
-     // simple score: reward chains
+
      const chainBonus = 1 + combo * 0.5;
      score += Math.floor(clearedCount * 10 * level * chainBonus);
      sfxClear.play();
      return clearedCount;
  }
- 
+
  function applyGravity()
  {
      for (let x=0; x<COLS; x++)
@@ -289,8 +325,7 @@
          for (let y=0; y<ROWS; y++)
          {
              const v = grid[x][y];
-             if (v === EMPTY)
-                 continue;
+             if (v === EMPTY) continue;
              if (write !== y)
              {
                  grid[x][write] = v;
@@ -302,143 +337,415 @@
              grid[x][y] = EMPTY;
      }
  }
- 
+
  function landingY()
  {
+     // Pure helper — does not mutate piece. Returns the y where the bottom of
+     // the piece lands if dropped from current x.
      let y = piece.y;
-     while (true)
+     while (y > 0)
      {
-         piece.y = y;
-         if (!canMove(0, -1))
-             break;
-         y--;
+         const ny = y - 1;
+         // check fits at ny
+         let ok = true;
+         for (let i=0; i<3; i++)
+         {
+             const cy = ny + i;
+             if (cy < 0) { ok = false; break; }
+             if (cy < ROWS && grid[piece.x][cy] !== EMPTY) { ok = false; break; }
+         }
+         if (!ok) break;
+         y = ny;
      }
-     piece.y = y;
      return y;
  }
- 
- function drawJewel(pos, colorIndex, alpha=1, brightness=1)
- {
-     const base = JEWEL_COLORS[colorIndex];
-     const c = rgb(base.r*brightness, base.g*brightness, base.b*brightness, alpha);
-     const dark = colorDarken(c, .22);
-     const light = colorLighten(c, .14);
- 
-     // body
-     drawRect(pos, vec2(.95), c);
-     // bevel
-     drawRect(pos, vec2(.95), undefined, 0); // keep render order consistent (no-op if undefined)
-     drawRect(pos.add(vec2(-.12, .12)), vec2(.65), light);
-     drawRect(pos.add(vec2(.12, -.12)), vec2(.65), dark);
-     // outline
-     drawRect(pos, vec2(.98), rgb(0,0,0,alpha*.35));
-     drawRect(pos, vec2(.92), c);
 
-     // fruit emoji overlay
-     const emoji = FRUIT_EMOJIS[colorIndex] || '🍬';
-     drawText(emoji, pos.add(vec2(0,-.02)), 0.75, rgb(1,1,1,alpha), 0.12, rgb(0,0,0,alpha*.6));
+ ///////////////////////////////////////////////////////////////////////////////
+ // VISUAL EFFECTS
+
+ function startShake(duration)
+ {
+     screenShakeTime = Math.max(screenShakeTime, duration);
  }
- 
+
+ function updateShake(dt)
+ {
+     if (screenShakeTime <= 0) { screenShake = vec2(0,0); return; }
+     screenShakeTime -= dt;
+     const t = Math.max(0, screenShakeTime / 0.3);
+     const intensity = t * t;
+     screenShake = vec2(
+         frand(-0.35, 0.35) * intensity,
+         frand(-0.35, 0.35) * intensity,
+     );
+ }
+
+ function spawnClearParticles(cellX, cellY, colorIndex)
+ {
+     const baseColor = JEWEL_COLORS[colorIndex];
+     const pos = vec2(cellX + .5, cellY + .5);
+     // burst
+     const N = 10;
+     for (let i = 0; i < N; i++)
+     {
+         const a = frand(0, Math.PI*2);
+         const speed = frand(2.5, 7);
+         particles.push({
+             kind: 'burst',
+             pos: pos.add(vec2(frand(-.2,.2), frand(-.2,.2))),
+             vel: vec2(Math.cos(a), Math.sin(a)).scale(speed).add(vec2(0, frand(1, 3))),
+             life: .55,
+             lifeMax: .55,
+             size: frand(.10, .22),
+             color: baseColor,
+         });
+     }
+     // a few bright sparkles
+     for (let i = 0; i < 4; i++)
+     {
+         particles.push({
+             kind: 'sparkle',
+             pos: pos.add(vec2(frand(-.25,.25), frand(-.25,.25))),
+             vel: vec2(frand(-1.5,1.5), frand(.5, 3)),
+             life: .45,
+             lifeMax: .45,
+             size: frand(.08, .14),
+             color: shadeColor(baseColor, .3),
+         });
+     }
+ }
+
+ function updateParticles(dt)
+ {
+     const gBurst = -14;
+     const gSpark = -3;
+     for (let i = particles.length - 1; i >= 0; i--)
+     {
+         const p = particles[i];
+         p.life -= dt;
+         if (p.life <= 0) { particles.splice(i, 1); continue; }
+         if (p.kind === 'sparkle')
+         {
+             p.vel = p.vel.add(vec2(0, gSpark * dt)).scale(0.99);
+         }
+         else
+         {
+             p.vel = p.vel.add(vec2(0, gBurst * dt)).scale(0.985);
+         }
+         p.pos = p.pos.add(p.vel.scale(dt));
+     }
+ }
+
+ function renderParticles()
+ {
+     for (const p of particles)
+     {
+         const t = p.lifeMax ? clamp01(p.life / p.lifeMax) : 1;
+         const c = p.color.copy();
+         c.a *= t;
+         if (p.kind === 'sparkle')
+         {
+             // bright core + faint glow
+             drawRect(p.pos, vec2(p.size), c);
+             drawRect(p.pos, vec2(p.size * 2.4), withAlpha(rgb(1,1,1), c.a * .18));
+         }
+         else
+         {
+             drawRect(p.pos, vec2(p.size), c);
+         }
+     }
+ }
+
+ ///////////////////////////////////////////////////////////////////////////////
+ // RENDERING
+
+ // Clean Tetris-style 3D beveled block.
+ function drawJewel3D(pos, size, color, alpha=1)
+ {
+     const base = withAlpha(color, alpha);
+     const hi   = shadeColor(base, .18);
+     const hi2  = shadeColor(base, .30);
+     const sh   = shadeColor(base, -.18);
+     const sh2  = shadeColor(base, -.30);
+
+     const outline = size * .10;
+     const bevel   = size * .22;
+     const inner   = size - bevel;
+
+     // outer outline
+     drawRect(pos, vec2(size + outline), withAlpha(rgb(0,0,0), alpha));
+     // base
+     drawRect(pos, vec2(size), base);
+     // top highlight strip
+     drawRect(pos.add(vec2(0, inner/2)), vec2(size - outline*0.7, bevel), withAlpha(hi2, alpha));
+     // left highlight strip
+     drawRect(pos.add(vec2(-inner/2, 0)), vec2(bevel, size - outline*0.7), withAlpha(hi, alpha));
+     // bottom shadow strip
+     drawRect(pos.add(vec2(0, -inner/2)), vec2(size - outline*0.7, bevel), withAlpha(sh2, alpha));
+     // right shadow strip
+     drawRect(pos.add(vec2(inner/2, 0)), vec2(bevel, size - outline*0.7), withAlpha(sh, alpha));
+     // tiny specular highlight
+     drawRect(pos.add(vec2(-inner/2 + bevel*0.55, inner/2 - bevel*0.55)), vec2(bevel*0.75), withAlpha(rgb(1,1,1), .14*alpha));
+ }
+
+ function drawJewel(pos, colorIndex, alpha=1, size=.94)
+ {
+     drawJewel3D(pos, size, JEWEL_COLORS[colorIndex], alpha);
+ }
+
  function drawBoard()
  {
-     // board background
-     const boardCenter = vec2(COLS/2, ROWS/2);
-     drawRect(boardCenter, vec2(COLS+0.4, ROWS+0.4), rgb(.08,.08,.10));
-     drawRect(boardCenter, vec2(COLS, ROWS), rgb(.06,.06,.08));
- 
-     // grid lines (subtle)
-     for (let x=0; x<=COLS; x++)
-         drawLine(vec2(x,0), vec2(x,ROWS), .03, rgb(.13,.13,.16));
-     for (let y=0; y<=ROWS; y++)
-         drawLine(vec2(0,y), vec2(COLS,y), .03, rgb(.13,.13,.16));
- 
+     const shake = isPlaying ? screenShake : vec2(0,0);
+
+     // board frame (outer ring + inner well — same pattern as tetris reference)
+     const boardCenter = vec2(COLS/2, ROWS/2).add(shake);
+     drawRect(boardCenter, vec2(COLS+0.5, ROWS+0.5), rgb(.18,.18,.22));
+     drawRect(boardCenter, vec2(COLS+0.18, ROWS+0.18), rgb(.05,.05,.07));
+     drawRect(boardCenter, vec2(COLS, ROWS), rgb(.08,.08,.10));
+
+     // subtle grid lines
+     for (let x=1; x<COLS; x++)
+         drawLine(vec2(x,0).add(shake), vec2(x,ROWS).add(shake), .03, rgb(.15,.15,.18));
+     for (let y=1; y<ROWS; y++)
+         drawLine(vec2(0,y).add(shake), vec2(COLS,y).add(shake), .03, rgb(.15,.15,.18));
+
      // landed jewels
      for (let x=0; x<COLS; x++)
      for (let y=0; y<ROWS; y++)
      {
          const v = grid[x][y];
-         if (v === EMPTY)
-             continue;
-         drawJewel(vec2(x+.5, y+.5), v, 1);
+         if (v === EMPTY) continue;
+         drawJewel(vec2(x+.5, y+.5).add(shake), v, 1);
      }
- 
-     if (!piece || gameOver)
-         return;
+
+     if (!piece || gameOver) return;
+
+     // ghost piece — show landing position
+     const gy = landingY();
+     if (gy !== piece.y)
+     {
+         for (let i=0; i<3; i++)
+         {
+             const y = gy + i;
+             if (y >= 0 && y < ROWS)
+                 drawJewel(vec2(piece.x+.5, y+.5).add(shake), piece.c[i], 0.28, .82);
+         }
+     }
 
      // falling piece
      for (let i=0; i<3; i++)
      {
          const y = piece.y + i;
          if (y >= 0 && y < ROWS)
-             drawJewel(vec2(piece.x+.5, y+.5), piece.c[i], 1);
+             drawJewel(vec2(piece.x+.5, y+.5).add(shake), piece.c[i], 1);
+     }
+
+     // clear flash overlay (whole playfield brief flash)
+     if (clearFlashTimer > 0)
+     {
+         const a = clamp01(clearFlashTimer / 0.18) * 0.35;
+         drawRect(boardCenter, vec2(COLS, ROWS), rgb(1,1,1, a));
      }
  }
- 
+
  function drawPanel()
  {
-     const px = COLS + PANEL_W/2 + 0.8;
+     const px = COLS + 0.6 + PANEL_W/2;
+     const panelTop = ROWS;
      const panelCenter = vec2(px, ROWS/2);
-     drawRect(panelCenter, vec2(PANEL_W, ROWS), rgb(.05,.05,.07));
-     drawRect(panelCenter, vec2(PANEL_W-.2, ROWS-.2), rgb(.09,.09,.12));
- 
-     drawText('COLUMNS', vec2(px, ROWS - 1.0), 0.7, hsl(0,0,1), 0.15, hsl(0,0,0));
-     drawText('Score',   vec2(px, ROWS - 2.2), 0.45, hsl(0,0,1), 0.12, hsl(0,0,0));
-     drawText(score,     vec2(px, ROWS - 2.9), 0.6,  hsl(.12,1,.65), 0.12, hsl(0,0,0));
- 
-     drawText('Level',   vec2(px, ROWS - 4.2), 0.45, hsl(0,0,1), 0.12, hsl(0,0,0));
-     drawText(level,     vec2(px, ROWS - 4.9), 0.6,  hsl(.55,1,.7),  0.12, hsl(0,0,0));
- 
-     drawText('Next',    vec2(px, ROWS - 6.2), 0.45, hsl(0,0,1), 0.12, hsl(0,0,0));
+
+     // panel frame matches the board frame
+     drawRect(panelCenter, vec2(PANEL_W+0.5, ROWS+0.5), rgb(.18,.18,.22));
+     drawRect(panelCenter, vec2(PANEL_W+0.18, ROWS+0.18), rgb(.05,.05,.07));
+     drawRect(panelCenter, vec2(PANEL_W, ROWS), rgb(.10,.10,.13));
+
+     // title (world units, like tetris reference)
+     drawText('COLUMNS', vec2(px, panelTop - 0.9), 0.75, hsl(.55,.6,.85), 0.15, BLACK);
+
+     // SCORE
+     drawText('SCORE', vec2(px, panelTop - 2.2), 0.42, hsl(0,0,.7), 0.10, BLACK);
+     drawText(''+score, vec2(px, panelTop - 3.0), 0.75, hsl(.12,1,.65), 0.16, BLACK);
+
+     // LEVEL
+     drawText('LEVEL', vec2(px, panelTop - 4.3), 0.42, hsl(0,0,.7), 0.10, BLACK);
+     drawText(''+level, vec2(px, panelTop - 5.1), 0.75, hsl(.55,1,.7), 0.16, BLACK);
+
+     // NEXT — boxed preview
+     drawText('NEXT', vec2(px, panelTop - 6.4), 0.42, hsl(0,0,.7), 0.10, BLACK);
+     // preview well
+     const previewCenterY = panelTop - 8.7;
+     drawRect(vec2(px, previewCenterY), vec2(1.5, 3.6), rgb(.05,.05,.07));
      if (nextPiece)
      {
          for (let i=0; i<3; i++)
          {
-             const y = ROWS - 7.2 - i*1.05;
-             drawJewel(vec2(px, y), nextPiece.c[i], 1);
+             // show stack: bottom to top, top of stack at top of preview
+             const y = previewCenterY + 1.05 - i*1.05;
+             drawJewel(vec2(px, y), nextPiece.c[2 - i], 1);
          }
      }
- 
-     const help = '←/→ move\n↑ rotate\n↓ soft drop\nSpace hard drop\nR restart';
-     drawText(help, vec2(px, 2.8), 0.35, hsl(0,0,1), 0.12, hsl(0,0,0));
- 
-     if (gameOver)
+
+     // chain pop text
+     if (chainPopTimer > 0 && lastChainCount > 1)
      {
-         drawRect(vec2(COLS/2, ROWS/2), vec2(COLS+PANEL_W+2, 3.2), rgb(0,0,0,.55));
-         drawText('GAME OVER', vec2((COLS+PANEL_W+1.6)/2, ROWS/2 + .4), 1.0, hsl(0,1,.6), .25, hsl(0,0,0));
-         drawText('Press R to restart', vec2((COLS+PANEL_W+1.6)/2, ROWS/2 - .6), 0.5, hsl(0,0,1), .15, hsl(0,0,0));
+         const t = clamp01(chainPopTimer / 0.8);
+         const a = t;
+         const lift = (1 - t) * 0.5;
+         drawText(`CHAIN x${lastChainCount}!`,
+             vec2(px, panelTop - 11.0 + lift),
+             0.55,
+             hsl(.12, 1, .65, a), 0.14, withAlpha(BLACK, a));
      }
+
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
+ // MENU UI (menus.js)
+
+ function setPlaying(p) { isPlaying = p; }
+
+ function buildMenus()
+ {
+     // Pause whenever any menu (incl. dialogs) is up.
+     setMenuVisibilityCallback(v => paused = v);
+
+     // Sounds for menu navigation/activation
+     const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+     const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+     setMenuSounds({
+         select:   () => sound_select.play(),
+         activate: () => sound_activate.play(),
+     });
+
+     // ----- title menu -----
+     const playFromTitle = () =>
+     {
+         restartGame();
+         setPlaying(true);
+         hideMenu('title');
+     };
+     createMenu({
+         id: 'title',
+         title: 'COLUMNS',
+         subtitle: 'Match 3+ jewels — chain combos for huge scores',
+         dismissable: false,
+         onStart: playFromTitle,
+         items: [
+             {type:'button', label:'PLAY',    onClick: playFromTitle},
+             {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+         ],
+     });
+
+     // ----- about / how-to-play -----
+     createMenu({
+         id: 'about',
+         title: 'HOW TO PLAY',
+         onHide: popMenu,
+         items: [
+             {type:'text', text:
+                 'Move the falling 3-jewel column with Left/Right.\n' +
+                 'Press Up to cycle the jewel colors in the column.\n' +
+                 'Down soft-drops, Space hard-drops.\n\n' +
+                 'Match 3 or more of the same color in a line — ' +
+                 'horizontal, vertical, or diagonal — to clear them. ' +
+                 'Chains formed by falling jewels score huge bonuses!'},
+             {type:'separator'},
+             {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+         ],
+     });
+
+     // ----- pause menu (Esc) -----
+     createMenu({
+         id: 'pause',
+         title: 'PAUSED',
+         initialItemId: 'resume',
+         items: [
+             {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+             {type:'button', id:'restart', label:'RESTART',       onClick: () =>
+             {
+                 showConfirmDialog({
+                     message: 'Restart this run?',
+                     onYes: () =>
+                     {
+                         restartGame();
+                         clearSubmenuStack();
+                         hideAllMenus();
+                     },
+                 });
+             }},
+             {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
+             {
+                 showConfirmDialog({
+                     message: 'Quit to title?',
+                     onYes: () =>
+                     {
+                         clearSubmenuStack();
+                         hideAllMenus();
+                         setPlaying(false);
+                         showMenu('title');
+                     },
+                 });
+             }},
+         ],
+     });
+ }
+
+ ///////////////////////////////////////////////////////////////////////////////
+ // LITTLEJS CALLBACKS
+
  function gameInit()
  {
-     // retro fixed canvas
      setCanvasFixedSize(vec2(960, 540));
-     setCanvasPixelated(true);
      setShowSplashScreen(false);
-     setCameraScale(32);
- 
+     setCameraScale(36);
+
      // SFX
-     sfxMove = new SoundGenerator({volume:.20, frequency:520, attack:0, release:.05, shapeCurve:1.5});
-     sfxRotate = new SoundGenerator({volume:.22, frequency:640, attack:0, release:.06, shapeCurve:1.8, slide:-1.2});
-     sfxLock = new SoundGenerator({volume:.28, frequency:160, attack:0, release:.10, shapeCurve:1.2, noise:.1});
-     sfxClear = new SoundGenerator({volume:.35, frequency:380, attack:0, release:.25, shapeCurve:1.1, pitchJump:220, pitchJumpTime:.05, delay:.02});
-     sfxGameOver = new SoundGenerator({volume:.45, frequency:180, attack:0, release:.6, shapeCurve:2, slide:-.6, noise:.15});
- 
-     restartGame();
+     sfxMove     = new SoundGenerator({volume:.20, frequency:520, attack:0, release:.05, shapeCurve:1.5});
+     sfxRotate   = new SoundGenerator({volume:.22, frequency:640, attack:0, release:.06, shapeCurve:1.8, slide:-1.2});
+     sfxLock     = new SoundGenerator({volume:.28, frequency:160, attack:0, release:.10, shapeCurve:1.2, noise:.1});
+     sfxClear    = new SoundGenerator({volume:.40, frequency:520, attack:0, release:.20, shapeCurve:1.1, pitchJump:280, pitchJumpTime:.04, delay:.02});
+     sfxLevelUp  = new SoundGenerator({volume:.40, frequency:440, attack:0, release:.25, shapeCurve:1.1, pitchJump:520, pitchJumpTime:.08});
+     sfxGameOver = new SoundGenerator({volume:.45, frequency:180, attack:0, release:.6,  shapeCurve:2,   slide:-.6, noise:.15});
+
+     buildMenus();
+
+     // Make sure something is rendered on the title screen behind the menu
+     makeEmptyGrid();
+     nextPiece = makePiece();
+     piece = makePiece();
+
+     // Show the title menu on first user input (matches menuGame.html pattern).
+     attachClickToReveal('title', () => !isPlaying);
  }
- 
- ///////////////////////////////////////////////////////////////////////////////
+
  function gameUpdate()
  {
+     // gameUpdate only runs when paused=false (i.e. no menu visible).
+     // Esc surfaces the pause menu when actually playing.
+     if (isPlaying && !gameOver && keyWasPressed('Escape'))
+     {
+         playMenuSound('activate');
+         showMenu('pause');
+         inputClearKey('Escape');
+         return;
+     }
+
+     // tick particle/shake/flash visuals even when not playing (so they
+     // finish during the brief moment a clear pops before next frame)
+     updateParticles(timeDelta);
+     updateShake(timeDelta);
+     if (clearFlashTimer > 0) clearFlashTimer -= timeDelta;
+     if (chainPopTimer  > 0) chainPopTimer  -= timeDelta;
+
+     if (!isPlaying || gameOver) return;
+
+     // R restarts during gameplay
      if (keyWasPressed('KeyR'))
      {
          restartGame();
          return;
      }
-     if (gameOver)
-         return;
- 
+
      // input
      if (keyWasPressed('ArrowLeft'))
      {
@@ -453,7 +760,7 @@
          const old = piece.c.slice();
          rotatePiece();
          if (!canMove(0,0))
-             piece.c = old; // revert if rotation causes collision
+             piece.c = old;
          else
              sfxRotate.play();
      }
@@ -462,7 +769,7 @@
          hardDrop();
          return;
      }
- 
+
      // falling
      const softDrop = keyIsDown('ArrowDown');
      const interval = softDrop ? 2 : fallInterval();
@@ -474,34 +781,32 @@
              lockPiece();
      }
  }
- 
- ///////////////////////////////////////////////////////////////////////////////
+
  function gameUpdatePost()
  {
      // center camera to include board + right panel
-     const totalW = COLS + PANEL_W + 1.6;
+     const totalW = COLS + 0.6 + PANEL_W;
      setCameraPos(vec2(totalW/2, ROWS/2));
  }
- 
- ///////////////////////////////////////////////////////////////////////////////
+
  function gameRender()
  {
-     // background frame
-     const totalW = COLS + PANEL_W + 1.6;
+     // dark backdrop
+     const totalW = COLS + 0.6 + PANEL_W;
      const center = vec2(totalW/2, ROWS/2);
-     drawRect(center, vec2(totalW+2, ROWS+2), rgb(.02,.02,.03));
+     drawRect(center, vec2(totalW+3, ROWS+3), rgb(.04,.04,.06));
  }
- 
- ///////////////////////////////////////////////////////////////////////////////
+
  function gameRenderPost()
  {
      drawBoard();
      drawPanel();
+     renderParticles();
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- // Startup LittleJS Engine
  engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
- 
+
  </script>
  </body>
+</html>
