@@ -22,8 +22,10 @@ const TILE = 1;
 const PLAYER_SPEED = .12;       // tiles per frame (60 fps fixed)
 const GHOST_SPEED  = .11;
 const FRIGHT_SPEED = .075;
+const EYE_SPEED    = .19;       // eaten ghosts hustle home as eyes
 const POWER_FRAMES = 60*7;
 const FRIGHT_FLASH_FRAMES = 60*2; // last 2 seconds of fright blink white
+const READY_FRAMES = 60*2;        // "READY!" intro at game start and after a death
 
 const COLLIDE_R2 = (.68)**2;
 
@@ -47,6 +49,7 @@ let gameOver = false;
 
 let powerTimer = 0;
 let ghostEatChain = 0;
+let readyTimer = 0;
 
 // --- sounds
 let sPellet, sPower, sEatGhost, sDie, sWin;
@@ -75,6 +78,13 @@ function gameUpdate()
 
     if (win || gameOver)
         return;
+
+    // "READY!" intro — freeze player + ghosts so nothing moves until it expires
+    if (readyTimer > 0)
+    {
+        readyTimer--;
+        return;
+    }
 
     // power timer
     if (powerTimer > 0)
@@ -152,6 +162,11 @@ function gameRender()
     for (const g of ghosts)
         drawGhost(g);
     drawPac(player);
+
+    // arcade-style "READY!" banner shown at game start and after each death
+    // Placed in the open corridor just below the ghost house (one tile tall)
+    if (readyTimer > 0)
+        drawText('READY!', vec2(gridW/2, 13.5), 1.0, rgb(1, .92, 0), .05, rgb(0,0,0));
 }
 
 // -----------------------------------------------------------------------------
@@ -201,7 +216,7 @@ function buildLevel()
         'XXXXXX.XX_XXXXXXXX_XX.XXXXXX', // 16  ghost-house bottom wall
         'XXXXXX.XX__________XX.XXXXXX', // 17
         'XXXXXX.XX_XXXXXXXX_XX.XXXXXX', // 18
-        'XXXXXX.XX_XXXXXXwXX_XX.XXXXXX', // 19
+        'XXXXXX.XX_XXXXXXXX_XX.XXXXXX', // 19
         'X............XX............X', // 20
         'X.XXXX.XXXXX.XX.XXXXX.XXXX.X', // 21
         'X.XXXX.XXXXX.XX.XXXXX.XXXX.X', // 22
@@ -259,6 +274,7 @@ function resetRun(isFirst)
     player.desiredDir = vec2(-1,0);
     player.faceDir = vec2(-1,0);
 
+    // colors keyed to ghost personality: Blinky red, Pinky pink, Inky cyan, Clyde orange
     const colors = [rgb(.95,.25,.25), rgb(.95,.55,.9), rgb(.25,.85,.95), rgb(.95,.65,.2)];
     ghosts = [];
     for (let i=0; i<min(4, ghostStartCells.length); i++)
@@ -267,6 +283,7 @@ function resetRun(isFirst)
         g.color = colors[i%colors.length];
         g.frightened = false;
         g.pendingReverse = false;
+        g.eaten = false;
         g.homeCell = ghostStartCells[i].copy();
         g.modeTimer = randInt(140, 60);
         g.scatter = !!(i&1);
@@ -274,6 +291,8 @@ function resetRun(isFirst)
         g.respawnTimer = i * 45;   // staggered exit: 0, 0.75s, 1.5s, 2.25s
         ghosts.push(g);
     }
+
+    readyTimer = READY_FRAMES;
 
     if (!isFirst)
         sPower.play();
@@ -290,6 +309,7 @@ function makeMover(cell, dir, isGhost=false)
         t: 0,                       // 0..1 progress to next cell
         pos: vec2(cell.x+.5, cell.y+.5),
         isGhost,                    // gates whether the ghost door blocks this mover
+        eaten: false,               // when true the mover is "eyes" returning home
     };
 }
 
@@ -299,7 +319,7 @@ function moverUpdatePos(m)
     m.pos = base.add(m.dir.scale(m.t));
 }
 
-function canMove(cell, dir, asGhost=false)
+function canMove(cell, dir, asGhost=false, asEaten=false)
 {
     if (!dir.x && !dir.y)
         return true;
@@ -314,7 +334,10 @@ function canMove(cell, dir, asGhost=false)
     const w = isWallXY(nx, ny);
     if (w === 1) return false;             // solid wall
     if (w === 2)                            // ghost door
-        return asGhost && dir.y > 0;        // ghosts can leave upward, never re-enter from above
+    {
+        if (!asGhost) return false;        // pac-man bounces off
+        return asEaten || dir.y > 0;       // eaten ghosts pass either way; live ghosts only exit upward
+    }
     return true;
 }
 
@@ -341,7 +364,7 @@ function tickMover(m, speed, onArriveCenter)
             break;
 
         // if we're at a center and the next cell is blocked, stop immediately (no "bounce"/penetration)
-        if (m.t <= 1e-6 && !canMove(m.cell, m.dir, m.isGhost))
+        if (m.t <= 1e-6 && !canMove(m.cell, m.dir, m.isGhost, m.eaten))
         {
             m.dir = vec2(0,0);
             m.t = 0;
@@ -360,7 +383,7 @@ function tickMover(m, speed, onArriveCenter)
         remaining -= distToCenter;
         m.t = 0;
 
-        if (!canMove(m.cell, m.dir, m.isGhost))
+        if (!canMove(m.cell, m.dir, m.isGhost, m.eaten))
         {
             m.dir = vec2(0,0);
             break;
@@ -455,6 +478,8 @@ function eatAtCell(cell)
         ghostEatChain = 0;
         for (const g of ghosts)
         {
+            // eyes returning home ignore the new power pellet — they keep heading to jail
+            if (g.eaten) continue;
             g.frightened = true;
             g.pendingReverse = true; // arcade: ghosts reverse the instant fright starts
         }
@@ -468,9 +493,9 @@ function eatAtCell(cell)
 function updateGhosts()
 {
     const powered = powerTimer > 0;
-    // fright applies only to ghosts that are out and about — ones in the house keep their identity
+    // fright applies only to ghosts that are out and about — house residents and eyes keep their state
     for (const g of ghosts)
-        g.frightened = powered && !g.inHouse;
+        g.frightened = powered && !g.inHouse && !g.eaten;
 
     for (const g of ghosts)
     {
@@ -482,15 +507,15 @@ function updateGhosts()
             continue;
         }
 
-        // honor a pending reverse (e.g. player just ate a power pellet) before moving
+        // honor a pending reverse (e.g. player just ate a power pellet) — eyes ignore reversal
         if (g.pendingReverse)
         {
-            reverseMover(g);
+            if (!g.eaten) reverseMover(g);
             g.pendingReverse = false;
         }
 
-        // mode flip sometimes for variety (skip while in house — exit takes priority)
-        if (!g.inHouse && --g.modeTimer <= 0)
+        // mode flip sometimes for variety (skip while in house or returning as eyes)
+        if (!g.inHouse && !g.eaten && --g.modeTimer <= 0)
         {
             g.modeTimer = randInt(180, 90);
             g.scatter = !g.scatter;
@@ -498,19 +523,32 @@ function updateGhosts()
 
         const onCenter = (gm) =>
         {
+            // eaten ghost arriving at its home cell — turn back into a live ghost and jail it briefly
+            if (gm.eaten && gm.cell.x === gm.homeCell.x && gm.cell.y === gm.homeCell.y)
+            {
+                gm.eaten = false;
+                gm.inHouse = true;
+                gm.respawnTimer = 45;
+                gm.dir = vec2(0, 0);
+                return;
+            }
+
             // once we make it above the door, we're out of the house
             if (gm.inHouse && gm.cell.y >= 19)
                 gm.inHouse = false;
 
-            const choices = getMoveChoices(gm.cell, true);
+            const choices = getMoveChoices(gm.cell, true, gm.eaten);
 
-            // avoid reversing unless forced
+            // Avoid reversing unless forced. Eaten ghosts also follow this rule so the
+            // greedy AI can't oscillate between two equally-bad cells. The "free U-turn"
+            // they need on first frame is handled by clearing dir to 0 when eaten in
+            // checkCollisions — back=(0,0) then matches no direction so nothing filters.
             const back = gm.dir.scale(-1);
             const filtered = choices.filter(d => !(d.x===back.x && d.y===back.y));
             const dirs = filtered.length ? filtered : choices;
 
-            // in-house ghosts always head for the exit, even during fright
-            gm.dir = (gm.frightened && !gm.inHouse)
+            // in-house ghosts head for the exit; eyes home in on their cell; otherwise normal chase/fright
+            gm.dir = (gm.frightened && !gm.inHouse && !gm.eaten)
                 ? chooseFrightDir(dirs, gm)
                 : chooseChaseDir(dirs, gm);
         };
@@ -519,39 +557,72 @@ function updateGhosts()
         if (atCellCenter(g))
             onCenter(g);
 
-        const spd = g.frightened ? FRIGHT_SPEED : GHOST_SPEED;
+        const spd = g.eaten ? EYE_SPEED : (g.frightened ? FRIGHT_SPEED : GHOST_SPEED);
         tickMover(g, spd, onCenter);
     }
 }
 
-function getMoveChoices(cell, asGhost=false)
+function getMoveChoices(cell, asGhost=false, asEaten=false)
 {
     const dirs = [vec2(1,0), vec2(-1,0), vec2(0,1), vec2(0,-1)];
-    return dirs.filter(d => canMove(cell, d, asGhost));
+    return dirs.filter(d => canMove(cell, d, asGhost, asEaten));
 }
 
 // Exit point just above the door — ghosts in the house aim here so the greedy chase
 // AI threads them up through the door instead of bouncing around inside.
 const HOUSE_EXIT = vec2(13, 19);
 
+// Per-personality scatter corners. Each ghost retreats to a different corner when scattering.
+function ghostScatterCorner(idx)
+{
+    switch (idx)
+    {
+        case 0: return vec2(gridW-2, gridH-2); // Blinky → top-right
+        case 1: return vec2(1, gridH-2);       // Pinky  → top-left
+        case 2: return vec2(gridW-2, 1);       // Inky   → bottom-right
+        default: return vec2(1, 1);            // Clyde  → bottom-left
+    }
+}
+
+// Compute each ghost's chase target based on its personality (Blinky/Pinky/Inky/Clyde).
+function getGhostTarget(g)
+{
+    if (g.eaten)   return g.homeCell;
+    if (g.inHouse) return HOUSE_EXIT;
+
+    const idx = ghosts.indexOf(g);
+    if (g.scatter) return ghostScatterCorner(idx);
+
+    const pacCell = player.cell;
+    const pacDir  = (player.faceDir && (player.faceDir.x || player.faceDir.y)) ? player.faceDir : vec2(1, 0);
+
+    switch (idx)
+    {
+        case 0: // Blinky — chase Pac-Man's tile directly
+            return pacCell;
+        case 1: // Pinky — 4 tiles ahead of Pac-Man's facing direction
+            return vec2(pacCell.x + pacDir.x*4, pacCell.y + pacDir.y*4);
+        case 2: // Inky — 2 tiles ahead of Pac, then mirrored through Blinky's tile
+        {
+            const pivot = vec2(pacCell.x + pacDir.x*2, pacCell.y + pacDir.y*2);
+            const blinky = ghosts[0] ? ghosts[0].cell : pacCell;
+            return vec2(2*pivot.x - blinky.x, 2*pivot.y - blinky.y);
+        }
+        case 3: // Clyde — chase like Blinky when far (>8 tiles), retreat to scatter corner when close
+        {
+            const dx = pacCell.x - g.cell.x;
+            const dy = pacCell.y - g.cell.y;
+            return (dx*dx + dy*dy > 64) ? pacCell : ghostScatterCorner(3);
+        }
+    }
+    return pacCell;
+}
+
 function chooseChaseDir(dirs, g)
 {
-    let targetCell;
-    if (g.inHouse)
-    {
-        targetCell = HOUSE_EXIT;
-    }
-    else if (g.scatter)
-    {
-        const corners = [vec2(1,gridH-2), vec2(gridW-2,gridH-2), vec2(1,1), vec2(gridW-2,1)];
-        targetCell = corners[(ghosts.indexOf(g)) % corners.length];
-    }
-    else
-    {
-        targetCell = player.cell;
-    }
+    const targetCell = getGhostTarget(g);
 
-    // pick direction that minimizes distance to target (grid distance)
+    // pick direction that minimizes squared distance to target tile
     let best = dirs[0];
     let bestD = 1e9;
     for (const d of dirs)
@@ -602,6 +673,9 @@ function checkCollisions()
 {
     for (const g of ghosts)
     {
+        // eyes already returning home don't interact with Pac-Man at all
+        if (g.eaten)
+            continue;
         if (g.pos.distanceSquared(player.pos) > COLLIDE_R2)
             continue;
 
@@ -612,14 +686,16 @@ function checkCollisions()
             score += ghostScore;
             sEatGhost.play();
 
-            // back to jail: drop the ghost at its home cell inside the house and hold for a beat
-            g.cell = g.homeCell.copy();
-            g.dir = vec2(0,0);
-            g.t = 0;
-            g.respawnTimer = 150;     // ~2.5s in jail before walking back out
-            g.inHouse = true;
+            // Become eyes and head home from wherever Pac-Man caught us. The travel back
+            // happens at EYE_SPEED via the eaten branch in updateGhosts.
+            // Clear dir + snap to the cell center so the very first onCenter decision
+            // can pick any direction (including a U-turn toward home) — afterwards the
+            // no-reverse filter applies normally and prevents stuck oscillation.
+            g.eaten = true;
             g.frightened = false;
             g.pendingReverse = false;
+            g.dir = vec2(0, 0);
+            g.t = 0;
             moverUpdatePos(g);
         }
         else if (!g.inHouse)
@@ -658,12 +734,14 @@ function onPlayerDie()
         g.t = 0;
         g.pendingReverse = false;
         g.inHouse = true;
+        g.eaten = false;
         g.respawnTimer = i * 45;
         moverUpdatePos(g);
     }
 
     powerTimer = 0;
     ghostEatChain = 0;
+    readyTimer = READY_FRAMES;
 }
 
 // -----------------------------------------------------------------------------
@@ -695,9 +773,10 @@ function drawPac(p)
     const face = (p.faceDir && (p.faceDir.x || p.faceDir.y)) ? p.faceDir : (p.desiredDir || vec2(1,0));
     const faceAngle = face.angle();
 
-    // chomp animation: open/close as a fraction 0..1
-    const moving = p.dir.x || p.dir.y;
-    const phase = moving ? oscillate(6, 1, time) : .15;
+    // chomp animation: open/close as a fraction 0..1.
+    // Frozen during the READY intro so Pac-Man holds a still, slightly-open pose.
+    const moving = (p.dir.x || p.dir.y) && readyTimer <= 0;
+    const phase = moving ? oscillate(6, 1, time) : .25;
     const halfMouth = phase * PI/4.5;          // up to 40-degree half-angle
 
     if (halfMouth < .03)
@@ -751,17 +830,19 @@ const _ghostShape = (() =>
 
 function drawGhost(g)
 {
-    // in-house ghosts always show their identity color (no fright look while jailed)
-    const frightened = (powerTimer > 0) && !g.inHouse;
+    // eaten ghosts are eyes-only — no body, no bob, no fright color
+    const eaten = g.eaten;
+    const frightened = !eaten && (powerTimer > 0) && !g.inHouse;
     // last 2 seconds of fright: alternate blue/white at ~4 Hz to warn the player
     const flashing = frightened && powerTimer < FRIGHT_FLASH_FRAMES && (((powerTimer/15)|0) & 1);
     const bodyColor = flashing ? rgb(.95,.95,.98) : (frightened ? rgb(.13,.13,.95) : g.color);
 
-    const bob = .025*oscillate(6, 1, time + g.cell.x*.13 + g.cell.y*.17);
+    const bob = eaten ? 0 : .025*oscillate(6, 1, time + g.cell.x*.13 + g.cell.y*.17);
     const center = g.pos.add(vec2(0, bob));
 
-    // body as a single polygon
-    drawPoly(_ghostShape, bodyColor, 0, rgb(0,0,0), center, 0);
+    // body as a single polygon — skipped entirely while returning home as eyes
+    if (!eaten)
+        drawPoly(_ghostShape, bodyColor, 0, rgb(0,0,0), center, 0);
 
     // face
     const eyeY = .08;
