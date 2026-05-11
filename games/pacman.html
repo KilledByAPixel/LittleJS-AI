@@ -109,17 +109,28 @@ function gameRender()
     // pure black playfield, like the arcade
     drawRect(vec2(gridW/2, gridH/2), vec2(gridW, gridH), rgb(0,0,0));
 
-    // walls (solid arcade blue) + ghost door (pink strip across the door cell)
+    // Walls drawn as arcade-style hollow outlines:
+    // for each wall cell, lay down a thin blue edge along every side that faces a non-wall.
+    // Internal cell-to-cell wall borders are skipped, so connected wall regions read as one shape.
     const wallColor = rgb(.13, .22, .95);
     const doorColor = rgb(1, .72, .82);
+    const t = .18;
     for (let y=0; y<gridH; y++)
     for (let x=0; x<gridW; x++)
     {
         const w = isWallXY(x, y);
         if (w === 1)
-            drawRect(vec2(x+.5, y+.5), vec2(1, 1), wallColor);
+        {
+            const cx = x + .5, cy = y + .5;
+            if (isWallXY(x, y+1) !== 1) drawRect(vec2(cx, y+1-t/2), vec2(1, t), wallColor);
+            if (isWallXY(x, y-1) !== 1) drawRect(vec2(cx, y+t/2),   vec2(1, t), wallColor);
+            if (isWallXY(x+1, y) !== 1) drawRect(vec2(x+1-t/2, cy), vec2(t, 1), wallColor);
+            if (isWallXY(x-1, y) !== 1) drawRect(vec2(x+t/2,   cy), vec2(t, 1), wallColor);
+        }
         else if (w === 2)
+        {
             drawRect(vec2(x+.5, y+.5), vec2(1, .18), doorColor);
+        }
     }
 
     // pellets
@@ -182,15 +193,15 @@ function buildLevel()
         'X......XX....XX....XX......X', //  8
         'XXXXXX.XXXXX_XX_XXXXX.XXXXXX', //  9
         'XXXXXX.XXXXX_XX_XXXXX.XXXXXX', // 10
-        'XXXXXX.XX___EEEE___XX.XXXXXX', // 11  ghosts spawn just above the door
+        'XXXXXX.XX__________XX.XXXXXX', // 11  corridor above the ghost house
         'XXXXXX.XX_XXXDDXXX_XX.XXXXXX', // 12  ghost-house top w/ door (DD)
         'XXXXXX.XX_X______X_XX.XXXXXX', // 13
-        '______.___X______X___.______', // 14  tunnel row (wraps left/right)
+        '______.___X_EEEE_X___.______', // 14  ghosts start INSIDE the house here
         'XXXXXX.XX_X______X_XX.XXXXXX', // 15
         'XXXXXX.XX_XXXXXXXX_XX.XXXXXX', // 16  ghost-house bottom wall
         'XXXXXX.XX__________XX.XXXXXX', // 17
         'XXXXXX.XX_XXXXXXXX_XX.XXXXXX', // 18
-        'XXXXXX.XXXXX_XX_XXXXX.XXXXXX', // 19
+        'XXXXXX.XX_XXXXXXwXX_XX.XXXXXX', // 19
         'X............XX............X', // 20
         'X.XXXX.XXXXX.XX.XXXXX.XXXX.X', // 21
         'X.XXXX.XXXXX.XX.XXXXX.XXXX.X', // 22
@@ -259,6 +270,8 @@ function resetRun(isFirst)
         g.homeCell = ghostStartCells[i].copy();
         g.modeTimer = randInt(140, 60);
         g.scatter = !!(i&1);
+        g.inHouse = true;          // each starts inside the ghost house
+        g.respawnTimer = i * 45;   // staggered exit: 0, 0.75s, 1.5s, 2.25s
         ghosts.push(g);
     }
 
@@ -454,12 +467,21 @@ function eatAtCell(cell)
 
 function updateGhosts()
 {
-    const frightened = powerTimer > 0;
+    const powered = powerTimer > 0;
+    // fright applies only to ghosts that are out and about — ones in the house keep their identity
     for (const g of ghosts)
-        g.frightened = frightened;
+        g.frightened = powered && !g.inHouse;
 
     for (const g of ghosts)
     {
+        // jailed: count down, stay put, skip AI + movement entirely
+        if (g.respawnTimer > 0)
+        {
+            g.respawnTimer--;
+            moverUpdatePos(g);
+            continue;
+        }
+
         // honor a pending reverse (e.g. player just ate a power pellet) before moving
         if (g.pendingReverse)
         {
@@ -467,8 +489,8 @@ function updateGhosts()
             g.pendingReverse = false;
         }
 
-        // mode flip sometimes for variety
-        if (--g.modeTimer <= 0)
+        // mode flip sometimes for variety (skip while in house — exit takes priority)
+        if (!g.inHouse && --g.modeTimer <= 0)
         {
             g.modeTimer = randInt(180, 90);
             g.scatter = !g.scatter;
@@ -476,6 +498,10 @@ function updateGhosts()
 
         const onCenter = (gm) =>
         {
+            // once we make it above the door, we're out of the house
+            if (gm.inHouse && gm.cell.y >= 19)
+                gm.inHouse = false;
+
             const choices = getMoveChoices(gm.cell, true);
 
             // avoid reversing unless forced
@@ -483,7 +509,10 @@ function updateGhosts()
             const filtered = choices.filter(d => !(d.x===back.x && d.y===back.y));
             const dirs = filtered.length ? filtered : choices;
 
-            gm.dir = gm.frightened ? chooseFrightDir(dirs, gm) : chooseChaseDir(dirs, gm);
+            // in-house ghosts always head for the exit, even during fright
+            gm.dir = (gm.frightened && !gm.inHouse)
+                ? chooseFrightDir(dirs, gm)
+                : chooseChaseDir(dirs, gm);
         };
 
         // if already at a center, decide direction before moving
@@ -501,13 +530,26 @@ function getMoveChoices(cell, asGhost=false)
     return dirs.filter(d => canMove(cell, d, asGhost));
 }
 
+// Exit point just above the door — ghosts in the house aim here so the greedy chase
+// AI threads them up through the door instead of bouncing around inside.
+const HOUSE_EXIT = vec2(13, 19);
+
 function chooseChaseDir(dirs, g)
 {
-    // very small Pac-Man-like flavor: scatter targets corners, otherwise chase player
-    const corners = [vec2(1,gridH-2), vec2(gridW-2,gridH-2), vec2(1,1), vec2(gridW-2,1)];
-    const scatterTarget = corners[(ghosts.indexOf(g)) % corners.length];
-
-    const targetCell = g.scatter ? scatterTarget : player.cell;
+    let targetCell;
+    if (g.inHouse)
+    {
+        targetCell = HOUSE_EXIT;
+    }
+    else if (g.scatter)
+    {
+        const corners = [vec2(1,gridH-2), vec2(gridW-2,gridH-2), vec2(1,1), vec2(gridW-2,1)];
+        targetCell = corners[(ghosts.indexOf(g)) % corners.length];
+    }
+    else
+    {
+        targetCell = player.cell;
+    }
 
     // pick direction that minimizes distance to target (grid distance)
     let best = dirs[0];
@@ -563,21 +605,26 @@ function checkCollisions()
         if (g.pos.distanceSquared(player.pos) > COLLIDE_R2)
             continue;
 
-        if (powerTimer > 0)
+        if (g.frightened)
         {
             ghostEatChain++;
             const ghostScore = 200 * (1 << min(3, ghostEatChain-1));
             score += ghostScore;
             sEatGhost.play();
 
-            // respawn ghost at home
+            // back to jail: drop the ghost at its home cell inside the house and hold for a beat
             g.cell = g.homeCell.copy();
             g.dir = vec2(0,0);
             g.t = 0;
+            g.respawnTimer = 150;     // ~2.5s in jail before walking back out
+            g.inHouse = true;
+            g.frightened = false;
+            g.pendingReverse = false;
             moverUpdatePos(g);
         }
-        else
+        else if (!g.inHouse)
         {
+            // only ghosts that are actually out of the house can hurt the player
             onPlayerDie();
             return;
         }
@@ -610,6 +657,8 @@ function onPlayerDie()
         g.dir = vec2(-1,0);
         g.t = 0;
         g.pendingReverse = false;
+        g.inHouse = true;
+        g.respawnTimer = i * 45;
         moverUpdatePos(g);
     }
 
@@ -648,23 +697,28 @@ function drawPac(p)
 
     // chomp animation: open/close as a fraction 0..1
     const moving = p.dir.x || p.dir.y;
-    const phase = moving ? .5 + .5*oscillate(6, 1, time) : .25;
-    const halfMouth = phase * PI/4;            // up to 45 degree half-angle
+    const phase = moving ? oscillate(6, 1, time) : .15;
+    const halfMouth = phase * PI/4.5;          // up to 40-degree half-angle
 
-    // body
-    drawCircle(p.pos, diameter, rgb(1, .92, 0));
-
-    // mouth: black wedge whose apex sits at Pac-Man's center, opening in faceAngle
-    if (halfMouth > .02)
+    if (halfMouth < .03)
     {
-        const reach = r * 1.08;
-        const wedge = [
-            vec2(0, 0),
-            vec2(Math.sin(-halfMouth)*reach, Math.cos(-halfMouth)*reach),
-            vec2(Math.sin(+halfMouth)*reach, Math.cos(+halfMouth)*reach),
-        ];
-        drawPoly(wedge, rgb(0,0,0), 0, rgb(0,0,0), p.pos, faceAngle);
+        // mouth essentially closed — just a solid circle
+        drawCircle(p.pos, diameter, rgb(1, .92, 0));
+        return;
     }
+
+    // Single yellow polygon: apex at Pac-Man's center, then arc around the body
+    // from one mouth edge, all the way around, to the other mouth edge.
+    // The mouth gap is the wedge BETWEEN the two arc endpoints (back through the center).
+    const N = 32;
+    const sweep = 2*PI - 2*halfMouth;
+    const points = [vec2(0, 0)];
+    for (let i = 0; i <= N; i++)
+    {
+        const a = halfMouth + sweep * (i / N);
+        points.push(vec2(Math.sin(a)*r, Math.cos(a)*r));
+    }
+    drawPoly(points, rgb(1, .92, 0), 0, rgb(0,0,0), p.pos, faceAngle);
 }
 
 
@@ -697,7 +751,8 @@ const _ghostShape = (() =>
 
 function drawGhost(g)
 {
-    const frightened = powerTimer > 0;
+    // in-house ghosts always show their identity color (no fright look while jailed)
+    const frightened = (powerTimer > 0) && !g.inHouse;
     // last 2 seconds of fright: alternate blue/white at ~4 Hz to warn the player
     const flashing = frightened && powerTimer < FRIGHT_FLASH_FRAMES && (((powerTimer/15)|0) & 1);
     const bodyColor = flashing ? rgb(.95,.95,.98) : (frightened ? rgb(.13,.13,.95) : g.color);
@@ -709,37 +764,37 @@ function drawGhost(g)
     drawPoly(_ghostShape, bodyColor, 0, rgb(0,0,0), center, 0);
 
     // face
-    const eyeY = .1;
-    const eyeDX = .14;
+    const eyeY = .08;
+    const eyeDX = .15;
     if (frightened)
     {
         // pac-style scared face: small dot eyes + a wavy mouth band
         const faceColor = flashing ? rgb(.9,.15,.15) : rgb(.95,.95,.98);
-        drawRect(center.add(vec2(-eyeDX, eyeY)), vec2(.08, .12), faceColor);
-        drawRect(center.add(vec2(+eyeDX, eyeY)), vec2(.08, .12), faceColor);
+        drawRect(center.add(vec2(-eyeDX, eyeY)), vec2(.10, .14), faceColor);
+        drawRect(center.add(vec2(+eyeDX, eyeY)), vec2(.10, .14), faceColor);
 
         // zigzag mouth as a single polygon
-        const mw = .17, mh = .035, by = -.1;
+        const mw = .19, mh = .04, by = -.12;
         const seg = mw/3;
         const top = [
             vec2(-mw, by), vec2(-mw+seg*.5, by+mh), vec2(-mw+seg, by),
             vec2(-mw+seg*1.5, by+mh), vec2(-mw+seg*2, by),
             vec2(-mw+seg*2.5, by+mh), vec2( mw, by),
         ];
-        const bot = top.slice().reverse().map(v => vec2(v.x, v.y - .055));
+        const bot = top.slice().reverse().map(v => vec2(v.x, v.y - .06));
         drawPoly(top.concat(bot), faceColor, 0, rgb(0,0,0), center, 0);
     }
     else
     {
-        // arcade-style eyes: large whites, dark-blue pupil that looks toward motion
-        const look = (g.dir.x || g.dir.y) ? g.dir.normalize().scale(.04) : vec2();
+        // arcade-style eyes: large whites, dark-blue pupil that drifts toward motion
+        const look = (g.dir.x || g.dir.y) ? g.dir.normalize().scale(.06) : vec2();
         const eL = center.add(vec2(-eyeDX, eyeY));
         const eR = center.add(vec2(+eyeDX, eyeY));
-        // whites are taller than wide, like the arcade
-        drawEllipse(eL, vec2(.13, .17), rgb(1,1,1));
-        drawEllipse(eR, vec2(.13, .17), rgb(1,1,1));
-        drawCircle(eL.add(look), .08, rgb(.08,.18,.65));
-        drawCircle(eR.add(look), .08, rgb(.08,.18,.65));
+        // ~2x previous size; whites are taller than wide like the arcade
+        drawEllipse(eL, vec2(.22, .28), rgb(1,1,1));
+        drawEllipse(eR, vec2(.22, .28), rgb(1,1,1));
+        drawCircle(eL.add(look), .14, rgb(.08,.18,.65));
+        drawCircle(eR.add(look), .14, rgb(.08,.18,.65));
     }
 }
 
