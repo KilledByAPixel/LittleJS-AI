@@ -219,7 +219,7 @@ function buildLevel()
 const sfxJump  = new SoundGenerator({ volume:.55, frequency:420, attack:0, release:.16, slide:.04, randomness:.02 });
 const sfxBump  = new SoundGenerator({ volume:.4,  frequency:160, attack:0, release:.08, shapeCurve:0.6, noise:.1 });
 const sfxWin   = new SoundGenerator({ volume:.55, frequency:330, attack:0, release:.30, pitchJump:280, pitchJumpTime:.10, slide:-.08 });
-const sfxCoin  = new SoundGenerator({ volume:.45, frequency:900, attack:0, release:.10, pitchJump:1200, pitchJumpTime:.02, shapeCurve:1.6 });
+const sfxCoin  = new Sound([3,0,988,,,.4,,33,,,331,.1,,,,,,,,,-340]);
 const sfxStomp = new SoundGenerator({ volume:.5,  frequency:240, attack:0, release:.10, slide:-.15, noise:.15 });
 const sfxKick  = new SoundGenerator({ volume:.55, frequency:520, attack:0, release:.12, slide:.10, shapeCurve:1.2 });
 const sfxHurt  = new SoundGenerator({ volume:.6,  frequency:200, attack:.01, release:.45, slide:-.12, pitchJump:-80, pitchJumpTime:.08 });
