@@ -220,6 +220,7 @@ function addParticle(pos, vel, color, life, size, opts)
     angle: opts.angle || 0,
     shape: opts.shape || 'circle',
     rectSize: opts.rectSize || vec2(.15, .15),
+    additive: !!opts.additive,
   });
 }
 
@@ -233,7 +234,7 @@ function emitExplosionSparks(pos, friendly, count)
     const hue = friendly ? .55 + rand(-.05, .12) : .03 + rand(-.02, .12);
     const light = .65 + rand() * .3;
     addParticle(pos, vel, hsl(hue, .9, light, 1), rand(.45, .95), rand(.08, .18), {
-      damping: .92, gravity: 8, fade: 'shrink',
+      damping: .92, gravity: 8, fade: 'shrink', additive: true,
     });
   }
 }
@@ -287,12 +288,12 @@ function emitEnemyKillBurst(pos)
     const speed = rand(2, 7);
     const vel = vec2(Math.cos(angle) * speed, Math.sin(angle) * speed);
     addParticle(pos, vel, hsl(.13, 1, .85, 1), rand(.3, .55), rand(.08, .15), {
-      damping: .9, gravity: 3, fade: 'shrink',
+      damping: .9, gravity: 3, fade: 'shrink', additive: true,
     });
   }
   // bright flash particle
   addParticle(pos, vec2(), hsl(.13, .3, 1, 1), .2, .8, {
-    damping: 1, fade: 'shrink',
+    damping: 1, fade: 'shrink', additive: true,
   });
 }
 
@@ -305,7 +306,7 @@ function emitMuzzleFlash(pos, dir)
     const speed = rand(2, 6);
     addParticle(pos, vec2(Math.cos(a), Math.sin(a)).scale(speed),
                 hsl(.55, .9, .9, 1), rand(.15, .3), rand(.1, .18),
-                { damping: .88, fade: 'shrink' });
+                { damping: .88, fade: 'shrink', additive: true });
   }
 }
 
@@ -322,19 +323,37 @@ function updateParticles()
   particles = particles.filter(p => p.life > 0);
 }
 
+function drawOneParticle(p)
+{
+  const t = clamp(p.life / p.maxLife, 0, 1);
+  const c = p.color.copy();
+  const sizeMul = (p.fade === 'shrink' || p.fade === 'both') ? t : 1;
+  const alphaMul = (p.fade === 'fade' || p.fade === 'both') ? t : 1;
+  c.a *= alphaMul;
+  if (p.shape === 'rect')
+    drawRect(p.pos, p.rectSize.scale(sizeMul), c, p.angle);
+  else
+    drawCircle(p.pos, p.size * 2 * sizeMul, c);
+}
+
 function drawParticles()
 {
+  // non-additive pass: smoke, debris, dust
   for (const p of particles)
+    if (!p.additive)
+      drawOneParticle(p);
+
+  // additive pass: sparks, flashes, bright bursts
+  let anyAdditive = false;
+  for (const p of particles)
+    if (p.additive) { anyAdditive = true; break; }
+  if (anyAdditive)
   {
-    const t = clamp(p.life / p.maxLife, 0, 1);
-    const c = p.color.copy();
-    const sizeMul = (p.fade === 'shrink' || p.fade === 'both') ? t : 1;
-    const alphaMul = (p.fade === 'fade' || p.fade === 'both') ? t : 1;
-    c.a *= alphaMul;
-    if (p.shape === 'rect')
-      drawRect(p.pos, p.rectSize.scale(sizeMul), c, p.angle);
-    else
-      drawCircle(p.pos, p.size * 2 * sizeMul, c);
+    setBlendMode(true);
+    for (const p of particles)
+      if (p.additive)
+        drawOneParticle(p);
+    setBlendMode(false);
   }
 }
 
@@ -778,21 +797,15 @@ function gameUpdatePost()
 
 function drawGround()
 {
-  // sky gradient bands
-  const skyTop   = hsl(.68, .6,  .03);
-  const skyHoriz = hsl(.56, .5,  .14);
-  const skyBands = 10;
-  for (let i = 0; i < skyBands; i++)
-  {
-    const t = i / (skyBands - 1);
-    const yA = groundHeight + (levelSize.y + 4 - groundHeight) * (i / skyBands);
-    const yB = groundHeight + (levelSize.y + 4 - groundHeight) * ((i+1) / skyBands);
-    const h = yB - yA + .04;
-    const c = skyHoriz.lerp(skyTop, t * t);
-    drawRect(vec2(levelSize.x/2, yA + h/2), vec2(levelSize.x, h), c);
-  }
-  // top overflow
-  drawRect(vec2(levelSize.x/2, levelSize.y + 6), vec2(levelSize.x, 4), skyTop);
+  // sky as a single vertical gradient
+  const skyTop   = hsl(.68, .6, .03);
+  const skyHoriz = hsl(.56, .5, .14);
+  const skyBottom = groundHeight;
+  const skyTopY   = levelSize.y + 10;
+  const skyH = skyTopY - skyBottom;
+  drawRectGradient(vec2(levelSize.x/2, skyBottom + skyH/2),
+                   vec2(levelSize.x, skyH),
+                   skyTop, skyHoriz);
 
   // stars
   for (const s of stars)
@@ -814,10 +827,18 @@ function drawGround()
     drawCircle(ss.pos, .25, hsl(.13, .8, .95, t));
   }
 
-  // crescent moon
-  drawCircle(moonPos, 2.6, hsl(.13, .15, .92, .9));
-  drawCircle(moonPos, 2.9, hsl(.13, .3, .9, .12));
-  drawCircle(moonPos.add(vec2(.55, .25)), 2.5, hsl(.66, .55, .04));
+  // full moon with soft halo and craters
+  setBlendMode(true);
+  drawCircle(moonPos, 7.0, hsl(.13, .25, .85, .06));
+  drawCircle(moonPos, 4.6, hsl(.13, .25, .9,  .14));
+  setBlendMode(false);
+  drawCircle(moonPos, 3.0, hsl(.13, .15, .93, .95));
+  // craters
+  drawCircle(moonPos.add(vec2(-.55,  .55)), .45, hsl(.12, .12, .78, .55));
+  drawCircle(moonPos.add(vec2( .7,  -.25)), .32, hsl(.12, .12, .78, .5));
+  drawCircle(moonPos.add(vec2( .15, -.85)), .25, hsl(.12, .12, .78, .5));
+  drawCircle(moonPos.add(vec2(-.85, -.4 )), .28, hsl(.12, .12, .78, .45));
+  drawCircle(moonPos.add(vec2( .4,   .8 )), .2,  hsl(.12, .12, .78, .4));
 
   // distant mountains
   for (const m of mountains)
@@ -826,8 +847,13 @@ function drawGround()
   drawRect(vec2(levelSize.x/2, groundHeight + .1), vec2(levelSize.x, .2),
            hsl(.66, .3, .1));
 
-  // ground
-  drawRect(vec2(levelSize.x/2, groundY), vec2(levelSize.x, groundHeight), hsl(.08, .35, .11));
+  // backdrop below ground prevents sky bleed-through on shake
+  drawRect(vec2(levelSize.x/2, -5), vec2(levelSize.x, 10), hsl(.08, .35, .06));
+
+  // ground as a vertical gradient (lighter at horizon, darker below)
+  drawRectGradient(vec2(levelSize.x/2, groundY),
+                   vec2(levelSize.x, groundHeight),
+                   hsl(.08, .4, .17), hsl(.08, .35, .07));
 
   // ground stripes
   for (let i = 0; i < 6; i++)
@@ -1030,6 +1056,8 @@ function drawMissiles()
 
 function drawExplosions()
 {
+  if (!explosions.length) return;
+  setBlendMode(true);
   for (const e of explosions)
   {
     if (e.r <= 0) continue;
@@ -1039,22 +1067,23 @@ function drawExplosions()
 
     if (e.friendly)
     {
-      drawCircle(e.pos, d * 1.5, hsl(.55, .9, .65, .12 * phase));
-      drawCircle(e.pos, d, hsl(.55, .85, .65, .5));
-      drawCircle(e.pos, d * .7, hsl(.5, .85, .82, .7 * flicker));
-      drawCircle(e.pos, d * .35, hsl(.45, .25, .98, .9 * flicker));
+      drawCircle(e.pos, d * 1.6, hsl(.55, .9, .55, .18 * phase));
+      drawCircle(e.pos, d * 1.05, hsl(.55, .85, .6, .45));
+      drawCircle(e.pos, d * .7, hsl(.5, .8, .75, .6 * flicker));
+      drawCircle(e.pos, d * .35, hsl(.45, .2, .95, .85 * flicker));
       // shockwave ring
-      drawCircle(e.pos, d * 1.1, hsl(0,0,0,0), .1, hsl(.55, 1, .95, .8 * phase));
+      drawCircle(e.pos, d * 1.1, hsl(0,0,0,0), .1, hsl(.55, 1, .95, .9 * phase));
     }
     else
     {
-      drawCircle(e.pos, d * 1.5, hsl(.03, 1, .5, .12 * phase));
-      drawCircle(e.pos, d, hsl(.05, 1, .55, .55));
-      drawCircle(e.pos, d * .7, hsl(.1, 1, .65, .7 * flicker));
-      drawCircle(e.pos, d * .35, hsl(.14, 1, .92, .9 * flicker));
-      drawCircle(e.pos, d * 1.1, hsl(0,0,0,0), .1, hsl(.06, 1, .8, .85 * phase));
+      drawCircle(e.pos, d * 1.6, hsl(.03, 1, .45, .18 * phase));
+      drawCircle(e.pos, d * 1.05, hsl(.05, 1, .5, .5));
+      drawCircle(e.pos, d * .7, hsl(.1, 1, .6, .65 * flicker));
+      drawCircle(e.pos, d * .35, hsl(.14, 1, .9, .85 * flicker));
+      drawCircle(e.pos, d * 1.1, hsl(0,0,0,0), .1, hsl(.06, 1, .8, .9 * phase));
     }
   }
+  setBlendMode(false);
 }
 
 function drawCrosshair()
