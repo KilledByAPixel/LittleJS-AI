@@ -53,6 +53,7 @@ let autoPitchTimer = new Timer();
 let ballState = 'idle';
 let pitchOutcomeLocked = false; // strike/ball already decided for current pitch
 let zoneEntered = false;        // did pitch pass through strike zone?
+let swungAtPitch = false;       // did the player swing during this pitch?
 
 // Aim & swing state
 let swingTimer = new Timer();
@@ -93,8 +94,9 @@ function smoothstep01(t)
 
 function inStrikeZone(p)
 {
-    return abs(p.x - platePos.x) <= zoneHalf.x
-        && abs(p.y - platePos.y) <= zoneHalf.y;
+    // any part of the ball overlapping the zone counts (matches the visual)
+    return abs(p.x - platePos.x) <= zoneHalf.x + ballRadius
+        && abs(p.y - platePos.y) <= zoneHalf.y + ballRadius;
 }
 
 function inFairTerritory(p)
@@ -128,6 +130,7 @@ class Ball extends Box2dObject
         ballState = 'idle';
         pitchOutcomeLocked = false;
         zoneEntered = false;
+        swungAtPitch = false;
     }
 
     pitch()
@@ -135,6 +138,7 @@ class Ball extends Box2dObject
         const startPos = pitcherPos.copy();
         this.setPosition(startPos);
         this.setAwake(true);
+        swungAtPitch = false;
 
         // ~65% strikes, ~35% balls (outside the zone)
         const aimStrike = rand() < .65;
@@ -219,6 +223,7 @@ function trySwing()
     if (ballState === 'play') return;
     swingConnected = false;
     swingTimer.set(swingDuration);
+    if (ballState === 'pitch') swungAtPitch = true;
     sfxSwing.play(batterPos);
 }
 
@@ -407,8 +412,9 @@ function gameUpdate()
         // pitch ends when the ball crosses south of the plate
         if (ball.pos.y < platePos.y - zoneHalf.y - .25)
         {
-            if (zoneEntered) registerStrike('STRIKE!');
-            else             registerBall('BALL');
+            if (swungAtPitch)    registerStrike('Swinging Strike!');
+            else if (zoneEntered) registerStrike('STRIKE!');
+            else                  registerBall('BALL');
         }
     }
     else if (ballState === 'play')
