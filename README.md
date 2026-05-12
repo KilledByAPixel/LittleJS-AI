@@ -66,7 +66,6 @@ Did you make a game you think should be included? Send a pull request!
 | Pole Position | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
 | River Raid | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
-| Joust | 🏃 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) |
 | Plinko | 🎯 | ✅ | ✅ | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) |
 | Micro Racer | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/microRacer.html) |
 | Spy Hunter | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/spyhunter.html) |
@@ -79,7 +78,8 @@ Rough early experiments — playable concepts that haven't been curated yet. Exp
 | Game | Genre | Touch | Gamepad | Box2D | Play |
 |------|-------|-------|---------|-------|------|
 | 2048 | 🧩 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/2048.html) |
-| Baseball | ⚽ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) |
+| Baseball | ⚽ | | | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) |
+| Joust | 🏃 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) |
 | Basketball | ⚽ | | | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/basketball.html) |
 | Dr. Mario | 🧩 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/drMario.html) |
 | Gradius | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/gradius.html) |
