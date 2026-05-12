@@ -37,11 +37,17 @@ const LANE_FLOOR_Y = 0.9;
 const LANE_BOTTOM = 1.5;
 
 // Top arcs
-const DOME_CENTER = vec2(0, WALL_TOP_Y);
-const DOME_RADIUS = 10;                  // inner arc - the playfield ceiling
-const RAIL_RADIUS = 12;                  // outer arc - the launcher top rail
+// Rail (outer arc) is centered at (1, WALL_TOP_Y) so its right end lands on the outer lane
+// wall (x=12) and its left end lands on the left playfield wall (x=-10).
+// Dome (inner arc) shares the rail's center so the channel between them is uniform width
+// (radial gap = RAIL_RADIUS - DOME_RADIUS = 2, enough for the 1-unit ball with clearance).
+// Dome radius is 9 so its right end lines up with the right playfield wall (1 + 9 = 10).
+const RAIL_CENTER = vec2(1, WALL_TOP_Y);
+const DOME_CENTER = RAIL_CENTER;
+const DOME_RADIUS = 9.1;                   // inner arc - the playfield ceiling
+const RAIL_RADIUS = 11.1;                  // outer arc - the launcher top rail
 const DOME_END_ANGLE = 2.0;              // inner arc stops before full semicircle (leaves left exit open)
-const RAIL_END_ANGLE = 2.4;              // outer rail extends a bit further
+const RAIL_END_ANGLE = Math.PI;          // outer rail wraps the full top, all the way to the left wall
 
 const BALL_DIAMETER = 1;
 const BALL_SPAWN = vec2(LANE_CENTER_X, 2.3);
@@ -253,7 +259,7 @@ function buildWorld()
     buildArc(DOME_CENTER, DOME_RADIUS, 0, DOME_END_ANGLE, 14);
 
     // Launcher top rail (outer arc): curved channel over the dome that guides the launched ball
-    buildArc(DOME_CENTER, RAIL_RADIUS, 0, RAIL_END_ANGLE, 18);
+    buildArc(RAIL_CENTER, RAIL_RADIUS, 0, RAIL_END_ANGLE, 24);
 
     // Slingshots above flippers (symmetric, near flipper pivots)
     slingshots.push(new Slingshot(vec2(-6.25, 5.5), vec2(4.0, 0.6), 0.686, vec2(0.633, 0.774)));
