@@ -59,14 +59,14 @@ Did you make a game you think should be included? Send a pull request!
 |------|-------|----|----|------|
 | Snood | 🎯 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) |
 | Breakout | 👾 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
-| Centipede | 🐛 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) |
-| Combat | 🎖️ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/combat.html) |
+| Centipede | 🚀 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) |
+| Combat | 🚀 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/combat.html) |
 | Frogger | 👾 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/frogger.html) |
 | Geometry Dash | 🏃 | | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/geometryDash.html) |
 | Pole Position | 🏎️ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
-| River Raid | 🛩️ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
+| River Raid | 🚀 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | 🚀 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
-| Joust | 🤺 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) |
+| Joust | 🏃 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) |
 | Plinko | 🎯 | ✅ | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) |
 
 ## 🧪 Prototypes & Experiments
@@ -76,15 +76,15 @@ Rough early experiments — playable concepts that haven't been curated yet. Exp
 | Game | Genre | 📱 | 🎮 | Play |
 |------|-------|----|----|------|
 | 2048 | 🧩 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/2048.html) |
-| Baseball | ⚾ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) |
-| Basketball | 🏀 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/basketball.html) |
-| Dr. Mario | 💊 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/drMario.html) |
+| Baseball | ⚽ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) |
+| Basketball | ⚽ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/basketball.html) |
+| Dr. Mario | 🧩 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/drMario.html) |
 | Gradius | 🚀 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/gradius.html) |
-| Kaboom | 💥 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/kaboom.html) |
+| Kaboom | 🎯 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/kaboom.html) |
 | Limbo | 🏃 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/limbo.html) |
 | Mario | 🏃 | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/mario.html) |
 | Micro Racer | 🏎️ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/microRacer.html) |
-| Moon Patrol | 🌘 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/moonPatrol.html) |
+| Moon Patrol | 🏎️ | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/moonPatrol.html) |
 | Mr. Driller | 🧩 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/mrDriller.html) |
 | Peggle | 🎯 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/peggle.html) |
 | Pinball | 🎯 | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pinball.html) |
