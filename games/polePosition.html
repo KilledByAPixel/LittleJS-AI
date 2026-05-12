@@ -30,6 +30,12 @@ const BRAKE           = 0.020;
 const COAST_DECEL     = 0.008;
 const OFFROAD_DECEL   = 0.030;
 
+// steering (velocity-based for smooth handling)
+const STEER_ACCEL     = 0.010; // input accel (scaled by speed-factor)
+const STEER_DAMP      = 0.86;  // velocity damping per frame
+const STEER_MAX_VEL   = 0.055; // cap so curves are still recoverable
+const CENTRIFUGAL     = 0.9;   // curve pull applied to lateral velocity
+
 // track data
 let segments = [];
 let trackLen = 0;
@@ -39,6 +45,7 @@ let state = 'title'; // 'title' | 'play' | 'timeup'
 let trackPos = 0;    // distance along track in segments
 let speed = 0;
 let playerX = 0;     // lateral offset in world units
+let playerVX = 0;    // lateral velocity
 let score = 0;
 let lap = 0;
 let timeLeftFrames = 60 * 60; // 60 seconds at 60 fps
@@ -51,7 +58,7 @@ let aiCars = [];
 let proj = [];
 
 // sounds
-let sStart, sCrash, sRumble;
+let sStart, sCrash, sRumble, sEngine;
 
 ///////////////////////////////////////////////////////////////////////////////
 function buildTrack()
@@ -99,6 +106,7 @@ function resetGame()
     trackPos = 0;
     speed = 0;
     playerX = 0;
+    playerVX = 0;
     score = 0;
     lap = 0;
     timeLeftFrames = 60 * 60;
@@ -131,6 +139,8 @@ function gameInit()
     sStart  = new SoundGenerator({ volume:.6, frequency:420, attack:0, release:.08, pitchJump:80, pitchJumpTime:.02, noise:.02 });
     sCrash  = new SoundGenerator({ volume:.8, frequency:90,  attack:0, release:.25, shapeCurve:0, noise:.35, bitCrush:6, slide:-.6 });
     sRumble = new SoundGenerator({ volume:.25, frequency:120, attack:0, release:.05, noise:.15, bitCrush:10 });
+    // engine "vroom" pulse - replayed at a rate set by speed (see gameUpdate)
+    sEngine = new SoundGenerator({ volume:.22, frequency:55, attack:0, release:.06, shapeCurve:.3, noise:.05, bitCrush:7 });
 
     proj = new Array(DRAW_DIST+2);
 }
@@ -159,15 +169,30 @@ function gameUpdate()
     if (down) speed -= BRAKE;
     speed = clamp(speed, 0, MAX_SPEED);
 
-    // steering (more responsive at speed)
-    const steer = (right?1:0) - (left?1:0);
-    const steerStrength = 0.06 + speed*0.20;
-    playerX += steer * steerStrength;
+    // engine pulse: pops faster and higher in pitch with speed.
+    // at rest -> low idle every 14 frames; at top speed -> rapid 3-frame pops.
+    const sn = speed / MAX_SPEED;
+    const enginePeriod = max(3, (14 - sn*11)|0);
+    if (frame % enginePeriod === 0)
+        sEngine.play(undefined, 0.5 + sn*0.35, 0.6 + sn*1.5);
 
-    // centrifugal force from current curve
+    // steering as lateral acceleration -> velocity (with damping)
+    // gives weight/inertia: car keeps drifting briefly after key release,
+    // so curves are about anticipating rather than spamming the key.
+    const steer = (right?1:0) - (left?1:0);
+    const speedFactor = 0.35 + (speed/MAX_SPEED) * 1.25; // less twitchy at low speed
+    playerVX += steer * STEER_ACCEL * speedFactor;
+
+    // centrifugal force from current curve - applied to velocity, not position,
+    // so it integrates smoothly and is dampened the same way as steering input.
     const baseIndex = trackPos|0;
     const curve = segments[baseIndex % trackLen].curve;
-    playerX -= curve * speed * 45; // reduced centrifugal pull
+    playerVX -= curve * speed * CENTRIFUGAL;
+
+    // damp + clamp lateral velocity, then integrate
+    playerVX *= STEER_DAMP;
+    playerVX = clamp(playerVX, -STEER_MAX_VEL, STEER_MAX_VEL);
+    playerX += playerVX;
 
     // crash recovery
     if (crashTimer > 0)
@@ -233,8 +258,6 @@ function gameUpdate()
             c.z = (c.z + 12) % trackLen;
     }
 
-    // mild recentering at low speed
-    playerX = lerp(playerX, 0, speed < .15 ? .02 : 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -513,27 +536,13 @@ function renderRoadAndCars()
         const roadW = lerpP('roadW');
 
         const carX = sx + sc * c.offset * w/2;
-        const carW = max(6, sc * 0.24 * w/2);
+        const carW = max(6, sc * 0.28 * w/2);
         const carH = max(8, sc * 0.36 * h);
-        const carY = sy - carH;
 
         // simple occlusion: don't draw if behind horizon
-        if (carY < h*0.08 || carY > h) continue;
+        if (sy - carH < h*0.08 || sy > h) continue;
 
-        const body = hsl(c.colorH, .75, .55).toString();
-        ctx.fillStyle = body;
-        ctx.fillRect(carX - carW/2, carY, carW, carH);
-
-        // windshield stripe
-        ctx.fillStyle = hsl(.55, .35, .75, .85).toString();
-        ctx.fillRect(carX - carW*0.30, carY + carH*0.18, carW*0.60, carH*0.18);
-
-        // wheels
-        ctx.fillStyle = hsl(0,0,.08).toString();
-        const ww = carW*0.18;
-        const wh = carH*0.25;
-        ctx.fillRect(carX - carW/2 - ww*0.2, carY + carH*0.72, ww, wh);
-        ctx.fillRect(carX + carW/2 - ww*0.8, carY + carH*0.72, ww, wh);
+        drawAICar(ctx, carX, sy, carW, carH, c.colorH);
     }
 
     // player car (screen-fixed, like arcade view)
@@ -548,39 +557,162 @@ function renderRoadAndCars()
     ctx.fillRect(0, h-12, w, 12);
 }
 
+function drawAICar(ctx, cx, groundY, W, H, colorH)
+{
+    // Compact F1 silhouette: trapezoid body, exposed rear tires,
+    // tiny rear wing. Helmet only on cars big enough to read it.
+    const body = hsl(colorH, .75, .55).toString();
+    const tire = hsl(0,0,.10).toString();
+
+    // soft shadow
+    ctx.fillStyle = hsl(0,0,0,.4).toString();
+    ctx.fillRect(cx - W*0.55, groundY - max(1, H*0.04), W*1.10, max(2, H*0.08));
+
+    // rear tires (sticking outside the body)
+    const rtW = W*0.22, rtH = H*0.44;
+    ctx.fillStyle = tire;
+    ctx.fillRect(cx - W*0.50,         groundY - rtH, rtW, rtH);
+    ctx.fillRect(cx + W*0.50 - rtW,   groundY - rtH, rtW, rtH);
+
+    // body trapezoid
+    const botY = groundY - H*0.20;
+    const topY = groundY - H*0.95;
+    const botW = W*0.60;
+    const topW = W*0.22;
+    ctx.fillStyle = body;
+    fillQuad(ctx,
+        cx - botW/2, botY,
+        cx - topW/2, topY,
+        cx + topW/2, topY,
+        cx + botW/2, botY);
+
+    // rear wing - thin dark band behind/above the rear tires
+    ctx.fillStyle = hsl(0,0,.12).toString();
+    ctx.fillRect(cx - W*0.42, groundY - H*0.56, W*0.84, max(1, H*0.07));
+
+    // cockpit opening
+    const ckBotW = W*0.22, ckTopW = W*0.13;
+    ctx.fillStyle = hsl(0,0,.08).toString();
+    fillQuad(ctx,
+        cx - ckBotW/2, groundY - H*0.34,
+        cx - ckTopW/2, groundY - H*0.68,
+        cx + ckTopW/2, groundY - H*0.68,
+        cx + ckBotW/2, groundY - H*0.34);
+
+    // driver helmet (skip on tiny far cars to avoid noise)
+    if (H > 18)
+    {
+        ctx.fillStyle = hsl(0,0,.95).toString();
+        ctx.beginPath();
+        ctx.arc(cx, groundY - H*0.55, max(1, H*0.10), 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
 function drawPlayerCar(ctx, x, y, s=1)
 {
-    const w = 92*s;
-    const h = 60*s;
+    // F1 silhouette from behind: tapered body, exposed wheels,
+    // driver's helmet and a rear wing element behind the rear axle.
+    const W = 110*s;
+    const H = 68*s;
 
-    // shadow
-    ctx.fillStyle = hsl(0,0,0,.35).toString();
-    ctx.fillRect(x - w*0.46, y + h*0.18, w*0.92, h*0.22);
+    const flash = crashTimer>0 && (frame&3)<2;
+    const red      = flash ? hsl(0,0,1).toString()    : hsl(.01, .85, .52).toString();
+    const redDark  = flash ? hsl(0,0,.78).toString()  : hsl(.01, .85, .34).toString();
+    const tire     = hsl(0,0,.08).toString();
+    const tireTop  = hsl(0,0,.22).toString();
 
-    // body
-    ctx.fillStyle = (crashTimer>0 && (frame&3)<2) ? hsl(0,0,1).toString() : hsl(.02, .9, .52).toString();
-    ctx.fillRect(x - w/2, y - h, w, h);
+    // ground shadow
+    ctx.fillStyle = hsl(0,0,0,.45).toString();
+    ctx.beginPath();
+    ctx.ellipse(x, y + H*0.04, W*0.62, H*0.10, 0, 0, Math.PI*2);
+    ctx.fill();
 
-    // cockpit
-    ctx.fillStyle = hsl(.58, .40, .75, .9).toString();
-    ctx.fillRect(x - w*0.18, y - h*0.70, w*0.36, h*0.26);
+    // rear tires (largest, closest to camera) - poking out wider than body
+    const rtW = W*0.22, rtH = H*0.46;
+    const rtY = y - rtH;
+    const rtxL = x - W*0.50;
+    const rtxR = x + W*0.50 - rtW;
+    ctx.fillStyle = tire;
+    ctx.fillRect(rtxL, rtY, rtW, rtH);
+    ctx.fillRect(rtxR, rtY, rtW, rtH);
+    ctx.fillStyle = tireTop;
+    ctx.fillRect(rtxL, rtY, rtW, rtH*0.16);
+    ctx.fillRect(rtxR, rtY, rtW, rtH*0.16);
 
-    // nose stripe
-    ctx.fillStyle = hsl(0,0,1,.85).toString();
-    ctx.fillRect(x - w*0.06, y - h, w*0.12, h);
+    // rear wing - black plate spanning behind the body, with endplates
+    const wingY  = y - H*0.52;
+    const wingH  = H*0.08;
+    const wingW  = W*0.96;
+    ctx.fillStyle = hsl(0,0,.12).toString();
+    ctx.fillRect(x - wingW/2, wingY, wingW, wingH);
+    ctx.fillStyle = redDark;
+    ctx.fillRect(x - wingW/2,            wingY - wingH*1.6, wingH*0.5, wingH*2.2);
+    ctx.fillRect(x + wingW/2 - wingH*0.5, wingY - wingH*1.6, wingH*0.5, wingH*2.2);
 
-    // wheels
+    // main body - trapezoid: wide at rear, narrow toward nose
+    const bodyBotW = W*0.58;
+    const bodyTopW = W*0.18;
+    const bodyTopY = y - H*0.98;
+    const bodyBotY = y - H*0.18;
+    ctx.fillStyle = red;
+    fillQuad(ctx,
+        x - bodyBotW/2, bodyBotY,
+        x - bodyTopW/2, bodyTopY,
+        x + bodyTopW/2, bodyTopY,
+        x + bodyBotW/2, bodyBotY);
+
+    // body side-shading for depth (left + right slivers)
+    ctx.fillStyle = redDark;
+    fillQuad(ctx,
+        x - bodyBotW/2,           bodyBotY,
+        x - bodyTopW/2,           bodyTopY,
+        x - bodyTopW/2 + W*0.025, bodyTopY,
+        x - bodyBotW/2 + W*0.07,  bodyBotY);
+    fillQuad(ctx,
+        x + bodyBotW/2 - W*0.07,  bodyBotY,
+        x + bodyTopW/2 - W*0.025, bodyTopY,
+        x + bodyTopW/2,           bodyTopY,
+        x + bodyBotW/2,           bodyBotY);
+
+    // white centerline stripe down the nose
+    const strBotW = W*0.08;
+    const strTopW = W*0.03;
+    ctx.fillStyle = hsl(0,0,.95).toString();
+    fillQuad(ctx,
+        x - strBotW/2, bodyBotY,
+        x - strTopW/2, bodyTopY,
+        x + strTopW/2, bodyTopY,
+        x + strBotW/2, bodyBotY);
+
+    // front tires - smaller, peek above the body line near the front
+    const ftW = W*0.13, ftH = H*0.20;
+    const ftY = y - H*0.78;
+    ctx.fillStyle = tire;
+    ctx.fillRect(x - W*0.34, ftY, ftW, ftH);
+    ctx.fillRect(x + W*0.34 - ftW, ftY, ftW, ftH);
+
+    // cockpit opening - dark trapezoid set into the body
+    const ckBotW = W*0.26;
+    const ckTopW = W*0.15;
+    const ckBotY = y - H*0.32;
+    const ckTopY = y - H*0.70;
     ctx.fillStyle = hsl(0,0,.08).toString();
-    const ww = w*0.16;
-    const wh = h*0.30;
-    ctx.fillRect(x - w/2 - ww*0.15, y - h*0.35, ww, wh);
-    ctx.fillRect(x + w/2 - ww*0.85, y - h*0.35, ww, wh);
-    ctx.fillRect(x - w/2 - ww*0.15, y - h*0.92, ww, wh);
-    ctx.fillRect(x + w/2 - ww*0.85, y - h*0.92, ww, wh);
+    fillQuad(ctx,
+        x - ckBotW/2, ckBotY,
+        x - ckTopW/2, ckTopY,
+        x + ckTopW/2, ckTopY,
+        x + ckBotW/2, ckBotY);
 
-    // small rear wing
-    ctx.fillStyle = hsl(.02, .9, .35).toString();
-    ctx.fillRect(x - w*0.60, y - h*0.92, w*1.20, h*0.10);
+    // driver helmet - white sphere with a dark visor band
+    const helmR = H*0.13;
+    const helmY = y - H*0.55;
+    ctx.fillStyle = hsl(0,0,.95).toString();
+    ctx.beginPath();
+    ctx.arc(x, helmY, helmR, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = hsl(.6, .4, .12).toString();
+    ctx.fillRect(x - helmR*0.85, helmY - helmR*0.18, helmR*1.7, helmR*0.55);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
