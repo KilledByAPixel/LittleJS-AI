@@ -1,40 +1,3 @@
-# LittleJS - The Tiny Fast JavaScript Game Engine
-
-## Introduction
-
-LittleJS is a fast, lightweight, and fully open source HTML5 game engine designed for simplicity and performance.
-Its small footprint is packed with a comprehensive feature set including rendering, physics, particles, sound, and input handling.
-The code is very clean and well documented with many examples to get you started quickly.
-
-## LittleJS Features
-
-### Graphics
-
-- Super fast WebGL2 + Canvas2D hybrid rendering system
-- Apply Shadertoy style shaders for post-processing effects
-- Robust particle effect system and effect design tool
-
-### Audio
-
-- Sound and music with mp3, ogg, or wave files
-- Use ZzFX sound effect generator to play sounds without asset files
-
-### Input
-
-- Comprehensive input handling for mouse, keyboard, gamepad, and touch
-- Customizable on screen gamepad designed for mobile devices
-
-### Physics
-
-- Robust arcade physics system with collision handling
-- Fast tilemap collision and raycasting
-- Full Box2D integration for realistic physics
-
-### Flexibility
-
-- Compatible with all modern web browsers and mobile devices
-- Open Source and MIT licensed
-
 # LittleJS Engine Quick Reference Sheet
 
 ## This cheat sheet contains all LittleJS essentials.
@@ -171,6 +134,7 @@ Timer.valueOf()       // Get how long since elapsed, 0 if not set
 drawTile(pos, size, tileInfo, color=WHITE, angle=0, mirror, additiveColor)
 drawRect(pos, size, color=WHITE, angle=0)
 drawRectGradient(pos, size, colorTop=WHITE, colorBottom=BLACK, angle=0)
+drawTextureWrapped(pos, size, wrapCount, texture=0, color=WHITE, angle=0, additiveColor)
 drawLine(posA, posB, width=.1, color=WHITE, pos=(0,0), angle=0)
 drawLineList(points, width=.1, color, wrap=false, pos=(0,0), angle=0)
 drawPoly(points, color=WHITE, lineWidth=0, lineColor=BLACK, pos, angle=0)
@@ -199,13 +163,15 @@ TileInfo.frame(frame)   // Offset this tile by a number of animation frames
 TileInfo.textureInfo    // The texture info for this tile
 
 // Texture Info Object
-TextureInfo(image)      // Created automatically for each image
+TextureInfo(image, useWebGL=true, wrap=false) // Created automatically for each image
 TextureInfo.image       // Image source
 TextureInfo.size        // Size of the image
 TextureInfo.glTexture   // WebGL texture
+TextureInfo.wrap        // Whether texture is set to REPEAT (true) or CLAMP_TO_EDGE
+TextureInfo.setWrap(wrap=true) // Enable or disable wrapping for this texture
 
 // Font Image Object draws text using characters in an image
-FontImage(image, tileSize=(8,8), paddingSize=(0,1)) // Create an image font
+FontImage(tileInfo)                                 // Create a font from a tile sheet
 FontImage.drawText(text, pos, scale, center)        // Draw text in world space
 FontImage.drawTextScreen(text, pos, scale, center)  // Draw text in screen space
 
@@ -243,7 +209,7 @@ tileDefaultBleed = .3     // How much smaller to draw tiles to prevent bleeding
 // Sound Object
 Sound(zzfxSound, randomness, range, taper)             // Create a zzfx sound
 Sound(filename, randomness, range, taper)              // Load a wave, mp3, or ogg
-Sound.play(pos, volume=1, pitch=1, randomness=1, loop) // Play a sound, returns SoundInstance
+Sound.play(pos, volume=1, pitch=1, randomness=1, loop=false, paused=false) // Play a sound, returns SoundInstance
 Sound.playMusic(volume=1, loop=true)                   // Play as music with looping
 Sound.playNote(semitoneOffset, pos, volume=1)          // Play as note with a semitone offset
 Sound.getDuration()                                    // Get length of sound in seconds
@@ -251,7 +217,6 @@ Sound.isLoaded()                                       // Check if sound is curr
 Sound.loadedPercent                                    // Get loading progress (0 to 1)
 
 // SoundInstance
-SoundInstance.start()             // Start playing the sound
 SoundInstance.setVolume(volume)   // Change volume during playback
 SoundInstance.stop(fadeTime=0)    // Stop with optional fade out
 SoundInstance.pause()             // Pause the sound
@@ -264,8 +229,8 @@ SoundInstance.getDuration()       // Get total duration
 SoundInstance.getSource()         // Get AudioBufferSourceNode
 
 // ZzFXM - Tiny music playing system
-Music(..zzfxMusic)                                   // Create a zzfx music object
-Music.playMusic(volume=1, loop=true)                // Play the music
+ZzFXMusic(zzfxMusic)                                 // Create a zzfx music object
+ZzFXMusic.playMusic(volume=1, loop=true)             // Play the music
 
 // Audio functions
 speak(text, language='', volume=1, rate=1, pitch=1)  // Speak text line
@@ -311,7 +276,7 @@ gamepadWasReleased(button, gamepad=0) // Was gamepad button released this frame?
 gamepadStick(stickIndex, gamepad=0)   // Get gamepad analog stick value
 
 // Touch Gamepad
-touchGamepadEnabled                   // Is on screen touch gamepad enabled?
+touchGamepadEnable                    // Is on screen touch gamepad enabled?
 touchGamepadAnalog                    // Is touch gamepad analog or 8 way dpad?
 touchGamepadSize                      // Size of touch gamepad
 touchGamepadAlpha                     // Alpha of touch gamepad
@@ -451,6 +416,239 @@ ParticleEmitter.emitParticle()           // Spawn one particle
 particleEmitRateScale = 1 // Scales particles emit rate
 ```
 
+## LittleJS Tween System
+- Animate numbers, Vector2, Color, or any value with a `.lerp(other, percent)` method
+- Pauses with the game by default; opt-in real-time mode keeps tweens running while paused
+- Easing curves with looping, ping-pong, and chained completion callbacks
+- Auto-registers via `engineAddPlugin` — no setup needed
+- See `examples/tweenSystem` for a full visual demo
+
+```javascript
+// Tween a property by dot-path (common case)
+tweenProperty(target, propertyPath, start, end, duration=1, options)
+
+// Tween via custom callback
+new Tween(callback, start=0, end=1, duration=1, options)
+Tween.setEase(easeFn)          // Set easing curve, returns this
+Tween.then(callback)           // Completion callback, returns this
+Tween.loop(count=Infinity)     // Repeat n times, returns this
+Tween.pingPong(count=Infinity) // Bounce between endpoints, returns this
+Tween.pause()                  // Pause this tween
+Tween.resume()                 // Resume a paused tween
+Tween.restart()                // Reset to start and replay
+Tween.stop()                   // Remove from active list
+Tween.isActive()               // True if running and not paused
+Tween.getPercent()             // Progress 0..1
+Tween.getValue()               // Current interpolated value
+
+// Easing curves — pass to setEase or options.ease
+Ease.LINEAR, Ease.SINE, Ease.CIRC, Ease.EXPO
+Ease.BACK, Ease.ELASTIC, Ease.SPRING, Ease.BOUNCE
+Ease.POWER(n)                  // Returns x => x**n
+Ease.BEZIER(x1, y1, x2, y2)    // CSS cubic-bezier solver
+
+// Direction modifiers — wrap a curve to flip its direction
+Ease.OUT(curve)                // Reverse to ease-out
+Ease.IN_OUT(curve)             // Symmetric S-curve
+Ease.IN(curve)                 // No-op (curves are already ease-in)
+Ease.PIECEWISE(...curves)      // Run different curves over equal sections
+
+// Tween options
+options.ease         // Easing function (default Ease.LINEAR)
+options.useRealTime  // Advance even when game is paused (default false)
+options.paused       // Start in paused state (default false)
+
+// Global helper
+tweenStopAll()                 // Stop every active tween (e.g. on level reset)
+```
+
+## LittleJS PathFinding System
+- A* pathfinding on a grid
+- Works with a TileCollisionLayer or a bare grid with custom walkability
+- Optional path smoothing (corner cleanup + string-pull line-of-sight)
+- See `examples/shorts/pathFinder.js` for a demo
+
+```javascript
+// Construct from a TileCollisionLayer or a Vector2 grid size
+const pf = new PathFinder(tileCollisionLayer);
+const pf = new PathFinder(vec2(50, 50));
+pf.isWalkable = (x, y) => myGrid[y*50 + x] === 0; // bare grid: provide your own
+
+// Tunables (set freely)
+pf.heuristicWeight = 1     // > 1 = greedier search, faster but less optimal
+pf.maxLoop = 500           // max A* iterations per findPath
+pf.smoothPath = true       // run smoothing pass on result
+pf.debug = false           // draw search visualization
+pf.debugTime = 2           // seconds debug visuals persist
+
+// Main API
+pf.findPath(startPos, endPos)        // Returns array of world positions, or empty if no path
+pf.isLineClear(startPos, endPos)     // True if a straight line passes through walkable tiles
+pf.getNearestClearNode(worldPos, searchRange=10) // Snap an obstructed point to the nearest open tile
+pf.isWalkable(x, y)                  // Override for custom walkability
+pf.getCost(x, y)                     // Override for weighted tiles (0 = clear)
+
+// Conversion helpers
+pf.worldToTile(worldPos)             // Vector2 -> tile coords
+pf.tileToWorld(x, y)                 // tile coords -> Vector2 (tile center)
+pf.getNode(x, y)                     // Get PathFinderNode at tile coords
+```
+
+## LittleJS UI System
+- Standalone UI plugin with buttons, text, sliders, checkboxes, text input, video, and auto-layout
+- Auto-registers via `engineAddPlugin` — `new UISystemPlugin()` is all you need
+- Keyboard listener only attached while a UITextInput is being edited
+- See `examples/uiSystem/` and `examples/shorts/uiSystem.js` for demos
+
+```javascript
+// Setup
+const ui = new UISystemPlugin()        // Creates global uiSystem
+uiSystem.defaultColor                  // Default style values used by all widgets
+uiSystem.defaultLineColor              // (override before constructing widgets)
+uiSystem.defaultLineWidth
+uiSystem.defaultButtonColor
+uiSystem.defaultHoverColor
+uiSystem.defaultFont
+uiSystem.nativeHeight                  // If set, UI coords are normalized to this height
+uiSystem.destroyObjects()              // Remove all UI elements
+
+// Confirm dialog
+uiSystem.showConfirmDialog(text='Are you sure?', yes, no, size, exitKey='Escape')
+
+// Drawing helpers (use these instead of the engine's draw* during UI rendering)
+uiSystem.drawRect(pos, size, color, lineWidth, lineColor, cornerRadius, gradientColor, shadowColor, shadowBlur, shadowOffset)
+uiSystem.drawTile(pos, size, tileInfo, color, angle, mirror, shadowColor, shadowBlur, shadowOffset)
+uiSystem.drawText(text, pos, size, color, lineWidth, lineColor, align, font, fontStyle, applyMaxWidth, textShadow, shadowColor, shadowBlur, shadowOffset)
+uiSystem.drawLine(posA, posB, lineWidth, lineColor)
+
+// Base widget
+new UIObject(pos=vec2(), size=vec2())
+UIObject.anchor                        // vec2 in [-1,1]; anchors to parent (or canvas if root) + self-pivot; default vec2()=center
+UIObject.addChild(child)               // Returns child, parents it
+UIObject.removeChild(child)
+UIObject.destroy()
+UIObject.isHoverObject()               // True if mouse is over this object
+UIObject.isInteractive()
+UIObject.onClick / onPress / onRelease / onChange / onEnter / onLeave / onUpdate / onRender // Hooks
+
+// Widgets
+new UIText(pos, size, text='', align='center', font)
+new UITile(pos, size, tileInfo, color, angle=0, mirror=false)
+new UIButton(pos, size, text='', color)
+new UICheckbox(pos, size, checked=false, text='', color)  // .checked toggles on click
+new UISlider(pos, size, value=.5, text='', color, handleColor)  // .value in [0, 1]
+new UITextInput(pos, size, text='')   // .text holds current value
+new UIVideo(pos, size, src, autoplay=false, loop=false, volume=1)
+
+// Auto-layout container — arranges children into a grid
+new UILayout(pos, columns=1, gap=10, padding=10, transparent=false)
+UILayout.addChild(child)               // Triggers relayout
+UILayout.relayout()                    // Call manually if you mutate a child's size
+```
+
+## LittleJS Box2D Physics
+- Optional plugin wrapping the Box2D physics engine (via box2d.wasm.js)
+- Drop-in replacement for engine objects: `Box2dObject extends EngineObject`
+- Joints, raycasting, polygon/circle/edge fixtures
+- See `examples/box2d/` for a full demo
+
+```javascript
+// Setup (call once before engineInit)
+await box2dInit()              // Loads the WASM and creates global box2d / Box2dPlugin
+box2dSetDebug(true)            // Toggle debug rendering of physics shapes
+box2d.setGravity(vec2(0,-20))  // World gravity
+
+// Bodies — extend EngineObject, integrate with physics
+new Box2dObject(pos, size, tileInfo, angle, color, bodyType)   // Dynamic by default
+new Box2dStaticObject(pos, size, tileInfo, angle, color)       // Immovable
+new Box2dKinematicObject(pos, size, tileInfo, angle, color)    // Moves but ignores forces
+new Box2dTileLayer(pos, tileLayer)                             // Static collision from a TileLayer
+
+// Common fixture setup (call from constructor or after creation)
+obj.addBox(size, offset, angle, density, friction, restitution, isSensor)
+obj.addCircle(diameter, offset, density, friction, restitution, isSensor)
+obj.addPoly(points, offset, angle, density, friction, restitution, isSensor)
+obj.addEdgeList(points, offset, angle, density, friction, restitution, isSensor)
+obj.setFilterData(categoryBits, maskBits, groupIndex)
+
+// Forces and motion
+obj.applyForce(force, pos)             // Force in Newtons at world pos (sustained)
+obj.applyAcceleration(accel, pos)      // Δvelocity = accel per call (mass-independent, matches EngineObject)
+obj.applyImpulse(impulse, pos)         // Δvelocity = impulse / mass (instantaneous; use for one-shot hits)
+obj.applyTorque(torque)
+obj.applyAngularAcceleration(accel)    // Δangular velocity = accel per call (mass-independent)
+obj.applyAngularImpulse(impulse)       // Δangular velocity = impulse / inertia (instantaneous)
+obj.setLinearVelocity(vel)
+obj.setAngularVelocity(av)
+obj.setAwake(awake=true)
+obj.setMassData(mass, localCenter, I)
+obj.getMass() / getCenterOfMass() / getInertia()
+
+// Raycasting
+box2d.raycast(startPos, endPos, filterCallback?) // Returns Box2dRaycastResult or undefined
+
+// Joints — all extend Box2dJoint
+new Box2dTargetJoint(object, targetPos)        // Drag toward a point (mouse-follow)
+new Box2dDistanceJoint(objectA, objectB, anchorA, anchorB)
+new Box2dPinJoint(objectA, objectB, anchor)
+new Box2dRopeJoint(objectA, objectB, anchorA, anchorB, maxLength)
+new Box2dRevoluteJoint(objectA, objectB, anchor)
+new Box2dPrismaticJoint(objectA, objectB, anchor, axis)
+new Box2dWheelJoint(objectA, objectB, anchor, axis)
+new Box2dWeldJoint(objectA, objectB, anchor)
+new Box2dFrictionJoint(objectA, objectB, anchor)
+new Box2dPulleyJoint(objectA, objectB, groundA, groundB, anchorA, anchorB, ratio)
+new Box2dMotorJoint(objectA, objectB)
+new Box2dGearJoint(jointA, jointB, ratio)
+```
+
+## LittleJS Medals & Newgrounds
+- Achievement/medal system with on-screen popup, save/restore via localStorage
+- Optional Newgrounds integration: syncs medals and scoreboards when hosted on Newgrounds
+- See `examples/shorts/medals.js` for a demo
+
+```javascript
+// Medals
+new Medal(id, name, description='', icon='🏆', src)  // src is optional image url
+medal.unlock()                       // Mark unlocked, save, and queue the popup
+medal.unlocked                       // True after unlock
+medal.storageKey()                   // localStorage key for this medal
+
+medals                               // Global { [id]: Medal } map
+medalsInit(saveName)                 // Restore unlocked state from localStorage under saveName
+medalsForEach(callback)              // Iterate all registered medals
+medalsPreventUnlock                  // Block unlocks (testing / debug)
+
+// Display tuning
+medalDisplayTime / setMedalDisplayTime(seconds)
+medalDisplaySlideTime / setMedalDisplaySlideTime(seconds)
+medalDisplaySize / setMedalDisplaySize(vec2)
+
+// Newgrounds integration (only used when hosted on Newgrounds)
+await newgrounds                     // The global is set by NewgroundsPlugin
+new NewgroundsPlugin(app_id, cipher) // Auto-fetches medals and scoreboards
+newgrounds.unlockMedal(id)           // Server-side unlock
+newgrounds.postScore(id, value)      // Submit to a scoreboard
+newgrounds.getScores(id, user, social, skip, limit)
+newgrounds.logView()                 // Track a page view
+new NewgroundsMedal(id, name, description, icon)
+```
+
+## LittleJS Drawing Utilities
+- Optional plugin: nine-slice and three-slice helpers for scalable UI panels
+- World-space (WebGL or 2D) and screen-space (always 2D) variants
+- See `examples/shorts/nineSlice.js` and `examples/shorts/threeSlice.js`
+
+```javascript
+// Nine-slice — 3x3 tile grid scaled to fit
+drawNineSlice(pos, size, startTile, color, borderSize=1, additiveColor, extraSpace=.05, angle=0, useWebGL=glEnable, screenSpace, context)
+drawNineSliceScreen(pos, size, startTile, borderSize=32, extraSpace=2, angle=0)
+
+// Three-slice — 1x3 tile strip (corner / side / center) rotated around the box
+drawThreeSlice(pos, size, startTile, color, borderSize=1, additiveColor, extraSpace=.05, angle=0, useWebGL=glEnable, screenSpace, context)
+drawThreeSliceScreen(pos, size, startTile, borderSize=32, extraSpace=2, angle=0)
+```
+
 ## LittleJS Debugging System
 - Press Escape key to toggle debug overlay
 - Number keys toggle debug functions
@@ -465,7 +663,7 @@ debugCircle(pos, size, color='#fff', time=0, fill)        // Draw debug circle
 debugPoint(pos, color, time, angle)                         // Draw debug point
 debugLine(posA, posB, color, width=.1, time)                // Draw debug line
 debugText(text, pos, size=1, color='#fff', time=0, angle=0) // Draw debug text
-debugAABB(pA, sA, pB, sB, color) // Draw a debug axis aligned box
+debugOverlap(pA, sA, pB, sB, color) // Draw a debug overlap between two boxes
 debugClear()                     // Clear all debug primitives
 saveCanvas(canvas, filename)     // Save canvas to a file
 saveText(text, filename)         // Save text to a file 
@@ -478,3 +676,7 @@ debugKey = 'Escape'  // Key code used to toggle debug mode
 debugOverlay         // Is the debug overlay is active?
 debugWatermark       // Should watermark with FPS appear in debug mode?
 ```
+
+[LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) Copyright 2021 Frank Force
+
+![LittleJS Logo](examples/favicon.png)
