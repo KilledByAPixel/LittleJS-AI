@@ -32,6 +32,9 @@ const TT = {
 const tileMap = new Map();
 const tileKey = (x, y) => `${x|0},${y|0}`;
 
+// per ? block: 'mushroom' | 'star' | (anything else / missing => coin)
+const qBlockContents = new Map();
+
 function setTile(x, y, t)
 {
     if (x < 0 || y < 0 || x >= LEVEL_W || y >= LEVEL_H) return;
@@ -78,6 +81,7 @@ function buildLevel()
 {
     tileMap.clear();
     tileBumps.clear();
+    qBlockContents.clear();
     enemySpawns.length = 0;
     coinSpawns.length = 0;
 
@@ -169,6 +173,13 @@ function buildLevel()
     for (let y = 2; y < 11; y++) setTile(poleX, y, TT.POLE);
     setTile(poleX, 11, TT.FLAG); // top ball
 
+    // -- powerup-bearing ? blocks (canonical SMB 1-1 picks first ? block = mushroom,
+    //    high floating block above the early row = star)
+    qBlockContents.set(tileKey(16, 4), 'mushroom');
+    qBlockContents.set(tileKey(22, 8), 'star');
+    qBlockContents.set(tileKey(78, 4), 'mushroom');
+    qBlockContents.set(tileKey(168, 4), 'star');
+
     // -- enemy spawns --
     // Goombas
     enemySpawns.push({ type: 'goomba', x: 22 });
@@ -212,6 +223,10 @@ const sfxCoin  = new SoundGenerator({ volume:.45, frequency:900, attack:0, relea
 const sfxStomp = new SoundGenerator({ volume:.5,  frequency:240, attack:0, release:.10, slide:-.15, noise:.15 });
 const sfxKick  = new SoundGenerator({ volume:.55, frequency:520, attack:0, release:.12, slide:.10, shapeCurve:1.2 });
 const sfxHurt  = new SoundGenerator({ volume:.6,  frequency:200, attack:.01, release:.45, slide:-.12, pitchJump:-80, pitchJumpTime:.08 });
+const sfxGrow    = new SoundGenerator({ volume:.55, frequency:330, attack:0,    release:.45, slide:.20, pitchJump:280, pitchJumpTime:.18, shapeCurve:1.5 });
+const sfxStar    = new SoundGenerator({ volume:.55, frequency:660, attack:0,    release:.35, slide:.18, pitchJump:240, pitchJumpTime:.08, shapeCurve:2 });
+const sfxBreak   = new SoundGenerator({ volume:.5,  frequency:240, attack:0,    release:.20, noise:.65, slide:-.10 });
+const sfxShrink  = new SoundGenerator({ volume:.55, frequency:420, attack:0,    release:.35, slide:-.18, pitchJump:-220, pitchJumpTime:.15, shapeCurve:1.2 });
 
 ///////////////////////////////////////////////////////////////////////////////
 // Coin pickup (collectible, hovers/bounces)
@@ -291,6 +306,185 @@ class PopCoin extends EngineObject
         const sx = .26 + Math.cos(this.life * .8) * .22;
         drawEllipse(this.pos, vec2(Math.abs(sx), .44), rgb(1, .88, .2));
         drawEllipse(this.pos, vec2(Math.abs(sx) + .04, .48), rgb(.6, .4, .05, .5));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Brick chunks (when Big Mario breaks a brick)
+///////////////////////////////////////////////////////////////////////////////
+
+class BrickChunk extends EngineObject
+{
+    constructor(pos, vel)
+    {
+        super(pos, vec2(.35));
+        this.vel = vel;
+        this.life = 0;
+        this.angle = 0;
+        this.spin = (Math.random() - .5) * .4;
+        this.setCollision(false, false, false, false);
+    }
+    updatePhysics() {}
+    update()
+    {
+        this.life++;
+        this.pos = this.pos.add(this.vel);
+        this.vel.y -= .026;
+        this.angle += this.spin;
+        if (this.life > 70) this.destroy();
+    }
+    render()
+    {
+        // a small brick fragment (rough rotation via offsets)
+        drawRect(this.pos, vec2(.35), rgb(.78, .35, .14), this.angle);
+        drawRect(this.pos, vec2(.30, .08), rgb(.4, .15, .05), this.angle);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Mushroom (Big-Mario power-up)
+///////////////////////////////////////////////////////////////////////////////
+
+const MUSHROOM_SPEED = .10;
+
+class Mushroom extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.9, .9));
+        this.vel = vec2(0, 0);
+        this.facing = 1;
+        this.onGround = false;
+        // emerge: slowly rise out of the block before behaving as a walker
+        this.emerging = true;
+        this.emergeStartY = pos.y;
+        this.emergeTargetY = pos.y + 1;
+        this.emergeTimer = 36;
+        this.setCollision(false, false, false, false);
+    }
+    updatePhysics() {}
+
+    update()
+    {
+        if (this.emerging)
+        {
+            const t = 1 - this.emergeTimer / 36;
+            this.pos.y = lerp(t, this.emergeStartY, this.emergeTargetY);
+            this.emergeTimer--;
+            if (this.emergeTimer <= 0)
+            {
+                this.emerging = false;
+                this.vel.x = MUSHROOM_SPEED;
+            }
+            this.checkPickup();
+            return;
+        }
+
+        // simple tile collision (walks off ledges, turns at walls)
+        Enemy.prototype.moveAndCollideTiles.call(this, false);
+        this.checkPickup();
+    }
+
+    checkPickup()
+    {
+        if (!player || player.dead) return;
+        const dx = Math.abs(player.pos.x - this.pos.x);
+        const dy = Math.abs(player.pos.y - this.pos.y);
+        if (dx < (player.size.x + this.size.x) * .5 && dy < (player.size.y + this.size.y) * .5)
+        {
+            player.grow();
+            this.destroy();
+        }
+    }
+
+    render()
+    {
+        // cap (red with white spots)
+        drawEllipse(this.pos.add(vec2(0, .12)), vec2(1.0, .70), rgb(.95, .15, .15));
+        drawRect(this.pos.add(vec2(0, -.08)), vec2(1.0, .12), rgb(.95, .15, .15));
+        // white spots
+        drawEllipse(this.pos.add(vec2(-.27, .22)), vec2(.20, .14), rgb(1, 1, 1));
+        drawEllipse(this.pos.add(vec2(.22, .17)),  vec2(.20, .14), rgb(1, 1, 1));
+        drawEllipse(this.pos.add(vec2(0, .32)),    vec2(.16, .12), rgb(1, 1, 1));
+        // cap rim
+        drawRect(this.pos.add(vec2(0, -.10)), vec2(1.05, .08), rgb(.55, .03, .03));
+        // stem (cream)
+        drawRect(this.pos.add(vec2(0, -.28)), vec2(.55, .38), rgb(.98, .85, .65));
+        // eyes
+        drawRect(this.pos.add(vec2(-.12, -.25)), vec2(.06, .14), rgb(0, 0, 0));
+        drawRect(this.pos.add(vec2(.12,  -.25)), vec2(.06, .14), rgb(0, 0, 0));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Star (Starman invincibility)
+///////////////////////////////////////////////////////////////////////////////
+
+class Star extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.85, .85));
+        this.vel = vec2(0, 0);
+        this.facing = 1;
+        this.onGround = false;
+        this.emerging = true;
+        this.emergeStartY = pos.y;
+        this.emergeTargetY = pos.y + 1;
+        this.emergeTimer = 28;
+        this.setCollision(false, false, false, false);
+    }
+    updatePhysics() {}
+
+    update()
+    {
+        if (this.emerging)
+        {
+            const t = 1 - this.emergeTimer / 28;
+            this.pos.y = lerp(t, this.emergeStartY, this.emergeTargetY);
+            this.emergeTimer--;
+            if (this.emergeTimer <= 0)
+            {
+                this.emerging = false;
+                this.vel = vec2(.14, .35);
+            }
+            this.checkPickup();
+            return;
+        }
+
+        Enemy.prototype.moveAndCollideTiles.call(this, false);
+        // continuous bounce
+        if (this.onGround) this.vel.y = .42;
+
+        this.checkPickup();
+    }
+
+    checkPickup()
+    {
+        if (!player || player.dead) return;
+        const dx = Math.abs(player.pos.x - this.pos.x);
+        const dy = Math.abs(player.pos.y - this.pos.y);
+        if (dx < (player.size.x + this.size.x) * .5 && dy < (player.size.y + this.size.y) * .5)
+        {
+            player.starPower();
+            this.destroy();
+        }
+    }
+
+    render()
+    {
+        // pulsing rainbow 5-pointed star
+        const pulse = .55 + Math.sin(time * 14) * .08;
+        const hue = (time * 2.5 + this.pos.x * .05) % 1;
+        const c = hsl(hue, 1, .65);
+        const points = [];
+        for (let i = 0; i < 10; i++)
+        {
+            const a = i * Math.PI / 5 - Math.PI / 2;
+            const rad = (i % 2 === 0) ? pulse : pulse * .42;
+            points.push(vec2(Math.cos(a) * rad, Math.sin(a) * rad));
+        }
+        drawPoly(points, c, .04, rgb(.25, .15, 0, 1), this.pos);
     }
 }
 
@@ -485,6 +679,14 @@ class Goomba extends Enemy
         // player interaction
         if (!player || player.dead) return;
         if (!this.overlaps(player)) return;
+
+        if (player.isStarPowered())
+        {
+            this.kill(player.facing);
+            sfxStomp.play(this.pos);
+            return;
+        }
+
         const dy = player.pos.y - this.pos.y;
         if (player.vel.y < -.05 && dy > .2)
         {
@@ -611,6 +813,14 @@ class Koopa extends Enemy
         // player interaction
         if (!player || player.dead) return;
         if (!this.overlaps(player)) return;
+
+        if (player.isStarPowered())
+        {
+            this.kill(player.facing);
+            sfxStomp.play(this.pos);
+            return;
+        }
+
         const dy = player.pos.y - this.pos.y;
         const stomp = player.vel.y < -.05 && dy > .15;
 
@@ -736,7 +946,35 @@ class Player extends EngineObject
         this.bufferTimer = 0;
         this.jumpHolding = false;
 
+        // power-up state
+        this.powerState = 'small';   // 'small' | 'big'
+        this.starTimer = 0;          // frames of star invincibility
+        this.damageFlash = 0;        // frames of post-shrink invulnerability (flicker)
+
         this.setCollision(false, false, false, false);
+    }
+
+    isStarPowered() { return this.starTimer > 0; }
+
+    grow()
+    {
+        if (this.powerState === 'big')
+        {
+            // already big: bonus coin (SMB behavior when picking up a second mushroom)
+            coinsCollected++;
+            sfxCoin.play(this.pos);
+            return;
+        }
+        this.powerState = 'big';
+        this.size = vec2(.9, 1.8);
+        this.pos = this.pos.add(vec2(0, .4));
+        sfxGrow.play(this.pos);
+    }
+
+    starPower()
+    {
+        this.starTimer = 600; // ~10s
+        sfxStar.play(this.pos);
     }
 
     updatePhysics() {}
@@ -775,6 +1013,9 @@ class Player extends EngineObject
         }
 
         const P = Player;
+
+        if (this.starTimer > 0) this.starTimer--;
+        if (this.damageFlash > 0) this.damageFlash--;
 
         const moveDirection = keyDirection();
         const left  = moveDirection.x < 0;
@@ -874,8 +1115,14 @@ class Player extends EngineObject
 
         this.prevJumpDown = jumpDown;
 
-        // fell off
-        if (this.pos.y < -10 && !this.dead) this.hurt();
+        // fell off — always lethal regardless of Big/Star state
+        if (this.pos.y < -10 && !this.dead)
+        {
+            this.dead = true;
+            this.deadTimer = 0;
+            this.vel = vec2(0, .45);
+            sfxHurt.play(this.pos);
+        }
     }
 
     onStomp()
@@ -887,6 +1134,19 @@ class Player extends EngineObject
     hurt()
     {
         if (this.dead || this.won) return;
+        if (this.starTimer > 0 || this.damageFlash > 0) return;
+
+        if (this.powerState === 'big')
+        {
+            // shrink + brief i-frames
+            this.powerState = 'small';
+            this.size = vec2(.9, 1);
+            this.pos = this.pos.add(vec2(0, -.4));
+            this.damageFlash = 90;
+            sfxShrink.play(this.pos);
+            return;
+        }
+
         this.dead = true;
         this.deadTimer = 0;
         this.vel = vec2(0, .45);
@@ -950,18 +1210,48 @@ class Player extends EngineObject
                 if (hitX >= 0)
                 {
                     const t = getTile(hitX, ySide);
+                    const blockCenter = vec2(hitX + .5, ySide + .5);
                     if (t === TT.QBLOCK)
                     {
                         setTile(hitX, ySide, TT.USED);
-                        new PopCoin(vec2(hitX + .5, ySide + 1.2));
-                        coinsCollected++;
-                        sfxCoin.play(vec2(hitX + .5, ySide + .5));
                         bumpTile(hitX, ySide);
+                        const content = qBlockContents.get(tileKey(hitX, ySide)) || 'coin';
+                        if (content === 'mushroom')
+                        {
+                            new Mushroom(blockCenter);
+                            sfxBump.play(blockCenter);
+                        }
+                        else if (content === 'star')
+                        {
+                            new Star(blockCenter);
+                            sfxBump.play(blockCenter);
+                        }
+                        else
+                        {
+                            new PopCoin(vec2(hitX + .5, ySide + 1.2));
+                            coinsCollected++;
+                            sfxCoin.play(blockCenter);
+                        }
                     }
                     else if (t === TT.BRICK)
                     {
-                        bumpTile(hitX, ySide);
-                        sfxBump.play(vec2(hitX + .5, ySide + .5));
+                        if (this.powerState === 'big')
+                        {
+                            // shatter the brick
+                            setTile(hitX, ySide, TT.EMPTY);
+                            for (let i = 0; i < 4; i++)
+                            {
+                                const vx = (i < 2 ? -1 : 1) * (.08 + rand(0, .06));
+                                const vy = .28 + rand(0, .12) + (i % 2) * .12;
+                                new BrickChunk(blockCenter, vec2(vx, vy));
+                            }
+                            sfxBreak.play(blockCenter);
+                        }
+                        else
+                        {
+                            bumpTile(hitX, ySide);
+                            sfxBump.play(blockCenter);
+                        }
                     }
                     else
                         sfxBump.play(this.pos);
@@ -984,36 +1274,73 @@ class Player extends EngineObject
 
     render()
     {
-        if (this.dead && this.deadTimer < 4) return; // tiny flicker
+        if (this.dead && this.deadTimer < 4) return;
 
-        // body (Mario-ish red overalls + blue shirt — simplified)
+        // post-shrink invulnerability flicker (skip every other tick)
+        if (this.damageFlash > 0 && Math.floor(time * 30) % 2 === 0) return;
+
+        const big = this.powerState === 'big';
         const lean = this.facing * Math.min(.12, Math.abs(this.vel.x) * .4);
 
-        // legs / overalls (lower body)
-        drawRect(this.pos.add(vec2(0, -.22)), vec2(.85, .55), rgb(.85, .15, .15));
-        // shirt (upper)
-        drawRect(this.pos.add(vec2(lean * .3, .18)), vec2(.78, .38), rgb(.95, .25, .15));
-        // arms / sleeves accent
-        drawRect(this.pos.add(vec2(-.42 + lean * .3, .12)), vec2(.18, .25), rgb(.85, .15, .15));
-        drawRect(this.pos.add(vec2(.42 + lean * .3, .12)),  vec2(.18, .25), rgb(.85, .15, .15));
-        // cap
-        drawRect(this.pos.add(vec2(lean, .45)), vec2(.8, .22), rgb(.65, .05, .05));
-        // brim (facing)
-        drawRect(this.pos.add(vec2(this.facing * .25 + lean, .37)), vec2(.42, .10), rgb(.65, .05, .05));
-        // face (skin patch)
-        drawRect(this.pos.add(vec2(lean * .5, .28)), vec2(.55, .18), rgb(.95, .80, .60));
-        // eye
-        drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .30)), vec2(.08, .12), rgb(0, 0, 0));
-        // moustache
-        drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .20)), vec2(.22, .06), rgb(.20, .10, .05));
-        // belt buckle / button
-        drawRect(this.pos.add(vec2(-.14, -.12)), vec2(.08, .08), rgb(1, 1, .2));
-        drawRect(this.pos.add(vec2(.14, -.12)),  vec2(.08, .08), rgb(1, 1, .2));
-        // shoes (animate when walking on ground)
+        // star power cycles palette
+        let bodyC, shirtC, hatC, skinC;
+        if (this.starTimer > 0)
+        {
+            const hue = (time * 12) % 1;
+            bodyC  = hsl(hue, .9, .50);
+            shirtC = hsl((hue + .3) % 1, .9, .60);
+            hatC   = hsl((hue + .15) % 1, .9, .45);
+            skinC  = hsl((hue + .5) % 1, .8, .70);
+        }
+        else
+        {
+            bodyC  = rgb(.85, .15, .15);
+            shirtC = rgb(.95, .25, .15);
+            hatC   = rgb(.65, .05, .05);
+            skinC  = rgb(.95, .80, .60);
+        }
+
         const walking = this.onGround && Math.abs(this.vel.x) > .02;
         const wp = walking ? Math.sin(time * 14) * .06 : 0;
-        drawRect(this.pos.add(vec2(-.18, -.46 + wp)), vec2(.24, .12), rgb(.40, .20, .05));
-        drawRect(this.pos.add(vec2(.18,  -.46 - wp)), vec2(.24, .12), rgb(.40, .20, .05));
+
+        if (big)
+        {
+            // shoes
+            drawRect(this.pos.add(vec2(-.18, -.82 + wp)), vec2(.26, .14), rgb(.40, .20, .05));
+            drawRect(this.pos.add(vec2(.18,  -.82 - wp)), vec2(.26, .14), rgb(.40, .20, .05));
+            // overalls / legs
+            drawRect(this.pos.add(vec2(0, -.32)), vec2(.85, .85), bodyC);
+            // buckles
+            drawRect(this.pos.add(vec2(-.20, .10)), vec2(.10, .10), rgb(1, 1, .2));
+            drawRect(this.pos.add(vec2(.20, .10)),  vec2(.10, .10), rgb(1, 1, .2));
+            // shirt + arms
+            drawRect(this.pos.add(vec2(lean * .3, .30)), vec2(.85, .50), shirtC);
+            drawRect(this.pos.add(vec2(-.46 + lean * .3, .25)), vec2(.20, .40), bodyC);
+            drawRect(this.pos.add(vec2(.46 + lean * .3, .25)),  vec2(.20, .40), bodyC);
+            // face
+            drawRect(this.pos.add(vec2(lean * .5, .56)), vec2(.62, .28), skinC);
+            drawRect(this.pos.add(vec2(this.facing * .14 + lean * .5, .60)), vec2(.10, .14), rgb(0, 0, 0));
+            drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .48)), vec2(.26, .07), rgb(.20, .10, .05));
+            // cap
+            drawRect(this.pos.add(vec2(lean, .80)), vec2(.88, .24), hatC);
+            drawRect(this.pos.add(vec2(this.facing * .28 + lean, .72)), vec2(.46, .12), hatC);
+        }
+        else
+        {
+            drawRect(this.pos.add(vec2(0, -.22)), vec2(.85, .55), bodyC);
+            drawRect(this.pos.add(vec2(lean * .3, .18)), vec2(.78, .38), shirtC);
+            drawRect(this.pos.add(vec2(-.42 + lean * .3, .12)), vec2(.18, .25), bodyC);
+            drawRect(this.pos.add(vec2(.42 + lean * .3, .12)),  vec2(.18, .25), bodyC);
+            drawRect(this.pos.add(vec2(lean, .45)), vec2(.8, .22), hatC);
+            drawRect(this.pos.add(vec2(this.facing * .25 + lean, .37)), vec2(.42, .10), hatC);
+            drawRect(this.pos.add(vec2(lean * .5, .28)), vec2(.55, .18), skinC);
+            drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .30)), vec2(.08, .12), rgb(0, 0, 0));
+            drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .20)), vec2(.22, .06), rgb(.20, .10, .05));
+            drawRect(this.pos.add(vec2(-.14, -.12)), vec2(.08, .08), rgb(1, 1, .2));
+            drawRect(this.pos.add(vec2(.14, -.12)),  vec2(.08, .08), rgb(1, 1, .2));
+            drawRect(this.pos.add(vec2(-.18, -.46 + wp)), vec2(.24, .12), rgb(.40, .20, .05));
+            drawRect(this.pos.add(vec2(.18,  -.46 - wp)), vec2(.24, .12), rgb(.40, .20, .05));
+        }
     }
 }
 
