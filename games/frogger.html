@@ -41,9 +41,12 @@
 
   // Game state
   let frog, cars = [], logs = [];
+  // Short-lived death particles. The player vanishes on death and these
+  // play in its place — same effect for road and water, just a different hue.
+  let particles = [];
   let reached = new Array(homeSlots).fill(false);
   let lives = 3, level = 1;
-  let respawnTimer, flashTimer;
+  let respawnTimer;
 
   // Sounds
   let sHop, sDie, sHome, sLevel;
@@ -133,14 +136,37 @@
 
   function killFrog() {
     if (respawnTimer.active()) return;
+
+    // Pick a particle palette by where the frog died (water vs. dry land).
+    const gy = frog.grid.y;
+    const inWater = gy >= RIVER_MIN_Y && gy <= HOME_Y;
+    const hue = inWater ? 205/360 : 105/360;
+    const sat = inWater ? .55 : .75;
+    const light = inWater ? .70 : .45;
+
+    for (let i = 0; i < 24; i++) {
+      const a = rand(0, Math.PI * 2);
+      const s = rand(1.8, 4.2);
+      particles.push({
+        pos: frog.pos.copy(),
+        vel: vec2(Math.cos(a) * s, Math.sin(a) * s * .6 + rand(1.6, 3.4)),
+        life: 0,
+        maxLife: rand(.55, .95),
+        h: hue,
+        s: sat,
+        l: light + rand(-.10, .12),
+        size: rand(.07, .15),
+      });
+    }
+
     sDie.play(frog.pos);
     lives--;
     respawnTimer.set(1);
-    flashTimer.set(.6);
     if (lives < 0) {
       lives = 3;
       level = 1;
       reached.fill(false);
+      particles.length = 0;
       buildLanes();
     }
   }
@@ -262,7 +288,6 @@
     };
 
     respawnTimer = new Timer(); respawnTimer.unset();
-    flashTimer = new Timer(); flashTimer.unset();
 
     sHop  = new SoundGenerator({ volume:.6, frequency:640, randomness:.08, attack:0, release:.06, shapeCurve:1.6 });
     sDie  = new SoundGenerator({ volume:.9, frequency:180, randomness:.2,  attack:0, release:.28, shapeCurve:.6, slide:-1.6, noise:.15 });
@@ -283,6 +308,16 @@
     updateObstacles(cars);
     updateObstacles(logs);
     frogWorldChecks();
+
+    // tick & cull death particles (simple gravity arcs)
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life += DT;
+      p.vel.y -= 8 * DT;
+      p.pos.x += p.vel.x * DT;
+      p.pos.y += p.vel.y * DT;
+      if (p.life >= p.maxLife) particles.splice(i, 1);
+    }
 
     if (frog.hopAnim > 0)
       frog.hopAnim = Math.max(0, frog.hopAnim - DT * 6);
