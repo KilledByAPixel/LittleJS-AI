@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.4';
+const engineVersion = '1.18.7';
 
 /** Frames per second to update
  *  @type {number}
@@ -207,7 +207,7 @@ async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, game
         const combinedScale = timeScale * debugScale;
         frameTimeDeltaMS *= combinedScale;
         frameTimeBufferMS += paused ? 0 : frameTimeDeltaMS;
-        if (combinedScale <= 1)
+        if (debugScale <= 1)
             frameTimeBufferMS = min(frameTimeBufferMS, 50); // clamp min framerate
 
         let wasUpdated = false;
@@ -566,145 +566,6 @@ function engineObjectsRaycast(start, end, objects=engineObjects)
     debugRaycast && debugLine(start, end, hitObjects.length ? '#f00' : '#00f', .02);
     return hitObjects;
 }
-
-///////////////////////////////////////////////////////////////////////////////
-function drawEngineLogo(t)
-{
-    const blackAndWhite = 0;
-    const showName = 1;
-
-    // LittleJS Logo and Splash Screen
-    const x = mainContext;
-    const dpr = canvasPixelRatio ?? (devicePixelRatio || 1);
-    const w = mainCanvas.width = innerWidth * dpr;
-    const h = mainCanvas.height = innerHeight * dpr;
-    {
-        // background
-        const p3 = percent(t, 1, .8);
-        const p4 = percent(t, 0, .5);
-        const g = x.createRadialGradient(w/2,h/2,0,w/2,h/2,hypot(w,h)*.6);
-        g.addColorStop(0,hsl(0,0,lerp(0,p3/2,p4),p3).toString());
-        g.addColorStop(1,hsl(0,0,0,p3).toString());
-        x.save();
-        x.fillStyle = g;
-        x.fillRect(0,0,w,h);
-    }
-    const gradient = (X1,Y1,X2,Y2,C,S=1)=>
-    {
-        if (C >= 0)
-        {
-            if (blackAndWhite)
-                x.fillStyle = '#fff';
-            else
-            {
-                const g = x.fillStyle = x.createLinearGradient(X1,Y1,X2,Y2);
-                g.addColorStop(0,color(C,2));
-                g.addColorStop(1,color(C,1));
-            }
-        }
-        else
-            x.fillStyle = '#000';
-        C >= -1 ? (x.fill(), S && x.stroke()) : x.stroke();
-    }
-    const circle = (X,Y,R,A=0,B=2*PI,C,S)=>
-    {
-        x.beginPath();
-        x.arc(X,Y,R,p*A,p*B);
-        gradient(X,Y-R,X,Y+R,C,S);
-    }
-    const rect = (X,Y,W,H,C)=>
-    {
-        x.beginPath();
-        x.rect(X,Y,W,H*p);
-        gradient(X,Y+H,X+W,Y,C);
-    }
-    const poly = (points,C,Y,H)=>
-    {
-        x.beginPath();
-        for (const p of points)
-            x.lineTo(p.x, p.y);
-        x.closePath();
-        gradient(0, Y, 0, Y+H,C);
-    }
-    const color = (c,l)=> l?`hsl(${[.95,.56,.13][c%3]*360} 99%${[0,50,75][l]}%`:'#000';
-
-    // center and fit tos screen
-    const alpha = oscillate(1,1,t);
-    const p = percent(alpha, .1, .5);
-    const size = min(6, min(w,h)/99);
-    x.translate(w/2,h/2);
-    x.scale(size,size);
-    x.translate(-40,-35);
-    p < 1 && x.setLineDash([99*p,99]);
-    x.lineJoin = x.lineCap = 'round';
-    x.lineWidth = .1 + p*1.9;
-    //x.strokeStyle='#fff7';
-
-    if (showName)
-    {
-        // engine name text
-        const Y = 54;
-        const s = 'LittleJS';
-        x.font = '900 15.5px arial';
-        x.lineWidth = .1+p*3.9;
-        x.textAlign = 'center';
-        x.textBaseline = 'top';
-        rect(11,Y+1,59,8*p,-1);
-        x.beginPath();
-
-        let w2 = 0;
-        for (let i=0;i<s.length;++i)
-            w2 += x.measureText(s[i]).width;
-        for (let j=2;j--;)
-        for (let i=0,X=40-w2/2;i<s.length;++i)
-        {
-            const w = x.measureText(s[i]).width, X2 = X+w/2;
-            gradient(X2,Y,X2+2,Y+13,i>5?1:0);
-            x[j?'strokeText':'fillText'](s[i],X2,Y+.5,17*p);
-            X += w;
-        }
-
-        x.lineWidth = .1 + p*1.9;
-        rect(3,Y,73,0); // bottom
-    }
-
-    rect(7,15,26,-7,0);   // cab top
-    rect(25,15,8,25,-1);  // cab front
-    rect(10,40,15,-25,1); // cab back
-    rect(14,21,7,9,2);    // cab window
-    rect(38,20,6,-6,2);   // little stack
-    
-    // big stack
-    rect(49,20,10,-6,0);
-    const stackPoints = [vec2(44,8),vec2(64,8),vec2(59,8+6*p),vec2(49,8+6*p)];
-    poly(stackPoints,2,8,6*p);
-    rect(44,8,20,-7,0);
-
-    // engine
-    for (let i=5;i--;) circle(59-i*6*p,30,10,0,2*PI,1,0);
-    circle(59,30,4,0,7,2); // light
-
-    // engine outline
-    rect(35,20,24,0);  // top
-    circle(59,30,10);  // front
-    circle(47,30,10,PI/2,PI*3/2); // middle
-    circle(35,30,10,PI/2,PI*3/2); // back
-    rect(7,40,13,7,-1);   // bottom back
-    rect(17,40,43,14,-1); // bottom center
-
-    // wheels
-    for (let i=3;i--;) for (let j=2;j--;) circle(17+15*i,47,j?7:1,0,2*PI,2);
-    
-    // cowcatcher
-    for (let i=2;i--;)
-    {
-        let w=6, s=7, o=53+w*p*i
-        const points = [vec2(o+s,54),vec2(o,40),vec2(o+w*p,40),vec2(o+s+w*p,54)];
-        poly(points,0,40,14);
-    }
-
-    x.restore();
-}
 /**
  * LittleJS Debug System
  * - Press Esc to toggle debug overlay with object picking
@@ -749,7 +610,7 @@ let debugKey = 'Escape';
 let debugOverlay = false;
 
 // Engine internal variables not exposed to documentation
-let debugPrimitives = [], debugPhysics = false, debugRaycast = false, debugParticles = false, debugGamepads = false, debugMedals = false, debugTakeScreenshot;
+let debugPrimitives = [], debugPhysics = false, debugRaycast = false, debugParticles = false, debugGamepads = false, debugTakeScreenshot;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Debug helper functions
@@ -1580,7 +1441,11 @@ function percentLerp(value, percentA, percentB, lerpA, lerpB)
  *  @return {number}
  *  @memberof Math */
 function distanceWrap(valueA, valueB, wrapSize=1)
-{ const d = (valueA - valueB) % wrapSize; return d*2 % wrapSize - d; }
+{
+    ASSERT(wrapSize > 0, 'distanceWrap wrapSize must be > 0');
+    const d = (valueA - valueB) % wrapSize;
+    return d*2 % wrapSize - d;
+}
 
 /** Linearly interpolates between values passed in with wrapping
  *  @param {number} valueA
@@ -1897,6 +1762,7 @@ class RandomGenerator
      *  @param {number} [seed] - Starting seed or engine default seed */
     constructor(seed = 123456789)
     {
+        ASSERT(seed !== 0, 'RandomGenerator seed must be non-zero (xorshift is fixed at 0)');
         /** @property {number} - random seed */
         this.seed = seed;
     }
@@ -2190,8 +2056,10 @@ class Vector2
      * @return {Vector2} */
     floor() { return new Vector2(floor(this.x), floor(this.y)); }
 
-    /** Returns a copy of this vector snapped to a grid
-     *  @param {number} grid - grid size to snap to
+    /** Returns a copy of this vector snapped to a grid. Note that `grid` is
+     *  the number of snap steps per unit (so `grid=2` snaps to halves and
+     *  `grid=0.5` snaps to twos), not the cell size.
+     *  @param {number} grid - snap steps per unit
      *  @return {Vector2} */
     snap(grid)
     {
@@ -2761,9 +2629,14 @@ function readSaveData(saveName, defaultSaveData)
 {
     ASSERT(isString(saveName), 'loadData requires saveName string');
     
-    // replace undefined values with defaults
+    // replace undefined values with defaults; tolerate corrupt JSON
     const data = localStorage[saveName];
-    const loadedData = data ? JSON.parse(data) : {};
+    let loadedData = {};
+    if (data)
+    {
+        try { loadedData = JSON.parse(data); }
+        catch { LOG('readSaveData: corrupt JSON for', saveName, '— using defaults'); }
+    }
     return { ...defaultSaveData, ...loadedData };
 }
 
@@ -3099,33 +2972,6 @@ let soundDefaultRange = 40;
 let soundDefaultTaper = .7;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Medals settings
-
-/** How long to show medals for in seconds
- *  @type {number}
- *  @default
- *  @memberof Settings */
-let medalDisplayTime = 5;
-
-/** How quickly to slide on/off medals in seconds
- *  @type {number}
- *  @default
- *  @memberof Settings */
-let medalDisplaySlideTime = .5;
-
-/** Size of medal display
- *  @type {Vector2}
- *  @default Vector2(640,80)
- *  @memberof Settings */
-let medalDisplaySize = vec2(640, 80);
-
-/** Set to stop medals from being unlockable (like if cheats are enabled)
- *  @type {boolean}
- *  @default
- *  @memberof Settings */
-let medalsPreventUnlock = false;
-
-///////////////////////////////////////////////////////////////////////////////
 // Setters for global variables
 
 /** Set position of camera in world space
@@ -3386,26 +3232,6 @@ function setSoundDefaultRange(range) { soundDefaultRange = range; }
  *  @memberof Settings */
 function setSoundDefaultTaper(taper) { soundDefaultTaper = taper; }
 
-/** Set how long to show medals for in seconds
- *  @param {number} time
- *  @memberof Settings */
-function setMedalDisplayTime(time) { medalDisplayTime = time; }
-
-/** Set how quickly to slide on/off medals in seconds
- *  @param {number} time
- *  @memberof Settings */
-function setMedalDisplaySlideTime(time) { medalDisplaySlideTime = time; }
-
-/** Set size of medal display
- *  @param {Vector2} size
- *  @memberof Settings */
-function setMedalDisplaySize(size) { medalDisplaySize = size.copy(); }
-
-/** Set to stop medals from being unlockable
- *  @param {boolean} preventUnlock
- *  @memberof Settings */
-function setMedalsPreventUnlock(preventUnlock) { medalsPreventUnlock = preventUnlock; }
-
 /** Set if watermark with FPS should be shown
  *  @param {boolean} show
  *  @memberof Debug */
@@ -3547,10 +3373,18 @@ class EngineObject
         const parent = this.parent;
         if (parent)
         {
-            // copy parent pos/angle
+            // compose with parent transform inline to avoid intermediate vector allocs
             const mirror = parent.getMirrorSign();
-            this.pos = this.localPos.multiply(vec2(mirror,1)).rotate(parent.angle).add(parent.pos);
-            this.angle = mirror*this.localAngle + parent.angle;
+            const lp = this.localPos, pp = parent.pos;
+            const lx = lp.x*mirror, ly = lp.y, pa = parent.angle;
+            if (pa)
+            {
+                const c = cos(-pa), s = sin(-pa);
+                this.pos = new Vector2(lx*c - ly*s + pp.x, lx*s + ly*c + pp.y);
+            }
+            else
+                this.pos = new Vector2(lx + pp.x, ly + pp.y);
+            this.angle = mirror*this.localAngle + pa;
         }
 
         // update children
@@ -3916,8 +3750,6 @@ class EngineObject
      *  @return {string} */
     toString()
     {
-        if (!debug) return;
-        
         let text = 'type = ' + this.constructor.name;
         if (this.pos.x || this.pos.y)
             text += '\npos = ' + this.pos;
@@ -4167,8 +3999,9 @@ class TextureInfo
      * Create a TextureInfo, called automatically by the engine
      * @param {HTMLImageElement|OffscreenCanvas} image
      * @param {boolean} [useWebGL] - Should use WebGL if available?
+     * @param {boolean} [wrap] - Should the texture wrap (REPEAT) or clamp (CLAMP_TO_EDGE)?
      */
-    constructor(image, useWebGL=true)
+    constructor(image, useWebGL=true, wrap=false)
     {
         /** @property {HTMLImageElement|OffscreenCanvas} - image source */
         this.image = image;
@@ -4178,6 +4011,8 @@ class TextureInfo
         this.sizeInverse = image ? vec2(1/image.width, 1/image.height) : vec2();
         /** @property {WebGLTexture} - WebGL texture */
         this.glTexture = undefined;
+        /** @property {boolean} - true for REPEAT wrap mode, false for CLAMP_TO_EDGE */
+        this.wrap = wrap;
         useWebGL && this.createWebGLTexture();
     }
 
@@ -4190,6 +4025,14 @@ class TextureInfo
     /** Check if the texture is webgl enabled
      * @return {boolean} */
     hasWebGL() { return !!this.glTexture; }
+
+    /** Set the wrap mode for this texture
+     *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE */
+    setWrap(wrap=true)
+    {
+        this.wrap = wrap;
+        glSetTextureWrap(this.glTexture, wrap);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4251,8 +4094,13 @@ function drawTile(pos, size=vec2(1), tileInfo, color=WHITE,
         }
         else
         {
-            // if no tile info, force untextured
-            glDraw(pos.x, pos.y, size.x, size.y, angle, 0, 0, 0, 0, 0, color.rgbaInt());
+            // if no tile info, force untextured by zeroing rgba (so whatever
+            // texture is bound doesn't leak in) and folding color+additive
+            // into the additive slot — matches the Canvas2D path's
+            // color.add(additiveColor) on line ~337.
+            const combined = additiveColor ? color.add(additiveColor) : color;
+            glDraw(pos.x, pos.y, size.x, size.y, angle, 0, 0, 0, 0,
+                0, combined.rgbaInt());
         }
     }
     else
@@ -4391,6 +4239,8 @@ function drawTextureWrapped(pos, size, wrapCount, texture=0, color=WHITE,
     const textureInfo = typeof texture === 'number' ? textureInfos[texture] : texture;
     ASSERT(textureInfo instanceof TextureInfo, 'texture not loaded');
     ASSERT(textureInfo.size.x > 0, 'texture not loaded');
+    ASSERT(textureInfo.wrap,
+        'drawTextureWrapped requires a wrap-enabled texture; call textureInfo.setWrap(true) first');
 
     if (useWebGL && glEnable)
     {
@@ -5299,7 +5149,7 @@ const isTouchDevice = !headlessMode && window.ontouchstart !== undefined;
  *  This is useful to disable for html menus so the browser can handle input normally
  *  @param {boolean} preventDefault
  *  @memberof Input */
-function setInputPreventDefault(preventDefault) { inputPreventDefault = preventDefault; }
+function setInputPreventDefault(preventDefault=true) { inputPreventDefault = preventDefault; }
 
 /** Clears an input key state
  *  @param {string|number} key
@@ -6095,10 +5945,12 @@ function touchGamepadButtonCenter()
  * @namespace Audio
  */
 
-/** Audio context used by the engine
+/** Audio context used by the engine. Created lazily in audioInit() to avoid
+ *  browser autoplay warnings about constructing an AudioContext before any
+ *  user gesture.
  *  @type {AudioContext}
  *  @memberof Audio */
-let audioContext = new AudioContext;
+let audioContext;
 
 /** Master gain node for all audio to pass through
  *  @type {GainNode}
@@ -6114,12 +5966,13 @@ const audioDefaultSampleRate = 44100;
  *  @return {boolean} - True if the audio context is running
  *  @memberof Audio */
 function audioIsRunning()
-{ return audioContext.state === 'running'; }
+{ return audioContext?.state === 'running'; }
 
 function audioInit()
 {
     if (!soundEnable || headlessMode) return;
 
+    audioContext = new AudioContext;
     audioMasterGain = audioContext.createGain();
     audioMasterGain.connect(audioContext.destination);
     audioMasterGain.gain.value = soundVolume; // set starting value
@@ -6186,8 +6039,8 @@ class Sound
 
         if (Array.isArray(asset))
         {
-            // generate zzfx sound
-            const zzfxSound = asset;
+            // generate zzfx sound — copy so we don't mutate the caller's array
+            const zzfxSound = asset.slice();
 
             // remove randomness so it can be applied on playback
             const defaultRandomness = randomness ?? .05;
@@ -7785,11 +7638,14 @@ class ParticleEmitter extends EngineObject
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// scratch vector reused by Particle.render to avoid per-frame allocations
+const particleDrawPos = new Vector2;
+
 /**
  * Particle Object - Created automatically by Particle Emitters
  * @memberof Particles
  */
-class Particle 
+class Particle
 {
     /**
      * Create a particle with the passed in settings
@@ -7964,14 +7820,14 @@ class Particle
         additive && setBlendMode(true);
 
         // update the position and angle for drawing
-        const pos = this.pos.copy();
+        const pos = particleDrawPos.set(this.pos.x, this.pos.y);
         let angle = this.angle;
         if (localSpace)
         {
             // in local space of emitter
             const a = emitter.angle;
             const c = cos(a), s = sin(a);
-            pos.set(emitter.pos.x + pos.x*c - pos.y*s, 
+            pos.set(emitter.pos.x + pos.x*c - pos.y*s,
                 emitter.pos.y + pos.x*s + pos.y*c);
             angle += a;
         }
@@ -7995,200 +7851,6 @@ class Particle
         additive && setBlendMode();
         debugParticles && debugRect(pos, size, '#f005', 0, angle);
     }
-}
-/**
- * LittleJS Medal System
- * - Achievement/trophy system for games
- * - Medal class with name, description, icon, and unlock tracking
- * - Automatic saving to local storage
- * - Visual display queue with slide-in notifications
- * - Newgrounds API integration for online achievements
- * - Debug mode to unlock/reset medals during development
- * @namespace Medals
- */
-
-/** List of all medals
- *  @type {Object}
- *  @memberof Medals */
-const medals = {};
-
-// Engine internal variables not exposed to documentation
-let medalsDisplayQueue = [], medalsSaveName, medalsDisplayTimeLast;
-
-///////////////////////////////////////////////////////////////////////////////
-
-/** Initialize medals with a save name used for storage
- *  - Call this after creating all medals
- *  - Checks if medals are unlocked
- *  @param {string} saveName
- *  @memberof Medals */
-function medalsInit(saveName)
-{
-    // check if medals are unlocked
-    medalsSaveName = saveName;
-    if (!debugMedals)
-        medalsForEach(medal=> medal.unlocked = !!localStorage[medal.storageKey()]);
-
-    // engine automatically renders medals
-    engineAddPlugin(undefined, medalsRender);
-
-    // plugin functions
-    function medalsRender()
-    {
-        if (!medalsDisplayQueue.length) return;
-
-        // update first medal in queue
-        const medal = medalsDisplayQueue[0];
-        const time = timeReal - medalsDisplayTimeLast;
-        if (!medalsDisplayTimeLast)
-            medalsDisplayTimeLast = timeReal;
-        else if (time > medalDisplayTime)
-        {
-            medalsDisplayTimeLast = 0;
-            medalsDisplayQueue.shift();
-        }
-        else
-        {
-            // slide on/off medals
-            const slideOffTime = medalDisplayTime - medalDisplaySlideTime;
-            const hidePercent =
-                time < medalDisplaySlideTime ? 1 - time / medalDisplaySlideTime :
-                time > slideOffTime ? (time - slideOffTime) / medalDisplaySlideTime : 0;
-            medal.render(hidePercent);
-        }
-    }
-}
-
-/**
- *  @callback MedalCallbackFunction - Function that processes a medal
- *  @param {Medal} medal
- *  @memberof Medals
- */
-
-/** Calls a function for each medal
- *  @param {MedalCallbackFunction} callback
- *  @memberof Medals */
-function medalsForEach(callback)
-{ Object.values(medals).forEach(medal=>callback(medal)); }
-
-///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Medal - Tracks an unlockable medal
- * @memberof Medals
- * @example
- * // create a medal
- * const medal_example = new Medal(0, 'Example Medal', 'More info about the medal goes here.', '🎖️');
- *
- * // initialize medals
- * medalsInit('Example Game');
- *
- * // unlock the medal
- * medal_example.unlock();
- */
-class Medal
-{
-    /** Create a medal object and adds it to the list of medals
-     *  @param {number} id            - The unique identifier of the medal
-     *  @param {string} name          - Name of the medal
-     *  @param {string} [description] - Description of the medal
-     *  @param {string} [icon]        - Icon for the medal
-     *  @param {string} [src]         - Image location for the medal
-     */
-    constructor(id, name, description='', icon='🏆', src)
-    {
-        ASSERT(id >= 0 && !medals[id]);
-
-        /** @property {number} - The unique identifier of the medal */
-        this.id = id;
-
-        /** @property {string} - Name of the medal */
-        this.name = name;
-
-        /** @property {string} - Description of the medal */
-        this.description = description;
-
-        /** @property {string} - Icon for the medal */
-        this.icon = icon;
-
-        /** @property {boolean} - Is the medal unlocked? */
-        this.unlocked = false;
-
-        // load the source image if provided
-        if (src)
-            (this.image = new Image).src = src;
-
-        // add this to list of medals
-        medals[id] = this;
-    }
-
-    /** Unlocks a medal if not already unlocked */
-    unlock()
-    {
-        if (medalsPreventUnlock || this.unlocked) return;
-
-        // save the medal
-        ASSERT(medalsSaveName, 'save name must be set');
-        localStorage[this.storageKey()] = this.unlocked = true;
-        medalsDisplayQueue.push(this);
-    }
-
-    /** Render a medal
-     *  @param {number} [hidePercent] - How much to slide the medal off screen
-     */
-    render(hidePercent=0)
-    {
-        const context = mainContext;
-        const width = min(medalDisplaySize.x, mainCanvas.width);
-        const height = medalDisplaySize.y;
-        const x = mainCanvas.width - width;
-        const y = -height*hidePercent;
-        const backgroundColor = hsl(0,0,.9);
-
-        // draw containing rect and clip to that region
-        context.save();
-        context.beginPath();
-        context.fillStyle = backgroundColor.toString();
-        context.strokeStyle = BLACK.toString();
-        context.lineWidth = 3;
-        context.rect(x, y, width, height);
-        context.fill();
-        context.stroke();
-        context.clip();
-
-        // draw the icon
-        const gap = vec2(.1, .05).scale(height);
-        const medalDisplayIconSize = height - 2*gap.x;
-        this.renderIcon(vec2(x + gap.x + medalDisplayIconSize/2, y + height/2), medalDisplayIconSize);
-
-        // draw the name
-        const nameSize = height*.5;
-        const descriptionSize = height*.3;
-        const pos = vec2(x + medalDisplayIconSize + 2*gap.x, y + gap.y*2 + nameSize/2);
-        const textWidth = width - medalDisplayIconSize - 3*gap.x;
-        drawTextScreen(this.name, pos, nameSize, BLACK, 0, undefined, 'left', undefined, undefined, textWidth);
-
-        // draw the description
-        pos.y = y + height - gap.y*2 - descriptionSize/2;
-        drawTextScreen(this.description, pos, descriptionSize, BLACK, 0, undefined, 'left', undefined, undefined, textWidth);
-        context.restore();
-    }
-
-    /** Render the icon for a medal
-     *  @param {Vector2} pos - Screen space position
-     *  @param {number} size - Screen space size
-     */
-    renderIcon(pos, size)
-    {
-        // draw the image or icon
-        if (this.image)
-            mainContext.drawImage(this.image, pos.x-size/2, pos.y-size/2, size, size);
-        else
-            drawTextScreen(this.icon, pos, size*.7, BLACK);
-    }
-
-    // Get local storage key used by the medal
-    storageKey() { return medalsSaveName + '_' + this.id; }
 }
 /**
  * LittleJS WebGL Interface
@@ -8289,7 +7951,7 @@ function glInit(rootElement)
         // reinit WebGL and restore textures
         initWebGL();
         for (const info of glTextureInfos)
-            info.glTexture = glCreateTexture(info.image);
+            info.glTexture = glCreateTexture(info.image, info.wrap);
         pluginList.forEach(plugin=>plugin.glContextRestored?.());
     });
 
@@ -8505,6 +8167,30 @@ function glSetTexture(texture)
     glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture);
 }
 
+/** Set the wrap mode (REPEAT or CLAMP_TO_EDGE) on an existing WebGL texture
+ *  Flushes the current batch only if the texture is the active one
+ *  @param {WebGLTexture} texture
+ *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
+ *  @memberof WebGL */
+function glSetTextureWrap(texture, wrap=true)
+{
+    if (!glContext || !texture) return;
+
+    // flush only if changing wrap on the currently bound texture
+    const isCurrent = texture === glActiveTexture;
+    if (isCurrent)
+        glFlush();
+    else
+        glContext.bindTexture(glContext.TEXTURE_2D, texture);
+
+    const wrapMode = wrap ? glContext.REPEAT : glContext.CLAMP_TO_EDGE;
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, wrapMode);
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, wrapMode);
+
+    if (!isCurrent && glActiveTexture)
+        glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture);
+}
+
 /** Compile WebGL shader of the given type, will throw errors if in debug mode
  *  @param {string} source
  *  @param {number} type
@@ -8549,9 +8235,10 @@ function glCreateProgram(vsSource, fsSource)
 /** Create WebGL texture from an image and init the texture settings
  *  Restores the active texture when done
  *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas} [image]
+ *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
  *  @return {WebGLTexture}
  *  @memberof WebGL */
-function glCreateTexture(image)
+function glCreateTexture(image, wrap=false)
 {
     if (!glContext) return;
 
@@ -8577,8 +8264,9 @@ function glCreateTexture(image)
     const minFilter = mipMap ? glContext.LINEAR_MIPMAP_LINEAR : magFilter;
     glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MAG_FILTER, magFilter);
     glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, minFilter);
-    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, glContext.REPEAT);
-    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, glContext.REPEAT);
+    const wrapMode = wrap ? glContext.REPEAT : glContext.CLAMP_TO_EDGE;
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, wrapMode);
+    glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, wrapMode);
     if (mipMap)
         glContext.generateMipmap(glContext.TEXTURE_2D);
 
@@ -8630,7 +8318,7 @@ function glRegisterTextureInfo(textureInfo)
     if (textureInfo.glTexture)
         glSetTextureData(textureInfo.glTexture, textureInfo.image);
     else
-        textureInfo.glTexture = glCreateTexture(textureInfo.image);
+        textureInfo.glTexture = glCreateTexture(textureInfo.image, textureInfo.wrap);
 }
 
 /** Tells WebGL to destroy the glTexture and stop tracking it
@@ -8849,6 +8537,7 @@ function glSetRenderTarget(texture, clear=false)
         glFlush();
         glRenderTarget = undefined;
         glContext.bindFramebuffer(glContext.FRAMEBUFFER, null);
+        glContext.viewport(0, 0, mainCanvasSize.x, mainCanvasSize.y);
     }
 }
 
@@ -8971,9 +8660,9 @@ function glPolyStrip(points)
         return area;
     }
 
-    // ensure counter-clockwise winding
+    // ensure counter-clockwise winding (slice first so we don't mutate caller's array)
     if (signedArea(points) < 0)
-        points = points.reverse();
+        points = points.slice().reverse();
 
     // check if point is inside triangle
     const e = 1e-9;
@@ -9073,6 +8762,398 @@ function glPolyStrip(points)
     }
     return strip;
 }
+/**
+ * LittleJS Engine Logo
+ * - Draws the LittleJS splash screen logo
+ * - Used internally during engine startup
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+function drawEngineLogo(t)
+{
+    const blackAndWhite = 0;
+    const showName = 1;
+
+    // LittleJS Logo and Splash Screen
+    const x = mainContext;
+    const dpr = canvasPixelRatio ?? (devicePixelRatio || 1);
+    const w = mainCanvas.width = innerWidth * dpr;
+    const h = mainCanvas.height = innerHeight * dpr;
+    {
+        // background
+        const p3 = percent(t, 1, .8);
+        const p4 = percent(t, 0, .5);
+        const g = x.createRadialGradient(w/2,h/2,0,w/2,h/2,hypot(w,h)*.6);
+        g.addColorStop(0,hsl(0,0,lerp(0,p3/2,p4),p3).toString());
+        g.addColorStop(1,hsl(0,0,0,p3).toString());
+        x.save();
+        x.fillStyle = g;
+        x.fillRect(0,0,w,h);
+    }
+    const gradient = (X1,Y1,X2,Y2,C,S=1)=>
+    {
+        if (C >= 0)
+        {
+            if (blackAndWhite)
+                x.fillStyle = '#fff';
+            else
+            {
+                const g = x.fillStyle = x.createLinearGradient(X1,Y1,X2,Y2);
+                g.addColorStop(0,color(C,2));
+                g.addColorStop(1,color(C,1));
+            }
+        }
+        else
+            x.fillStyle = '#000';
+        C >= -1 ? (x.fill(), S && x.stroke()) : x.stroke();
+    }
+    const circle = (X,Y,R,A=0,B=2*PI,C,S)=>
+    {
+        x.beginPath();
+        x.arc(X,Y,R,p*A,p*B);
+        gradient(X,Y-R,X,Y+R,C,S);
+    }
+    const rect = (X,Y,W,H,C)=>
+    {
+        x.beginPath();
+        x.rect(X,Y,W,H*p);
+        gradient(X,Y+H,X+W,Y,C);
+    }
+    const poly = (points,C,Y,H)=>
+    {
+        x.beginPath();
+        for (const p of points)
+            x.lineTo(p.x, p.y);
+        x.closePath();
+        gradient(0, Y, 0, Y+H,C);
+    }
+    const color = (c,l)=> l?`hsl(${[.95,.56,.13][c%3]*360} 99%${[0,50,75][l]}%`:'#000';
+
+    // center and fit to screen
+    const alpha = oscillate(1,1,t);
+    const p = percent(alpha, .1, .5);
+    const size = min(6, min(w,h)/99);
+    x.translate(w/2,h/2);
+    x.scale(size,size);
+    x.translate(-40,-35);
+    p < 1 && x.setLineDash([99*p,99]);
+    x.lineJoin = x.lineCap = 'round';
+    x.lineWidth = .1 + p*1.9;
+    //x.strokeStyle='#fff7';
+
+    if (showName)
+    {
+        // engine name text
+        const Y = 54;
+        const s = 'LittleJS';
+        x.font = '900 15.5px arial';
+        x.lineWidth = .1+p*3.9;
+        x.textAlign = 'center';
+        x.textBaseline = 'top';
+        rect(11,Y+1,59,8*p,-1);
+        x.beginPath();
+
+        let w2 = 0;
+        for (let i=0;i<s.length;++i)
+            w2 += x.measureText(s[i]).width;
+        for (let j=2;j--;)
+        for (let i=0,X=40-w2/2;i<s.length;++i)
+        {
+            const w = x.measureText(s[i]).width, X2 = X+w/2;
+            gradient(X2,Y,X2+2,Y+13,i>5?1:0);
+            x[j?'strokeText':'fillText'](s[i],X2,Y+.5,17*p);
+            X += w;
+        }
+
+        x.lineWidth = .1 + p*1.9;
+        rect(3,Y,73,0); // bottom
+    }
+
+    rect(7,15,26,-7,0);   // cab top
+    rect(25,15,8,25,-1);  // cab front
+    rect(10,40,15,-25,1); // cab back
+    rect(14,21,7,9,2);    // cab window
+    rect(38,20,6,-6,2);   // little stack
+
+    // big stack
+    rect(49,20,10,-6,0);
+    const stackPoints = [vec2(44,8),vec2(64,8),vec2(59,8+6*p),vec2(49,8+6*p)];
+    poly(stackPoints,2,8,6*p);
+    rect(44,8,20,-7,0);
+
+    // engine
+    for (let i=5;i--;) circle(59-i*6*p,30,10,0,2*PI,1,0);
+    circle(59,30,4,0,7,2); // light
+
+    // engine outline
+    rect(35,20,24,0);  // top
+    circle(59,30,10);  // front
+    circle(47,30,10,PI/2,PI*3/2); // middle
+    circle(35,30,10,PI/2,PI*3/2); // back
+    rect(7,40,13,7,-1);   // bottom back
+    rect(17,40,43,14,-1); // bottom center
+
+    // wheels
+    for (let i=3;i--;) for (let j=2;j--;) circle(17+15*i,47,j?7:1,0,2*PI,2);
+
+    // cowcatcher
+    for (let i=2;i--;)
+    {
+        let w=6, s=7, o=53+w*p*i
+        const points = [vec2(o+s,54),vec2(o,40),vec2(o+w*p,40),vec2(o+s+w*p,54)];
+        poly(points,0,40,14);
+    }
+
+    x.restore();
+}
+
+/**
+ * LittleJS Medal System
+ * - Achievement/trophy system for games
+ * - Medal class with name, description, icon, and unlock tracking
+ * - Automatic saving to local storage
+ * - Visual display queue with slide-in notifications
+ * - Newgrounds API integration for online achievements
+ * - Debug mode to unlock/reset medals during development
+ * @namespace Medals
+ */
+
+let debugMedals = false;
+
+///////////////////////////////////////////////////////////////////////////////
+// Medals settings
+
+/** How long to show medals for in seconds
+ *  @type {number}
+ *  @default
+ *  @memberof Settings */
+let medalDisplayTime = 5;
+
+/** How quickly to slide on/off medals in seconds
+ *  @type {number}
+ *  @default
+ *  @memberof Settings */
+let medalDisplaySlideTime = .5;
+
+/** Size of medal display
+ *  @type {Vector2}
+ *  @default Vector2(640,80)
+ *  @memberof Settings */
+let medalDisplaySize = vec2(640, 80);
+
+/** Set to stop medals from being unlockable (like if cheats are enabled)
+ *  @type {boolean}
+ *  @default
+ *  @memberof Settings */
+let medalsPreventUnlock = false;
+
+/** List of all medals
+ *  @type {Object}
+ *  @memberof Medals */
+const medals = {};
+
+// Engine internal variables not exposed to documentation
+let medalsDisplayQueue = [], medalsSaveName, medalsDisplayTimeLast;
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** Initialize medals with a save name used for storage
+ *  - Call this after creating all medals
+ *  - Checks if medals are unlocked
+ *  @param {string} saveName
+ *  @memberof Medals */
+function medalsInit(saveName)
+{
+    // check if medals are unlocked
+    medalsSaveName = saveName;
+    if (!debugMedals)
+        medalsForEach(medal=> medal.unlocked = !!localStorage[medal.storageKey()]);
+
+    // engine automatically renders medals
+    engineAddPlugin(undefined, medalsRender);
+
+    // plugin functions
+    function medalsRender()
+    {
+        if (!medalsDisplayQueue.length) return;
+
+        // update first medal in queue
+        const medal = medalsDisplayQueue[0];
+        const time = timeReal - medalsDisplayTimeLast;
+        if (!medalsDisplayTimeLast)
+            medalsDisplayTimeLast = timeReal;
+        else if (time > medalDisplayTime)
+        {
+            medalsDisplayTimeLast = 0;
+            medalsDisplayQueue.shift();
+        }
+        else
+        {
+            // slide on/off medals
+            const slideOffTime = medalDisplayTime - medalDisplaySlideTime;
+            const hidePercent =
+                time < medalDisplaySlideTime ? 1 - time / medalDisplaySlideTime :
+                time > slideOffTime ? (time - slideOffTime) / medalDisplaySlideTime : 0;
+            medal.render(hidePercent);
+        }
+    }
+}
+
+/**
+ *  @callback MedalCallbackFunction - Function that processes a medal
+ *  @param {Medal} medal
+ *  @memberof Medals
+ */
+
+/** Calls a function for each medal
+ *  @param {MedalCallbackFunction} callback
+ *  @memberof Medals */
+function medalsForEach(callback)
+{ Object.values(medals).forEach(medal=>callback(medal)); }
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Medal - Tracks an unlockable medal
+ * @memberof Medals
+ * @example
+ * // create a medal
+ * const medal_example = new Medal(0, 'Example Medal', 'More info about the medal goes here.', '🎖️');
+ *
+ * // initialize medals
+ * medalsInit('Example Game');
+ *
+ * // unlock the medal
+ * medal_example.unlock();
+ */
+class Medal
+{
+    /** Create a medal object and adds it to the list of medals
+     *  @param {number} id            - The unique identifier of the medal
+     *  @param {string} name          - Name of the medal
+     *  @param {string} [description] - Description of the medal
+     *  @param {string} [icon]        - Icon for the medal
+     *  @param {string} [src]         - Image location for the medal
+     */
+    constructor(id, name, description='', icon='🏆', src)
+    {
+        ASSERT(id >= 0 && !medals[id]);
+
+        /** @property {number} - The unique identifier of the medal */
+        this.id = id;
+
+        /** @property {string} - Name of the medal */
+        this.name = name;
+
+        /** @property {string} - Description of the medal */
+        this.description = description;
+
+        /** @property {string} - Icon for the medal */
+        this.icon = icon;
+
+        /** @property {boolean} - Is the medal unlocked? */
+        this.unlocked = false;
+
+        // load the source image if provided
+        if (src)
+            (this.image = new Image).src = src;
+
+        // add this to list of medals
+        medals[id] = this;
+    }
+
+    /** Unlocks a medal if not already unlocked */
+    unlock()
+    {
+        if (medalsPreventUnlock || this.unlocked) return;
+
+        // save the medal
+        ASSERT(medalsSaveName, 'save name must be set');
+        localStorage[this.storageKey()] = this.unlocked = true;
+        medalsDisplayQueue.push(this);
+    }
+
+    /** Render a medal
+     *  @param {number} [hidePercent] - How much to slide the medal off screen
+     */
+    render(hidePercent=0)
+    {
+        const context = mainContext;
+        const width = min(medalDisplaySize.x, mainCanvas.width);
+        const height = medalDisplaySize.y;
+        const x = mainCanvas.width - width;
+        const y = -height*hidePercent;
+        const backgroundColor = hsl(0,0,.9);
+
+        // draw containing rect and clip to that region
+        context.save();
+        context.beginPath();
+        context.fillStyle = backgroundColor.toString();
+        context.strokeStyle = BLACK.toString();
+        context.lineWidth = 3;
+        context.rect(x, y, width, height);
+        context.fill();
+        context.stroke();
+        context.clip();
+
+        // draw the icon
+        const gap = vec2(.1, .05).scale(height);
+        const medalDisplayIconSize = height - 2*gap.x;
+        this.renderIcon(vec2(x + gap.x + medalDisplayIconSize/2, y + height/2), medalDisplayIconSize);
+
+        // draw the name
+        const nameSize = height*.5;
+        const descriptionSize = height*.3;
+        const pos = vec2(x + medalDisplayIconSize + 2*gap.x, y + gap.y*2 + nameSize/2);
+        const textWidth = width - medalDisplayIconSize - 3*gap.x;
+        drawTextScreen(this.name, pos, nameSize, BLACK, 0, undefined, 'left', undefined, undefined, textWidth);
+
+        // draw the description
+        pos.y = y + height - gap.y*2 - descriptionSize/2;
+        drawTextScreen(this.description, pos, descriptionSize, BLACK, 0, undefined, 'left', undefined, undefined, textWidth);
+        context.restore();
+    }
+
+    /** Render the icon for a medal
+     *  @param {Vector2} pos - Screen space position
+     *  @param {number} size - Screen space size
+     */
+    renderIcon(pos, size)
+    {
+        // draw the image or icon
+        if (this.image)
+            mainContext.drawImage(this.image, pos.x-size/2, pos.y-size/2, size, size);
+        else
+            drawTextScreen(this.icon, pos, size*.7, BLACK);
+    }
+
+    // Get local storage key used by the medal
+    storageKey() { return medalsSaveName + '_' + this.id; }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Medals setting setters
+
+/** Set how long to show medals for in seconds
+ *  @param {number} time
+ *  @memberof Settings */
+function setMedalDisplayTime(time) { medalDisplayTime = time; }
+
+/** Set how quickly to slide on/off medals in seconds
+ *  @param {number} time
+ *  @memberof Settings */
+function setMedalDisplaySlideTime(time) { medalDisplaySlideTime = time; }
+
+/** Set size of medal display
+ *  @param {Vector2} size
+ *  @memberof Settings */
+function setMedalDisplaySize(size) { medalDisplaySize = size.copy(); }
+
+/** Set to stop medals from being unlockable
+ *  @param {boolean} preventUnlock
+ *  @memberof Settings */
+function setMedalsPreventUnlock(preventUnlock) { medalsPreventUnlock = preventUnlock; }
+
 /** 
  * LittleJS Newgrounds Plugin
  * - NewgroundsMedal extends Medal with Newgrounds API functionality
@@ -9689,15 +9770,12 @@ class UISystemPlugin
         this.lastHoverObject = undefined;
         /** @property {UIObject} - Current confirm menu being shown */
         this.confirmDialog = undefined;
-        /** @property {UIObject} - Object to send keyboard input to */
-        this.keyInputObject = undefined;
+        /** @private */
+        this._keyInputObject = undefined;
+        /** @private */
+        this._onKeyDown = (e) => this._keyInputObject?.onKeyDown(e);
 
         engineAddPlugin(uiUpdate, uiRender);
-
-        // key down handler
-        function onKeyDown(e)
-        { uiSystem.keyInputObject?.onKeyDown(e); }
-        document.addEventListener('keydown', onKeyDown);
 
         // set object position in parent space
         function updateTransforms(o)
@@ -10040,8 +10118,23 @@ class UISystemPlugin
         return p;
     }
 
+    /** Object to send keyboard input to (typically a UITextInput).
+     *  The document keydown listener is only attached while this is set,
+     *  so games that never use text input pay no event-handling cost.
+     *  @type {UIObject} */
+    get keyInputObject() { return this._keyInputObject; }
+    set keyInputObject(obj)
+    {
+        const had = !!this._keyInputObject;
+        this._keyInputObject = obj;
+        if (!had && obj)
+            document.addEventListener('keydown', this._onKeyDown);
+        else if (had && !obj)
+            document.removeEventListener('keydown', this._onKeyDown);
+    }
+
     /** Destroy and remove all objects
-    *  @memberof Engine */
+    *  @memberof UISystem */
     destroyObjects()
     {
         for (const o of this.uiObjects)
@@ -10464,15 +10557,13 @@ class UIObject
      *  @return {string} */
     toString()
     {
-        if (!debug) return;
-        
         let text = 'type = ' + this.constructor.name;
         if (this.text)
             text += '\ntext = ' + this.text;
         if (this.pos.x || this.pos.y)
             text += '\npos = ' + this.pos;
         if (this.localPos.x || this.localPos.y)
-            text += '\localPos = ' + this.localPos;
+            text += '\nlocalPos = ' + this.localPos;
         if (this.size.x || this.size.y)
             text += '\nsize = ' + this.size;
         if (this.color)
@@ -11067,6 +11158,135 @@ class UIVideo extends UIObject
         super.destroy();
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+/**
+ * UILayout - A container that auto-arranges children in a vertical list, horizontal list, or grid
+ * - Set columns to 1 for a vertical list (default)
+ * - Set columns to children.length for a horizontal list
+ * - Set columns to N (1 < N < children.length) for a grid with N columns
+ * - Per-child sizing: each row's height = max child.size.y in that row, each column's width = max child.size.x in that column
+ * - Children are positioned centered in their cell
+ * - Container auto-sizes to fit children plus padding
+ * @extends UIObject
+ * @memberof UISystem
+ */
+class UILayout extends UIObject
+{
+    /** Create a UILayout container that auto-arranges children
+     *  @param {Vector2} [pos]
+     *  @param {number}  [columns=1]     - Number of columns (1 = vertical list)
+     *  @param {number}  [gap=10]        - Space between children
+     *  @param {number}  [padding=10]    - Space between container border and children
+     *  @param {boolean} [transparent=false] - If true, draws no background, outline, or shadow
+     */
+    constructor(pos, columns=1, gap=10, padding=10, transparent=false)
+    {
+        super(pos);
+
+        ASSERT(isNumber(columns) && columns >= 1, 'ui layout columns must be a number >= 1');
+        ASSERT(isNumber(gap), 'ui layout gap must be a number');
+        ASSERT(isNumber(padding), 'ui layout padding must be a number');
+
+        /** @property {number} - Number of columns in the layout */
+        this.columns = columns;
+        /** @property {number} - Space between children */
+        this.gap = gap;
+        /** @property {number} - Space between container border and children */
+        this.padding = padding;
+
+        if (transparent)
+        {
+            // pure positioning helper - skip background, outline, and shadow
+            this.color = CLEAR_BLACK;
+            this.gradientColor = undefined;
+            this.lineWidth = 0;
+            this.shadowColor = CLEAR_BLACK;
+        }
+        this.relayout();
+    }
+
+    /** Add a child UIObject and re-layout
+     *  @param {UIObject} child
+     *  @return {UIObject} The child object added */
+    addChild(child)
+    {
+        super.addChild(child);
+        this.relayout();
+        return child;
+    }
+
+    /** Remove a child UIObject and re-layout
+     *  @param {UIObject} child */
+    removeChild(child)
+    {
+        super.removeChild(child);
+        this.relayout();
+    }
+
+    /** Recompute child positions and container size based on per-child sizes.
+     *  Called automatically by addChild and removeChild. Call manually if you
+     *  mutate a child's size or change columns, gap, or padding. */
+    relayout()
+    {
+        const n = this.children.length;
+        if (!n)
+        {
+            this.size = vec2(this.padding * 2);
+            return;
+        }
+
+        const cols = this.columns;
+        const rows = ceil(n / cols);
+        const colWidths = new Array(cols).fill(0);
+        const rowHeights = new Array(rows).fill(0);
+
+        // first pass: compute column widths and row heights from child sizes
+        for (let i = 0; i < n; ++i)
+        {
+            const col = i % cols;
+            const row = floor(i / cols);
+            const child = this.children[i];
+            colWidths[col] = max(colWidths[col], child.size.x);
+            rowHeights[row] = max(rowHeights[row], child.size.y);
+        }
+
+        // total content size (sum of column widths/row heights plus gaps between them)
+        let contentWidth = this.gap * (cols - 1);
+        for (const w of colWidths) contentWidth += w;
+        let contentHeight = this.gap * (rows - 1);
+        for (const h of rowHeights) contentHeight += h;
+
+        // cumulative column/row offsets so positioning is O(n) not O(n^2)
+        const colOffsets = new Array(cols);
+        let xAcc = 0;
+        for (let c = 0; c < cols; ++c)
+        {
+            colOffsets[c] = xAcc;
+            xAcc += colWidths[c];
+        }
+        const rowOffsets = new Array(rows);
+        let yAcc = 0;
+        for (let r = 0; r < rows; ++r)
+        {
+            rowOffsets[r] = yAcc;
+            yAcc += rowHeights[r];
+        }
+
+        // second pass: position each child centered in its cell
+        for (let i = 0; i < n; ++i)
+        {
+            const col = i % cols;
+            const row = floor(i / cols);
+            const x = -contentWidth/2 + colOffsets[col] + this.gap * col + colWidths[col] / 2;
+            const y = -contentHeight/2 + rowOffsets[row] + this.gap * row + rowHeights[row] / 2;
+            this.children[i].localPos = vec2(x, y);
+        }
+
+        // container size = content + padding on all sides
+        this.size = vec2(contentWidth + this.padding * 2, contentHeight + this.padding * 2);
+    }
+}
 /**
  * LittleJS Box2D Physics Plugin
  * - Box2dObject extends EngineObject with Box2D physics
@@ -11592,14 +11812,29 @@ class Box2dObject extends EngineObject
         this.body.ApplyForce(box2d.vec2dTo(force), box2d.vec2dTo(pos));
     }
 
-    /** Apply acceleration to this object
+    /** Apply acceleration to this object (changes velocity by acceleration,
+     *  mass-independent — matches EngineObject.applyAcceleration semantics).
+     *  Use applyImpulse if you want the mass-dependent velocity change
+     *  Δv = impulse / mass, or applyForce for a Newton-style sustained force.
      *  @param {Vector2} acceleration
      *  @param {Vector2} [pos] */
     applyAcceleration(acceleration, pos)
-    { 
+    {
         pos ||= this.getCenterOfMass();
         this.setAwake();
-        this.body.ApplyLinearImpulse(box2d.vec2dTo(acceleration), box2d.vec2dTo(pos));
+        const impulse = acceleration.scale(this.getMass());
+        this.body.ApplyLinearImpulse(box2d.vec2dTo(impulse), box2d.vec2dTo(pos));
+    }
+
+    /** Apply an instantaneous linear impulse. Changes velocity immediately by
+     *  impulse / mass (so heavier bodies move less for the same impulse).
+     *  @param {Vector2} impulse
+     *  @param {Vector2} [pos] */
+    applyImpulse(impulse, pos)
+    {
+        pos ||= this.getCenterOfMass();
+        this.setAwake();
+        this.body.ApplyLinearImpulse(box2d.vec2dTo(impulse), box2d.vec2dTo(pos));
     }
 
     /** Apply torque to this object
@@ -11609,13 +11844,23 @@ class Box2dObject extends EngineObject
         this.setAwake();
         this.body.ApplyTorque(torque);
     }
-    
-    /** Apply angular acceleration to this object
+
+    /** Apply angular acceleration to this object (changes angular velocity by
+     *  acceleration, mass-independent — matches EngineObject semantics).
      *  @param {number} acceleration */
     applyAngularAcceleration(acceleration)
     {
         this.setAwake();
-        this.body.ApplyAngularImpulse(acceleration);
+        this.body.ApplyAngularImpulse(acceleration * this.getInertia());
+    }
+
+    /** Apply an instantaneous angular impulse. Changes angular velocity by
+     *  impulse / inertia immediately.
+     *  @param {number} impulse */
+    applyAngularImpulse(impulse)
+    {
+        this.setAwake();
+        this.body.ApplyAngularImpulse(impulse);
     }
 
     ///////////////////////////////////////////////////////////////////////////////
@@ -11861,7 +12106,7 @@ class Box2dJoint
     
     /** Check if the connected bodies should collide
      *  @return {boolean} */
-    getCollideConnected()   { return this.box2dJoint.getCollideConnected();}
+    getCollideConnected()   { return this.box2dJoint.GetCollideConnected();}
 
     /** Check if either connected body is active
      *  @return {boolean} */
@@ -13474,13 +13719,13 @@ const Ease =
      *  @param {number} x
      *  @returns {number}
      *  @memberof TweenSystem */
-    SINE: (x) => 1 - Math.cos(x * (Math.PI / 2)),
+    SINE: (x) => 1 - cos(x * (PI / 2)),
 
     /** Circular ease-in curve.
      *  @param {number} x
      *  @returns {number}
      *  @memberof TweenSystem */
-    CIRC: (x) => 1 - Math.sqrt(1 - x * x),
+    CIRC: (x) => 1 - (1 - x * x)**.5,
 
     /** Exponential ease-in curve (`2^(10x-10)`).
      *  @param {number} x
@@ -13499,7 +13744,7 @@ const Ease =
      *  @returns {number}
      *  @memberof TweenSystem */
     ELASTIC: (x) =>
-        -(2 ** (10 * x - 10)) * Math.sin(((37 - 40 * x) * Math.PI) / 6),
+        -(2 ** (10 * x - 10)) * sin(((37 - 40 * x) * PI) / 6),
 
     /** Spring-like ease-out: oscillates outward after passing the target.
      *  @param {number} x
@@ -13507,8 +13752,8 @@ const Ease =
      *  @memberof TweenSystem */
     SPRING: (x) =>
         1 -
-        (Math.sin(Math.PI * (1 - x) * (0.2 + 2.5 * (1 - x) ** 3)) *
-            Math.pow(x, 2.2) +
+        (sin(PI * (1 - x) * (0.2 + 2.5 * (1 - x) ** 3)) *
+            x ** 2.2 +
             (1 - x)) *
             (1.0 + 1.2 * x),
 
@@ -13612,7 +13857,7 @@ const Ease =
             {
                 const tMid = (t0 + t1) / 2;
                 const [bx, by] = curve(tMid);
-                if (Math.abs(bx - x) < 1e-5) return by;
+                if (abs(bx - x) < 1e-5) return by;
                 if (bx < x) t0 = tMid; else t1 = tMid;
             }
             return curve((t0 + t1) / 2)[1];
@@ -13743,4 +13988,761 @@ function tweenStopAll()
 
 // Register with the engine so tweens auto-advance.
 engineAddPlugin(tweenUpdate);
+
+/**
+ * LittleJS PathFinder Plugin
+ * - Grid-based A* pathfinder with two-pass smoothing for natural-looking paths
+ * - Works directly on a TileCollisionLayer, or override isWalkable/getCost for any grid
+ * - Debug visualization via engine debug primitives (stripped in release builds)
+ * - Port of frankforce.com pathFindingBase.cpp (2018)
+ * @namespace PathFinding
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Diagonal step cost — pre-computed for the A* expansion inner loop.
+const PATHFINDER_DIAGONAL_COST = Math.SQRT2;
+
+// Shared 1x1 size vector for per-tile debugRect calls. debugRect copies the
+// argument internally, so reusing one instance is safe.
+const PATHFINDER_TILE_VEC = vec2(1);
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** A single grid cell tracked by the pathfinder. Allocated once per cell at
+ *  PathFinder construction; reset (not reallocated) at the start of every
+ *  findPath call.
+ *  @memberof PathFinding */
+class PathFinderNode
+{
+    /** @param {number} x - Tile x
+     *  @param {number} y - Tile y */
+    constructor(x, y)
+    {
+        /** @property {Vector2} - Tile coords (integer) */
+        this.pos = vec2(x, y);
+        /** @property {Vector2} - World-space center of this tile (set by buildNodeData) */
+        this.posWorld = vec2();
+        /** @property {boolean} - True if this cell is passable (cleared each findPath call) */
+        this.walkable = false;
+        /** @property {number} - Extra cost added to A* G-score for stepping on this cell */
+        this.cost = 0;
+        /** @property {number} - A* G-score: actual cost from start to this node */
+        this.g = 0;
+        /** @property {number} - A* F-score: G + heuristic */
+        this.f = 0;
+        /** @property {PathFinderNode|null} - Parent for path reconstruction */
+        this.parent = null;
+        /** @property {boolean} - In the A* open list */
+        this.isOpen = false;
+        /** @property {boolean} - In the A* closed list */
+        this.isClosed = false;
+    }
+
+    /** Reset per-search state (called at the start of buildNodeData). */
+    reset()
+    {
+        this.walkable = false;
+        this.cost = 0;
+        this.g = 0;
+        this.f = 0;
+        this.parent = null;
+        this.isOpen = false;
+        this.isClosed = false;
+    }
+
+    /** True if walkable and not blocked by cost. */
+    isClear()
+    {
+        return this.walkable && this.cost === 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** Grid pathfinder using A* with two optional smoothing passes.
+ *  @memberof PathFinding
+ *  @example
+ *  // Tile-layer driven (most common):
+ *  const pf = new PathFinder(myTileCollisionLayer);
+ *  const path = pf.findPath(player.pos, mousePos);
+ *
+ *  // Bare grid with custom walkability:
+ *  const pf = new PathFinder(vec2(50, 50));
+ *  pf.isWalkable = (x, y) => myGrid[y*50 + x] === 0;
+ */
+class PathFinder
+{
+    /** @param {TileCollisionLayer|Vector2} source - Either a TileCollisionLayer
+     *  (size and walkability auto-derived) or a Vector2 grid size (user
+     *  overrides isWalkable). */
+    constructor(source)
+    {
+        // Accept either a Vector2 size or a TileCollisionLayer (which has a .size).
+        // We don't import TileCollisionLayer to avoid coupling; we duck-type on
+        // .size + .getCollisionData.
+        if (isVector2(source))
+        {
+            this.size = source.floor();
+            this.tileLayer = undefined;
+        }
+        else
+        {
+            ASSERT(source && isVector2(source.size) && typeof source.getCollisionData === 'function',
+                'PathFinder requires a Vector2 size or a TileCollisionLayer');
+            this.size = source.size;
+            this.tileLayer = source;
+        }
+
+        // Tunables (public, freely re-assignable).
+        this.heuristicWeight = 1;
+        this.maxLoop = 500;
+        this.smoothPath = true;
+        this.debug = false;
+        this.debugTime = 2;
+
+        // Pre-allocate the node array — one node per tile, reused across calls.
+        this.nodes = new Array(this.size.x * this.size.y);
+        for (let y = 0; y < this.size.y; ++y)
+        for (let x = 0; x < this.size.x; ++x)
+            this.nodes[x + y * this.size.x] = new PathFinderNode(x, y);
+
+        // Scratch Vector2 reused to avoid allocations in the isWalkable hot path.
+        this.collisionScratch = vec2();
+    }
+
+    /** Default walkability: if a tile layer was provided, returns true when the
+     *  cell has no solid collision data; otherwise returns true. Override on
+     *  the instance or via a subclass.
+     *  @param {number} x - Tile x
+     *  @param {number} y - Tile y
+     *  @returns {boolean} */
+    isWalkable(x, y)
+    {
+        if (!this.tileLayer) return true;
+        return !this.tileLayer.getCollisionData(this.collisionScratch.set(x, y));
+    }
+
+    /** Default extra cost for stepping on a cell. Returns 0 (free) by default.
+     *  Override to add cost-weighted terrain (mud, swamp, etc).
+     *  @param {number} x - Tile x
+     *  @param {number} y - Tile y
+     *  @returns {number} */
+    getCost(x, y)
+    {
+        return 0;
+    }
+
+    /** Get the node at tile coords, or null if out of bounds.
+     *  @param {number} x
+     *  @param {number} y
+     *  @returns {PathFinderNode|null} */
+    getNode(x, y)
+    {
+        if (x < 0 || y < 0 || x >= this.size.x || y >= this.size.y) return null;
+        return this.nodes[x + y * this.size.x];
+    }
+
+    /** Convert a world-space position to integer tile coords (no clamping).
+     *  @param {Vector2} worldPos
+     *  @returns {Vector2}
+     *  @memberof PathFinding */
+    worldToTile(worldPos)
+    {
+        const ox = this.tileLayer ? this.tileLayer.pos.x : 0;
+        const oy = this.tileLayer ? this.tileLayer.pos.y : 0;
+        return vec2(floor(worldPos.x - ox), floor(worldPos.y - oy));
+    }
+
+    /** Convert integer tile coords to the world-space center of that tile.
+     *  @param {number} x
+     *  @param {number} y
+     *  @returns {Vector2}
+     *  @memberof PathFinding */
+    tileToWorld(x, y)
+    {
+        const ox = this.tileLayer ? this.tileLayer.pos.x : 0;
+        const oy = this.tileLayer ? this.tileLayer.pos.y : 0;
+        return vec2(x + 0.5 + ox, y + 0.5 + oy);
+    }
+
+    /** Reset all nodes and re-populate walkable / cost / posWorld from the
+     *  current isWalkable / getCost overrides. Called at the start of
+     *  findPath; exposed so tests and tooling can drive it directly.
+     *  @private */
+    buildNodeData()
+    {
+        const w = this.size.x;
+        const h = this.size.y;
+        const ox = this.tileLayer ? this.tileLayer.pos.x : 0;
+        const oy = this.tileLayer ? this.tileLayer.pos.y : 0;
+        for (let y = 0; y < h; ++y)
+        for (let x = 0; x < w; ++x)
+        {
+            const node = this.nodes[x + y * w];
+            node.reset();
+            const walkable = !!this.isWalkable(x, y);
+            const cost = walkable ? max(0, this.getCost(x, y)) : 0;
+            node.walkable = walkable;
+            node.cost = cost;
+            node.posWorld.set(x + 0.5 + ox, y + 0.5 + oy);
+
+            if (this.debug && this.debugTime > 0)
+            {
+                if (!walkable)
+                    debugRect(node.posWorld, PATHFINDER_TILE_VEC, rgb(1, 0, 0, 0.25), this.debugTime);
+                else if (cost > 0)
+                    debugRect(node.posWorld, PATHFINDER_TILE_VEC, rgb(1, 0, 0, min(0.2, cost * 0.05)), this.debugTime);
+            }
+        }
+    }
+
+    /** Core A* search loop. Expects buildNodeData() to have been called first.
+     *  Marks node.parent for path reconstruction. Returns true if endNode was
+     *  reached; false on disconnected goal or maxLoop exhaustion.
+     *  @param {PathFinderNode} startNode
+     *  @param {PathFinderNode} endNode
+     *  @returns {boolean}
+     *  @private */
+    aStarSearch(startNode, endNode)
+    {
+        ASSERT(startNode && endNode, 'aStarSearch needs both endpoints');
+        ASSERT(startNode !== endNode, 'aStarSearch: start and end must differ — caller should handle trivial case');
+        ASSERT(startNode.walkable && endNode.walkable, 'aStarSearch: endpoints must be walkable');
+
+        const openList = [startNode];
+        startNode.isOpen = true;
+        let loopCount = 0;
+
+        while (openList.length > 0)
+        {
+            // Find the open node with the smallest f score (linear scan).
+            // Same as the C++ — fine up to a few thousand nodes.
+            let bestIndex = 0;
+            let bestF = openList[0].f;
+            for (let i = 1; i < openList.length; ++i)
+            {
+                if (openList[i].f < bestF)
+                {
+                    bestF = openList[i].f;
+                    bestIndex = i;
+                }
+            }
+            const current = openList[bestIndex];
+
+            if (current === endNode) break;
+            if (++loopCount > this.maxLoop) break;
+
+            // Move current from open to closed.
+            current.isOpen = false;
+            openList.splice(bestIndex, 1);
+            current.isClosed = true;
+
+            if (this.debug && this.debugTime > 0)
+                debugRect(current.posWorld, PATHFINDER_TILE_VEC, rgb(1, 1, 1, 0.05), this.debugTime);
+
+            // Expand all 8 neighbors.
+            for (let dy = -1; dy <= 1; ++dy)
+            for (let dx = -1; dx <= 1; ++dx)
+            {
+                if (dx === 0 && dy === 0) continue;
+                const neighbor = this.getNode(current.pos.x + dx, current.pos.y + dy);
+                if (!neighbor || !neighbor.walkable || neighbor.isClosed) continue;
+
+                let stepCost = 1;
+                if (dx !== 0 && dy !== 0)
+                {
+                    // Diagonal step: refuse if either cardinal neighbor is
+                    // blocked or has cost. Prevents cutting through corners.
+                    const card1 = this.getNode(current.pos.x + dx, current.pos.y);
+                    if (!card1 || card1.cost > 0 || !card1.walkable) continue;
+                    const card2 = this.getNode(current.pos.x, current.pos.y + dy);
+                    if (!card2 || card2.cost > 0 || !card2.walkable) continue;
+                    stepCost = PATHFINDER_DIAGONAL_COST;
+                }
+
+                const tentativeG = current.g + stepCost + neighbor.cost;
+                if (!neighbor.isOpen)
+                {
+                    neighbor.isOpen = true;
+                    openList.push(neighbor);
+                }
+                else if (tentativeG >= neighbor.g)
+                {
+                    continue;
+                }
+
+                // Best path so far through neighbor — record it.
+                neighbor.parent = current;
+                neighbor.g = tentativeG;
+                const gdx = endNode.pos.x - neighbor.pos.x;
+                const gdy = endNode.pos.y - neighbor.pos.y;
+                neighbor.f = neighbor.g + (gdx * gdx + gdy * gdy) * this.heuristicWeight;
+            }
+        }
+
+        return endNode.parent !== null;
+    }
+
+    /** Find the clear (walkable, zero-cost) node closest to the given world
+     *  position. Spirals outward in expanding boxes until a clear node is
+     *  found or the search range is exhausted. Useful for snapping a click
+     *  or NPC spawn position to the nearest open tile.
+     *
+     *  By default, calls `buildNodeData()` first so it works correctly on a
+     *  fresh PathFinder. If you're calling it many times in a row with
+     *  unchanged walkability, pass `rebuild=false` and call `buildNodeData()`
+     *  once externally to avoid redundant work.
+     *  @param {Vector2} worldPos
+     *  @param {number} [searchRange=10] - Max box-radius in tiles
+     *  @param {boolean} [rebuild=true] - Whether to call buildNodeData first
+     *  @returns {PathFinderNode|null}
+     *  @memberof PathFinding */
+    getNearestClearNode(worldPos, searchRange = 10, rebuild = true)
+    {
+        ASSERT(isVector2(worldPos), 'worldPos must be a Vector2');
+        if (rebuild) this.buildNodeData();
+
+        // Inline worldToTile to avoid a Vector2 allocation per call.
+        const ox = this.tileLayer ? this.tileLayer.pos.x : 0;
+        const oy = this.tileLayer ? this.tileLayer.pos.y : 0;
+        const centerX = floor(worldPos.x - ox);
+        const centerY = floor(worldPos.y - oy);
+
+        for (let offset = 0; offset <= searchRange; ++offset)
+        {
+            let nearest = null;
+            let nearestDistSq = 0;
+
+            for (let dy = -offset; dy <= offset; ++dy)
+            for (let dx = -offset; dx <= offset; ++dx)
+            {
+                // Only scan the perimeter of the current ring (skip the
+                // interior we've already searched in earlier iterations).
+                if (offset > 0 && abs(dx) !== offset && abs(dy) !== offset)
+                    continue;
+
+                const node = this.getNode(centerX + dx, centerY + dy);
+                if (!node || !node.isClear()) continue;
+
+                const ddx = node.posWorld.x - worldPos.x;
+                const ddy = node.posWorld.y - worldPos.y;
+                const distSq = ddx * ddx + ddy * ddy;
+                if (!nearest || distSq < nearestDistSq)
+                {
+                    nearest = node;
+                    nearestDistSq = distSq;
+                }
+            }
+            if (nearest) return nearest;
+        }
+        return null;
+    }
+
+    /** Smooth a node path by removing redundant turns and tightening corners
+     *  where a grid-aligned diagonal is clear. Modifies the path in place.
+     *  Stays on the grid — does not introduce off-tile-center points.
+     *  Port of ShortenPath() in pathFinding.cpp.
+     *  @param {PathFinderNode[]} path
+     *  @private */
+    smoothPathCorners(path)
+    {
+        if (path.length <= 2) return;
+
+        let i = 1;
+        while (i < path.length - 1)
+        {
+            const prev = path[i - 1];
+            const node = path[i];
+            const next = path[i + 1];
+
+            const dx = next.pos.x - prev.pos.x;
+            const dy = next.pos.y - prev.pos.y;
+            const lenSq = dx * dx + dy * dy;
+
+            // dx,dy is the prev-to-current step direction; needed for the
+            // 135° "mostly vertical/horizontal" disambiguation.
+            const stepDx = node.pos.x - prev.pos.x;
+            const stepDy = node.pos.y - prev.pos.y;
+            const stepDxNext = next.pos.x - node.pos.x;
+            const stepDyNext = next.pos.y - node.pos.y;
+
+            if (lenSq === 1)
+            {
+                // 45° angle — middle node is off the straight line. Drop it.
+                if (this.debug && this.debugTime > 0)
+                    debugCircle(node.posWorld, 0.3, rgb(0.5, 0, 0.5, 0.5), this.debugTime);
+                path.splice(i, 1);
+                i = max(1, i - 1);
+                continue;
+            }
+            else if (lenSq === 2)
+            {
+                // 90° corner. Check the alternative-diagonal cell.
+                if (this.debug && this.debugTime > 0)
+                    debugCircle(node.posWorld, 0.3, rgb(1, 0, 0, 0.5), this.debugTime);
+
+                let sx, sy;
+                if (prev.pos.y === node.pos.y && next.pos.x === node.pos.x)
+                { sx = prev.pos.x; sy = next.pos.y; }
+                else
+                { sx = next.pos.x; sy = prev.pos.y; }
+
+                const shortcut = this.getNode(sx, sy);
+                if (shortcut && shortcut.isClear())
+                {
+                    path.splice(i, 1);
+                    i = max(1, i - 1);
+                    continue;
+                }
+            }
+            else if (lenSq === 5)
+            {
+                // 135° angle (a knight's-move offset). Try to relocate the
+                // middle node to whichever of two candidate cells is closer
+                // to prev-of-prev, and only if the corner cut is also clear.
+                if (this.debug && this.debugTime > 0)
+                    debugCircle(node.posWorld, 0.3, rgb(1, 1, 0, 0.5), this.debugTime);
+
+                const prevPrev = i >= 2 ? path[i - 2] : prev;
+                let s1x, s1y, s2x, s2y;
+                if (stepDx === 0 || stepDxNext === 0)
+                {
+                    // mostly vertical
+                    s1x = next.pos.x; s1y = node.pos.y;
+                    s2x = prev.pos.x; s2y = node.pos.y;
+                }
+                else
+                {
+                    // mostly horizontal
+                    s1x = node.pos.x; s1y = next.pos.y;
+                    s2x = node.pos.x; s2y = prev.pos.y;
+                }
+                const dd1x = s1x - prevPrev.pos.x;
+                const dd1y = s1y - prevPrev.pos.y;
+                const dd2x = s2x - prevPrev.pos.x;
+                const dd2y = s2y - prevPrev.pos.y;
+                const dist1Sq = dd1x * dd1x + dd1y * dd1y;
+                const dist2Sq = dd2x * dd2x + dd2y * dd2y;
+                const sx = dist1Sq < dist2Sq ? s1x : s1x === s2x && s1y === s2y ? s1x : s2x;
+                const sy = dist1Sq < dist2Sq ? s1y : s1x === s2x && s1y === s2y ? s1y : s2y;
+
+                const shortcut = this.getNode(sx, sy);
+                if (shortcut && shortcut !== node && shortcut.isClear())
+                {
+                    // Also check the cut-corner cell is clear.
+                    const ccx = next.pos.x + s2x - s1x;
+                    const ccy = next.pos.y + s2y - s1y;
+                    const cutCorner = this.getNode(ccx, ccy);
+                    if (cutCorner && cutCorner.isClear())
+                    {
+                        path[i] = shortcut;
+                        i = max(1, i - 1);
+                        continue;
+                    }
+                }
+            }
+            else if (lenSq === 4 || lenSq === 8)
+            {
+                // Straight line or a 1-cell bump.
+                if (this.debug && this.debugTime > 0)
+                    debugCircle(node.posWorld, 0.3, rgb(0, 1, 0, 0.5), this.debugTime);
+
+                if (stepDx === stepDxNext && stepDy === stepDyNext)
+                {
+                    // Truly straight — nothing to do, advance.
+                    ++i;
+                    continue;
+                }
+                else
+                {
+                    // Bump — try to flatten via the in-line cell.
+                    let sx, sy;
+                    if (prev.pos.y === next.pos.y)
+                    { sx = node.pos.x; sy = prev.pos.y; }
+                    else
+                    { sx = prev.pos.x; sy = node.pos.y; }
+                    const shortcut = this.getNode(sx, sy);
+                    if (shortcut && shortcut.isClear())
+                    {
+                        path[i] = shortcut;
+                        i = max(1, i - 1);
+                        continue;
+                    }
+                }
+            }
+
+            ++i;
+        }
+    }
+
+    /** Smooth a node path via line-of-sight ("string pulling"). Walks the
+     *  input path collapsing runs of nodes into straight segments whenever
+     *  isLineClear permits, so the result can leave grid centers and cut
+     *  cleanly across open spaces.
+     *
+     *  Bails (leaves the path unchanged) if any node has nonzero cost — a
+     *  straight geometric shortcut can't be trusted to be the lowest-cost
+     *  route when cost-weighted terrain is in play.
+     *
+     *  Port of ShortenPath2() in pathFinding.cpp.
+     *  @param {PathFinderNode[]} path
+     *  @private */
+    smoothPathStringPull(path)
+    {
+        if (path.length <= 2) return;
+        for (const n of path)
+        {
+            if (!n.isClear()) return;
+        }
+
+        const original = path.slice();
+        path.length = 0;
+        path.push(original[0]);
+        let searchIndex = 0;
+
+        for (let i = 1; i < original.length; ++i)
+        {
+            const node = original[i];
+
+            // Skip if node is collinear with the search-window start and the
+            // previous node — it adds no information. Note: a == b is the
+            // degenerate i=1, searchIndex=0 case; skip the test then.
+            {
+                const a = original[searchIndex];
+                const b = original[i - 1];
+                if (a !== b)
+                {
+                    const cross =
+                        (b.pos.x - a.pos.x) * (node.pos.y - a.pos.y) -
+                        (b.pos.y - a.pos.y) * (node.pos.x - a.pos.x);
+                    if (cross === 0) continue;
+                }
+            }
+
+            if (!this.isLineClear(node.pos, path[path.length - 1].pos))
+            {
+                // Look ahead — if any later node has a clear shot to the
+                // back of our new path, skip this node and try later.
+                let foundClearAfter = false;
+                for (let j = i + 1; j < original.length; ++j)
+                {
+                    if (this.isLineClear(original[j].pos, path[path.length - 1].pos))
+                    {
+                        foundClearAfter = true;
+                        break;
+                    }
+                }
+                if (foundClearAfter)
+                {
+                    if (this.debug && this.debugTime > 0)
+                        debugLine(node.posWorld, path[path.length - 1].posWorld, rgb(0, 0, 1, 0.3), 0.02, this.debugTime);
+                    continue;
+                }
+
+                // No clear line ahead — fall back to the last waypoint we did
+                // have a clear line to. searchIndex tracks our scan position.
+                for (; searchIndex < original.length; ++searchIndex)
+                {
+                    const cand = original[searchIndex];
+                    if (this.isLineClear(node.pos, cand.pos))
+                    {
+                        path.push(cand);
+                        i = searchIndex;
+                        break;
+                    }
+                }
+                ASSERT(searchIndex < original.length, 'smoothPathStringPull: ran out of candidates');
+            }
+        }
+
+        path.push(original[original.length - 1]);
+    }
+
+    /** Lookup helper: true when the node at tile coords (x, y) is in-bounds
+     *  and clear (walkable, zero-cost). Used by isLineClear's hot path.
+     *  @param {number} x
+     *  @param {number} y
+     *  @returns {boolean}
+     *  @private */
+    isNodeClear(x, y)
+    {
+        const n = this.getNode(x, y);
+        return n !== null && n.isClear();
+    }
+
+    /** Check that the line between two tile-coord endpoints stays entirely
+     *  inside walkable, zero-cost cells. Stricter than just sampling along
+     *  the line — it also checks the diagonal-corner-adjacent cells so the
+     *  line can never "scrape past" a wall corner.
+     *
+     *  Both endpoints must themselves be clear (asserted in debug). Port of
+     *  CheckLine() in pathFinding.cpp.
+     *  @param {Vector2} startPos - Tile coords
+     *  @param {Vector2} endPos - Tile coords
+     *  @returns {boolean}
+     *  @private */
+    isLineClear(startPos, endPos)
+    {
+        ASSERT(isVector2(startPos) && isVector2(endPos), 'isLineClear needs Vector2 endpoints');
+        ASSERT(this.isNodeClear(startPos.x, startPos.y) && this.isNodeClear(endPos.x, endPos.y),
+            'isLineClear endpoints must be in-bounds and clear');
+
+        const dx = endPos.x - startPos.x;
+        const dy = endPos.y - startPos.y;
+        const adx = abs(dx);
+        const ady = abs(dy);
+        const sx = sign(dx);
+        const sy = sign(dy);
+        let x = startPos.x;
+        let y = startPos.y;
+
+        if (ady === adx)
+        {
+            // Pure diagonal.
+            while (x !== endPos.x)
+            {
+                if (x !== startPos.x)
+                {
+                    if (!this.isNodeClear(x, y)) return false;
+                    if (!this.isNodeClear(x, y - sy)) return false;
+                }
+                if (!this.isNodeClear(x, y + sy)) return false;
+                x += sx;
+                y += sy;
+            }
+            if (!this.isNodeClear(endPos.x, endPos.y - sy)) return false;
+        }
+        else if (ady < adx)
+        {
+            // Mostly horizontal.
+            if (dy === 0)
+            {
+                // Purely horizontal.
+                x += sx;
+                while (x !== endPos.x)
+                {
+                    if (!this.isNodeClear(x, y)) return false;
+                    x += sx;
+                }
+            }
+            else
+            {
+                let lastY = startPos.y;
+                while (x !== endPos.x)
+                {
+                    y = startPos.y + Math.trunc((dy * (x - startPos.x)) / dx);
+                    if (lastY !== y)
+                    {
+                        if (!this.isNodeClear(x - sx, y + sy)) return false;
+                        if (!this.isNodeClear(x, y - sy)) return false;
+                    }
+                    lastY = y;
+                    if (x !== startPos.x)
+                    {
+                        if (!this.isNodeClear(x, y)) return false;
+                    }
+                    y += sy;
+                    if (!this.isNodeClear(x, y)) return false;
+                    x += sx;
+                }
+                const finalY = endPos.y - sy;
+                if (!this.isNodeClear(endPos.x, finalY)) return false;
+            }
+        }
+        else
+        {
+            // Mostly vertical.
+            if (dx === 0)
+            {
+                y += sy;
+                while (y !== endPos.y)
+                {
+                    if (!this.isNodeClear(x, y)) return false;
+                    y += sy;
+                }
+            }
+            else
+            {
+                let lastX = startPos.x;
+                while (y !== endPos.y)
+                {
+                    x = startPos.x + Math.trunc((dx * (y - startPos.y)) / dy);
+                    if (lastX !== x)
+                    {
+                        if (!this.isNodeClear(x + sx, y - sy)) return false;
+                        if (!this.isNodeClear(x - sx, y)) return false;
+                    }
+                    lastX = x;
+                    if (y !== startPos.y)
+                    {
+                        if (!this.isNodeClear(x, y)) return false;
+                    }
+                    x += sx;
+                    if (!this.isNodeClear(x, y)) return false;
+                    y += sy;
+                }
+                const finalX = endPos.x - sx;
+                if (!this.isNodeClear(finalX, endPos.y)) return false;
+            }
+        }
+        return true;
+    }
+
+    /** Find a path from startPos to endPos in world space. Returns an array
+     *  of world-space Vector2 points; empty array if no path exists.
+     *
+     *  Start and end are snapped to the nearest walkable tile via
+     *  getNearestClearNode. Intermediate points are tile centers unless the
+     *  string-pulling smoothing pass moves them off-grid.
+     *  @param {Vector2} startPos - World-space start
+     *  @param {Vector2} endPos - World-space end
+     *  @returns {Vector2[]}
+     *  @memberof PathFinding */
+    findPath(startPos, endPos)
+    {
+        ASSERT(isVector2(startPos) && isVector2(endPos), 'findPath needs Vector2 endpoints');
+
+        this.buildNodeData();
+
+        // rebuild=false because we just built — avoid redundant work per snap.
+        const startNode = this.getNearestClearNode(startPos, 10, false);
+        const endNode = this.getNearestClearNode(endPos, 10, false);
+        if (!startNode || !endNode) return [];
+
+        // Trivial case: start and end snapped to the same tile.
+        if (startNode === endNode) return [startNode.posWorld.copy()];
+
+        if (!this.aStarSearch(startNode, endNode)) return [];
+
+        // Walk back from endNode via parent pointers, then reverse — cheaper
+        // than unshifting on every step.
+        const nodePath = [];
+        for (let n = endNode; n; n = n.parent)
+            nodePath.push(n);
+        nodePath.reverse();
+
+        if (this.smoothPath)
+        {
+            this.smoothPathCorners(nodePath);
+            this.smoothPathStringPull(nodePath);
+        }
+
+        // Convert to world-space Vector2 path. Return copies, not live node
+        // references — callers shouldn't be able to mutate the grid.
+        const result = nodePath.map(n => n.posWorld.copy());
+
+        if (this.debug && this.debugTime > 0 && result.length > 0)
+        {
+            for (let i = 1; i < result.length; ++i)
+                debugLine(result[i - 1], result[i], RED, 0.1, this.debugTime);
+            for (const p of result)
+                debugCircle(p, 0.5, rgb(1, 0, 0, 0.3), this.debugTime);
+            debugCircle(result[0], 0.5, rgb(0, 1, 0, 0.5), this.debugTime);
+            debugCircle(result[result.length - 1], 0.5, rgb(0, 1, 0, 0.5), this.debugTime);
+        }
+
+        return result;
+    }
+}
 

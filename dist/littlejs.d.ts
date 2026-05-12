@@ -88,6 +88,10 @@ declare module "littlejsengine" {
      *  @type {Array<EngineObject>}
      *  @memberof Engine */
     export let engineObjects: Array<EngineObject>;
+    /** Array with only objects set to collide with other objects this frame (for optimization)
+     *  @type {Array<EngineObject>}
+     *  @memberof Engine */
+    export let engineObjectsCollide: Array<EngineObject>;
     /** Current update frame, used to calculate time
      *  @type {number}
      *  @memberof Engine */
@@ -226,6 +230,11 @@ declare module "littlejsengine" {
      *  @param {...Object} output - message output
      *  @memberof Debug */
     export function LOG(...output: any[]): void;
+    /** Size to render debug points by default
+     *  @type {number}
+     *  @default
+     *  @memberof Debug */
+    export const debugPointSize: number;
     /** Draw a debug rectangle in world space
      *  @param {Vector2} pos
      *  @param {Vector2} [size=vec2(0)]
@@ -471,6 +480,11 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let glEnable: boolean;
+    /** How many sided poly to use when drawing circles and ellipses with WebGL
+     *  @type {number}
+     *  @default
+     *  @memberof Settings */
+    export let glCircleSides: number;
     /** Should gamepads be allowed
      *  @type {boolean}
      *  @default
@@ -486,6 +500,12 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let inputWASDEmulateDirection: boolean;
+    /** True if touch input is enabled for mobile devices
+     *  - Touch events will be routed to mouse events
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let touchInputEnable: boolean;
     /** True if touch gamepad should appear on mobile devices
      *  - Supports left analog stick, 4 face buttons and start button (button 9)
      *  - setTouchGamepadButtonCount(1) to use face buttons as right analog stick
@@ -503,6 +523,11 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let touchGamepadCenterButtonSize: number;
+    /** Number of buttons on touch gamepad (0-4), if 1 also acts as right analog stick
+     *  @type {number}
+     *  @default
+     *  @memberof Settings */
+    export let touchGamepadButtonCount: number;
     /** True if touch gamepad should be analog stick or false to use if 8 way dpad
      *  @type {boolean}
      *  @default
@@ -548,21 +573,6 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let soundDefaultTaper: number;
-    /** How long to show medals for in seconds
-     *  @type {number}
-     *  @default
-     *  @memberof Settings */
-    export let medalDisplayTime: number;
-    /** How quickly to slide on/off medals in seconds
-     *  @type {number}
-     *  @default
-     *  @memberof Settings */
-    export let medalDisplaySlideTime: number;
-    /** Size of medal display
-     *  @type {Vector2}
-     *  @default Vector2(640,80)
-     *  @memberof Settings */
-    export let medalDisplaySize: Vector2;
     /** Set position of camera in world space
      *  @param {Vector2} pos
      *  @memberof Settings */
@@ -683,6 +693,10 @@ declare module "littlejsengine" {
      *  @param {number} scale
      *  @memberof Settings */
     export function setParticleEmitRateScale(scale: number): void;
+    /** Set how many sided polygons to use when drawing circles and ellipses with WebGL
+     *  @param {number} sides
+     *  @memberof Settings */
+    export function setGLCircleSides(sides: number): void;
     /** Set if touch input is allowed
      *  @param {boolean} enable
      *  @memberof Settings */
@@ -745,22 +759,6 @@ declare module "littlejsengine" {
      *  @param {number} taper
      *  @memberof Settings */
     export function setSoundDefaultTaper(taper: number): void;
-    /** Set how long to show medals for in seconds
-     *  @param {number} time
-     *  @memberof Settings */
-    export function setMedalDisplayTime(time: number): void;
-    /** Set how quickly to slide on/off medals in seconds
-     *  @param {number} time
-     *  @memberof Settings */
-    export function setMedalDisplaySlideTime(time: number): void;
-    /** Set size of medal display
-     *  @param {Vector2} size
-     *  @memberof Settings */
-    export function setMedalDisplaySize(size: Vector2): void;
-    /** Set to stop medals from being unlockable
-     *  @param {boolean} preventUnlock
-     *  @memberof Settings */
-    export function setMedalsPreventUnlock(preventUnlock: boolean): void;
     /** Set if watermark with FPS should be shown
      *  @param {boolean} show
      *  @memberof Debug */
@@ -823,17 +821,17 @@ declare module "littlejsengine" {
      *  @param {number} x
      *  @return {number}
      *  @memberof Math */
-    export const sign: (x: number) => number;
+    export const sign: any;
     /** Returns hypotenuse of values passed in
      *  @param {...number} values
      *  @return {number}
      *  @memberof Math */
-    export const hypot: (...values: number[]) => number;
+    export const hypot: any;
     /** Returns log2 of value passed in
      *  @param {number} x
      *  @return {number}
      *  @memberof Math */
-    export const log2: (x: number) => number;
+    export const log2: any;
     /** Returns sin of value passed in
      *  @param {number} x
      *  @return {number}
@@ -930,6 +928,11 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export function nearestPowerOfTwo(value: number): number;
+    /** Checks if the value passed in is a power of two
+     *  @param {number} value
+     *  @return {boolean}
+     *  @memberof Math */
+    export function isPowerOfTwo(value: number): boolean;
     /** Returns true if two axis aligned bounding boxes are overlapping
      *  this can be used for simple collision detection between objects
      *  @param {Vector2} posA - Center of box A
@@ -1229,8 +1232,10 @@ declare module "littlejsengine" {
         /** Returns a copy of this vector with each axis floored
          * @return {Vector2} */
         floor(): Vector2;
-        /** Returns a copy of this vector snapped to a grid
-         *  @param {number} grid - grid size to snap to
+        /** Returns a copy of this vector snapped to a grid. Note that `grid` is
+         *  the number of snap steps per unit (so `grid=2` snaps to halves and
+         *  `grid=0.5` snaps to twos), not the cell size.
+         *  @param {number} grid - snap steps per unit
          *  @return {Vector2} */
         snap(grid: number): Vector2;
         /** Returns new vec2 with modded values
@@ -1605,8 +1610,9 @@ declare module "littlejsengine" {
          * Create a TextureInfo, called automatically by the engine
          * @param {HTMLImageElement|OffscreenCanvas} image
          * @param {boolean} [useWebGL] - Should use WebGL if available?
+         * @param {boolean} [wrap] - Should the texture wrap (REPEAT) or clamp (CLAMP_TO_EDGE)?
          */
-        constructor(image: HTMLImageElement | OffscreenCanvas, useWebGL?: boolean);
+        constructor(image: HTMLImageElement | OffscreenCanvas, useWebGL?: boolean, wrap?: boolean);
         /** @property {HTMLImageElement|OffscreenCanvas} - image source */
         image: OffscreenCanvas | HTMLImageElement;
         /** @property {Vector2} - size of the image */
@@ -1615,6 +1621,8 @@ declare module "littlejsengine" {
         sizeInverse: Vector2;
         /** @property {WebGLTexture} - WebGL texture */
         glTexture: any;
+        /** @property {boolean} - true for REPEAT wrap mode, false for CLAMP_TO_EDGE */
+        wrap: boolean;
         /** Creates the WebGL texture, updates if already created */
         createWebGLTexture(): void;
         /** Destroys the WebGL texture */
@@ -1622,6 +1630,9 @@ declare module "littlejsengine" {
         /** Check if the texture is webgl enabled
          * @return {boolean} */
         hasWebGL(): boolean;
+        /** Set the wrap mode for this texture
+         *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE */
+        setWrap(wrap?: boolean): void;
     }
     /**
      * LittleJS Drawing System
@@ -1796,6 +1807,19 @@ declare module "littlejsengine" {
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawPoly(points: Array<Vector2>, color?: Color, lineWidth?: number, lineColor?: Color, pos?: Vector2, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    /** Draw colored regular polygon using passed in number of sides
+     *  @param {Vector2} pos
+     *  @param {Vector2} [size=vec2(1)]
+     *  @param {number}  [sides]
+     *  @param {Color}   [color=WHITE]
+     *  @param {number}  [angle]
+     *  @param {number}  [lineWidth]
+     *  @param {Color}   [lineColor=BLACK]
+     *  @param {boolean} [useWebGL=glEnable]
+     *  @param {boolean} [screenSpace]
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
+     *  @memberof Draw */
+    export function drawRegularPoly(pos: Vector2, size?: Vector2, sides?: number, color?: Color, lineWidth?: number, lineColor?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Draw colored ellipse using passed in point
      *  @param {Vector2} pos
      *  @param {Vector2} [size=vec2(1)] - Width and height diameter
@@ -1937,6 +1961,14 @@ declare module "littlejsengine" {
      *  @return {Vector2}
      *  @memberof Draw */
     export function getCameraSize(): Vector2;
+    /** Check if a box, point, or circle is on screen with a circle test
+     *  If size is a Vector2, uses the length as diameter
+     *  This can be used to cull offscreen objects from render or update
+     *  @param {Vector2} pos - world space position
+     *  @param {Vector2|number} size - world space size or diameter
+     *  @return {boolean}
+     *  @memberof Draw */
+    export function isOnScreen(pos: Vector2, size?: Vector2 | number): boolean;
     /**
      * LittleJS WebGL Interface
      * - WebGL2 rendering engine for high-performance graphics
@@ -1972,6 +2004,12 @@ declare module "littlejsengine" {
      *  @param {WebGLTexture} texture
      *  @memberof WebGL */
     export function glSetTexture(texture: WebGLTexture): void;
+    /** Set the wrap mode (REPEAT or CLAMP_TO_EDGE) on an existing WebGL texture
+     *  Flushes the current batch only if the texture is the active one
+     *  @param {WebGLTexture} texture
+     *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
+     *  @memberof WebGL */
+    export function glSetTextureWrap(texture: WebGLTexture, wrap?: boolean): void;
     /** Compile WebGL shader of the given type, will throw errors if in debug mode
      *  @param {string} source
      *  @param {number} type
@@ -1987,9 +2025,10 @@ declare module "littlejsengine" {
     /** Create WebGL texture from an image and init the texture settings
      *  Restores the active texture when done
      *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas} [image]
+     *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
      *  @return {WebGLTexture}
      *  @memberof WebGL */
-    export function glCreateTexture(image?: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas): WebGLTexture;
+    export function glCreateTexture(image?: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas, wrap?: boolean): WebGLTexture;
     /** Deletes a WebGL texture
      *  @param {WebGLTexture} [texture]
      *  @memberof WebGL */
@@ -2180,7 +2219,7 @@ declare module "littlejsengine" {
      *  This is useful to disable for html menus so the browser can handle input normally
      *  @param {boolean} preventDefault
      *  @memberof Input */
-    export function setInputPreventDefault(preventDefault: boolean): void;
+    export function setInputPreventDefault(preventDefault?: boolean): void;
     /** Returns true if gamepad button is down
      *  @param {number} button
      *  @param {number} [gamepad]
@@ -2205,6 +2244,11 @@ declare module "littlejsengine" {
      *  @return {Vector2}
      *  @memberof Input */
     export function gamepadStick(stick: number, gamepad?: number): Vector2;
+    /** Returns how many control sticks the passed in gamepad has
+     *  @param {number} [gamepad]
+     *  @return {number}
+     *  @memberof Input */
+    export function gamepadStickCount(gamepad?: number): number;
     /** Returns gamepad dpad value
      *  @param {number} [gamepad]
      *  @return {Vector2}
@@ -2257,7 +2301,9 @@ declare module "littlejsengine" {
      * - Web Audio API integration with master gain control
      * @namespace Audio
      */
-    /** Audio context used by the engine
+    /** Audio context used by the engine. Created lazily in audioInit() to avoid
+     *  browser autoplay warnings about constructing an AudioContext before any
+     *  user gesture.
      *  @type {AudioContext}
      *  @memberof Audio */
     export let audioContext: AudioContext;
@@ -2269,6 +2315,10 @@ declare module "littlejsengine" {
      *  @default 44100
      *  @memberof Audio */
     export const audioDefaultSampleRate: 44100;
+    /** Check if the audio context is running and available for playback
+     *  @return {boolean} - True if the audio context is running
+     *  @memberof Audio */
+    export function audioIsRunning(): boolean;
     /**
      * Sound Object - Stores a sound for later
      * - this can be used to load and play wave, mp3, and ogg files
@@ -3158,16 +3208,6 @@ declare module "littlejsengine" {
         /** Render the particle, automatically called each frame */
         render(): void;
     }
-    /**
-     * LittleJS Medal System
-     * - Achievement/trophy system for games
-     * - Medal class with name, description, icon, and unlock tracking
-     * - Automatic saving to local storage
-     * - Visual display queue with slide-in notifications
-     * - Newgrounds API integration for online achievements
-     * - Debug mode to unlock/reset medals during development
-     * @namespace Medals
-     */
     /** List of all medals
      *  @type {Object}
      *  @memberof Medals */
@@ -3183,6 +3223,15 @@ declare module "littlejsengine" {
      *  @param {string} saveName
      *  @memberof Medals */
     export function medalsInit(saveName: string): void;
+    /**
+     *  @callback MedalCallbackFunction - Function that processes a medal
+     *  @param {Medal} medal
+     *  @memberof Medals
+     */
+    /** Calls a function for each medal
+     *  @param {MedalCallbackFunction} callback
+     *  @memberof Medals */
+    export function medalsForEach(callback: MedalCallbackFunction): void;
     /**
      * Medal - Tracks an unlockable medal
      * @memberof Medals
@@ -3229,6 +3278,37 @@ declare module "littlejsengine" {
         renderIcon(pos: Vector2, size: number): void;
         storageKey(): string;
     }
+    /** How long to show medals for in seconds
+     *  @type {number}
+     *  @default
+     *  @memberof Settings */
+    export let medalDisplayTime: number;
+    /** How quickly to slide on/off medals in seconds
+     *  @type {number}
+     *  @default
+     *  @memberof Settings */
+    export let medalDisplaySlideTime: number;
+    /** Size of medal display
+     *  @type {Vector2}
+     *  @default Vector2(640,80)
+     *  @memberof Settings */
+    export let medalDisplaySize: Vector2;
+    /** Set how long to show medals for in seconds
+     *  @param {number} time
+     *  @memberof Settings */
+    export function setMedalDisplayTime(time: number): void;
+    /** Set how quickly to slide on/off medals in seconds
+     *  @param {number} time
+     *  @memberof Settings */
+    export function setMedalDisplaySlideTime(time: number): void;
+    /** Set size of medal display
+     *  @param {Vector2} size
+     *  @memberof Settings */
+    export function setMedalDisplaySize(size: Vector2): void;
+    /** Set to stop medals from being unlockable
+     *  @param {boolean} preventUnlock
+     *  @memberof Settings */
+    export function setMedalsPreventUnlock(preventUnlock: boolean): void;
     /**
      * LittleJS Newgrounds Plugin
      * - NewgroundsMedal extends Medal with Newgrounds API functionality
@@ -3478,8 +3558,10 @@ declare module "littlejsengine" {
         lastHoverObject: any;
         /** @property {UIObject} - Current confirm menu being shown */
         confirmDialog: any;
-        /** @property {UIObject} - Object to send keyboard input to */
-        keyInputObject: any;
+        /** @private */
+        private _keyInputObject;
+        /** @private */
+        private _onKeyDown;
         /** Draw a rectangle to the UI context
         *  @param {Vector2} pos
         *  @param {Vector2} size
@@ -3541,8 +3623,14 @@ declare module "littlejsengine" {
          *  @param {Vector2} pos
          *  @return {Vector2} */
         screenToNative(pos: Vector2): Vector2;
+        set keyInputObject(arg: UIObject);
+        /** Object to send keyboard input to (typically a UITextInput).
+         *  The document keydown listener is only attached while this is set,
+         *  so games that never use text input pay no event-handling cost.
+         *  @type {UIObject} */
+        get keyInputObject(): UIObject;
         /** Destroy and remove all objects
-        *  @memberof Engine */
+        *  @memberof UISystem */
         destroyObjects(): void;
         /** Get all navigable UI objects sorted by navigationIndex
          *  @return {Array<UIObject>} */
@@ -3892,6 +3980,37 @@ declare module "littlejsengine" {
         setTime(time: number): void;
     }
     /**
+     * UILayout - A container that auto-arranges children in a vertical list, horizontal list, or grid
+     * - Set columns to 1 for a vertical list (default)
+     * - Set columns to children.length for a horizontal list
+     * - Set columns to N (1 < N < children.length) for a grid with N columns
+     * - Per-child sizing: each row's height = max child.size.y in that row, each column's width = max child.size.x in that column
+     * - Children are positioned centered in their cell
+     * - Container auto-sizes to fit children plus padding
+     * @extends UIObject
+     * @memberof UISystem
+     */
+    export class UILayout extends UIObject {
+        /** Create a UILayout container that auto-arranges children
+         *  @param {Vector2} [pos]
+         *  @param {number}  [columns=1]     - Number of columns (1 = vertical list)
+         *  @param {number}  [gap=10]        - Space between children
+         *  @param {number}  [padding=10]    - Space between container border and children
+         *  @param {boolean} [transparent=false] - If true, draws no background, outline, or shadow
+         */
+        constructor(pos?: Vector2, columns?: number, gap?: number, padding?: number, transparent?: boolean);
+        /** @property {number} - Number of columns in the layout */
+        columns: number;
+        /** @property {number} - Space between children */
+        gap: number;
+        /** @property {number} - Space between container border and children */
+        padding: number;
+        /** Recompute child positions and container size based on per-child sizes.
+         *  Called automatically by addChild and removeChild. Call manually if you
+         *  mutate a child's size or change columns, gap, or padding. */
+        relayout(): void;
+    }
+    /**
      * LittleJS Box2D Physics Plugin
      * - Box2dObject extends EngineObject with Box2D physics
      * - Call box2dInit() to enable
@@ -4214,13 +4333,25 @@ declare module "littlejsengine" {
          *  @param {Vector2} force
          *  @param {Vector2} [pos] */
         applyForce(force: Vector2, pos?: Vector2): void;
-        /** Apply acceleration to this object
+        /** Apply acceleration to this object (changes velocity by acceleration,
+         *  mass-independent — matches EngineObject.applyAcceleration semantics).
+         *  Use applyImpulse if you want the mass-dependent velocity change
+         *  Δv = impulse / mass, or applyForce for a Newton-style sustained force.
          *  @param {Vector2} acceleration
          *  @param {Vector2} [pos] */
         applyAcceleration(acceleration: Vector2, pos?: Vector2): void;
+        /** Apply an instantaneous linear impulse. Changes velocity immediately by
+         *  impulse / mass (so heavier bodies move less for the same impulse).
+         *  @param {Vector2} impulse
+         *  @param {Vector2} [pos] */
+        applyImpulse(impulse: Vector2, pos?: Vector2): void;
         /** Apply torque to this object
          *  @param {number} torque */
         applyTorque(torque: number): void;
+        /** Apply an instantaneous angular impulse. Changes angular velocity by
+         *  impulse / inertia immediately.
+         *  @param {number} impulse */
+        applyAngularImpulse(impulse: number): void;
         /** Check if this object has any fixtures
          *  @return {boolean} */
         hasFixtures(): boolean;
@@ -5070,5 +5201,169 @@ declare module "littlejsengine" {
         function IN_OUT(f: (arg0: number) => number): (arg0: number) => number;
         function PIECEWISE(...fns: ((arg0: number) => number)[]): (arg0: number) => number;
         function BEZIER(x1: number, y1: number, x2: number, y2: number): (arg0: number) => number;
+    }
+    /** Grid pathfinder using A* with two optional smoothing passes.
+     *  @memberof PathFinding
+     *  @example
+     *  // Tile-layer driven (most common):
+     *  const pf = new PathFinder(myTileCollisionLayer);
+     *  const path = pf.findPath(player.pos, mousePos);
+     *
+     *  // Bare grid with custom walkability:
+     *  const pf = new PathFinder(vec2(50, 50));
+     *  pf.isWalkable = (x, y) => myGrid[y*50 + x] === 0;
+     */
+    export class PathFinder {
+        /** @param {TileCollisionLayer|Vector2} source - Either a TileCollisionLayer
+         *  (size and walkability auto-derived) or a Vector2 grid size (user
+         *  overrides isWalkable). */
+        constructor(source: TileCollisionLayer | Vector2);
+        size: any;
+        tileLayer: Vector2 | TileCollisionLayer;
+        heuristicWeight: number;
+        maxLoop: number;
+        smoothPath: boolean;
+        debug: boolean;
+        debugTime: number;
+        nodes: any[];
+        collisionScratch: Vector2;
+        /** Default walkability: if a tile layer was provided, returns true when the
+         *  cell has no solid collision data; otherwise returns true. Override on
+         *  the instance or via a subclass.
+         *  @param {number} x - Tile x
+         *  @param {number} y - Tile y
+         *  @returns {boolean} */
+        isWalkable(x: number, y: number): boolean;
+        /** Default extra cost for stepping on a cell. Returns 0 (free) by default.
+         *  Override to add cost-weighted terrain (mud, swamp, etc).
+         *  @param {number} x - Tile x
+         *  @param {number} y - Tile y
+         *  @returns {number} */
+        getCost(x: number, y: number): number;
+        /** Get the node at tile coords, or null if out of bounds.
+         *  @param {number} x
+         *  @param {number} y
+         *  @returns {PathFinderNode|null} */
+        getNode(x: number, y: number): PathFinderNode | null;
+        /** Convert a world-space position to integer tile coords (no clamping).
+         *  @param {Vector2} worldPos
+         *  @returns {Vector2}
+         *  @memberof PathFinding */
+        worldToTile(worldPos: Vector2): Vector2;
+        /** Convert integer tile coords to the world-space center of that tile.
+         *  @param {number} x
+         *  @param {number} y
+         *  @returns {Vector2}
+         *  @memberof PathFinding */
+        tileToWorld(x: number, y: number): Vector2;
+        /** Reset all nodes and re-populate walkable / cost / posWorld from the
+         *  current isWalkable / getCost overrides. Called at the start of
+         *  findPath; exposed so tests and tooling can drive it directly.
+         *  @private */
+        private buildNodeData;
+        /** Core A* search loop. Expects buildNodeData() to have been called first.
+         *  Marks node.parent for path reconstruction. Returns true if endNode was
+         *  reached; false on disconnected goal or maxLoop exhaustion.
+         *  @param {PathFinderNode} startNode
+         *  @param {PathFinderNode} endNode
+         *  @returns {boolean}
+         *  @private */
+        private aStarSearch;
+        /** Find the clear (walkable, zero-cost) node closest to the given world
+         *  position. Spirals outward in expanding boxes until a clear node is
+         *  found or the search range is exhausted. Useful for snapping a click
+         *  or NPC spawn position to the nearest open tile.
+         *
+         *  By default, calls `buildNodeData()` first so it works correctly on a
+         *  fresh PathFinder. If you're calling it many times in a row with
+         *  unchanged walkability, pass `rebuild=false` and call `buildNodeData()`
+         *  once externally to avoid redundant work.
+         *  @param {Vector2} worldPos
+         *  @param {number} [searchRange=10] - Max box-radius in tiles
+         *  @param {boolean} [rebuild=true] - Whether to call buildNodeData first
+         *  @returns {PathFinderNode|null}
+         *  @memberof PathFinding */
+        getNearestClearNode(worldPos: Vector2, searchRange?: number, rebuild?: boolean): PathFinderNode | null;
+        /** Smooth a node path by removing redundant turns and tightening corners
+         *  where a grid-aligned diagonal is clear. Modifies the path in place.
+         *  Stays on the grid — does not introduce off-tile-center points.
+         *  Port of ShortenPath() in pathFinding.cpp.
+         *  @param {PathFinderNode[]} path
+         *  @private */
+        private smoothPathCorners;
+        /** Smooth a node path via line-of-sight ("string pulling"). Walks the
+         *  input path collapsing runs of nodes into straight segments whenever
+         *  isLineClear permits, so the result can leave grid centers and cut
+         *  cleanly across open spaces.
+         *
+         *  Bails (leaves the path unchanged) if any node has nonzero cost — a
+         *  straight geometric shortcut can't be trusted to be the lowest-cost
+         *  route when cost-weighted terrain is in play.
+         *
+         *  Port of ShortenPath2() in pathFinding.cpp.
+         *  @param {PathFinderNode[]} path
+         *  @private */
+        private smoothPathStringPull;
+        /** Lookup helper: true when the node at tile coords (x, y) is in-bounds
+         *  and clear (walkable, zero-cost). Used by isLineClear's hot path.
+         *  @param {number} x
+         *  @param {number} y
+         *  @returns {boolean}
+         *  @private */
+        private isNodeClear;
+        /** Check that the line between two tile-coord endpoints stays entirely
+         *  inside walkable, zero-cost cells. Stricter than just sampling along
+         *  the line — it also checks the diagonal-corner-adjacent cells so the
+         *  line can never "scrape past" a wall corner.
+         *
+         *  Both endpoints must themselves be clear (asserted in debug). Port of
+         *  CheckLine() in pathFinding.cpp.
+         *  @param {Vector2} startPos - Tile coords
+         *  @param {Vector2} endPos - Tile coords
+         *  @returns {boolean}
+         *  @private */
+        private isLineClear;
+        /** Find a path from startPos to endPos in world space. Returns an array
+         *  of world-space Vector2 points; empty array if no path exists.
+         *
+         *  Start and end are snapped to the nearest walkable tile via
+         *  getNearestClearNode. Intermediate points are tile centers unless the
+         *  string-pulling smoothing pass moves them off-grid.
+         *  @param {Vector2} startPos - World-space start
+         *  @param {Vector2} endPos - World-space end
+         *  @returns {Vector2[]}
+         *  @memberof PathFinding */
+        findPath(startPos: Vector2, endPos: Vector2): Vector2[];
+    }
+    /** A single grid cell tracked by the pathfinder. Allocated once per cell at
+     *  PathFinder construction; reset (not reallocated) at the start of every
+     *  findPath call.
+     *  @memberof PathFinding */
+    export class PathFinderNode {
+        /** @param {number} x - Tile x
+         *  @param {number} y - Tile y */
+        constructor(x: number, y: number);
+        /** @property {Vector2} - Tile coords (integer) */
+        pos: Vector2;
+        /** @property {Vector2} - World-space center of this tile (set by buildNodeData) */
+        posWorld: Vector2;
+        /** @property {boolean} - True if this cell is passable (cleared each findPath call) */
+        walkable: boolean;
+        /** @property {number} - Extra cost added to A* G-score for stepping on this cell */
+        cost: number;
+        /** @property {number} - A* G-score: actual cost from start to this node */
+        g: number;
+        /** @property {number} - A* F-score: G + heuristic */
+        f: number;
+        /** @property {PathFinderNode|null} - Parent for path reconstruction */
+        parent: any;
+        /** @property {boolean} - In the A* open list */
+        isOpen: boolean;
+        /** @property {boolean} - In the A* closed list */
+        isClosed: boolean;
+        /** Reset per-search state (called at the start of buildNodeData). */
+        reset(): void;
+        /** True if walkable and not blocked by cost. */
+        isClear(): boolean;
     }
 }
