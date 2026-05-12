@@ -334,7 +334,7 @@ function spawnObstaclesAround(centerPos)
         const gy = gridY + dy;
         
         // check if this grid cell should have an obstacle
-        const seed = gx * 73856093 ^ gy * 19349663;
+        const seed = 1 + (gx * 73856093 ^ gy * 19349663);
         const rng = new RandomGenerator(seed);
         
         if (rng.float() < .25) // 25% chance of obstacle in each cell
