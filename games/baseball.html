@@ -3,6 +3,7 @@
 <meta charset=utf-8>
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.0"></script>
+<script src="../dist/box2d.wasm.js"></script>
 <script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
@@ -12,34 +13,48 @@ debugWatermark = false;
 showEngineVersion = false;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Baseball Batting Practice
+// Top-Down Baseball (Box2D physics, gravity-free 2D field)
 
-// World layout
-const groundY    = -10;
-const platePos   = vec2(14, groundY + 2);
-const batterPos  = vec2(18, groundY + 3);
-const pitcherPos = vec2(-16, groundY + 8);
+// Field layout (Y is north toward pitcher, X is east toward first base)
+const platePos      = vec2(0, 0);
+const pitcherPos    = vec2(0, 18);
+const batterPos     = vec2(-1.4, 0);    // right-handed, 3B side of plate
+const catcherPos    = vec2(0, -1.6);
+const moundCenter   = vec2(0, 18);
+const fenceRadius   = 42;
+const backstopY     = -3.0;             // backstop wall south of catcher
+const foulAngleHalf = PI/4;             // ±45° from north defines fair territory
 
-// Bat & ball params
-const batLength     = 5;
-const batThickness  = .35;
-const swingDuration = .18;
-const ballRadius    = .45;
-const ballGravity   = 18;
+// Strike zone (AABB centered at home plate)
+const zoneHalf      = vec2(.75, .55);
+
+// Bat & ball
+const batLength     = 3.5;
+const batThickness  = .25;
+const swingDuration = .26;
+const ballRadius    = .35;
 
 // Pitch settings
-const strikeLineX   = batterPos.x + 3.5;
-const pitchSpeedMin = 16;
-const pitchSpeedMax = 20;
+const pitchSpeedMin = 26;
+const pitchSpeedMax = 34;
 
 // Game state
-let ball, pitchNumber = 0, strikes = 0, hits = 0, perfectHits = 0, swings = 0;
+let ball, backstopObj;
+let pitchNumber = 0, balls = 0, strikes = 0, hits = 0, perfectHits = 0, homeRuns = 0;
+let bestDistance = 0;
 let lastResultText = '';
+let resultColor = hsl(.14, .9, .7);
 let resultTimer = new Timer();
 let autoPitchTimer = new Timer();
 
+// 'idle' = ball at pitcher
+// 'pitch' = ball flying from pitcher toward plate
+// 'play' = ball was hit
+let ballState = 'idle';
+let pitchOutcomeLocked = false; // strike/ball already decided for current pitch
+let zoneEntered = false;        // did pitch pass through strike zone?
+
 // Aim & swing state
-let aim = 0;
 let swingTimer = new Timer();
 let swingConnected = false;
 
@@ -47,11 +62,15 @@ let swingConnected = false;
 const puffs = [];
 
 // Sounds
-const sfxSwing  = new SoundGenerator({volume:.45, frequency:170, attack:0, release:.08, slide:.2, shapeCurve:1.5});
-const sfxHit    = new SoundGenerator({volume:.55, frequency:110, attack:0, release:.12, noise:.08, shapeCurve:1});
-const sfxMiss   = new SoundGenerator({volume:.4, frequency:90,  attack:0, release:.12, slide:-.4, shapeCurve:2});
-const sfxPitch  = new SoundGenerator({volume:.35, frequency:260, attack:0, release:.08, noise:.1,  slide:-.8});
-const sfxLand   = new SoundGenerator({volume:.25, frequency:70,  attack:0, release:.18, noise:.25, shapeCurve:2});
+const sfxSwing   = new SoundGenerator({volume:.45, frequency:170, attack:0, release:.08, slide:.2, shapeCurve:1.5});
+const sfxHit     = new SoundGenerator({volume:.6,  frequency:160, attack:0, release:.14, noise:.07, shapeCurve:1.2, slide:.2});
+const sfxCrack   = new SoundGenerator({volume:.7,  frequency:380, attack:0, release:.22, noise:.18, shapeCurve:.8, slide:-1});
+const sfxStrike  = new SoundGenerator({volume:.42, frequency:90,  attack:0, release:.16, slide:-.4, shapeCurve:2});
+const sfxBall    = new SoundGenerator({volume:.32, frequency:380, attack:0, release:.14, slide:-.2, shapeCurve:1.5});
+const sfxPitch   = new SoundGenerator({volume:.35, frequency:260, attack:0, release:.08, noise:.1,  slide:-.8});
+const sfxCatcher = new SoundGenerator({volume:.4,  frequency:130, attack:0, release:.14, noise:.5,  shapeCurve:2});
+const sfxRoll    = new SoundGenerator({volume:.2,  frequency:80,  attack:0, release:.12, noise:.3,  shapeCurve:2});
+const sfxHomerun = new SoundGenerator({volume:.55, frequency:520, attack:0, release:.45, slide:.3});
 
 ///////////////////////////////////////////////////////////////////////////////
 // Helpers
@@ -62,69 +81,142 @@ function distPointToSegment(p, a, b)
     const ap = p.subtract(a);
     const abLen2 = ab.lengthSquared();
     if (abLen2 <= 1e-6) return ap.length();
-
-    let t = ap.dot(ab) / abLen2;
-    t = clamp(t, 0, 1);
-    const closest = a.add(ab.scale(t));
-    return p.distance(closest);
+    const t = clamp(ap.dot(ab) / abLen2, 0, 1);
+    return p.distance(a.add(ab.scale(t)));
 }
 
 function smoothstep01(t)
 {
     t = clamp(t, 0, 1);
-    return t*t*(3-2*t);
+    return t*t*(3 - 2*t);
 }
 
-// Mirror a direction across the Y axis so the batter can face the pitcher (left).
-// LittleJS angle convention: +X is 0 radians, increasing angle rotates CCW.
-function angleToDirMirrored(angle, length)
+function inStrikeZone(p)
 {
-    const d = vec2(0,0).setAngle(angle, length);
-    d.x *= -1;
-    return d;
+    return abs(p.x - platePos.x) <= zoneHalf.x
+        && abs(p.y - platePos.y) <= zoneHalf.y;
+}
+
+function inFairTerritory(p)
+{
+    // fair = angle from +X is between 45° and 135° (north-pointing wedge)
+    const a = Math.atan2(p.y, p.x);
+    return a > PI/2 - foulAngleHalf && a < PI/2 + foulAngleHalf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Ball
+
+class Ball extends Box2dObject
+{
+    constructor()
+    {
+        super(pitcherPos.copy(), vec2(ballRadius*2), 0, 0, hsl(0, 0, .97));
+        this.addCircle(ballRadius*2, vec2(), 1.2, .4, .55);
+        this.setBullet(true);
+        this.setLinearDamping(.2);
+        this.setAngularDamping(.5);
+        this.setGravityScale(0); // top-down: no gravity
+        this.parkAtMound();
+    }
+
+    parkAtMound()
+    {
+        this.setPosition(pitcherPos.copy());
+        this.setLinearVelocity(vec2());
+        this.setAngularVelocity(0);
+        ballState = 'idle';
+        pitchOutcomeLocked = false;
+        zoneEntered = false;
+    }
+
+    pitch()
+    {
+        const startPos = pitcherPos.copy();
+        this.setPosition(startPos);
+        this.setAwake(true);
+
+        // ~65% strikes, ~35% balls (outside the zone)
+        const aimStrike = rand() < .65;
+        let target;
+        if (aimStrike)
+        {
+            target = vec2(
+                rand(-zoneHalf.x*.85, zoneHalf.x*.85),
+                rand(-zoneHalf.y*.85, zoneHalf.y*.85));
+        }
+        else
+        {
+            // pick a side outside the zone
+            const side = randInt(4);
+            const wide = vec2(zoneHalf.x + rand(.4, 1.3), rand(-zoneHalf.y*1.2, zoneHalf.y*1.2));
+            const high = vec2(rand(-zoneHalf.x*1.2, zoneHalf.x*1.2), zoneHalf.y + rand(.4, 1.0));
+            target =
+                side === 0 ? wide :
+                side === 1 ? vec2(-wide.x, wide.y) :
+                side === 2 ? high :
+                             vec2(high.x, -high.y);
+        }
+
+        const speed = rand(pitchSpeedMin, pitchSpeedMax);
+        const dir = target.subtract(startPos).normalize();
+        this.setLinearVelocity(dir.scale(speed));
+        this.setAngularVelocity(rand(-12, 12));
+        ballState = 'pitch';
+        pitchOutcomeLocked = false;
+        zoneEntered = false;
+    }
+
+    beginContact(other)
+    {
+        if (ballState !== 'play') return;
+        if (other === backstopObj)
+            sfxCatcher.play(this.pos);
+    }
+
+    render()
+    {
+        // soft shadow
+        drawCircle(this.pos.add(vec2(.08, -.08)), ballRadius*2.1, hsl(0,0,0,.25));
+        // ball
+        drawCircle(this.pos, ballRadius*2, this.color);
+        // stitching (rotates with body)
+        const a = this.angle;
+        const r = ballRadius*.7;
+        drawLine(this.pos.add(vec2().setAngle(a, r)),
+                 this.pos.add(vec2().setAngle(a+PI, r)),
+                 .06, hsl(0, .55, .45));
+        drawLine(this.pos.add(vec2().setAngle(a+PI/2, r)),
+                 this.pos.add(vec2().setAngle(a-PI/2, r)),
+                 .06, hsl(0, .55, .45));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Bat
 
+// Right-handed swing: bat pivots at the hand and sweeps CCW from idle (pointing
+// back/south behind batter) through east (over the plate) to north-west
+// follow-through. LittleJS angle convention: 0=+Y(N), +π/2=+X(E), π=-Y(S).
+const batIdleAngle = 2.6;            // ~149° — bat tip rests south-east-ish behind batter
+const batSwingArc  = -3.0;           // sweep ~172° CCW (decreasing angle)
+
 function getBatInfo()
 {
-    // aim with mouse Y (and keys as backup)
-    const mouseAim = clamp((mousePos.y - batterPos.y) / 6, -1, 1);
-    aim = lerp(aim, mouseAim, .18);
-
-    if (keyIsDown('KeyW') || keyIsDown('ArrowUp'))
-        aim = clamp(aim + .04, -1, 1);
-    if (keyIsDown('KeyS') || keyIsDown('ArrowDown'))
-        aim = clamp(aim - .04, -1, 1);
-
-    // base aim angle (down..up)
-    const baseAngle = lerp(-.55, .9, (aim+1)/2);
-
-    // swing animation (Timer.getPercent() goes 0->1 over the swing)
     const swingT = swingTimer.active() ? swingTimer.getPercent() : 0;
     const eased = smoothstep01(swingT);
+    const angle = batIdleAngle + (swingTimer.active() ? batSwingArc * eased : 0);
 
-    // Continuous swing: idle pose + rotate forward
-    const idleOffset = -1.15; // bat rests back/behind
-    const swingArc   =  2.25; // how far it rotates forward
-    const angle = baseAngle + idleOffset + (swingTimer.active() ? swingArc * eased : 0);
+    const hand = batterPos.add(vec2(.4, .3));
+    const dir = vec2().setAngle(angle, batLength);
 
-    // Hand pivot
-    const hand = batterPos.add(vec2(-.3, .2));
-    const dir = angleToDirMirrored(angle, batLength);
-
-    const a = hand;
-    const b = hand.add(dir);
-
-    return {a, b, angle, swingT};
+    return {a: hand, b: hand.add(dir), angle, swingT};
 }
 
 function trySwing()
 {
-    if (!ball || ball.inFlight || swingTimer.active()) return;
-
-    swings++;
+    if (swingTimer.active()) return;
+    if (ballState === 'play') return;
     swingConnected = false;
     swingTimer.set(swingDuration);
     sfxSwing.play(batterPos);
@@ -132,290 +224,391 @@ function trySwing()
 
 function checkBatContact()
 {
-    if (!ball || ball.inFlight || !swingTimer.active() || swingConnected) return;
+    if (ballState !== 'pitch') return;
+    if (!swingTimer.active() || swingConnected) return;
 
-    const swingT = swingTimer.getPercent();
-    if (swingT < .18 || swingT > .78) return;
+    const t = swingTimer.getPercent();
+    if (t < .15 || t > .8) return;
 
     const {a, b} = getBatInfo();
-    const dist = distPointToSegment(ball.pos, a, b);
+    const d = distPointToSegment(ball.pos, a, b);
     const contactDist = ballRadius + batThickness;
-
-    if (dist <= contactDist)
+    if (d <= contactDist)
     {
         swingConnected = true;
-        const timing = ball.pos.x - platePos.x;
-        const sweet  = 1 - clamp(abs(timing) / 1.6, 0, 1);
-        const center = 1 - clamp(dist / contactDist, 0, 1);
-        const quality = clamp(sweet * .7 + center * .3, 0, 1);
-        registerHit(quality, timing);
-    }
-}
 
-///////////////////////////////////////////////////////////////////////////////
-// Ball
+        // contact quality: sweet-spot position along bat + how centered on segment
+        const ab = b.subtract(a);
+        const along = clamp(ball.pos.subtract(a).dot(ab) / ab.lengthSquared(), 0, 1);
+        const sweet  = 1 - clamp(abs(along - .8) / .5, 0, 1); // sweet spot near tip
+        const center = 1 - clamp(d / contactDist, 0, 1);
+        const quality = clamp(sweet*.65 + center*.35, 0, 1);
 
-class Ball extends EngineObject
-{
-    constructor()
-    {
-        super(pitcherPos.copy(), vec2(ballRadius*2));
-        this.color = hsl(.07, .9, .75);
-        this.resetPitch();
-    }
-
-    resetPitch()
-    {
-        // start near pitcher with small vertical variation
-        this.pos = pitcherPos.add(vec2(0, rand(2,-2)));
-        this.vel = vec2(rand(pitchSpeedMax, pitchSpeedMin), rand(1.2,-1.2));
-        this.spin = rand(.8,-.8); // makes a tiny "break"
-        this.inFlight = false;    // true after contact
-        this.bounced = false;
-    }
-
-    update()
-    {
-        // curve a little on the way in
-        if (!this.inFlight)
-            this.vel.y += this.spin * timeDelta;
-        else
-            this.vel.y -= ballGravity * timeDelta;
-
-        // integrate
-        this.pos = this.pos.add(this.vel.scale(timeDelta));
-
-        // strike if it passes the plate without contact
-        if (!this.inFlight && this.pos.x > strikeLineX)
-            registerMiss('Strike!');
-
-        // land
-        if (this.inFlight && this.pos.y <= groundY + ballRadius)
-        {
-            this.pos.y = groundY + ballRadius;
-            if (!this.bounced)
-            {
-                this.bounced = true;
-                sfxLand.play(this.pos);
-
-                // compute distance (how far it traveled toward outfield)
-                const dist = max(0, platePos.x - this.pos.x);
-                lastResultText = `In play: ${dist.toFixed(1)}m`;
-                resultTimer.set(1.2);
-                autoPitchTimer.set(.9);
-            }
-
-            // roll out a bit
-            this.vel.x *= .98;
-            this.vel.y = 0;
-            if (abs(this.vel.x) < .3)
-                this.vel.x = 0;
-        }
-    }
-
-    render()
-    {
-        drawCircle(this.pos, ballRadius*2, this.color);
-
-        // tiny motion trail on pitches
-        if (!this.inFlight)
-        {
-            const back = this.pos.subtract(this.vel.normalize(1.2));
-            drawLine(back, this.pos, .12, hsl(.07,.4,.8,.5));
-        }
+        registerHit(quality);
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Game logic
 
-function resetSession()
-{
-    pitchNumber = strikes = hits = perfectHits = swings = 0;
-    lastResultText = '';
-    resultTimer.unset();
-    autoPitchTimer.unset();
-    swingTimer.unset();
-    swingConnected = false;
-    ball.resetPitch();
-}
-
 function startPitch()
 {
-    if (!ball || ball.inFlight) return;
-    if (ball.pos.distanceSquared(pitcherPos) > 1) return;
-
+    if (ballState !== 'idle') return;
     pitchNumber++;
-    ball.resetPitch();
+    ball.pitch();
     sfxPitch.play(pitcherPos);
 }
 
-function registerMiss(text)
+function endPitch()
 {
-    if (!ball || ball.inFlight) return;
+    pitchOutcomeLocked = true;
+    ball.parkAtMound();
+    autoPitchTimer.set(1.0);
+}
 
+function registerStrike(text)
+{
+    if (pitchOutcomeLocked) return;
     strikes++;
     lastResultText = text;
-    resultTimer.set(1.2);
-    autoPitchTimer.set(.9);
-    sfxMiss.play(platePos);
-
-    // reset pitch position immediately
-    ball.resetPitch();
+    resultColor = hsl(0, .8, .7);
+    resultTimer.set(1.3);
+    sfxStrike.play(platePos);
+    endPitch();
 
     if (strikes >= 3)
     {
-        lastResultText = '3 Strikes — Reset!';
-        resultTimer.set(1.6);
-        strikes = 0;
-        pitchNumber = 0;
-        hits = 0;
-        perfectHits = 0;
-        swings = 0;
-        autoPitchTimer.set(1.3);
+        lastResultText = '3 STRIKES — OUT!';
+        resultColor = hsl(0, 1, .65);
+        resultTimer.set(1.8);
+        balls = strikes = 0;
+        autoPitchTimer.set(1.8);
     }
 }
 
-function registerHit(contactQuality, timing)
+function registerBall(text)
 {
-    if (!ball || ball.inFlight) return;
+    if (pitchOutcomeLocked) return;
+    balls++;
+    lastResultText = text;
+    resultColor = hsl(.6, .6, .8);
+    resultTimer.set(1.3);
+    sfxBall.play(platePos);
+    endPitch();
 
+    if (balls >= 4)
+    {
+        lastResultText = 'BALL FOUR — WALK!';
+        resultColor = hsl(.55, .9, .75);
+        resultTimer.set(1.8);
+        balls = strikes = 0;
+        autoPitchTimer.set(1.8);
+    }
+}
+
+function registerHit(quality)
+{
     hits++;
+    if (quality > .9) perfectHits++;
+    balls = strikes = 0; // a hit resets the count
 
-    // perfect if close to the plate center
-    if (contactQuality > .9)
-        perfectHits++;
+    // launch direction: perpendicular to the bat axis, 90° CCW
+    // (matches the direction the bat is sweeping for our CCW swing)
+    const {a, b} = getBatInfo();
+    const batAxis = b.subtract(a).normalize();
+    const launchDir = vec2(-batAxis.y, batAxis.x);
 
-    // launch: mostly up + left (toward outfield)
-    const speed = lerp(10, 30, contactQuality);
-    const aimBias = clamp(aim, -1, 1);
+    const speed = lerp(22, 60, quality);
+    ball.setLinearVelocity(launchDir.scale(speed));
+    ball.setAngularVelocity(rand(-18, 18));
+    ballState = 'play';
+    pitchOutcomeLocked = true;
 
-    // timing: negative=early, positive=late
-    // early -> more pulled (lower), late -> more opposite (higher)
-    const elev = clamp(0.55 + aimBias*.35 - timing*.18, 0.15, 1.15);
-    const vx = -speed * Math.cos(elev);
-    const vy =  speed * Math.sin(elev);
-
-    ball.inFlight = true;
-    ball.vel = vec2(vx, vy);
-
-    // contact puff
-    for (let i=0;i<16;i++)
+    // contact puffs at ball
+    for (let i = 0; i < 18; i++)
+    {
         puffs.push({
             p: ball.pos.copy(),
-            v: randVec2(rand(6,2)).add(vec2(0, rand(5,1))),
-            t: rand(.35,.2)
+            v: randVec2(rand(2, 6)),
+            t: rand(.25, .5),
+            c: hsl(.1, .3, .85)
         });
+    }
 
-    const label = contactQuality > .9 ? 'Perfect!' : contactQuality > .65 ? 'Solid!' : 'Foul-ish!';
-    lastResultText = `${label} (${(contactQuality*100|0)}%)`;
-    resultTimer.set(1.0);
-    autoPitchTimer.set(.9);
+    const label = quality > .9 ? 'PERFECT!' : quality > .65 ? 'Solid hit!' : 'Contact!';
+    lastResultText = `${label} (${(quality*100|0)}%)`;
+    resultColor = quality > .9 ? hsl(.14, 1, .65) : hsl(.55, .7, .8);
+    resultTimer.set(1.6);
 
     sfxHit.play(ball.pos);
+    if (quality > .8) sfxCrack.play(ball.pos);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Rendering
-
-function drawBat()
+function endPlay()
 {
-    const {a, b, swingT} = getBatInfo();
-
-    // bat barrel
-    drawLine(a, b, batThickness*2, hsl(.08, .35, .35));
-
-    // grip
-    const gripDir = a.subtract(b).normalize(1);
-    const gripEnd = a.add(gripDir.scale(1.2));
-    drawLine(a, gripEnd, batThickness*2.3, hsl(0,0,.15));
-
-    // little arc indicator while swinging
-    if (swingTimer.active())
-        drawCircle(a, 1.2 + swingT*2.5, hsl(.55,.6,.6,.08));
-}
-
-function drawField()
-{
-    // sky
-    drawRect(cameraPos, vec2(200, 200), hsl(.58,.3,.15));
-
-    // grass
-    drawRect(vec2(0, groundY-6), vec2(200, 24), hsl(.33,.55,.22));
-
-    // dirt strip
-    drawRect(vec2(0, groundY+2.2), vec2(200, 8), hsl(.08,.45,.28));
-
-    // mound
-    drawCircle(pitcherPos, 3, hsl(.08,.25,.35,.9));
-
-    // plate
-    drawRect(platePos.add(vec2(0,-.2)), vec2(1.2, .45), hsl(0,0,1));
-
-    // strike zone box (visual only)
-    const zonePos  = platePos.add(vec2(-.2, 3.5));
-    const zoneSize = vec2(1.8, 3.2);
-    drawRect(zonePos, zoneSize, hsl(.55,.4,.9,.08));
-    drawRect(zonePos, zoneSize, hsl(0,0,1,.12), 0, false);
-
-    // batter
-    drawCircle(batterPos.add(vec2(0,1.4)), 1.8, hsl(.12,.25,.2)); // torso
-    drawCircle(batterPos.add(vec2(.2,3.1)), 1.2, hsl(.1,.18,.85)); // head
-
-    // catcher silhouette
-    const catcher = platePos.add(vec2(1.9, 2.0));
-    drawCircle(catcher, 2.1, hsl(.1,.15,.08));
-}
-
-function drawParticles()
-{
-    for (let i=puffs.length; i--;)
+    if (ballState !== 'play') return;
+    const dist = ball.pos.length();
+    if (!resultTimer.active())
     {
-        const p = puffs[i];
-        p.t -= timeDelta;
-        if (p.t <= 0)
-        {
-            puffs.splice(i,1);
-            continue;
-        }
-        p.v = p.v.add(vec2(0, -ballGravity*.25*timeDelta));
-        p.p = p.p.add(p.v.scale(timeDelta));
-        drawCircle(p.p, lerp(.2, 1.2, p.t/.35), hsl(.08,.25,.85, p.t/.35));
+        lastResultText = `In play: ${dist.toFixed(1)}m`;
+        resultColor = hsl(.55, .5, .85);
+        resultTimer.set(1.4);
     }
+    ball.parkAtMound();
+    autoPitchTimer.set(.9);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-function gameInit()
+function resetSession()
 {
-    setCanvasFixedSize(vec2(1280, 720));
-    cameraScale = 28;
-    cameraPos = vec2(0, groundY + 4);
-    ball = new Ball();
+    pitchNumber = balls = strikes = hits = perfectHits = homeRuns = 0;
+    bestDistance = 0;
+    lastResultText = '';
+    resultTimer.unset();
+    swingTimer.unset();
+    swingConnected = false;
+    ball.parkAtMound();
     autoPitchTimer.set(.6);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Engine hooks
+
+async function gameInit()
+{
+    await box2dInit();
+
+    setCanvasFixedSize(vec2(1280, 720));
+    cameraScale = 14;
+    cameraPos = vec2(0, 18);
+    gravity = vec2(0, 0); // top-down
+    canvasClearColor = hsl(.25, .35, .22); // foul territory / dark green
+
+    // backstop south of the catcher (catches missed pitches)
+    backstopObj = new Box2dStaticObject(vec2(0, backstopY));
+    backstopObj.addBox(vec2(8, .6), vec2(), 0, 0, .3, .1);
+    backstopObj.render = ()=>{};
+
+    ball = new Ball();
+    autoPitchTimer.set(.8);
+}
+
 function gameUpdate()
 {
     if (keyWasPressed('Space') || mouseWasPressed(0)) trySwing();
     if (keyWasPressed('Enter')) startPitch();
     if (keyWasPressed('KeyR')) resetSession();
 
+    if (ballState === 'pitch')
+    {
+        // tracking: did the pitch pass through the strike zone?
+        if (!zoneEntered && inStrikeZone(ball.pos))
+            zoneEntered = true;
+
+        // pitch ends when the ball crosses south of the plate
+        if (ball.pos.y < platePos.y - zoneHalf.y - .25)
+        {
+            if (zoneEntered) registerStrike('STRIKE!');
+            else             registerBall('BALL');
+        }
+    }
+    else if (ballState === 'play')
+    {
+        const dist = ball.pos.length();
+        const fair = inFairTerritory(ball.pos);
+
+        if (dist > fenceRadius)
+        {
+            if (fair)
+            {
+                homeRuns++;
+                if (dist > bestDistance) bestDistance = dist;
+                lastResultText = 'HOME RUN!';
+                resultColor = hsl(.13, 1, .65);
+                resultTimer.set(2.2);
+                sfxHomerun.play(ball.pos);
+                for (let i = 0; i < 40; i++)
+                {
+                    puffs.push({
+                        p: ball.pos.copy(),
+                        v: randVec2(rand(3, 11)),
+                        t: rand(.5, 1.1),
+                        c: hsl(rand(.08, .18), .9, .7)
+                    });
+                }
+            }
+            else
+            {
+                if (dist > bestDistance) bestDistance = dist;
+                lastResultText = `Foul ball — ${dist.toFixed(1)}m`;
+                resultColor = hsl(.0, .6, .75);
+                resultTimer.set(1.6);
+            }
+            ball.parkAtMound();
+            autoPitchTimer.set(1.2);
+        }
+        else
+        {
+            // ball has stopped rolling
+            const v = ball.body.GetLinearVelocity();
+            const speed2 = v.get_x()*v.get_x() + v.get_y()*v.get_y();
+            if (speed2 < .25) endPlay();
+        }
+    }
+
+    checkBatContact();
+
     if (autoPitchTimer.elapsed())
     {
         autoPitchTimer.unset();
         startPitch();
     }
-    checkBatContact();
 }
 
-///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    cameraPos = vec2(0, groundY + 4);
+    // gentle camera pan toward action
+    let target = vec2(0, 18);
+    if (ballState === 'play')
+    {
+        target = vec2(
+            clamp(ball.pos.x * .5, -18, 18),
+            clamp(10 + ball.pos.y * .55, 6, 26));
+    }
+    cameraPos = cameraPos.lerp(target, .06);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Rendering
+
+function drawField()
+{
+    // fair-territory grass wedge: large green triangle (approximated as 3 rects)
+    // Easier: draw a large green disk and then chop foul areas with dark wedges.
+    drawCircle(platePos, fenceRadius*2 + 6, hsl(.32, .55, .32));
+
+    // dirt infield diamond (square rotated 45° around mound area)
+    drawRect(moundCenter.add(vec2(0, -9)), vec2(20, 20), hsl(.08, .45, .35), PI/4);
+
+    // dirt cutout around home plate
+    drawCircle(platePos.add(vec2(0, .5)), 5, hsl(.08, .45, .35));
+
+    // dark "out of play" wedges over foul territory
+    // Left foul wedge: from home plate to NW (135° to 180°)
+    drawRect(vec2(-fenceRadius*.6 - 2, fenceRadius*.6 - 2), vec2(fenceRadius*2, fenceRadius*2), hsl(.25, .35, .18), -PI/4);
+    drawRect(vec2( fenceRadius*.6 + 2, fenceRadius*.6 - 2), vec2(fenceRadius*2, fenceRadius*2), hsl(.25, .35, .18),  PI/4);
+    // South of plate too
+    drawRect(vec2(0, -fenceRadius - 4), vec2(fenceRadius*3, fenceRadius*2), hsl(.25, .35, .18));
+
+    // outfield fence (arc, drawn as small line segments)
+    const segs = 28;
+    const a0 = PI/2 - foulAngleHalf;
+    const a1 = PI/2 + foulAngleHalf;
+    for (let i = 0; i < segs; i++)
+    {
+        const t0 = a0 + (a1-a0)*i/segs;
+        const t1 = a0 + (a1-a0)*(i+1)/segs;
+        drawLine(
+            vec2(cos(t0)*fenceRadius, sin(t0)*fenceRadius),
+            vec2(cos(t1)*fenceRadius, sin(t1)*fenceRadius),
+            .35, hsl(0, 0, .92));
+    }
+    // warning track (thin dirt band just inside the fence)
+    for (let i = 0; i < segs; i++)
+    {
+        const t0 = a0 + (a1-a0)*i/segs;
+        const t1 = a0 + (a1-a0)*(i+1)/segs;
+        drawLine(
+            vec2(cos(t0)*(fenceRadius-1.3), sin(t0)*(fenceRadius-1.3)),
+            vec2(cos(t1)*(fenceRadius-1.3), sin(t1)*(fenceRadius-1.3)),
+            1.8, hsl(.08, .35, .35, .55));
+    }
+
+    // foul lines from home plate to fence
+    drawLine(platePos, vec2(cos(PI-foulAngleHalf)*fenceRadius, sin(PI-foulAngleHalf)*fenceRadius), .15, WHITE);
+    drawLine(platePos, vec2(cos(foulAngleHalf)*fenceRadius, sin(foulAngleHalf)*fenceRadius), .15, WHITE);
+
+    // bases (white squares at 1B, 2B, 3B)
+    const baseSize = vec2(1.2, 1.2);
+    const firstBase = vec2(cos(PI/4) * 20, sin(PI/4) * 20);
+    const secondBase = vec2(0, 28);
+    const thirdBase = vec2(cos(3*PI/4) * 20, sin(3*PI/4) * 20);
+    drawRect(firstBase, baseSize, WHITE, PI/4);
+    drawRect(secondBase, baseSize, WHITE, PI/4);
+    drawRect(thirdBase, baseSize, WHITE, PI/4);
+
+    // pitcher's rubber on the mound
+    drawCircle(moundCenter, 4, hsl(.08, .38, .42));
+    drawRect(moundCenter, vec2(1.2, .35), WHITE);
+
+    // home plate (pentagon approximated as a small white pentagon-ish shape via two rects)
+    drawRect(platePos, vec2(1.2, 1.0), WHITE);
+    drawRect(platePos.add(vec2(0, -.6)), vec2(1.0, .5), WHITE, PI/4);
+
+    // strike zone overlay (visible to player)
+    drawRect(platePos, zoneHalf.scale(2), hsl(.16, .9, .6, .18));
+    // box outline simulated with 4 thin rects
+    const zw = zoneHalf.x*2, zh = zoneHalf.y*2;
+    drawRect(platePos.add(vec2(0,  zoneHalf.y)), vec2(zw + .06, .06), hsl(.16, 1, .65, .9));
+    drawRect(platePos.add(vec2(0, -zoneHalf.y)), vec2(zw + .06, .06), hsl(.16, 1, .65, .9));
+    drawRect(platePos.add(vec2( zoneHalf.x, 0)), vec2(.06, zh + .06), hsl(.16, 1, .65, .9));
+    drawRect(platePos.add(vec2(-zoneHalf.x, 0)), vec2(.06, zh + .06), hsl(.16, 1, .65, .9));
+
+    // batter's box (rectangle next to plate)
+    drawRect(batterPos.add(vec2(0, 0)), vec2(1.6, 2.4), hsl(0, 0, .85, .15));
+    drawRect(batterPos.add(vec2(0, 0)), vec2(1.6, 2.4), hsl(0, 0, 1, .35), 0);
+
+    // batter (top-down: head circle + shoulder oval)
+    drawEllipse(batterPos.add(vec2(.05, .15)), vec2(1.6, 1.9), hsl(.6, .35, .25));
+    drawCircle(batterPos.add(vec2(.05, .25)), 1.0, hsl(.08, .25, .82));
+
+    // catcher (south of plate, crouched)
+    drawCircle(catcherPos, 1.6, hsl(.55, .45, .25));
+    drawCircle(catcherPos.add(vec2(0, .35)), .85, hsl(.08, .2, .82));
+
+    // pitcher on mound
+    drawCircle(pitcherPos.add(vec2(0, -.2)), 1.4, hsl(0, .45, .35));
+    drawCircle(pitcherPos.add(vec2(0, 0)), .85, hsl(.08, .25, .82));
+}
+
+function drawBat()
+{
+    const {a, b, swingT} = getBatInfo();
+
+    // bat barrel
+    drawLine(a, b, batThickness*2, hsl(.08, .35, .42));
+    // grain lines
+    const dir = b.subtract(a).normalize();
+    for (let i = 1; i < 4; i++)
+    {
+        const p = a.add(dir.scale(batLength * i/4));
+        drawLine(p.subtract(dir.scale(.04)), p.add(dir.scale(.04)),
+            batThickness*1.5, hsl(.08, .25, .28));
+    }
+
+    // grip wrap
+    const gripDir = a.subtract(b).normalize(1);
+    const gripEnd = a.add(gripDir.scale(.8));
+    drawLine(a, gripEnd, batThickness*2.4, hsl(0, 0, .12));
+
+    // swing-arc hint
+    if (swingTimer.active())
+        drawCircle(a, 1.0 + swingT*2.2, hsl(.55, .6, .8, .07));
+}
+
+function drawParticles()
+{
+    for (let i = puffs.length; i--;)
+    {
+        const p = puffs[i];
+        p.t -= timeDelta;
+        if (p.t <= 0) { puffs.splice(i, 1); continue; }
+        p.v = p.v.scale(.96); // air drag
+        p.p = p.p.add(p.v.scale(timeDelta));
+        const fade = clamp(p.t / .6, 0, 1);
+        drawCircle(p.p, lerp(.1, .9, p.t/.6), p.c.scale(1, fade));
+    }
+}
+
 function gameRender()
 {
     drawField();
@@ -423,23 +616,23 @@ function gameRender()
     drawParticles();
 }
 
-///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    // HUD
-    const top = vec2(mainCanvasSize.x/2, 40);
+    const cx = mainCanvasSize.x/2;
+    const line1 = `BATTING PRACTICE   •   Pitch ${pitchNumber}   •   ${balls}-${strikes}`;
+    const line2 = `Hits ${hits}   •   Perfect ${perfectHits}   •   HR ${homeRuns}   •   Best ${bestDistance.toFixed(1)}m`;
+    drawTextScreen(line1, vec2(cx, 40), 28, hsl(0,0,1), 4, hsl(0,0,0));
+    drawTextScreen(line2, vec2(cx, 76), 22, hsl(0,0,1), 4, hsl(0,0,0));
 
-    const line1 = `Batting Practice  •  Pitch ${pitchNumber}  •  Strikes ${strikes}/3`;
-    const line2 = `Swings ${swings}  •  Hits ${hits}  •  Perfect ${perfectHits}`;
-
-    drawTextScreen(line1, top, 34, hsl(0,0,1), 4, hsl(0,0,0));
-    drawTextScreen(line2, top.add(vec2(0, 34)), 26, hsl(0,0,1), 4, hsl(0,0,0));
-
-    const help = 'SPACE / Click: Swing   •   Mouse Y or W/S: Aim   •   ENTER: Pitch   •   R: Reset';
-    drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y-28), 20, hsl(0,0,1,.8), 3, hsl(0,0,0));
+    const help = 'SPACE / Click: Swing     ENTER: Pitch     R: Reset';
+    drawTextScreen(help, vec2(cx, mainCanvasSize.y - 26), 18, hsl(0,0,1,.85), 3, hsl(0,0,0));
 
     if (resultTimer.active() && lastResultText)
-        drawTextScreen(lastResultText, vec2(mainCanvasSize.x/2, 140), 46, hsl(.14,.9,.7), 6, hsl(0,0,0));
+    {
+        const t = clamp(resultTimer.getPercent(), 0, 1);
+        const size = lerp(54, 38, t);
+        drawTextScreen(lastResultText, vec2(cx, 140), size, resultColor, 6, hsl(0,0,0));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -447,3 +640,5 @@ function gameRenderPost()
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 
 </script>
+</body>
+</html>
