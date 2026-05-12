@@ -41,18 +41,20 @@ Game ideas that work well with LittleJS
 - Platformer: use a TileCollisionLayer 
 - Top down game: duel stick shooter, racing, adventure game
 - Pseudo 3d: Raycasting or arcade racing.
-- Box2d Physics: use indexBox2d.html as a starter
+- Box2d Physics: paste the contents of indexBox2d.html into index.html as the starter
 
 Common pitfalls
 - For drawCircle and drawEllipse, the size is the diameter not the radius.
-- Clockwise is positive for angles.
+- Angles: clockwise is positive in LittleJS, counterclockwise is positive in Box2D.
+- Y-axis is up-positive in world space (gravity.y must be negative to fall down).
+- drawText uses world units (size ~3 is normal); drawTextScreen uses pixels (size ~80 is normal). Do not mix them up.
+- When using the Box2D starter, call `await box2dInit()` at the top of gameInit before creating any bodies.
 - Do not redefine shortcuts to Math functions.
 - Do not write new audio code, just use SoundGenerator to make sounds.
-- Do not change html or css, only write JavaScript.
 - Do not replace \n with new lines for text inside strings.
 
 Notes
 - Drawing functions are in world space by default with a screenSpace parameter
-- Use keyDirection() to get directional input as a vec2.
+- Use keyDirection() for directional keyboard input (returns a vec2; handles arrows + WASD automatically). Reserve keyIsDown() for non-directional keys like jump, run, action.
 - reference.md documents the main parts of LittleJS API.
 - tutorial.md explains how to make a basic breakout style game.
