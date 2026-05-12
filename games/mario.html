@@ -8,27 +8,28 @@
 'use strict';
 
 // engine settings
-debugWatermark = false; // Hide debug watermark in corner
-showEngineVersion = false; // Hide engine version console display
+debugWatermark = false;
+showEngineVersion = false;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Minimal NES-style platformer level (original layout, inspired by early 8-bit platformers)
-// No textures/assets; everything is drawn with solid-color primitives.
+// Tile system
+///////////////////////////////////////////////////////////////////////////////
 
-// --------- level data ---------
-const TILE = 1;
-const LEVEL_W = 240;
+const LEVEL_W = 214;
 const LEVEL_H = 18;
 
-// tile types
 const TT = {
     EMPTY: 0,
     GROUND: 1,
-    BRICK: 2,    PIPE: 4,
-    GOAL: 5,
+    BRICK:  2,
+    QBLOCK: 3,
+    USED:   4,
+    PIPE:   5,
+    FLAG:   6,
+    POLE:   7, // flag pole (non-solid)
 };
 
-const tileMap = new Map(); // key "x,y" -> type
+const tileMap = new Map();
 const tileKey = (x, y) => `${x|0},${y|0}`;
 
 function setTile(x, y, t)
@@ -38,14 +39,12 @@ function setTile(x, y, t)
     else tileMap.set(tileKey(x,y), t);
 }
 
-function getTile(x, y)
-{ return tileMap.get(tileKey(x,y)) || TT.EMPTY; }
+function getTile(x, y) { return tileMap.get(tileKey(x,y)) || TT.EMPTY; }
 
 function isSolidType(t)
-{ return t === TT.GROUND || t === TT.BRICK || t === TT.PIPE || t === TT.GOAL; }
+{ return t === TT.GROUND || t === TT.BRICK || t === TT.QBLOCK || t === TT.USED || t === TT.PIPE || t === TT.FLAG; }
 
-function isSolidAt(x, y)
-{ return isSolidType(getTile(x,y)); }
+function isSolidAt(x, y) { return isSolidType(getTile(x, y)); }
 
 function fillRectTiles(x0, y0, w, h, t)
 {
@@ -54,126 +53,171 @@ function fillRectTiles(x0, y0, w, h, t)
         setTile(x, y, t);
 }
 
-function clearRectTiles(x0, y0, w, h)
+// brick / qblock bump animation: key -> startTime
+const tileBumps = new Map();
+function bumpTile(x, y) { tileBumps.set(tileKey(x, y), time); }
+function getTileBumpOffset(x, y)
 {
-    for (let x = x0; x < x0 + w; x++)
-    for (let y = y0; y < y0 + h; y++)
-        setTile(x, y, TT.EMPTY);
+    const start = tileBumps.get(tileKey(x, y));
+    if (start === undefined) return 0;
+    const t = (time - start) / .18;
+    if (t > 1) { tileBumps.delete(tileKey(x, y)); return 0; }
+    return Math.sin(t * Math.PI) * .35;
 }
+
+function addPipe(x, h) { fillRectTiles(x, 1, 2, h, TT.PIPE); }
+
+///////////////////////////////////////////////////////////////////////////////
+// Level: SMB 1-1 inspired layout
+///////////////////////////////////////////////////////////////////////////////
+
+const enemySpawns = []; // populated by buildLevel
+const coinSpawns  = [];
 
 function buildLevel()
 {
     tileMap.clear();
+    tileBumps.clear();
+    enemySpawns.length = 0;
+    coinSpawns.length = 0;
 
-    // base ground
+    // continuous ground row at y=0
     for (let x = 0; x < LEVEL_W; x++)
         setTile(x, 0, TT.GROUND);
 
-    // a few pits (keep it "classic" but not an exact 1-1 layout)
+    // pits (clear ground)
     const pits = [
-        [24, 3],
-        [58, 4],
-        [92, 3],
-        [132, 5],
-        [176, 4],
+        [69, 3],
+        [86, 2],
+        [120, 4],
+        [157, 3],
     ];
-    for (const [start, len] of pits)
-        clearRectTiles(start, 0, len, 2);
+    for (const [x, w] of pits)
+        for (let xx = x; xx < x + w; xx++) setTile(xx, 0, TT.EMPTY);
 
-    // low hills
-    fillRectTiles(8, 1, 6, 2, TT.GROUND);
-    fillRectTiles(14, 1, 5, 1, TT.GROUND);
+    // -- early section: lonely ? block + four-block row --
+    setTile(16, 4, TT.QBLOCK);
 
-    fillRectTiles(70, 1, 10, 2, TT.GROUND);
-    fillRectTiles(82, 1, 7, 1, TT.GROUND);
+    setTile(20, 4, TT.BRICK);
+    setTile(21, 4, TT.QBLOCK);
+    setTile(22, 4, TT.BRICK);
+    setTile(23, 4, TT.QBLOCK);
+    setTile(24, 4, TT.BRICK);
+    setTile(22, 8, TT.QBLOCK);
 
-    // brick / question clusters
-    const yA = 6;
-    fillRectTiles(12, yA, 3, 1, TT.BRICK);
-    setTile(13, yA+1, TT.BRICK);
+    // -- four pipes (heights 2, 3, 4, 4) --
+    addPipe(28, 2);
+    addPipe(38, 3);
+    addPipe(46, 4);
+    addPipe(57, 4);
 
-    fillRectTiles(34, yA, 5, 1, TT.BRICK);
-    setTile(36, yA+1, TT.BRICK);
+    // -- after pipes: brick + ? + brick + a coin row above --
+    setTile(77, 4, TT.BRICK);
+    setTile(78, 4, TT.QBLOCK);
+    setTile(79, 4, TT.BRICK);
+    for (let x = 77; x <= 79; x++) setTile(x, 8, TT.BRICK);
 
-    fillRectTiles(104, 7, 4, 1, TT.BRICK);
-    setTile(106, 8, TT.BRICK);
+    // -- mid-section bricks --
+    setTile(94, 4, TT.BRICK);
+    setTile(98, 4, TT.QBLOCK);
+    setTile(101, 4, TT.BRICK);
 
-    // pipes (2 tiles wide)
-    addPipe(40, 1, 3);
-    addPipe(112, 1, 4);
-    addPipe(150, 1, 5);
+    // floating bricks above
+    fillRectTiles(108, 8, 3, 1, TT.BRICK);
 
-    // a mid-air platform
-    fillRectTiles(120, 9, 10, 1, TT.BRICK);
+    // -- staircase up to a high block area --
+    fillRectTiles(115, 1, 1, 1, TT.BRICK);
+    fillRectTiles(116, 1, 1, 2, TT.BRICK);
+    fillRectTiles(117, 1, 1, 3, TT.BRICK);
+    fillRectTiles(118, 1, 1, 4, TT.BRICK);
 
-    // stair-ish blocks near the end
-    const stairX = 200;
-    for (let i=0; i<8; i++)
-        fillRectTiles(stairX+i, 1, 1, i+1, TT.BRICK);
+    // floating platform over the big pit
+    fillRectTiles(122, 7, 4, 1, TT.BRICK);
 
-    // goal gate
-    addGoal(228, 1);
+    // descending stair after the pit
+    fillRectTiles(125, 1, 1, 4, TT.BRICK);
+    fillRectTiles(126, 1, 1, 3, TT.BRICK);
+    fillRectTiles(127, 1, 1, 2, TT.BRICK);
+    fillRectTiles(128, 1, 1, 1, TT.BRICK);
 
-    // trim: ensure spawn area is clear
-    clearRectTiles(0, 1, 6, 8);
+    // floating coin row
+    fillRectTiles(133, 8, 4, 1, TT.BRICK);
+    setTile(135, 4, TT.QBLOCK);
+
+    // brick + ? + brick chain
+    setTile(140, 4, TT.BRICK);
+    setTile(141, 4, TT.QBLOCK);
+    setTile(142, 4, TT.BRICK);
+
+    // -- ground staircase up, plateau, staircase down (classic SMB beat) --
+    for (let i = 0; i < 4; i++)
+        fillRectTiles(149 + i, 1, 1, i + 1, TT.GROUND);
+    fillRectTiles(153, 1, 2, 4, TT.GROUND);
+    for (let i = 0; i < 4; i++)
+        fillRectTiles(155 + i, 1, 1, 4 - i, TT.GROUND);
+
+    // after pit
+    setTile(168, 4, TT.QBLOCK);
+
+    // -- final 8-step staircase before flag --
+    for (let i = 0; i < 8; i++)
+        fillRectTiles(178 + i, 1, 1, i + 1, TT.GROUND);
+
+    // flag pole + ball
+    const poleX = 192;
+    setTile(poleX, 1, TT.GROUND); // base
+    for (let y = 2; y < 11; y++) setTile(poleX, y, TT.POLE);
+    setTile(poleX, 11, TT.FLAG); // top ball
+
+    // -- enemy spawns --
+    // Goombas
+    enemySpawns.push({ type: 'goomba', x: 22 });
+    enemySpawns.push({ type: 'goomba', x: 50 });
+    enemySpawns.push({ type: 'goomba', x: 52 });
+    enemySpawns.push({ type: 'goomba', x: 80 });
+    enemySpawns.push({ type: 'goomba', x: 96 });
+    enemySpawns.push({ type: 'goomba', x: 98 });
+    enemySpawns.push({ type: 'goomba', x: 137 });
+    enemySpawns.push({ type: 'goomba', x: 140 });
+    enemySpawns.push({ type: 'goomba', x: 170 });
+    // Koopa
+    enemySpawns.push({ type: 'koopa', x: 110 });
+
+    // -- coin placements --
+    // air coins near early blocks
+    coinSpawns.push([7.5, 2.5], [9.5, 2.5], [11.5, 2.5]);
+    coinSpawns.push([16.5, 6], [21.5, 6], [23.5, 6]);
+    // above pipes
+    coinSpawns.push([30.5, 4.5], [41, 5.5], [49, 6.5]);
+    // along coin-brick row at 77-79 (under)
+    coinSpawns.push([77.5, 6.5], [78.5, 6.5], [79.5, 6.5]);
+    // around 98 qblock and floating bricks
+    coinSpawns.push([94.5, 6], [99.5, 6], [108.5, 6.5], [110.5, 6.5]);
+    // floating platform over big pit
+    coinSpawns.push([122.5, 8.5], [123.5, 8.5], [124.5, 8.5], [125.5, 8.5]);
+    // mid-floating row at 133-136
+    coinSpawns.push([133.5, 9.5], [134.5, 9.5], [135.5, 9.5], [136.5, 9.5]);
+    // late game
+    coinSpawns.push([147, 2.5], [165, 2.5], [173, 2.5]);
 }
 
-function addPipe(x, y, height)
-{
-    // body
-    fillRectTiles(x, y, 2, height, TT.PIPE);
-    // top lip
-    setTile(x-1, y+height-1, TT.PIPE);
-    setTile(x+2, y+height-1, TT.PIPE);
-}
+///////////////////////////////////////////////////////////////////////////////
+// Sound
+///////////////////////////////////////////////////////////////////////////////
 
-function addGoal(x, y)
-{
-    // two posts and a top bar
-    for (let i=0; i<10; i++)
-    {
-        setTile(x, y+i, TT.GOAL);
-        setTile(x+4, y+i, TT.GOAL);
-    }
-    fillRectTiles(x, y+10, 5, 1, TT.GOAL);
-}
+const sfxJump  = new SoundGenerator({ volume:.55, frequency:420, attack:0, release:.16, slide:.04, randomness:.02 });
+const sfxBump  = new SoundGenerator({ volume:.4,  frequency:160, attack:0, release:.08, shapeCurve:0.6, noise:.1 });
+const sfxWin   = new SoundGenerator({ volume:.55, frequency:330, attack:0, release:.30, pitchJump:280, pitchJumpTime:.10, slide:-.08 });
+const sfxCoin  = new SoundGenerator({ volume:.45, frequency:900, attack:0, release:.10, pitchJump:1200, pitchJumpTime:.02, shapeCurve:1.6 });
+const sfxStomp = new SoundGenerator({ volume:.5,  frequency:240, attack:0, release:.10, slide:-.15, noise:.15 });
+const sfxKick  = new SoundGenerator({ volume:.55, frequency:520, attack:0, release:.12, slide:.10, shapeCurve:1.2 });
+const sfxHurt  = new SoundGenerator({ volume:.6,  frequency:200, attack:.01, release:.45, slide:-.12, pitchJump:-80, pitchJumpTime:.08 });
 
-// --------- player ---------
-let player;
-let cameraMinX = 0;
+///////////////////////////////////////////////////////////////////////////////
+// Coin pickup (collectible, hovers/bounces)
+///////////////////////////////////////////////////////////////////////////////
 
-// --------- coins ---------
 let coinsCollected = 0;
-let coinsTotal = 0;
-
-// Hand-authored coin placements (world/tile units)
-const coinPositions = [
-    [7.5, 3.8], [9.0, 4.8], [10.5, 5.8],
-    [14.5, 8.2], [15.8, 8.2],
-    [26.5, 4.8], [27.5, 5.8], [28.5, 6.8],
-    [43.0, 6.2], [45.0, 6.2],
-    [62.0, 4.4], [63.2, 5.2], [64.4, 6.0],
-    [93.5, 4.8], [95.0, 6.0],
-    [121.5, 11.2], [123.0, 11.2], [124.5, 11.2],
-    [134.2, 4.8], [135.4, 5.6], [136.6, 6.4],
-    [152.0, 7.8], [154.0, 7.8],
-    [181.0, 5.2], [182.2, 6.0],
-    [205.0, 8.5], [207.0, 10.0],
-];
-
-function spawnCoins()
-{
-    coinsCollected = 0;
-    coinsTotal = coinPositions.length;
-    for (const [x,y] of coinPositions)
-        new Coin(vec2(x,y));
-}
-
-// sfx
-const sfxJump  = new SoundGenerator({ volume:.6, frequency:420, attack:0, release:.12, slide:.05, randomness:.02 });
-const sfxBump  = new SoundGenerator({ volume:.4, frequency:160, attack:0, release:.08, shapeCurve:0.6, noise:.1 });
-const sfxWin   = new SoundGenerator({ volume:.5, frequency:330, attack:0, release:.25, pitchJump:220, pitchJumpTime:.08, slide:-.12 });
-const sfxCoin  = new SoundGenerator({ volume:.45, frequency:900, attack:0, release:.10, pitchJump:1200, pitchJumpTime:.02, randomness:.01, shapeCurve:1.6 });
 
 class Coin extends EngineObject
 {
@@ -184,189 +228,681 @@ class Coin extends EngineObject
         this.phase = rand(9e9);
         this.setCollision(false, false, false, false);
     }
-
     updatePhysics() {}
-
     update()
     {
-        // float animation (no dt; fixed 60fps)
         this.pos.y = this.baseY + oscillate(2, 1, time + this.phase) * .14;
-
-        // collect
-        if (!player) return;
+        if (!player || player.dead) return;
         const dx = abs(player.pos.x - this.pos.x);
         const dy = abs(player.pos.y - this.pos.y);
-        if (dx < player.size.x*.5 + .30 && dy < player.size.y*.5 + .30)
+        if (dx < player.size.x*.5 + .35 && dy < player.size.y*.5 + .45)
         {
             coinsCollected++;
             sfxCoin.play(this.pos);
             this.destroy();
         }
     }
+    render()
+    {
+        // spin: width oscillates so the coin looks like it's rotating about a vertical axis.
+        // sign of the sine tells which face is showing (lighter front / darker back).
+        const spin = time * 5 + this.phase * 2;
+        const s = Math.sin(spin);
+        const w = Math.abs(s) * .42 + .08;   // 0.08 .. 0.50
+        const h = .85;
+        const facing = s > 0;
+
+        // dark outline
+        drawEllipse(this.pos, vec2(w + .08, h + .08), rgb(.45, .28, .04));
+        // body (face vs back side)
+        drawEllipse(this.pos, vec2(w, h), facing ? rgb(1, .92, .25) : rgb(.78, .58, .12));
+        // inner detail only when wide enough to see
+        if (w > .18)
+        {
+            drawEllipse(this.pos, vec2(w * .55, h * .65),
+                facing ? rgb(.95, .75, .12) : rgb(.55, .40, .08));
+            if (facing)
+                drawEllipse(this.pos.add(vec2(-w * .30, h * .12)),
+                    vec2(w * .25, h * .30), rgb(1, 1, 1, .65));
+        }
+    }
+}
+
+// Popped from a ? block. Auto-counts, flies up, despawns.
+class PopCoin extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.5));
+        this.vel = vec2(0, .38);
+        this.life = 0;
+        this.setCollision(false, false, false, false);
+    }
+    updatePhysics() {}
+    update()
+    {
+        this.life++;
+        this.pos = this.pos.add(this.vel);
+        this.vel.y -= .024;
+        if (this.life > 28) this.destroy();
+    }
+    render()
+    {
+        const sx = .26 + Math.cos(this.life * .8) * .22;
+        drawEllipse(this.pos, vec2(Math.abs(sx), .44), rgb(1, .88, .2));
+        drawEllipse(this.pos, vec2(Math.abs(sx) + .04, .48), rgb(.6, .4, .05, .5));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Enemy base (custom tile collision, like the player)
+///////////////////////////////////////////////////////////////////////////////
+
+const ENEMY_GRAVITY = .025;
+const ENEMY_TERMINAL = -.7;
+
+class Enemy extends EngineObject
+{
+    constructor(pos, size)
+    {
+        super(pos, size);
+        this.vel = vec2(0, 0);
+        this.facing = -1;
+        this.onGround = false;
+        this.dead = false;
+        this.deadTimer = 0;
+        this.setCollision(false, false, false, false);
+    }
+
+    updatePhysics() {}
+
+    // Returns true if collided horizontally this frame.
+    moveAndCollideTiles(turnAtEdges = false)
+    {
+        const half = this.size.scale(.5);
+        let bumpedWall = false;
+
+        // gravity
+        this.vel.y -= ENEMY_GRAVITY;
+        this.vel.y = max(this.vel.y, ENEMY_TERMINAL);
+
+        // ---- X ----
+        this.pos.x += this.vel.x;
+        if (this.vel.x)
+        {
+            const y0 = floor(this.pos.y - half.y + .001);
+            const y1 = floor(this.pos.y + half.y - .001);
+            if (this.vel.x > 0)
+            {
+                const xSide = floor(this.pos.x + half.x);
+                for (let y = y0; y <= y1; y++)
+                if (isSolidAt(xSide, y))
+                {
+                    this.pos.x = xSide - half.x;
+                    this.vel.x = -Math.abs(this.vel.x);
+                    this.facing = -1;
+                    bumpedWall = true;
+                    break;
+                }
+            }
+            else
+            {
+                const xSide = floor(this.pos.x - half.x);
+                for (let y = y0; y <= y1; y++)
+                if (isSolidAt(xSide, y))
+                {
+                    this.pos.x = xSide + 1 + half.x;
+                    this.vel.x = Math.abs(this.vel.x);
+                    this.facing = 1;
+                    bumpedWall = true;
+                    break;
+                }
+            }
+        }
+
+        // ---- Y ----
+        const wasOnGround = this.onGround;
+        this.onGround = false;
+        this.pos.y += this.vel.y;
+        if (this.vel.y)
+        {
+            const x0 = floor(this.pos.x - half.x + .001);
+            const x1 = floor(this.pos.x + half.x - .001);
+            if (this.vel.y > 0)
+            {
+                const ySide = floor(this.pos.y + half.y);
+                for (let x = x0; x <= x1; x++)
+                if (isSolidAt(x, ySide))
+                {
+                    this.pos.y = ySide - half.y;
+                    this.vel.y = 0;
+                    break;
+                }
+            }
+            else
+            {
+                const ySide = floor(this.pos.y - half.y);
+                for (let x = x0; x <= x1; x++)
+                if (isSolidAt(x, ySide))
+                {
+                    this.pos.y = ySide + 1 + half.y;
+                    this.vel.y = 0;
+                    this.onGround = true;
+                    break;
+                }
+            }
+        }
+
+        // turn at ledges (Koopa)
+        if (turnAtEdges && this.onGround && this.vel.x !== 0)
+        {
+            const aheadX = floor(this.pos.x + this.facing * (half.x + .1));
+            const belowY = floor(this.pos.y - half.y - .1);
+            if (!isSolidAt(aheadX, belowY))
+            {
+                this.vel.x = -this.vel.x;
+                this.facing = -this.facing;
+            }
+        }
+
+        // fell off the world
+        if (this.pos.y < -10) this.destroy();
+
+        return bumpedWall;
+    }
+
+    // AABB overlap helper
+    overlaps(other)
+    {
+        return Math.abs(this.pos.x - other.pos.x) < (this.size.x + other.size.x) * .5
+            && Math.abs(this.pos.y - other.pos.y) < (this.size.y + other.size.y) * .5;
+    }
+
+    // Death animation (flipped/squashed). Subclasses call when killed.
+    deathFall()
+    {
+        this.deadTimer++;
+        this.vel.y -= .03;
+        this.pos = this.pos.add(this.vel);
+        if (this.deadTimer > 50) this.destroy();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Goomba
+///////////////////////////////////////////////////////////////////////////////
+
+const GOOMBA_SPEED = .04;
+
+class Goomba extends Enemy
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.9, .9));
+        this.vel.x = -GOOMBA_SPEED;
+        this.squished = false;
+        this.squishTimer = 0;
+    }
+
+    update()
+    {
+        if (this.dead) { this.deathFall(); return; }
+
+        if (this.squished)
+        {
+            this.squishTimer++;
+            if (this.squishTimer > 30) this.destroy();
+            return;
+        }
+
+        // walk + fall off edges
+        this.moveAndCollideTiles(false);
+
+        // collide with other enemies (turn around)
+        for (const e of engineObjects)
+        {
+            if (e === this || !(e instanceof Enemy) || e.dead || e.squished) continue;
+            if (this.overlaps(e))
+            {
+                // shell kicks kill goombas (handled by shell), but goomba-vs-goomba just swap
+                if (e instanceof Koopa && e.state === 'kicked')
+                {
+                    this.kill(Math.sign(e.vel.x));
+                    sfxKick.play(this.pos);
+                    return;
+                }
+                if (e instanceof Goomba)
+                {
+                    if (Math.sign(this.pos.x - e.pos.x) !== Math.sign(this.vel.x))
+                    {
+                        this.vel.x = -this.vel.x;
+                        this.facing = -this.facing;
+                    }
+                }
+            }
+        }
+
+        // player interaction
+        if (!player || player.dead) return;
+        if (!this.overlaps(player)) return;
+        const dy = player.pos.y - this.pos.y;
+        if (player.vel.y < -.05 && dy > .2)
+        {
+            // stomped
+            this.squished = true;
+            this.vel.x = 0;
+            player.onStomp();
+            sfxStomp.play(this.pos);
+        }
+        else
+        {
+            player.hurt();
+        }
+    }
+
+    kill(dir)
+    {
+        this.dead = true;
+        this.vel = vec2(.1 * (dir || 1), .35);
+    }
 
     render()
     {
-        // coin body
-        const wobble = oscillate(6, 1, time + this.phase) * .10;
-        drawEllipse(this.pos, vec2(.32 + wobble, .42), rgb(1, .88, .2));
-        // inner shine
-        drawEllipse(this.pos.add(vec2(-.06, .03)), vec2(.12, .22), rgb(1, 1, 1, .7));
-        // outline hint
-        drawEllipse(this.pos, vec2(.36 + wobble, .46), rgb(.55, .35, .05, .45));
+        if (this.dead)
+        {
+            // flipped upside-down
+            drawRect(this.pos, vec2(.85, .55), rgb(.55, .30, .08));
+            drawRect(this.pos.add(vec2(0, .25)), vec2(.7, .25), rgb(.7, .42, .15));
+            return;
+        }
+
+        const sq = this.squished;
+        const h  = sq ? .25 : .8;
+        const yo = sq ? -.3 : 0;
+
+        // body
+        drawRect(this.pos.add(vec2(0, yo + .05)), vec2(.85, h), rgb(.55, .30, .08));
+        // head highlight
+        drawRect(this.pos.add(vec2(0, yo + .25)), vec2(.65, h * .35), rgb(.7, .42, .15));
+
+        if (!sq)
+        {
+            // eyes
+            drawRect(this.pos.add(vec2(-.18, .15)), vec2(.13, .18), rgb(1, 1, 1));
+            drawRect(this.pos.add(vec2(.18, .15)),  vec2(.13, .18), rgb(1, 1, 1));
+            drawRect(this.pos.add(vec2(-.16, .12)), vec2(.06, .12), rgb(0, 0, 0));
+            drawRect(this.pos.add(vec2(.20, .12)),  vec2(.06, .12), rgb(0, 0, 0));
+            // feet shuffle
+            const fp = Math.sin(time * 10) * .06;
+            drawRect(this.pos.add(vec2(-.22, -.42 + fp)), vec2(.24, .14), rgb(.35, .18, .05));
+            drawRect(this.pos.add(vec2(.22, -.42 - fp)),  vec2(.24, .14), rgb(.35, .18, .05));
+        }
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Koopa Troopa (walking → shell → kicked)
+///////////////////////////////////////////////////////////////////////////////
+
+const KOOPA_SPEED = .035;
+const SHELL_SPEED = .35;
+
+class Koopa extends Enemy
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.85, 1.0));
+        this.vel.x = -KOOPA_SPEED;
+        this.state = 'walk';     // 'walk' | 'shell' | 'kicked'
+        this.stateTimer = 0;
+        this.kickCooldown = 0;   // prevents re-kick on same touch
+    }
+
+    update()
+    {
+        if (this.dead) { this.deathFall(); return; }
+
+        this.stateTimer++;
+        if (this.kickCooldown > 0) this.kickCooldown--;
+
+        if (this.state === 'walk')
+        {
+            this.moveAndCollideTiles(true); // turn at edges
+        }
+        else if (this.state === 'shell')
+        {
+            this.vel.x = 0;
+            this.moveAndCollideTiles(false);
+            // shells stay shelled forever (no auto-revive — simpler)
+        }
+        else // kicked
+        {
+            const wallHit = this.moveAndCollideTiles(false);
+            if (wallHit) sfxBump.play(this.pos);
+
+            // kicked shell vs other enemies
+            for (const e of engineObjects)
+            {
+                if (e === this || !(e instanceof Enemy) || e.dead) continue;
+                if (e instanceof Koopa && e.state === 'kicked') continue;
+                if (this.overlaps(e))
+                {
+                    if (e instanceof Goomba && !e.squished)
+                    {
+                        e.kill(Math.sign(this.vel.x));
+                        sfxKick.play(this.pos);
+                    }
+                    else if (e instanceof Koopa)
+                    {
+                        if (e.state === 'walk') {
+                            e.kill(Math.sign(this.vel.x));
+                            sfxKick.play(this.pos);
+                        }
+                        else if (e.state === 'shell')
+                        {
+                            // bounce off shelled koopa, also kicks it
+                            e.kickInDir(Math.sign(this.vel.x));
+                        }
+                    }
+                }
+            }
+        }
+
+        // player interaction
+        if (!player || player.dead) return;
+        if (!this.overlaps(player)) return;
+        const dy = player.pos.y - this.pos.y;
+        const stomp = player.vel.y < -.05 && dy > .15;
+
+        if (this.state === 'walk')
+        {
+            if (stomp)
+            {
+                this.state = 'shell';
+                this.size = vec2(.95, .55);
+                this.vel.x = 0;
+                this.stateTimer = 0;
+                player.onStomp();
+                sfxStomp.play(this.pos);
+            }
+            else player.hurt();
+        }
+        else if (this.state === 'shell')
+        {
+            if (stomp)
+            {
+                // re-stomp on still shell does nothing extra
+                player.onStomp();
+                sfxStomp.play(this.pos);
+            }
+            else if (this.kickCooldown === 0)
+            {
+                this.kickInDir(player.pos.x < this.pos.x ? 1 : -1);
+            }
+        }
+        else // kicked
+        {
+            if (stomp)
+            {
+                // stop it
+                this.state = 'shell';
+                this.vel.x = 0;
+                this.kickCooldown = 8;
+                player.onStomp();
+                sfxStomp.play(this.pos);
+            }
+            else player.hurt();
+        }
+    }
+
+    kickInDir(dir)
+    {
+        this.state = 'kicked';
+        this.vel.x = SHELL_SPEED * dir;
+        this.facing = dir;
+        this.kickCooldown = 12;
+        this.stateTimer = 0;
+        sfxKick.play(this.pos);
+    }
+
+    kill(dir)
+    {
+        this.dead = true;
+        this.vel = vec2(.1 * (dir || 1), .35);
+    }
+
+    render()
+    {
+        if (this.dead)
+        {
+            drawRect(this.pos, vec2(.95, .55), rgb(.95, .85, .25));
+            return;
+        }
+
+        if (this.state === 'walk')
+        {
+            // legs (shuffle)
+            const fp = Math.sin(time * 9) * .05;
+            drawRect(this.pos.add(vec2(-.18, -.42 + fp)), vec2(.22, .14), rgb(.95, .78, .18));
+            drawRect(this.pos.add(vec2(.18,  -.42 - fp)), vec2(.22, .14), rgb(.95, .78, .18));
+            // body (shell)
+            drawRect(this.pos.add(vec2(0, -.05)), vec2(.85, .55), rgb(.18, .65, .25));
+            drawRect(this.pos.add(vec2(0, -.05)), vec2(.65, .35), rgb(.10, .45, .15));
+            // shell rim
+            drawRect(this.pos.add(vec2(0, .25)),  vec2(.92, .15), rgb(.9, .78, .18));
+            // head
+            drawRect(this.pos.add(vec2(this.facing * .15, .38)), vec2(.45, .35), rgb(.30, .80, .30));
+            // eye
+            drawRect(this.pos.add(vec2(this.facing * .28, .45)), vec2(.10, .10), rgb(1, 1, 1));
+            drawRect(this.pos.add(vec2(this.facing * .31, .43)), vec2(.05, .07), rgb(0, 0, 0));
+        }
+        else
+        {
+            // shell on the ground
+            const spinPhase = this.state === 'kicked' ? this.stateTimer * .6 : 0;
+            drawRect(this.pos, vec2(.95, .55), rgb(.18, .65, .25));
+            drawRect(this.pos.add(vec2(0, .18)), vec2(.95, .12), rgb(.10, .45, .15));
+            // spinning pattern: an offset stripe
+            const pxOff = Math.cos(spinPhase) * .25;
+            drawRect(this.pos.add(vec2(pxOff, -.05)), vec2(.18, .35), rgb(.10, .45, .15));
+            // rim
+            drawRect(this.pos.add(vec2(0, .22)), vec2(1.0, .12), rgb(.95, .82, .18));
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Player
+///////////////////////////////////////////////////////////////////////////////
+
+let player;
+let cameraMinX = 0;
 
 class Player extends EngineObject
 {
     constructor(pos)
     {
-        super(pos, vec2(1, 1));
+        super(pos, vec2(.9, 1));
         this.vel = vec2();
         this.onGround = false;
         this.facing = 1;
         this.won = false;
+        this.winTimer = 0;
+        this.dead = false;
+        this.deadTimer = 0;
+
         this.prevJumpDown = false;
         this.coyoteTimer = 0;
         this.bufferTimer = 0;
+        this.jumpHolding = false;
 
-        // disable built-in physics/collision (we do custom tile collision)
         this.setCollision(false, false, false, false);
     }
 
-    updatePhysics() {} // prevent EngineObject.updatePhysics from moving us
+    updatePhysics() {}
+
+    // SMB-style tuning. Held jump = floaty ascent; release/fall = snappy.
+    // Jump velocity scales with horizontal speed (Mario jumps higher when running).
+    static WALK_ACCEL    = .009;
+    static RUN_ACCEL     = .013;
+    static WALK_MAX      = .18;
+    static RUN_MAX       = .30;
+    static AIR_ACCEL_MUL = .65;
+    static SKID_DECEL    = .07;
+    static IDLE_FRICTION = .89;
+    static GRAVITY_RISE_HOLD = .020; // held jump = floaty ascent (lower = higher jump)
+    static GRAVITY_RISE_FREE = .032; // released mid-jump = snappier
+    static GRAVITY_FALL      = .036; // descending
+    static JUMP_CUT          = .35;  // upward vel multiplier when jump released
+    static JUMP_VEL_BASE     = .43;  // standing jump impulse
+    static JUMP_VEL_RUN_BONUS = .05; // small bonus at full run speed (set to 0 to disable)
+    static TERMINAL_VEL = -.75;      // max fall speed
+    static STOMP_BOUNCE = .32;
+    static STOMP_BOUNCE_HELD = .42;
+    static COYOTE_FRAMES = 6;
+    static BUFFER_FRAMES = 6;
 
     update()
     {
-        // controls (keyDirection handles WASD + arrows via inputWASDEmulateDirection)
+        if (this.dead)
+        {
+            this.deadTimer++;
+            // hop + fall
+            this.vel.y -= .025;
+            this.pos = this.pos.add(this.vel);
+            if (this.deadTimer > 60) respawn();
+            return;
+        }
+
+        const P = Player;
+
         const moveDirection = keyDirection();
         const left  = moveDirection.x < 0;
         const right = moveDirection.x > 0;
-        const run   = keyIsDown('ShiftLeft') || keyIsDown('KeyX');
-        const jumpDown = keyIsDown('Space') || keyIsDown('ArrowUp');
+        const run   = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight') || keyIsDown('KeyX');
+        const jumpDown = keyIsDown('Space') || keyIsDown('ArrowUp') || keyIsDown('KeyZ');
         const jumpPressed = jumpDown && !this.prevJumpDown;
 
-        // SMB-feel tuning (per-frame, engine is fixed 60fps)
-        const WALK_ACCEL    = .01;
-        const RUN_ACCEL     = .01;
-        const WALK_MAX      = .2;
-        const RUN_MAX       = .3;
-        const AIR_ACCEL_MUL = .8;      // reduced horizontal control in air
-        const SKID_DECEL    = .085;    // deceleration when input opposes ground velocity
-        const IDLE_FRICTION = .9;     // ground friction when no directional input
-        const GRAVITY_RISE  = .020;    // base gravity (rising and at apex)
-        const GRAVITY_FALL  = .025;    // slightly heavier while falling (vel.y < 0)
-        const JUMP_CUT      = .4;      // multiply upward vel when jump released (short hop)
-        const JUMP_VEL  = .43;     // jump velocity
-        const TERMINAL_VEL  = -.9;
-        const COYOTE_FRAMES = 6;
-        const BUFFER_FRAMES = 6;
+        const accel = run ? P.RUN_ACCEL : P.WALK_ACCEL;
+        const maxSpeed = run ? P.RUN_MAX : P.WALK_MAX;
 
-        const accel = run ? RUN_ACCEL : WALK_ACCEL;
-        const maxSpeed = run ? RUN_MAX : WALK_MAX;
-
-        // coyote + buffer timers
-        if (this.onGround) this.coyoteTimer = COYOTE_FRAMES;
+        if (this.onGround) this.coyoteTimer = P.COYOTE_FRAMES;
         else if (this.coyoteTimer > 0) this.coyoteTimer--;
 
-        if (jumpPressed) this.bufferTimer = BUFFER_FRAMES;
+        if (jumpPressed) this.bufferTimer = P.BUFFER_FRAMES;
         else if (this.bufferTimer > 0) this.bufferTimer--;
 
         if (!this.won)
         {
-            // horizontal: skid takes priority, then accel, then idle friction
+            // skid first
             if (this.onGround && left && this.vel.x > 0)
             {
-                this.vel.x = max(0, this.vel.x - SKID_DECEL);
+                this.vel.x = max(0, this.vel.x - P.SKID_DECEL);
                 this.facing = -1;
             }
             else if (this.onGround && right && this.vel.x < 0)
             {
-                this.vel.x = min(0, this.vel.x + SKID_DECEL);
+                this.vel.x = min(0, this.vel.x + P.SKID_DECEL);
                 this.facing = 1;
             }
             else if (left)
             {
-                this.vel.x -= accel * (this.onGround ? 1 : AIR_ACCEL_MUL);
+                this.vel.x -= accel * (this.onGround ? 1 : P.AIR_ACCEL_MUL);
                 this.facing = -1;
             }
             else if (right)
             {
-                this.vel.x += accel * (this.onGround ? 1 : AIR_ACCEL_MUL);
+                this.vel.x += accel * (this.onGround ? 1 : P.AIR_ACCEL_MUL);
                 this.facing = 1;
             }
             else if (this.onGround)
-                this.vel.x *= IDLE_FRICTION;
+                this.vel.x *= P.IDLE_FRICTION;
 
-            // on ground: clamp to current walk/run limit; in air: preserve running momentum
             this.vel.x = this.onGround
                 ? clamp(this.vel.x, -maxSpeed, maxSpeed)
-                : clamp(this.vel.x, -RUN_MAX, RUN_MAX);
+                : clamp(this.vel.x, -P.RUN_MAX, P.RUN_MAX);
 
-            // jump: coyote + buffer — speed-scaled initial velocity
+            // jump: scale velocity with horizontal speed (SMB-style)
             if (this.bufferTimer > 0 && this.coyoteTimer > 0)
             {
-                this.vel.y = JUMP_VEL;
+                const speedFrac = Math.abs(this.vel.x) / P.RUN_MAX;
+                this.vel.y = P.JUMP_VEL_BASE + P.JUMP_VEL_RUN_BONUS * speedFrac;
                 this.coyoteTimer = 0;
                 this.bufferTimer = 0;
                 this.onGround = false;
+                this.jumpHolding = true;
                 sfxJump.play(this.pos);
             }
 
-            // short hop: cut upward velocity if jump released mid-rise
+            // short hop
             const jumpReleased = !jumpDown && this.prevJumpDown;
             if (jumpReleased && this.vel.y > 0)
-                this.vel.y *= JUMP_CUT;
+            {
+                this.vel.y *= P.JUMP_CUT;
+                this.jumpHolding = false;
+            }
+            if (!jumpDown) this.jumpHolding = false;
         }
 
-        // gravity: base while rising/floating, a little heavier when falling
-        const gravity = (this.vel.y < 0) ? GRAVITY_FALL : GRAVITY_RISE;
-        this.vel.y -= gravity;
-        this.vel.y = max(this.vel.y, TERMINAL_VEL);
+        // gravity
+        let g;
+        if (this.vel.y > 0) g = this.jumpHolding ? P.GRAVITY_RISE_HOLD : P.GRAVITY_RISE_FREE;
+        else                g = P.GRAVITY_FALL;
+        this.vel.y -= g;
+        this.vel.y = max(this.vel.y, P.TERMINAL_VEL);
 
-        // move + collide
         this.moveAndCollide();
 
-        // goal check
+        // goal: touching the pole
         if (!this.won)
         {
-            const goalX = 230;
-            if (this.pos.x > goalX)
+            if (this.pos.x > 191 && this.pos.x < 193)
             {
                 this.won = true;
+                this.winTimer = 0;
                 sfxWin.play(this.pos);
             }
         }
 
-        // win celebration: little hop + slow
         if (this.won)
         {
-            this.vel.x *= .90;
-            if (this.onGround && randBool(.02))
-            {
-                this.vel.y = .38;
-                this.onGround = false;
-            }
+            this.winTimer++;
+            // walk to the right after a moment
+            if (this.winTimer > 40)
+                this.vel.x = .12;
         }
 
-        // remember jump state for press/release logic
         this.prevJumpDown = jumpDown;
 
         // fell off
-        if (this.pos.y < -20)
-            respawn();
+        if (this.pos.y < -10 && !this.dead) this.hurt();
+    }
+
+    onStomp()
+    {
+        // bounce. held-jump = bigger bounce.
+        this.vel.y = this.jumpHolding ? Player.STOMP_BOUNCE_HELD : Player.STOMP_BOUNCE;
+    }
+
+    hurt()
+    {
+        if (this.dead || this.won) return;
+        this.dead = true;
+        this.deadTimer = 0;
+        this.vel = vec2(0, .45);
+        sfxHurt.play(this.pos);
     }
 
     moveAndCollide()
     {
         const half = this.size.scale(.5);
 
-        // ---- X axis ----
+        // ---- X ----
         this.pos.x += this.vel.x;
         if (this.vel.x)
         {
             const y0 = floor(this.pos.y - half.y + .001);
             const y1 = floor(this.pos.y + half.y - .001);
-
             if (this.vel.x > 0)
             {
                 const xSide = floor(this.pos.x + half.x);
@@ -391,7 +927,7 @@ class Player extends EngineObject
             }
         }
 
-        // ---- Y axis ----
+        // ---- Y ----
         this.onGround = false;
         this.pos.y += this.vel.y;
         if (this.vel.y)
@@ -402,14 +938,33 @@ class Player extends EngineObject
             if (this.vel.y > 0)
             {
                 const ySide = floor(this.pos.y + half.y);
+                let hitX = -1;
                 for (let x = x0; x <= x1; x++)
                 if (isSolidAt(x, ySide))
                 {
-                    // bump head
+                    hitX = x;
                     this.pos.y = ySide - half.y;
                     this.vel.y = 0;
-                    sfxBump.play(this.pos);
                     break;
+                }
+                if (hitX >= 0)
+                {
+                    const t = getTile(hitX, ySide);
+                    if (t === TT.QBLOCK)
+                    {
+                        setTile(hitX, ySide, TT.USED);
+                        new PopCoin(vec2(hitX + .5, ySide + 1.2));
+                        coinsCollected++;
+                        sfxCoin.play(vec2(hitX + .5, ySide + .5));
+                        bumpTile(hitX, ySide);
+                    }
+                    else if (t === TT.BRICK)
+                    {
+                        bumpTile(hitX, ySide);
+                        sfxBump.play(vec2(hitX + .5, ySide + .5));
+                    }
+                    else
+                        sfxBump.play(this.pos);
                 }
             }
             else
@@ -418,7 +973,6 @@ class Player extends EngineObject
                 for (let x = x0; x <= x1; x++)
                 if (isSolidAt(x, ySide))
                 {
-                    // landed
                     this.pos.y = ySide + 1 + half.y;
                     this.vel.y = 0;
                     this.onGround = true;
@@ -430,26 +984,54 @@ class Player extends EngineObject
 
     render()
     {
-        // body
-        const body = rgb(.95, .25, .25);
-        drawRect(this.pos, this.size, body);
+        if (this.dead && this.deadTimer < 4) return; // tiny flicker
 
-        // hat
-        const hatSize = vec2(this.size.x, this.size.y*.22);
-        const hatPos  = this.pos.add(vec2(0, this.size.y*.39));
-        drawRect(hatPos, hatSize, rgb(.65, .05, .05));
+        // body (Mario-ish red overalls + blue shirt — simplified)
+        const lean = this.facing * Math.min(.12, Math.abs(this.vel.x) * .4);
 
-        // face direction indicator
-        const eyePos = this.pos.add(vec2(this.facing*this.size.x*.18, this.size.y*.12));
-        drawRect(eyePos, vec2(.10,.10), rgb(1,1,1));
+        // legs / overalls (lower body)
+        drawRect(this.pos.add(vec2(0, -.22)), vec2(.85, .55), rgb(.85, .15, .15));
+        // shirt (upper)
+        drawRect(this.pos.add(vec2(lean * .3, .18)), vec2(.78, .38), rgb(.95, .25, .15));
+        // arms / sleeves accent
+        drawRect(this.pos.add(vec2(-.42 + lean * .3, .12)), vec2(.18, .25), rgb(.85, .15, .15));
+        drawRect(this.pos.add(vec2(.42 + lean * .3, .12)),  vec2(.18, .25), rgb(.85, .15, .15));
+        // cap
+        drawRect(this.pos.add(vec2(lean, .45)), vec2(.8, .22), rgb(.65, .05, .05));
+        // brim (facing)
+        drawRect(this.pos.add(vec2(this.facing * .25 + lean, .37)), vec2(.42, .10), rgb(.65, .05, .05));
+        // face (skin patch)
+        drawRect(this.pos.add(vec2(lean * .5, .28)), vec2(.55, .18), rgb(.95, .80, .60));
+        // eye
+        drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .30)), vec2(.08, .12), rgb(0, 0, 0));
+        // moustache
+        drawRect(this.pos.add(vec2(this.facing * .12 + lean * .5, .20)), vec2(.22, .06), rgb(.20, .10, .05));
+        // belt buckle / button
+        drawRect(this.pos.add(vec2(-.14, -.12)), vec2(.08, .08), rgb(1, 1, .2));
+        drawRect(this.pos.add(vec2(.14, -.12)),  vec2(.08, .08), rgb(1, 1, .2));
+        // shoes (animate when walking on ground)
+        const walking = this.onGround && Math.abs(this.vel.x) > .02;
+        const wp = walking ? Math.sin(time * 14) * .06 : 0;
+        drawRect(this.pos.add(vec2(-.18, -.46 + wp)), vec2(.24, .12), rgb(.40, .20, .05));
+        drawRect(this.pos.add(vec2(.18,  -.46 - wp)), vec2(.24, .12), rgb(.40, .20, .05));
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 function respawn()
 {
     engineObjectsDestroy(true);
     buildLevel();
-    spawnCoins();
+
+    coinsCollected = 0;
+    for (const [x, y] of coinSpawns) new Coin(vec2(x, y));
+
+    for (const e of enemySpawns)
+    {
+        if (e.type === 'goomba')      new Goomba(vec2(e.x + .5, 1.5));
+        else if (e.type === 'koopa')  new Koopa(vec2(e.x + .5, 1.6));
+    }
+
     player = new Player(vec2(2.5, 3.2));
     cameraMinX = 0;
 }
@@ -457,27 +1039,16 @@ function respawn()
 ///////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
-    // retro-ish fixed canvas (4:3) and pixelated rendering
-    //setCanvasFixedSize(vec2(960, 720));
-    //setCanvasPixelated(true);
-
-    // camera tuning
-    cameraScale = 60; // pixels per world unit (tile)
-
-    // input
+    cameraScale = 60;
     inputWASDEmulateDirection = true;
     touchGamepadEnable = true;
-
-    // build + spawn
     respawn();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    // restart hotkey
-    if (keyWasPressed('KeyR'))
-        respawn();
+    if (keyWasPressed('KeyR')) respawn();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -485,13 +1056,11 @@ function gameUpdatePost()
 {
     if (!player) return;
 
-    // follow camera; don't scroll backward
     const camY = 6.0;
     const targetX = max(player.pos.x, cameraMinX + 6);
     cameraMinX = max(cameraMinX, targetX - 6);
     setCameraPos(vec2(cameraMinX + 8, camY));
 
-    // clamp near end so we don't show too much past the goal
     const camSize = getCameraSize();
     const maxCamX = LEVEL_W - camSize.x/2;
     if (cameraPos.x > maxCamX)
@@ -501,90 +1070,167 @@ function gameUpdatePost()
 ///////////////////////////////////////////////////////////////////////////////
 function drawTilePrimitive(x, y, t)
 {
-    const pos = vec2(x + .5, y + .5);
+    const yOff = getTileBumpOffset(x, y);
+    const pos = vec2(x + .5, y + .5 + yOff);
 
     if (t === TT.GROUND)
     {
         drawRect(pos, vec2(1), rgb(.55, .35, .15));
-        // top highlight
-        drawRect(pos.add(vec2(0,.38)), vec2(1,.24), rgb(.65,.45,.22));
+        drawRect(pos.add(vec2(0, .38)), vec2(1, .24), rgb(.65, .45, .22));
+        // pebble specks
+        drawRect(pos.add(vec2(-.25, -.18)), vec2(.10, .08), rgb(.40, .25, .10));
+        drawRect(pos.add(vec2(.15, .05)),   vec2(.08, .06), rgb(.40, .25, .10));
     }
     else if (t === TT.BRICK)
     {
-        drawRect(pos, vec2(1), rgb(.62, .36, .18));
-        drawRect(pos.add(vec2(0,.32)), vec2(.9,.18), rgb(.72, .44, .22));
-        // a couple "mortar" lines
-        drawLine(pos.add(vec2(-.45, 0)), pos.add(vec2(.45, 0)), .06, rgb(.42,.25,.12));
-        drawLine(pos.add(vec2(0, -.45)), pos.add(vec2(0, .45)), .06, rgb(.42,.25,.12));
+        drawRect(pos, vec2(1), rgb(.78, .35, .14));
+        drawRect(pos.add(vec2(0, .38)), vec2(1, .12), rgb(.92, .50, .20));
+        // mortar grid
+        drawLine(pos.add(vec2(-.5, .15)), pos.add(vec2(.5, .15)), .05, rgb(.40, .15, .05));
+        drawLine(pos.add(vec2(-.5, -.15)), pos.add(vec2(.5, -.15)), .05, rgb(.40, .15, .05));
+        drawLine(pos.add(vec2(0, .5)),  pos.add(vec2(0, .15)),  .05, rgb(.40, .15, .05));
+        drawLine(pos.add(vec2(-.25, -.15)), pos.add(vec2(-.25, -.5)), .05, rgb(.40, .15, .05));
+        drawLine(pos.add(vec2(.25, -.15)),  pos.add(vec2(.25, -.5)),  .05, rgb(.40, .15, .05));
+    }
+    else if (t === TT.QBLOCK)
+    {
+        // pulsing yellow ? block
+        const flash = .8 + Math.sin(time * 4 + x * 1.7) * .15;
+        drawRect(pos, vec2(1), rgb(flash, flash * .75, .15));
+        drawRect(pos.add(vec2(0, .38)), vec2(1, .12), rgb(1, .9, .35));
+        // bordered ?
+        drawRect(pos, vec2(.92, .92), rgb(flash * .9, flash * .65, .10));
+        drawRect(pos.add(vec2(0, .12)),  vec2(.18, .14), rgb(.35, .18, .05));
+        drawRect(pos.add(vec2(0, -.18)), vec2(.10, .10), rgb(.35, .18, .05));
+        drawRect(pos.add(vec2(-.12, .26)), vec2(.10, .10), rgb(.35, .18, .05));
+        drawRect(pos.add(vec2(.12, .26)),  vec2(.10, .10), rgb(.35, .18, .05));
+    }
+    else if (t === TT.USED)
+    {
+        drawRect(pos, vec2(1), rgb(.62, .42, .14));
+        drawRect(pos.add(vec2(0, .38)), vec2(1, .12), rgb(.75, .55, .25));
+        drawRect(pos, vec2(.92, .92), rgb(.50, .32, .08));
     }
     else if (t === TT.PIPE)
     {
-        drawRect(pos, vec2(1), rgb(.18, .75, .28));
-        drawRect(pos.add(vec2(0,.38)), vec2(1,.24), rgb(.12,.55,.20));
-        drawRect(pos.add(vec2(-.30,0)), vec2(.18,1), rgb(.28,.90,.38));
+        // body only; the wider cap is rendered in a second pass (drawPipeCap)
+        drawRect(pos, vec2(1), rgb(.18, .70, .28));
+        drawRect(pos.add(vec2(-.28, 0)), vec2(.18, 1), rgb(.10, .50, .18));
+        drawRect(pos.add(vec2(.32, 0)),  vec2(.10, 1), rgb(.32, .92, .38));
     }
-    else if (t === TT.GOAL)
+    else if (t === TT.FLAG)
     {
-        drawRect(pos, vec2(1), rgb(.92, .92, .92));
-        drawRect(pos.add(vec2(0,.38)), vec2(1,.24), rgb(.75,.75,.75));
+        // top ball of pole
+        drawEllipse(pos, vec2(.55, .55), rgb(.95, .95, .25));
+        drawEllipse(pos, vec2(.30, .30), rgb(.4, .4, .05));
     }
+    else if (t === TT.POLE)
+    {
+        // skinny grey pole (non-solid)
+        drawRect(pos, vec2(.14, 1), rgb(.85, .85, .85));
+        drawRect(pos.add(vec2(-.04, 0)), vec2(.04, 1), rgb(.55, .55, .55));
+    }
+}
+
+// Pipe cap: drawn as a separate pass on top of all tile bodies so the second
+// column of the 2-wide pipe can't overpaint it. Only the left tile of a top row draws.
+function drawPipeCap(x, y)
+{
+    const yOff = getTileBumpOffset(x, y);
+    const center = vec2(x + 1, y + .5 + yOff + .35); // centered between the two columns
+    drawRect(center, vec2(2.15, .35), rgb(.12, .55, .22));
+    drawRect(center.add(vec2(0, .04)),  vec2(2.10, .14), rgb(.30, .85, .38));
+    drawRect(center.add(vec2(0, -.13)), vec2(2.05, .08), rgb(.06, .35, .14));
+}
+
+// Flag that slides down with the player (rendered separately so it tracks player.pos)
+function drawFlagSlide()
+{
+    if (!player) return;
+    const poleX = 192;
+    // attach a small triangle/flag near player's height while at or past the pole
+    if (player.pos.x < poleX - .5 || player.pos.x > poleX + 1.5) return;
+    const fy = clamp(player.pos.y, 2.5, 10.5);
+    drawRect(vec2(poleX + .5, fy), vec2(.9, .5), rgb(.95, .25, .15));
+    drawRect(vec2(poleX + .35, fy), vec2(.1, .5), rgb(.95, .25, .15));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameRender()
 {
-    // sky
     const camSize = getCameraSize();
-    drawRect(cameraPos, camSize, rgb(.45, .72, .98));
 
-    // simple clouds/parallax
-    for (let i=0; i<6; i++)
+    // SMB cornflower sky
+    drawRect(cameraPos, camSize, rgb(.36, .58, .99));
+
+    // far clouds (parallax)
+    for (let i = 0; i < 8; i++)
     {
-        const cx = cameraPos.x*.35 + i*10 + 3;
-        const cy = 10 + (i%3)*2 + oscillate(.3, 1, time+i)*.2;
-        drawEllipse(vec2(cx, cy), vec2(3.2, 1.1), rgb(1,1,1,.65));
-        drawEllipse(vec2(cx+1.2, cy+.4), vec2(2.6, .9), rgb(1,1,1,.65));
+        const cx = cameraPos.x * .35 + i * 13 + 3;
+        const cy = 11 + (i % 3) * 1.6;
+        drawEllipse(vec2(cx, cy), vec2(2.6, .9), rgb(1, 1, 1, .8));
+        drawEllipse(vec2(cx + 1.0, cy + .35), vec2(2.2, .7), rgb(1, 1, 1, .8));
+        drawEllipse(vec2(cx - 1.2, cy + .25), vec2(1.8, .6), rgb(1, 1, 1, .8));
     }
 
-    // draw visible tiles only
+    // hills (mid parallax)
+    for (let i = 0; i < 6; i++)
+    {
+        const hx = cameraPos.x * .6 + i * 22 - (cameraPos.x * .6) % 22 - 8;
+        drawEllipse(vec2(hx, .9), vec2(8, 4), rgb(.10, .55, .18));
+        drawEllipse(vec2(hx - 1.5, 1.2), vec2(4, 2.4), rgb(.18, .65, .22));
+    }
+
+    // bushes (front decoration)
+    for (let i = 0; i < 12; i++)
+    {
+        const bx = (cameraPos.x * .9 + i * 9) % (LEVEL_W) - 4;
+        const by = 1.25;
+        drawEllipse(vec2(bx, by), vec2(2.0, .8), rgb(.12, .55, .18));
+        drawEllipse(vec2(bx + 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
+        drawEllipse(vec2(bx - 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
+    }
+
+    // visible tiles
     const minX = floor(cameraPos.x - camSize.x/2) - 2;
     const maxX = floor(cameraPos.x + camSize.x/2) + 2;
     const minY = -1;
     const maxY = LEVEL_H + 2;
 
-    for (let y=minY; y<=maxY; y++)
-    for (let x=minX; x<=maxX; x++)
+    // pass 1: tile bodies
+    for (let y = minY; y <= maxY; y++)
+    for (let x = minX; x <= maxX; x++)
     {
-        const t = getTile(x,y);
+        const t = getTile(x, y);
         if (t) drawTilePrimitive(x, y, t);
     }
 
-    // bushes (pure decoration)
-    for (let i=0; i<10; i++)
+    // pass 2: pipe caps drawn on top of bodies (only the left tile of each top row)
+    for (let y = minY; y <= maxY; y++)
+    for (let x = minX; x <= maxX; x++)
     {
-        const bx = (i*18 + 6) - (cameraPos.x%18);
-        const by = 1.3;
-        drawEllipse(vec2(cameraPos.x - camSize.x/2 + bx, by), vec2(1.4, .7), rgb(.15,.68,.22));
-        drawEllipse(vec2(cameraPos.x - camSize.x/2 + bx + 1.2, by), vec2(1.2, .6), rgb(.12,.55,.18));
+        if (getTile(x, y) !== TT.PIPE) continue;
+        if (getTile(x, y + 1) === TT.PIPE) continue; // not a top row
+        if (getTile(x - 1, y) === TT.PIPE) continue; // only left half draws
+        drawPipeCap(x, y);
     }
+
+    drawFlagSlide();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    // HUD
-    const help = 'Arrow: Move   Space/Up: Jump   Shift: Run   R: Restart';
-    drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 20), 20, hsl(0,0,1), 4, hsl(0,0,0));
-
-    // coins counter
-    drawTextScreen(`COINS ${coinsCollected}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1,1,1), 4, rgb(0,0,0), 'center', 'monospace');
+    const help = 'Arrow/WASD: Move   Space/Z/Up: Jump   Shift/X: Run   R: Restart';
+    drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 20), 18, hsl(0,0,1), 4, hsl(0,0,0));
+    drawTextScreen(`COINS ${coinsCollected}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1, 1, 1), 4, rgb(0, 0, 0), 'center', 'monospace');
 
     if (player?.won)
-        drawTextScreen('GOAL!', vec2(mainCanvasSize.x/2, 70), 80, hsl(.12,.9,.65), 6, hsl(0,0,0));
+        drawTextScreen('GOAL!', vec2(mainCanvasSize.x/2, 80), 80, hsl(.12, .9, .65), 6, hsl(0, 0, 0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Startup LittleJS Engine
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 
 </script>
+</body>
