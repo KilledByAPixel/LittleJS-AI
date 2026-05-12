@@ -93,7 +93,7 @@ function buildLevel()
     const pits = [
         [69, 3],
         [86, 2],
-        [120, 4],
+        [132, 3],
         [157, 3],
     ];
     for (const [x, w] of pits)
@@ -129,22 +129,12 @@ function buildLevel()
     // floating bricks above
     fillRectTiles(108, 8, 3, 1, TT.BRICK);
 
-    // -- staircase up to a high block area --
-    fillRectTiles(115, 1, 1, 1, TT.BRICK);
-    fillRectTiles(116, 1, 1, 2, TT.BRICK);
-    fillRectTiles(117, 1, 1, 3, TT.BRICK);
-    fillRectTiles(118, 1, 1, 4, TT.BRICK);
+    // -- first mountain: stair up, 2-tile plateau, stair down (x=119-128) --
+    for (let i = 0; i < 4; i++) fillRectTiles(119 + i, 1, 1, i + 1, TT.GROUND);
+    fillRectTiles(123, 1, 2, 4, TT.GROUND);
+    for (let i = 0; i < 4; i++) fillRectTiles(125 + i, 1, 1, 4 - i, TT.GROUND);
 
-    // floating platform over the big pit
-    fillRectTiles(122, 7, 4, 1, TT.BRICK);
-
-    // descending stair after the pit
-    fillRectTiles(125, 1, 1, 4, TT.BRICK);
-    fillRectTiles(126, 1, 1, 3, TT.BRICK);
-    fillRectTiles(127, 1, 1, 2, TT.BRICK);
-    fillRectTiles(128, 1, 1, 1, TT.BRICK);
-
-    // floating coin row
+    // floating coin row over the pit between mountains
     fillRectTiles(133, 8, 4, 1, TT.BRICK);
     setTile(135, 4, TT.QBLOCK);
 
@@ -369,7 +359,7 @@ class Mushroom extends EngineObject
         if (this.emerging)
         {
             const t = 1 - this.emergeTimer / 36;
-            this.pos.y = lerp(t, this.emergeStartY, this.emergeTargetY);
+            this.pos.y = lerp(this.emergeStartY, this.emergeTargetY, t);
             this.emergeTimer--;
             if (this.emergeTimer <= 0)
             {
@@ -441,7 +431,7 @@ class Star extends EngineObject
         if (this.emerging)
         {
             const t = 1 - this.emergeTimer / 28;
-            this.pos.y = lerp(t, this.emergeStartY, this.emergeTargetY);
+            this.pos.y = lerp(this.emergeStartY, this.emergeTargetY, t);
             this.emergeTimer--;
             if (this.emergeTimer <= 0)
             {
@@ -939,6 +929,7 @@ class Player extends EngineObject
         this.won = false;
         this.winTimer = 0;
         this.winStartY = 0; // captured at pole-touch; the height Mario slides from
+        this.atCastle = false;
         this.dead = false;
         this.deadTimer = 0;
 
@@ -1143,7 +1134,7 @@ class Player extends EngineObject
         {
             if (t <= 36)
             {
-                this.pos.y = lerp(t / 36, this.winStartY, baseY);
+                this.pos.y = lerp(this.winStartY, baseY, t / 36);
                 this.vel = vec2(0, 0);
                 this.facing = 1;
                 return;
@@ -1184,7 +1175,14 @@ class Player extends EngineObject
         this.vel.y = max(this.vel.y, Player.TERMINAL_VEL);
         this.moveAndCollide();
         if (this.onGround) this.vel.x = .14;
-        if (this.pos.x > 210) this.vel.x = 0; // stop before the level edge
+
+        // walk into the castle door
+        if (this.pos.x >= 206)
+        {
+            this.pos.x = 206;
+            this.vel.x = 0;
+            this.atCastle = true;
+        }
         this.facing = 1;
     }
 
@@ -1332,6 +1330,7 @@ class Player extends EngineObject
     render()
     {
         if (this.dead && this.deadTimer < 4) return;
+        if (this.atCastle) return; // walked into castle, hide
 
         // post-shrink invulnerability flicker (skip every other tick)
         if (this.damageFlash > 0 && Math.floor(time * 30) % 2 === 0) return;
@@ -1527,6 +1526,54 @@ function drawPipeCap(x, y)
     drawRect(center.add(vec2(0, -.13)), vec2(2.05, .08), rgb(.06, .35, .14));
 }
 
+// Castle at the end of the level — non-interactive scenery; Mario walks into the door
+// in the win sequence. Positioned at x=205..209, sitting on top of the ground row.
+function drawCastle()
+{
+    const cx = 207;       // center x
+    const stone = rgb(.78, .35, .14);
+    const dark  = rgb(.40, .18, .06);
+    const mort  = rgb(.55, .25, .08);
+    const door  = rgb(.18, .10, .04);
+
+    // main keep (5 wide, 4 tall, sitting at y=1..5)
+    drawRect(vec2(cx, 3),    vec2(5, 4),   stone);
+    // mortar lines (horizontal)
+    drawLine(vec2(cx - 2.5, 2), vec2(cx + 2.5, 2), .07, mort);
+    drawLine(vec2(cx - 2.5, 3), vec2(cx + 2.5, 3), .07, mort);
+    drawLine(vec2(cx - 2.5, 4), vec2(cx + 2.5, 4), .07, mort);
+    // brick-staggered vertical lines
+    drawLine(vec2(cx - 1.5, 1.5), vec2(cx - 1.5, 2),   .07, mort);
+    drawLine(vec2(cx + 1.5, 1.5), vec2(cx + 1.5, 2),   .07, mort);
+    drawLine(vec2(cx - 2.0, 2.5), vec2(cx - 2.0, 3),   .07, mort);
+    drawLine(vec2(cx + 2.0, 2.5), vec2(cx + 2.0, 3),   .07, mort);
+    drawLine(vec2(cx - 1.0, 3.5), vec2(cx - 1.0, 4),   .07, mort);
+    drawLine(vec2(cx + 1.0, 3.5), vec2(cx + 1.0, 4),   .07, mort);
+
+    // crenellations (4 across the top)
+    drawRect(vec2(cx - 1.8, 5.4), vec2(.8, .8), stone);
+    drawRect(vec2(cx - .6,  5.4), vec2(.8, .8), stone);
+    drawRect(vec2(cx + .6,  5.4), vec2(.8, .8), stone);
+    drawRect(vec2(cx + 1.8, 5.4), vec2(.8, .8), stone);
+
+    // central tower
+    drawRect(vec2(cx, 6.5), vec2(2, 2), stone);
+    drawLine(vec2(cx - 1, 6.5), vec2(cx + 1, 6.5), .07, mort);
+    // tower crenellations
+    drawRect(vec2(cx - .6, 7.7), vec2(.5, .5), stone);
+    drawRect(vec2(cx + .6, 7.7), vec2(.5, .5), stone);
+    // tower window
+    drawRect(vec2(cx, 6.7), vec2(.45, .65), door);
+
+    // door (arched-ish)
+    drawRect(vec2(cx - .8, 1.7), vec2(1.2, 1.8), door);
+    drawEllipse(vec2(cx - .8, 2.5), vec2(1.2, .5), door);
+
+    // pennant pole + small castle flag
+    drawRect(vec2(cx + .25, 8.4), vec2(.08, 1.2), rgb(.85, .85, .85));
+    drawRect(vec2(cx + .7,  8.7), vec2(.85, .5),  rgb(.95, .15, .15));
+}
+
 // Flag: sits at the top of the pole until Mario grabs it, then slides down with him.
 function drawFlagSlide()
 {
@@ -1536,7 +1583,7 @@ function drawFlagSlide()
     if (!player.won)
         fy = 10.4;              // resting at the top of the pole
     else if (player.winTimer < 36)
-        fy = lerp(player.winTimer / 36, 10.4, 2.8); // drop in sync with Mario's slide
+        fy = lerp(10.4, 2.8, player.winTimer / 36); // drop in sync with Mario's slide
     else
         fy = 2.8;               // settled at the base
 
@@ -1605,6 +1652,7 @@ function gameRender()
         drawPipeCap(x, y);
     }
 
+    drawCastle();
     drawFlagSlide();
 }
 
