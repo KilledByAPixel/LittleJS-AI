@@ -1285,29 +1285,14 @@ function spawnTank()
 
 function startWave(w)
 {
-    clearAllEnemies();
-    const c = getWaveComposition(w);
-
-    gameWave = w;
+    // Enemies, electrodes, and humans were all laid out during GET READY.
+    // Starting the wave just unlocks the player and begins the speed-ramp timer.
     waveActive = true;
     waveTime = 0;
     playerControlLocked = false;
     respawnTimer = 0;
 
-    for (let i=0;i<c.grunts;i++)    spawnGrunt();
-    for (let i=0;i<c.hulks;i++)     spawnHulk();
-    for (let i=0;i<c.brains;i++)    spawnBrain();
-    for (let i=0;i<c.spheroids;i++) spawnSpheroid();
-    for (let i=0;i<c.quarks;i++)    spawnQuark();
-    for (let i=0;i<(c.tanks||0);i++) spawnTank();
-
-    // wave-start fanfare: tight expanding rings at each spawn + short blip
     sfxWaveStart.play(vec2(0));
-    for (const e of enemies)
-    {
-        if (e.destroyed) continue;
-        ringBurst(e.pos, e.hitColor || rgb(.9,.9,1), 14);
-    }
 }
 
 function enterGetReadyForWave(nextWave)
@@ -1326,6 +1311,15 @@ function enterGetReadyForWave(nextWave)
     const c = getWaveComposition(nextWave);
     spawnElectrodesForWave(c.electrodes);
     spawnHumansForWave(c.humans);
+
+    // Spawn enemies now so they appear alongside electrodes and humans.
+    // They're frozen until startWave() unlocks the player (their update() bails on playerControlLocked).
+    for (let i=0;i<c.grunts;i++)     spawnGrunt();
+    for (let i=0;i<c.hulks;i++)      spawnHulk();
+    for (let i=0;i<c.brains;i++)     spawnBrain();
+    for (let i=0;i<c.spheroids;i++)  spawnSpheroid();
+    for (let i=0;i<c.quarks;i++)     spawnQuark();
+    for (let i=0;i<(c.tanks||0);i++) spawnTank();
 }
 
 function endWave()
@@ -1642,22 +1636,12 @@ function resetGame()
 
     score = 0;
     gameOver = false;
-    gameWave = 1;
-    humanRescueBonus = humanRescueStart;
     nextBonusLifeAt = bonusLifeInterval;
 
     player = new Player();
-
-    waveActive = false;
-    waveTime = 0;
+    // Lay out wave 1 (electrodes, humans, enemies — all visible during GET READY).
+    enterGetReadyForWave(1);
     interWaveTimer = waveStartDelayFrames;
-    respawnTimer = 0;
-    playerControlLocked = true;
-    player.pos = vec2(0);
-
-    const c = getWaveComposition(1);
-    spawnElectrodesForWave(c.electrodes);
-    spawnHumansForWave(c.humans);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
