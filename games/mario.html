@@ -198,11 +198,16 @@ function buildLevel()
         coinSpawns.push([x + .5, 4.5]);
         coinSpawns.push([x + .5, 7.5]);
     }
+    // brick platforms beneath each coin row. The lower row is full-width (jump up onto it
+    // from the ground); the upper row starts a few tiles in to leave a vertical gap on the
+    // left so you can run-jump between rows without head-bumping.
+    for (let x = ugX + 3; x < ugX + ugW - 4; x++)
+        setTile(x, 3, TT.BRICK);
+    for (let x = ugX + 6; x < ugX + ugW - 4; x++)
+        setTile(x, 6, TT.BRICK);
+
     // exit pipe at right of room (height 4, same as the surface entry pipe)
     addPipe(ugX + ugW - 3, 4);
-    // a brick step so the player can reach the top of the exit pipe
-    setTile(ugX + ugW - 6, 3, TT.BRICK);
-    setTile(ugX + ugW - 5, 3, TT.BRICK);
 
     // -- powerup-bearing ? blocks (canonical SMB 1-1 picks first ? block = mushroom,
     //    high floating block above the early row = star)
