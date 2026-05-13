@@ -15,8 +15,20 @@ showEngineVersion = false;
 // Tile system
 ///////////////////////////////////////////////////////////////////////////////
 
-const LEVEL_W = 214;
+const LEVEL_W = 270; // extended past x=214 so the secret coin room can live offscreen-right
 const LEVEL_H = 18;
+
+// Secret-room mode. Toggled by the warp pipe handlers; resets every respawn.
+let inSecretRoom = false;
+
+// Warp config: surface entry → underground spawn, and underground exit → surface respawn.
+// Coords are tile-index "top of pipe" locations the player must be standing on with Down held.
+const WARP_ENTRY_PIPE_X = [46, 47];     // surface 3rd pipe (h=4)
+const WARP_ENTRY_PIPE_TOP_Y = 4;
+const WARP_EXIT_PIPE_X = [259, 260];    // underground exit pipe
+const WARP_EXIT_PIPE_TOP_Y = 4;
+const WARP_UNDERGROUND_SPAWN = vec2(242.5, 11);
+const WARP_SURFACE_SPAWN    = vec2(78, 2);
 
 const TT = {
     EMPTY: 0,
@@ -172,6 +184,25 @@ function buildLevel()
     setTile(poleX, 1, TT.GROUND); // base
     for (let y = 2; y < 11; y++) setTile(poleX, y, TT.POLE);
     setTile(poleX, 11, TT.FLAG); // top ball
+
+    // ---------------- secret coin room (offscreen-right, reached via warp pipe) ----------------
+    const ugX = 240, ugW = 22, ugCeil = 13;
+    // walls (ground row at y=0 already covers the floor)
+    fillRectTiles(ugX,             1, 1, ugCeil, TT.GROUND);
+    fillRectTiles(ugX + ugW - 1,   1, 1, ugCeil, TT.GROUND);
+    // ceiling
+    fillRectTiles(ugX, ugCeil, ugW, 1, TT.GROUND);
+    // coin rows
+    for (let x = ugX + 3; x < ugX + ugW - 4; x++)
+    {
+        coinSpawns.push([x + .5, 4.5]);
+        coinSpawns.push([x + .5, 7.5]);
+    }
+    // exit pipe at right of room (height 4, same as the surface entry pipe)
+    addPipe(ugX + ugW - 3, 4);
+    // a brick step so the player can reach the top of the exit pipe
+    setTile(ugX + ugW - 6, 3, TT.BRICK);
+    setTile(ugX + ugW - 5, 3, TT.BRICK);
 
     // -- powerup-bearing ? blocks (canonical SMB 1-1 picks first ? block = mushroom,
     //    high floating block above the early row = star)
@@ -923,6 +954,10 @@ class Player extends EngineObject
         this.starTimer = 0;
         this.damageFlash = 0;
 
+        // warp pipe (secret room) state
+        this.warpTimer = 0;
+        this.warpDest = null;
+
         // engine queries the same tile multiple times per physics step (newPos, oldPos,
         // axis-only checks) — track tiles we've already reacted to this frame to avoid
         // multi-firing brick break / coin pop / bump sfx.
@@ -1082,6 +1117,12 @@ class Player extends EngineObject
             return;
         }
 
+        if (this.warpTimer > 0)
+        {
+            this.tickWarp();
+            return;
+        }
+
         const P = Player;
         const onGround = !!this.groundObject;
 
@@ -1091,12 +1132,36 @@ class Player extends EngineObject
         if (this.starTimer > 0) this.starTimer--;
         if (this.damageFlash > 0) this.damageFlash--;
 
-        const moveDirection = keyDirection();
-        const left  = moveDirection.x < 0;
-        const right = moveDirection.x > 0;
-        const run   = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight') || keyIsDown('KeyX');
-        const jumpDown = keyIsDown('Space') || keyIsDown('ArrowUp') || keyIsDown('KeyZ');
+        // input: keyboard + gamepad (left stick / d-pad on the gamepad's button 12-15)
+        const stick = gamepadStick(0);
+        const kbd = keyDirection();
+        const left  = kbd.x < 0 || stick.x < -.3 || gamepadIsDown(14);
+        const right = kbd.x > 0 || stick.x >  .3 || gamepadIsDown(15);
+        const down  = kbd.y < 0 || stick.y < -.5 || gamepadIsDown(13)
+                   || keyIsDown('ArrowDown') || keyIsDown('KeyS');
+        const run   = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight') || keyIsDown('KeyX')
+                   || gamepadIsDown(1)   // B / Circle (SMB run button)
+                   || gamepadIsDown(2);  // X / Square (also accepted)
+        const jumpDown = keyIsDown('Space') || keyIsDown('ArrowUp') || keyIsDown('KeyZ')
+                   || gamepadIsDown(0);  // A / Cross (jump)
         const jumpPressed = jumpDown && !this.prevJumpDown;
+
+        // warp pipe entry: standing on a warpable pipe with Down held
+        if (down && onGround)
+        {
+            const px = Math.floor(this.pos.x);
+            const py = Math.floor(this.pos.y - this.size.y/2 - .01);
+            if (!inSecretRoom && py === WARP_ENTRY_PIPE_TOP_Y && WARP_ENTRY_PIPE_X.includes(px))
+            {
+                this.startWarp('underground');
+                return;
+            }
+            if (inSecretRoom && py === WARP_EXIT_PIPE_TOP_Y && WARP_EXIT_PIPE_X.includes(px))
+            {
+                this.startWarp('surface');
+                return;
+            }
+        }
 
         const accel = run ? P.RUN_ACCEL : P.WALK_ACCEL;
         const maxSpeed = run ? P.RUN_MAX : P.WALK_MAX;
@@ -1162,8 +1227,8 @@ class Player extends EngineObject
         this.velocity.y -= g;
         this.velocity.y = max(this.velocity.y, P.TERMINAL_VEL);
 
-        // pole touch
-        if (this.pos.x >= 191.5)
+        // pole touch — but not while we're in the secret room (where pos.x is way past 191.5)
+        if (this.pos.x >= 191.5 && !inSecretRoom)
         {
             this.won = true;
             this.winTimer = 0;
@@ -1189,6 +1254,41 @@ class Player extends EngineObject
     onStomp()
     {
         this.velocity.y = this.jumpHolding ? Player.STOMP_BOUNCE_HELD : Player.STOMP_BOUNCE;
+    }
+
+    startWarp(dest)
+    {
+        this.warpTimer = 1;
+        this.warpDest = dest;
+        this.velocity = vec2(0, 0);
+        this.collideTiles = false; // we'll sink through the pipe
+        sfxWin.play(this.pos);
+    }
+
+    tickWarp()
+    {
+        this.warpTimer++;
+        if (this.warpTimer < 26)
+        {
+            // sinking into the pipe
+            this.velocity = vec2(0, 0);
+            this.pos.y -= .05;
+            return;
+        }
+        if (this.warpTimer === 26)
+        {
+            // teleport
+            const dest = this.warpDest === 'underground' ? WARP_UNDERGROUND_SPAWN : WARP_SURFACE_SPAWN;
+            this.pos = vec2(dest.x, dest.y);
+            inSecretRoom = (this.warpDest === 'underground');
+            // snap the camera to the new location (overrides the "no backtrack" rule)
+            cameraMinX = max(0, this.pos.x - 8);
+            return;
+        }
+        // post-teleport: hand control back to normal physics
+        this.collideTiles = true;
+        this.warpTimer = 0;
+        this.warpDest = null;
     }
 
     runWinSequence()
@@ -1352,6 +1452,7 @@ function respawn()
     buildLevel();
 
     coinsCollected = 0;
+    inSecretRoom = false;
     for (const [x, y] of coinSpawns) new Coin(vec2(x, y));
 
     for (const e of enemySpawns)
@@ -1561,35 +1662,38 @@ function gameRender()
 {
     const camSize = getCameraSize();
 
-    // SMB cornflower sky
-    drawRect(cameraPos, camSize, rgb(.36, .58, .99));
+    // Sky color: cornflower outside, near-black inside the secret room
+    drawRect(cameraPos, camSize, inSecretRoom ? rgb(.04, .03, .12) : rgb(.36, .58, .99));
 
-    // far clouds (parallax)
-    for (let i = 0; i < 8; i++)
+    if (!inSecretRoom)
     {
-        const cx = cameraPos.x * .35 + i * 13 + 3;
-        const cy = 11 + (i % 3) * 1.6;
-        drawEllipse(vec2(cx, cy), vec2(2.6, .9), rgb(1, 1, 1, .8));
-        drawEllipse(vec2(cx + 1.0, cy + .35), vec2(2.2, .7), rgb(1, 1, 1, .8));
-        drawEllipse(vec2(cx - 1.2, cy + .25), vec2(1.8, .6), rgb(1, 1, 1, .8));
-    }
+        // far clouds (parallax)
+        for (let i = 0; i < 8; i++)
+        {
+            const cx = cameraPos.x * .35 + i * 13 + 3;
+            const cy = 11 + (i % 3) * 1.6;
+            drawEllipse(vec2(cx, cy), vec2(2.6, .9), rgb(1, 1, 1, .8));
+            drawEllipse(vec2(cx + 1.0, cy + .35), vec2(2.2, .7), rgb(1, 1, 1, .8));
+            drawEllipse(vec2(cx - 1.2, cy + .25), vec2(1.8, .6), rgb(1, 1, 1, .8));
+        }
 
-    // hills (mid parallax)
-    for (let i = 0; i < 6; i++)
-    {
-        const hx = cameraPos.x * .6 + i * 22 - (cameraPos.x * .6) % 22 - 8;
-        drawEllipse(vec2(hx, .9), vec2(8, 4), rgb(.10, .55, .18));
-        drawEllipse(vec2(hx - 1.5, 1.2), vec2(4, 2.4), rgb(.18, .65, .22));
-    }
+        // hills (mid parallax)
+        for (let i = 0; i < 6; i++)
+        {
+            const hx = cameraPos.x * .6 + i * 22 - (cameraPos.x * .6) % 22 - 8;
+            drawEllipse(vec2(hx, .9), vec2(8, 4), rgb(.10, .55, .18));
+            drawEllipse(vec2(hx - 1.5, 1.2), vec2(4, 2.4), rgb(.18, .65, .22));
+        }
 
-    // bushes (front decoration)
-    for (let i = 0; i < 12; i++)
-    {
-        const bx = (cameraPos.x * .9 + i * 9) % (LEVEL_W) - 4;
-        const by = 1.25;
-        drawEllipse(vec2(bx, by), vec2(2.0, .8), rgb(.12, .55, .18));
-        drawEllipse(vec2(bx + 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
-        drawEllipse(vec2(bx - 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
+        // bushes (front decoration)
+        for (let i = 0; i < 12; i++)
+        {
+            const bx = (cameraPos.x * .9 + i * 9) % (LEVEL_W) - 4;
+            const by = 1.25;
+            drawEllipse(vec2(bx, by), vec2(2.0, .8), rgb(.12, .55, .18));
+            drawEllipse(vec2(bx + 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
+            drawEllipse(vec2(bx - 1.0, by + .15), vec2(1.6, .7), rgb(.16, .65, .22));
+        }
     }
 
     // visible tiles
@@ -1597,6 +1701,15 @@ function gameRender()
     const maxX = floor(cameraPos.x + camSize.x/2) + 2;
     const minY = -1;
     const maxY = LEVEL_H + 2;
+
+    // fill the void below the ground row so we don't see sky through 1-tile-thick ground.
+    // Only fills where there's actually a ground tile on top, so pits remain visible.
+    const groundExtend = 10;
+    for (let x = minX; x <= maxX; x++)
+    {
+        if (isSolidAt(x, 0))
+            drawRect(vec2(x + .5, -groundExtend/2), vec2(1, groundExtend), rgb(.55, .35, .15));
+    }
 
     // pass 1: tile bodies
     for (let y = minY; y <= maxY; y++)
@@ -1623,8 +1736,20 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    const help = 'Arrow/WASD: Move   Space/Z/Up: Jump   Shift/X: Run   R: Restart';
-    drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 20), 18, hsl(0,0,1), 4, hsl(0,0,0));
+    // During pipe descent, re-draw the warp pipe top (and one body row below it) over the
+    // player so it looks like Mario is sinking INTO the pipe instead of clipping through it.
+    if (player && player.warpTimer > 0 && player.warpTimer < 26)
+    {
+        const pipeXs   = inSecretRoom ? WARP_EXIT_PIPE_X      : WARP_ENTRY_PIPE_X;
+        const pipeTopY = inSecretRoom ? WARP_EXIT_PIPE_TOP_Y  : WARP_ENTRY_PIPE_TOP_Y;
+        for (const px of pipeXs)
+        {
+            drawTilePrimitive(px, pipeTopY,     TT.PIPE);
+            drawTilePrimitive(px, pipeTopY - 1, TT.PIPE);
+        }
+        drawPipeCap(pipeXs[0], pipeTopY);
+    }
+
     drawTextScreen(`COINS ${coinsCollected}`, vec2(mainCanvasSize.x - 140, 40), 26, rgb(1, 1, 1), 4, rgb(0, 0, 0), 'center', 'monospace');
 
     if (player?.won)
