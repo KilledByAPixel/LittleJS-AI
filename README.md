@@ -63,7 +63,6 @@ Did you make a game you think should be included? Send a pull request!
 | Breakout | 👾 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/breakout.html) |
 | Combat | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/combat.html) |
 | Geometry Dash | 🏃 | | ✅ | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/geometryDash.html) |
-| Pole Position | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
 | River Raid | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/riverRaid.html) |
 | Robotron | 🚀 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) |
 | Plinko | 🎯 | ✅ | ✅ | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) |
@@ -92,3 +91,4 @@ Rough early experiments — playable concepts that haven't been curated yet. Exp
 | Pinball | 🎯 | | | ✅ | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pinball.html) |
 | Pokemon | 🗺️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pokemon.html) |
 | Puzzle Fighter | 🧩 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/puzzleFighter.html) |
+| Pole Position | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
