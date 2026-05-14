@@ -759,11 +759,13 @@ function gameUpdate()
       addExplosion(m.target, true);
   }
 
-  enemyMissiles = enemyMissiles.filter(m=>m.alive);
-  playerMissiles = playerMissiles.filter(m=>m.alive);
-
   updateExplosions();
   checkExplosionHits();
+
+  // filter AFTER checkExplosionHits so missiles killed by an explosion
+  // don't get one final draw with their trail cutting through it
+  enemyMissiles = enemyMissiles.filter(m=>m.alive);
+  playerMissiles = playerMissiles.filter(m=>m.alive);
 
   checkWaveComplete();
   if (betweenWaves)
