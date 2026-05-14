@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.10';
+const engineVersion = '1.18.11';
 
 /** Frames per second to update
  *  @type {number}
@@ -3829,6 +3829,66 @@ function drawCircle(pos, size=1, color=WHITE, lineWidth=0, lineColor=BLACK, useW
 {
     ASSERT(isNumber(size), 'size must be a number');
     drawEllipse(pos, vec2(size), color, 0, lineWidth, lineColor, useWebGL, screenSpace, context);
+}
+
+/** Draw a circle filled with a radial gradient from the center to the rim
+ *  @param {Vector2} pos
+ *  @param {number}  [size=1] - Diameter
+ *  @param {Color}   [colorInner=WHITE]
+ *  @param {Color}   [colorOuter=CLEAR_WHITE]
+ *  @param {boolean} [useWebGL=glEnable]
+ *  @param {boolean} [screenSpace]
+ *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
+ *  @memberof Draw */
+function drawCircleGradient(pos, size=1, colorInner=WHITE, colorOuter=CLEAR_WHITE, useWebGL=glEnable, screenSpace=false, context)
+{
+    ASSERT(isVector2(pos), 'pos must be a vec2');
+    ASSERT(isNumber(size), 'size must be a number');
+    ASSERT(isColor(colorInner) && isColor(colorOuter), 'color is invalid');
+    ASSERT(!context || !useWebGL, 'context only supported in canvas 2D mode');
+
+    if (headlessMode) return;
+
+    if (useWebGL && glEnable)
+    {
+        ASSERT(!!glContext, 'WebGL is not enabled!');
+        if (screenSpace)
+        {
+            // convert to world space
+            pos = screenToWorld(pos);
+            size /= cameraScale;
+        }
+        // encode fan as tristrip: interleave center between every ring vertex
+        const sides = glCircleSides;
+        const radius = size/2;
+        const innerInt = colorInner.rgbaInt();
+        const outerInt = colorOuter.rgbaInt();
+        const points = [], colors = [];
+        for (let i=sides+1; i--;)
+        {
+            const a = (i%sides)/sides*PI*2;
+            points.push(pos);
+            colors.push(innerInt);
+            points.push(vec2(pos.x + sin(a)*radius, pos.y + cos(a)*radius));
+            colors.push(outerInt);
+        }
+        glDrawColoredPoints(points, colors);
+    }
+    else
+    {
+        // normal canvas 2D rendering method (slower)
+        ++drawCount;
+        drawCanvas2D(pos, vec2(size), 0, false, (context)=>
+        {
+            const gradient = context.createRadialGradient(0, 0, 0, 0, 0, .5);
+            gradient.addColorStop(0, colorInner.toString());
+            gradient.addColorStop(1, colorOuter.toString());
+            context.fillStyle = gradient;
+            context.beginPath();
+            context.ellipse(0, 0, .5, .5, 0, 0, 9);
+            context.fill();
+        }, screenSpace, context);
+    }
 }
 
 /**
