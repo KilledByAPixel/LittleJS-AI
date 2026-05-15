@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.8';
+const engineVersion = '1.18.12';
 
 /** Frames per second to update
  *  @type {number}
@@ -207,7 +207,7 @@ async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, game
         const combinedScale = timeScale * debugScale;
         frameTimeDeltaMS *= combinedScale;
         frameTimeBufferMS += paused ? 0 : frameTimeDeltaMS;
-        if (debugScale <= 1)
+        if (combinedScale <= 1)
             frameTimeBufferMS = min(frameTimeBufferMS, 50); // clamp min framerate
 
         let wasUpdated = false;
@@ -294,6 +294,7 @@ async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, game
             glFlush();
             debugRenderPost();
             drawCount = 0;
+            primitiveCount = 0;
         }
     }
 
@@ -1068,7 +1069,8 @@ function debugRender()
             debugContext.fillText('FPS: ' + averageFPS.toFixed(1) + (glEnable?' WebGL':' Canvas2D'), 
                 x, y += h);
             debugContext.fillText('Objects: ' + engineObjects.length, x, y += h);
-            debugContext.fillText('Draw Count: ' + drawCount, x, y += h);
+            debugContext.fillText('Draw Calls: ' + drawCount, x, y += h);
+            debugContext.fillText('Primitives: ' + primitiveCount, x, y += h);
             debugContext.fillText('---------', x, y += h);
             debugContext.fillStyle = '#f00';
             debugContext.fillText('ESC: Debug Overlay', x, y += h);
@@ -1139,7 +1141,8 @@ function debugRenderPost()
     mainContext.font = '1em monospace';
     mainContext.fillStyle = '#000';
     const text = engineName + ' v' + engineVersion + ' / '
-        + drawCount + ' / ' + engineObjects.length + ' / ' + averageFPS.toFixed(1)
+        + drawCount + ' / ' + primitiveCount + ' / '
+        + engineObjects.length + ' / ' + averageFPS.toFixed(1)
         + (glEnable ? ' GL' : ' 2D') ;
     mainContext.fillText(text, mainCanvas.width-3, 3);
     mainContext.fillStyle = '#fff';
@@ -2449,6 +2452,7 @@ const MAGENTA = debugProtectConstant(rgb(1,0,1));
  * - File saving (text, canvas, data URLs)
  * - Native share dialog support
  * - Local storage save data management
+ * - Gradient noise (1D and 2D)
  * @namespace Utilities
  */
 
@@ -2650,6 +2654,48 @@ function writeSaveData(saveName, saveData)
 {
     ASSERT(isStringLike(saveName), 'saveData requires saveName string');
     localStorage[saveName] = JSON.stringify(saveData);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Deterministic well-distributed hash of an integer lattice index to [0, 1).
+// Murmur3 finalizer — adjacent integers produce uncorrelated outputs.
+function noiseHash(i)
+{
+    let h = (i | 0) ^ 0x9e3779b9;
+    h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 2**32;
+}
+
+/** 1D gradient noise — returns a smooth value in [0, 1] for any real x.
+ *  Integer inputs land on deterministic lattice values; non-integer inputs
+ *  are interpolated with smoothStep for C1 continuity.
+ *  @param {number} x
+ *  @return {number}
+ *  @memberof Utilities */
+function noise1D(x)
+{
+    const i = floor(x);
+    return lerp(noiseHash(i), noiseHash(i + 1), smoothStep(x - i));
+}
+
+/** 2D gradient noise — returns a smooth value in [0, 1] for any real (x, y).
+ *  @param {number} x
+ *  @param {number} y
+ *  @return {number}
+ *  @memberof Utilities */
+function noise2D(x, y)
+{
+    const ix = floor(x), iy = floor(y);
+    const fx = smoothStep(x - ix), fy = smoothStep(y - iy);
+    // large prime decorrelates neighboring rows
+    const h = (a, b) => noiseHash(a + b * 374761393);
+    return lerp(
+        lerp(h(ix,     iy    ), h(ix + 1, iy    ), fx),
+        lerp(h(ix,     iy + 1), h(ix + 1, iy + 1), fx),
+        fy);
 }
 /**
  * LittleJS Engine Settings
@@ -3856,6 +3902,12 @@ let textureInfos = [];
  *  @memberof Draw */
 let drawCount;
 
+/** Keeps track of how many primitives were drawn each frame for debugging
+ *  A single draw call can render many primitives (e.g. a WebGL sprite batch).
+ *  @type {number}
+ *  @memberof Draw */
+let primitiveCount;
+
 // internal predicates for tint short-circuiting in canvas2D draw paths
 // isWhite ignores alpha because alpha is applied via globalAlpha, not multiply
 // isBlack includes alpha so additive colors that only contribute alpha are not skipped
@@ -4096,19 +4148,19 @@ function drawTile(pos, size=vec2(1), tileInfo, color=WHITE,
         }
         else
         {
-            // if no tile info, force untextured by zeroing rgba (so whatever
-            // texture is bound doesn't leak in) and folding color+additive
-            // into the additive slot — matches the Canvas2D path's
-            // color.add(additiveColor) on line ~337.
+            // untextured: glDrawUntextured picks the optimal path (poly
+            // tristrip if already in poly mode, otherwise instanced with
+            // uvs/rgba zeroed). Color+additive are folded together to match
+            // the Canvas2D path's color.add(additiveColor) on line ~337.
             const combined = additiveColor ? color.add(additiveColor) : color;
-            glDraw(pos.x, pos.y, size.x, size.y, angle, 0, 0, 0, 0,
-                0, combined.rgbaInt());
+            glDrawUntextured(pos.x, pos.y, size.x, size.y, angle, combined.rgbaInt());
         }
     }
     else
     {
         // normal canvas 2D rendering method (slower)
         ++drawCount;
+        ++primitiveCount;
         size = new Vector2(size.x, -size.y); // flip upside down sprites
         drawCanvas2D(pos, size, angle, mirror, (context)=>
         {
@@ -4148,13 +4200,13 @@ function drawRect(pos, size, color, angle, useWebGL, screenSpace, context)
  *  @param {Vector2} pos
  *  @param {Vector2} [size=vec2(1)]
  *  @param {Color}   [colorTop=WHITE]
- *  @param {Color}   [colorBottom=BLACK]
+ *  @param {Color}   [colorBottom=CLEAR_WHITE]
  *  @param {number}  [angle]
  *  @param {boolean} [useWebGL=glEnable]
  *  @param {boolean} [screenSpace]
  *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
  *  @memberof Draw */
-function drawRectGradient(pos, size, colorTop=WHITE, colorBottom=BLACK, angle=0, useWebGL=glEnable, screenSpace=false, context)
+function drawRectGradient(pos, size, colorTop=WHITE, colorBottom=CLEAR_WHITE, angle=0, useWebGL=glEnable, screenSpace=false, context)
 {
     ASSERT(isVector2(pos), 'pos must be a vec2');
     ASSERT(isVector2(size), 'size must be a vec2');
@@ -4194,6 +4246,7 @@ function drawRectGradient(pos, size, colorTop=WHITE, colorBottom=BLACK, angle=0,
     {
         // normal canvas 2D rendering method (slower)
         ++drawCount;
+        ++primitiveCount;
         size = new Vector2(size.x, -size.y); // fix upside down sprites
         drawCanvas2D(pos, size, angle, false, (context)=>
         {
@@ -4256,8 +4309,9 @@ function drawTextureWrapped(pos, size, wrapCount, texture=0, color=WHITE,
         return;
     }
 
-    // Canvas2D path — increment drawCount here (WebGL batch counts via glBatchCount)
+    // Canvas2D path — increment counts here (WebGL counts via glFlush)
     ++drawCount;
+    ++primitiveCount;
 
     if (!screenSpace)
     {
@@ -4331,6 +4385,7 @@ function drawLineList(points, width=.1, color, wrap=false, pos=vec2(), angle=0, 
     {
         // normal canvas 2D rendering method (slower)
         ++drawCount;
+        ++primitiveCount;
         drawCanvas2D(pos, vec2(1), angle, false, (context)=>
         {
             context.strokeStyle = color.toString();
@@ -4509,6 +4564,77 @@ function drawCircle(pos, size=1, color=WHITE, lineWidth=0, lineColor=BLACK, useW
 {
     ASSERT(isNumber(size), 'size must be a number');
     drawEllipse(pos, vec2(size), color, 0, lineWidth, lineColor, useWebGL, screenSpace, context);
+}
+
+/** Draw a circle filled with a radial gradient from the center to the rim
+ *  - Best when batched with other untextured polys
+ *  - If drawing mostly textured sprites, bake the gradient into a texture and use drawTile instead
+ *  - Stacking gradients at the exact same position may show a faint vertical artifact
+ *  @param {Vector2} pos
+ *  @param {number}  [size=1] - Diameter
+ *  @param {Color}   [colorInner=WHITE]
+ *  @param {Color}   [colorOuter=CLEAR_WHITE]
+ *  @param {boolean} [useWebGL=glEnable]
+ *  @param {boolean} [screenSpace]
+ *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
+ *  @memberof Draw */
+let drawCircleGradientOffset = 0;
+function drawCircleGradient(pos, size=1, colorInner=WHITE, colorOuter=CLEAR_WHITE, useWebGL=glEnable, screenSpace=false, context)
+{
+    ASSERT(isVector2(pos), 'pos must be a vec2');
+    ASSERT(isNumber(size), 'size must be a number');
+    ASSERT(isColor(colorInner) && isColor(colorOuter), 'color is invalid');
+    ASSERT(!context || !useWebGL, 'context only supported in canvas 2D mode');
+
+    if (headlessMode) return;
+
+    if (useWebGL && glEnable)
+    {
+        ASSERT(!!glContext, 'WebGL is not enabled!');
+        if (screenSpace)
+        {
+            // convert to world space
+            pos = screenToWorld(pos);
+            size /= cameraScale;
+        }
+        // fan as tristrip; rotate the boundary vertex by one slice per call
+        // so back-to-back gradients at the same position have their hole
+        // (from gpu edge-rule on the boundary line-degen) at different rim
+        // verts and don't visibly stack
+        const sides = glCircleSides;
+        const radius = size/2;
+        const innerInt = colorInner.rgbaInt();
+        const outerInt = colorOuter.rgbaInt();
+        const offset = drawCircleGradientOffset++;
+        const startA = (offset%sides)/sides*PI*2;
+        const points = [vec2(pos.x + sin(startA)*radius, pos.y + cos(startA)*radius)];
+        const colors = [outerInt];
+        for (let i=sides; i--;)
+        {
+            const a = ((i+offset)%sides)/sides*PI*2;
+            points.push(pos);
+            colors.push(innerInt);
+            points.push(vec2(pos.x + sin(a)*radius, pos.y + cos(a)*radius));
+            colors.push(outerInt);
+        }
+        glDrawColoredPoints(points, colors);
+    }
+    else
+    {
+        // normal canvas 2D rendering method (slower)
+        ++drawCount;
+        ++primitiveCount;
+        drawCanvas2D(pos, vec2(size), 0, false, (context)=>
+        {
+            const gradient = context.createRadialGradient(0, 0, 0, 0, 0, .5);
+            gradient.addColorStop(0, colorInner.toString());
+            gradient.addColorStop(1, colorOuter.toString());
+            context.fillStyle = gradient;
+            context.beginPath();
+            context.ellipse(0, 0, .5, .5, 0, 0, 9);
+            context.fill();
+        }, screenSpace, context);
+    }
 }
 
 /**
@@ -6356,14 +6482,15 @@ class SoundInstance
 
 /** Speak text with passed in settings
  *  @param {string} text - The text to speak
- *  @param {string} [language] - The language/accent to use (examples: en, it, ru, ja, zh)
  *  @param {number} [volume] - How much to scale volume by
  *  @param {number} [rate] - How quickly to speak
  *  @param {number} [pitch] - How much to change the pitch by
+ *  @param {string} [language] - The language/accent to use (examples: en, it, ru, ja, zh)
  *  @return {SpeechSynthesisUtterance} - The utterance that was spoken
  *  @memberof Audio */
-function speak(text, language='', volume=1, rate=1, pitch=1)
+function speak(text, volume=1, rate=1, pitch=1, language='')
 {
+    ASSERT(typeof volume !== 'string', 'speak() signature changed: language is now the last parameter, after pitch');
     if (!soundEnable || headlessMode) return;
     if (!speechSynthesis) return;
 
@@ -8356,7 +8483,8 @@ function glFlush()
             glContext.drawArrays(glContext.TRIANGLE_STRIP, 0, glBatchCount);
         else
             glContext.drawArraysInstanced(glContext.TRIANGLE_STRIP, 0, 4, glBatchCount);
-        drawCount += glBatchCount;
+        ++drawCount;
+        primitiveCount += glBatchCount;
         glBatchCount = 0;
     }
     glBatchAdditive = glAdditive;
@@ -8414,6 +8542,67 @@ function glDraw(x, y, sizeX, sizeY, angle=0, uv0X=0, uv0Y=0, uv1X=1, uv1Y=1, rgb
     glPositionData[offset++] = uv1Y;
     glColorData[offset++] = rgba;
     glColorData[offset++] = rgbaAdditive;
+    glPositionData[offset++] = angle;
+}
+
+/** Add an untextured rect to the gl draw list
+ *  Picks the optimal path: if already in poly mode, emits a tristrip rect
+ *  so it batches with surrounding polys; otherwise uses the instanced path
+ *  with uvs and rgba zeroed so the color falls through the additive slot.
+ *  @param {number} x
+ *  @param {number} y
+ *  @param {number} sizeX
+ *  @param {number} sizeY
+ *  @param {number} angle
+ *  @param {number} rgba - color as 32-bit integer
+ *  @memberof WebGL */
+function glDrawUntextured(x, y, sizeX, sizeY, angle, rgba)
+{
+    if (glPolyMode)
+    {
+        // batch with surrounding polys as a 4-vertex tristrip rect
+        const vertCount = 6; // 4 corners + 2 degenerate verts
+        if (glBatchCount+vertCount >= gl_MAX_POLY_VERTEXES || glBatchAdditive !== glAdditive)
+            glFlush();
+
+        // compute rotated corners in world space (matches glDrawPointsTransform rotation)
+        const hx = sizeX*.5, hy = sizeY*.5;
+        const c = cos(angle), s = sin(angle);
+        const chx = c*hx, shx = s*hx, chy = c*hy, shy = s*hy;
+        const x0 = x - chx - shy, y0 = y + shx - chy; // (-hx,-hy)
+        const x1 = x + chx - shy, y1 = y - shx - chy; // ( hx,-hy)
+        const x2 = x - chx + shy, y2 = y + shx + chy; // (-hx, hy)
+        const x3 = x + chx + shy, y3 = y - shx + chy; // ( hx, hy)
+
+        // write tristrip with leading/trailing degenerate verts
+        let offset = glBatchCount * gl_INDICES_PER_POLY_VERTEX;
+        glPositionData[offset++] = x0; glPositionData[offset++] = y0; glColorData[offset++] = rgba;
+        glPositionData[offset++] = x0; glPositionData[offset++] = y0; glColorData[offset++] = rgba;
+        glPositionData[offset++] = x1; glPositionData[offset++] = y1; glColorData[offset++] = rgba;
+        glPositionData[offset++] = x2; glPositionData[offset++] = y2; glColorData[offset++] = rgba;
+        glPositionData[offset++] = x3; glPositionData[offset++] = y3; glColorData[offset++] = rgba;
+        glPositionData[offset++] = x3; glPositionData[offset++] = y3; glColorData[offset++] = rgba;
+        glBatchCount += vertCount;
+        return;
+    }
+
+    // instanced path: zero uvs and rgba so the texture contribution is killed,
+    // then carry the real color in the additive slot
+    if (glBatchCount >= gl_MAX_INSTANCES || glBatchAdditive !== glAdditive)
+        glFlush();
+    glSetInstancedMode();
+
+    let offset = glBatchCount++ * gl_INDICES_PER_INSTANCE;
+    glPositionData[offset++] = x;
+    glPositionData[offset++] = y;
+    glPositionData[offset++] = sizeX;
+    glPositionData[offset++] = sizeY;
+    glPositionData[offset++] = 0;
+    glPositionData[offset++] = 0;
+    glPositionData[offset++] = 0;
+    glPositionData[offset++] = 0;
+    glColorData[offset++] = 0;
+    glColorData[offset++] = rgba;
     glPositionData[offset++] = angle;
 }
 
@@ -9053,7 +9242,8 @@ class Medal
         /** @property {boolean} - Is the medal unlocked? */
         this.unlocked = false;
 
-        // load the source image if provided
+        /** @property {HTMLImageElement|undefined} - Source image for the medal icon, if any */
+        this.image = undefined;
         if (src)
             (this.image = new Image).src = src;
 
@@ -9216,13 +9406,18 @@ class NewgroundsPlugin
         ASSERT(!cipher || cryptoJS, 'must provide cryptojs if there is a cipher');
 
         newgrounds = this; // set global newgrounds object
+        /** @property {string} - The newgrounds App ID */
         this.app_id = app_id;
+        /** @property {string|undefined} - AES-128/Base64 encryption key, if any */
         this.cipher = cipher;
+        /** @property {Object|undefined} - CryptoJS instance used when cipher is set */
         this.cryptoJS = cryptoJS;
+        /** @property {string} - Hostname used when logging views */
         this.host = location ? location.hostname : '';
 
         // get session id from url search params
         const url = new URL(location.href);
+        /** @property {string|null} - Newgrounds session id from the URL (null when not logged in) */
         this.session_id = url.searchParams.get('ngio_session_id');
 
         if (!this.session_id)
@@ -9230,6 +9425,7 @@ class NewgroundsPlugin
 
         // get medals
         const medalsResult = this.call('Medal.getList');
+        /** @property {Array} - Medals fetched from Newgrounds (empty until session is active) */
         this.medals = medalsResult ? medalsResult.result.data['medals'] : [];
         debugMedals && LOG(this.medals);
         for (const newgroundsMedal of this.medals)
@@ -9253,6 +9449,7 @@ class NewgroundsPlugin
     
         // get scoreboards
         const scoreboardResult = this.call('ScoreBoard.getBoards');
+        /** @property {Array} - Scoreboards fetched from Newgrounds */
         this.scoreboards = scoreboardResult ? scoreboardResult.result.data.scoreboards : [];
         debugMedals && LOG(this.scoreboards);
 
@@ -13565,13 +13762,21 @@ class Tween
         }
         ASSERT(isNumber(duration) && duration > 0, 'Tween duration must be > 0');
 
+        /** @property {function(number|Vector2|Color):void} - Called with the interpolated value each frame */
         this.callback = callback;
+        /** @property {number|Vector2|Color} - Starting value */
         this.start = start;
+        /** @property {number|Vector2|Color} - Ending value */
         this.end = end;
+        /** @property {number} - Total duration in seconds */
         this.duration = duration;
+        /** @property {number} - Remaining time in seconds (counts down from duration to 0) */
         this.life = duration;
+        /** @property {function(number):number} - Easing curve mapping [0,1] -> [0,1] */
         this.ease = options.ease || Ease.LINEAR;
+        /** @property {boolean} - If true, advance even when the game is paused */
         this.useRealTime = !!options.useRealTime;
+        /** @property {boolean} - If true, stop advancing until cleared */
         this.paused = !!options.paused;
 
         /** @private completion callback set by then(), loop(), pingPong(). */
@@ -14104,7 +14309,9 @@ class PathFinder
         // .size + .getCollisionData.
         if (isVector2(source))
         {
+            /** @property {Vector2} - Grid dimensions in tiles */
             this.size = source.floor();
+            /** @property {TileCollisionLayer|undefined} - Tile layer driving walkability, if any */
             this.tileLayer = undefined;
         }
         else
@@ -14116,13 +14323,18 @@ class PathFinder
         }
 
         // Tunables (public, freely re-assignable).
+        /** @property {number} - A* heuristic multiplier (1 = admissible, higher = greedier) */
         this.heuristicWeight = 1;
-        this.maxLoop = 500;
+        /** @property {number} - Maximum A* expansions before giving up */
+        this.maxLoop = 1e3;
+        /** @property {boolean} - If true, post-process paths with two-pass smoothing */
         this.smoothPath = true;
+        /** @property {boolean} - If true, draw debug visualization during findPath */
         this.debug = false;
-        this.debugTime = 2;
+        /** @property {number} - Debug primitive lifetime in seconds (0 disables drawing) */
+        this.debugTime = 1;
 
-        // Pre-allocate the node array — one node per tile, reused across calls.
+        /** @property {Array<PathFinderNode>} - Flat row-major array of size.x*size.y nodes */
         this.nodes = new Array(this.size.x * this.size.y);
         for (let y = 0; y < this.size.y; ++y)
         for (let x = 0; x < this.size.x; ++x)
@@ -14296,9 +14508,12 @@ class PathFinder
                 // Best path so far through neighbor — record it.
                 neighbor.parent = current;
                 neighbor.g = tentativeG;
-                const gdx = endNode.pos.x - neighbor.pos.x;
-                const gdy = endNode.pos.y - neighbor.pos.y;
-                neighbor.f = neighbor.g + (gdx * gdx + gdy * gdy) * this.heuristicWeight;
+                // Octile heuristic — tightest admissible distance for an
+                // 8-connected grid with cardinal cost 1 and diagonal cost √2.
+                const adx = abs(endNode.pos.x - neighbor.pos.x);
+                const ady = abs(endNode.pos.y - neighbor.pos.y);
+                const h = max(adx, ady) + (Math.SQRT2 - 1) * min(adx, ady);
+                neighbor.f = neighbor.g + h * this.heuristicWeight;
             }
         }
 
@@ -14580,6 +14795,24 @@ class PathFinder
         path.push(original[original.length - 1]);
     }
 
+    /** Drop any middle node that lies exactly on the line through its two
+     *  neighbors. Backstop for the smoothing passes — the corners pass
+     *  intentionally keeps truly-straight runs, and the string-pulling pass
+     *  checks collinearity against the original path, not the in-progress
+     *  result, so it can leave 3+ collinear nodes in some edge cases.
+     *  @param {PathFinderNode[]} path
+     *  @private */
+    dropCollinearNodes(path)
+    {
+        for (let i = path.length - 2; i >= 1; --i)
+        {
+            const a = path[i - 1], b = path[i], c = path[i + 1];
+            if ((b.pos.x - a.pos.x) * (c.pos.y - a.pos.y) ===
+                (b.pos.y - a.pos.y) * (c.pos.x - a.pos.x))
+                path.splice(i, 1);
+        }
+    }
+
     /** Lookup helper: true when the node at tile coords (x, y) is in-bounds
      *  and clear (walkable, zero-cost). Used by isLineClear's hot path.
      *  @param {number} x
@@ -14747,6 +14980,7 @@ class PathFinder
         {
             this.smoothPathCorners(nodePath);
             this.smoothPathStringPull(nodePath);
+            this.dropCollinearNodes(nodePath);
         }
 
         // Convert to world-space Vector2 path. Return copies, not live node
