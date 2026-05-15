@@ -1018,6 +1018,19 @@ declare module "littlejsengine" {
      *  @param {Object} saveData - object containing data to be saved
      *  @memberof Utilities */
     export function writeSaveData(saveName: string, saveData: any): void;
+    /** 1D gradient noise — returns a smooth value in [0, 1] for any real x.
+     *  Integer inputs land on deterministic lattice values; non-integer inputs
+     *  are interpolated with smoothStep for C1 continuity.
+     *  @param {number} x
+     *  @return {number}
+     *  @memberof Utilities */
+    export function noise1D(x: number): number;
+    /** 2D gradient noise — returns a smooth value in [0, 1] for any real (x, y).
+     *  @param {number} x
+     *  @param {number} y
+     *  @return {number}
+     *  @memberof Utilities */
+    export function noise2D(x: number, y: number): number;
     /** Random global functions
      *  @namespace Random */
     /** Returns a random value between the two values passed in
@@ -1368,6 +1381,7 @@ declare module "littlejsengine" {
      * - File saving (text, canvas, data URLs)
      * - Native share dialog support
      * - Local storage save data management
+     * - Gradient noise (1D and 2D)
      * @namespace Utilities
      */
     /**
@@ -1756,7 +1770,7 @@ declare module "littlejsengine" {
      *  @param {Vector2} pos
      *  @param {Vector2} [size=vec2(1)]
      *  @param {Color}   [colorTop=WHITE]
-     *  @param {Color}   [colorBottom=BLACK]
+     *  @param {Color}   [colorBottom=CLEAR_WHITE]
      *  @param {number}  [angle]
      *  @param {boolean} [useWebGL=glEnable]
      *  @param {boolean} [screenSpace]
@@ -2501,13 +2515,13 @@ declare module "littlejsengine" {
     }
     /** Speak text with passed in settings
      *  @param {string} text - The text to speak
-     *  @param {string} [language] - The language/accent to use (examples: en, it, ru, ja, zh)
      *  @param {number} [volume] - How much to scale volume by
      *  @param {number} [rate] - How quickly to speak
      *  @param {number} [pitch] - How much to change the pitch by
+     *  @param {string} [language] - The language/accent to use (examples: en, it, ru, ja, zh)
      *  @return {SpeechSynthesisUtterance} - The utterance that was spoken
      *  @memberof Audio */
-    export function speak(text: string, language?: string, volume?: number, rate?: number, pitch?: number): SpeechSynthesisUtterance;
+    export function speak(text: string, volume?: number, rate?: number, pitch?: number, language?: string): SpeechSynthesisUtterance;
     /** Stop all queued speech
      *  @memberof Audio */
     export function speakStop(): void;
