@@ -96,7 +96,7 @@
 //   #littlejs-menus {
 //       --menu-bg:           rgba(20, 0, 30, 0.95);
 //       --menu-accent:       #f0a;
-//       --menu-font:         'Orbitron', sans-serif;   /* font everywhere */
+//       --menu-font:         sans-serif;   /* font everywhere */
 //       --menu-border-width: 4px;
 //   }
 // `--menu-font` controls every text element in the menu system (titles,
