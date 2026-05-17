@@ -40,8 +40,7 @@ cameraScale = 32;
 canvasMaxSize = vec2(2048, 2048);
 
 ///////////////////////////////////////////////////////////////////////////////
-// MENU SYSTEM TEMPLATE
-// Demonstrates createMenu() and createToolbar() from menus.js.
+// JETPACK DASH — prototype built on the menus.js helper
 
 let playerPos = vec2(0, 0);
 const playerSize = vec2(2, 2);
@@ -122,21 +121,21 @@ async function gameInit()
         onHide: popMenu,
         items: [
             {type:'slider',   id:'volume', label:'VOLUME',       value: 0.8, min:0, max:1,
-                persist:'menuDemo.volume',
+                persist:'jetpackDash.volume',
                 onChange: v => setSoundVolume(v)},
             {type:'checkbox', id:'music',  label:'MUSIC',        value: musicOn,
-                persist:'menuDemo.music',
+                persist:'jetpackDash.music',
                 onChange: v => { musicOn = v; getToolbar('hud')?.getItem('music')?.setValue(v); }},
             {type:'separator'},
             {type:'checkbox', id:'shake',  label:'SCREEN SHAKE', value: true,
-                persist:'menuDemo.shake',
+                persist:'jetpackDash.shake',
                 onChange: v => console.log('shake ->', v)},
             {type:'color',    id:'bg',     label:'BG COLOR',     value:'#264d40',
-                persist:'menuDemo.bg',
+                persist:'jetpackDash.bg',
                 title:'Pick the canvas background color',
                 onChange: c => canvasClearColor = new Color().setHex(c)},
             {type:'input',    id:'name',   label:'NAME',         value:'Player',
-                persist:'menuDemo.name',
+                persist:'jetpackDash.name',
                 placeholder:'Enter a name', maxLength:16,
                 title:'Demo of the text input item type',
                 onChange: v => console.log('name ->', v)},
@@ -152,7 +151,7 @@ async function gameInit()
         title: 'ABOUT',
         onHide: popMenu,
         items: [
-            {type:'label', text:'menus.js demo'},
+            {type:'label', text:'Jetpack Dash'},
             {type:'text', text:'Hold MOUSE / SPACE / UP / A to thrust. ' +
                 'Release to fall. Don\'t hit zappers, missiles, lasers, ceiling, or floor. ' +
                 'Collect coins. Shield bubbles absorb one hit.\n\nBuilt with LittleJS.'},
