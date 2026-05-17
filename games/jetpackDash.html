@@ -79,6 +79,7 @@ let player;                  // Player instance, recreated each run
 let alive = false;
 let distance = 0;            // floored player.pos.x in meters
 let deathTimer = 0;          // counts up after death; opens dialog at ~1s
+let coins = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 function startRun()
@@ -89,6 +90,7 @@ function startRun()
     alive = true;
     deathTimer = 0;
     distance = 0;
+    coins = 0;
 
     // player sits at world x=0; camera offset keeps it ~1/3 from left of screen
     player = new Player(vec2(0, ceilingY / 2));
@@ -182,6 +184,47 @@ class Zapper extends Hazard
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+class Coin extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(0.7), tile(TILE_COIN));
+        this.gravityScale = 0;
+        this.damping = 1;
+        this.spin = Math.random() * 6.28;
+    }
+
+    update()
+    {
+        if (this.pos.x < cameraPos.x - 25) { this.destroy(); return; }
+        super.update();
+    }
+
+    render()
+    {
+        // squash on X to fake a spin
+        this.spin += 0.15;
+        const sx = Math.abs(Math.cos(this.spin)) * 0.7 + 0.05;
+        drawTile(this.pos, vec2(sx, 0.7), tile(TILE_COIN));
+    }
+
+    tryCollect(p)
+    {
+        const dx = Math.abs(p.pos.x - this.pos.x);
+        const dy = Math.abs(p.pos.y - this.pos.y);
+        if (dx < (this.size.x + p.size.x)/2 &&
+            dy < (this.size.y + p.size.y)/2)
+        {
+            this.destroy();
+            coins += 1;
+            sndCoin && sndCoin.play();
+            return true;
+        }
+        return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 function spawnChunk(chunkX)
 {
     // Decide a safe-gap Y band — center of the gap and its half-height
@@ -209,6 +252,46 @@ function spawnChunk(chunkX)
         const y = (top + bot) / 2;
         const len = top - bot;
         new Zapper(vec2(chunkX, y), len, 'v');
+    }
+
+    // coin pattern in the safe gap — pick one of: line, arc, stair
+    const patternRoll = Math.random();
+    const startX = chunkX - 1;
+    const endX   = chunkX + 2;
+    const count  = 5;
+
+    if (patternRoll < 0.4)
+    {
+        // horizontal line at gapCenter
+        for (let i = 0; i < count; i++)
+        {
+            const t = i / (count - 1);
+            new Coin(vec2(lerp(startX, endX, t), gapCenter));
+        }
+    }
+    else if (patternRoll < 0.75)
+    {
+        // arc — sine wave centered on gapCenter
+        for (let i = 0; i < count; i++)
+        {
+            const t = i / (count - 1);
+            const x = lerp(startX, endX, t);
+            const y = gapCenter + Math.sin(t * Math.PI) * Math.min(1.2, gapHalf - 0.3);
+            new Coin(vec2(x, y));
+        }
+    }
+    else
+    {
+        // stair — descend or ascend across the gap height
+        const dir = Math.random() < 0.5 ? 1 : -1;
+        const amp = Math.min(gapHalf - 0.3, 1.2);
+        for (let i = 0; i < count; i++)
+        {
+            const t = i / (count - 1);
+            const x = lerp(startX, endX, t);
+            const y = gapCenter + dir * (t - 0.5) * amp * 2;
+            new Coin(vec2(x, y));
+        }
     }
 }
 
@@ -288,6 +371,12 @@ class Player extends EngineObject
                 killPlayer();
                 break;
             }
+        }
+
+        // coin pickup
+        for (const obj of engineObjects)
+        {
+            if (obj instanceof Coin) obj.tryCollect(this);
         }
 
         // ceiling / floor death
@@ -410,6 +499,9 @@ async function gameInit()
 
     // One callback drives `paused` for every menu, including dialogs.
     setMenuVisibilityCallback(v => paused = v);
+
+    // sounds — real definitions land in Task 10; placeholder so collect calls work.
+    window.sndCoin = new SoundGenerator({ frequency: 1200, attack: 0.005, release: 0.08, volume: 0.4, pitchJump: 600, pitchJumpTime: 0.05 });
 
     // ----- global UI sounds (LittleJS Sound class wraps zzfx params and
     //       routes through the engine's audio system, so master volume,
