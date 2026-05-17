@@ -725,7 +725,8 @@ class PlayerCar extends EngineObject
     constructor()
     {
         super(vec2(0, -2), vec2(1.55, 3.0));
-        this.speed = 14;
+        this.speed = 0;             // start stopped; cruise pulls speed up
+        this.passedMinSpeed = false; // once we cross PLAYER_MIN_SPEED for the first time, the floor applies
         this.fireCooldown = new Timer();
         this.lives = 3;
         this.invuln = new Timer();
@@ -747,7 +748,10 @@ class PlayerCar extends EngineObject
         const brake = (keyIsDown('ArrowDown') || keyIsDown('KeyS')) ? 1 : 0;
         this.speed += (accel - brake) * PLAYER_ACCEL * timeDelta;
         this.speed = lerp(this.speed, PLAYER_CRUISE, .02);
-        this.speed = clamp(this.speed, PLAYER_MIN_SPEED, PLAYER_MAX_SPEED);
+        // min-speed floor doesn't apply until the player has reached cruising speed at least once
+        if (this.speed >= PLAYER_MIN_SPEED) this.passedMinSpeed = true;
+        const minSpeed = this.passedMinSpeed ? PLAYER_MIN_SPEED : 0;
+        this.speed = clamp(this.speed, minSpeed, PLAYER_MAX_SPEED);
 
         // forward
         this.pos.y += this.speed * timeDelta;
@@ -818,7 +822,10 @@ function pickKind(progress)
 function spawnCar()
 {
     if (!player) return;
-    const y = player.pos.y + rand(14, 26);
+    // always spawn above the visible top of the screen, regardless of zoom
+    const camSize = getCameraSize();
+    const topY = cameraPos.y + camSize.y/2;
+    const y = topY + rand(2, 14);
     const lane = randInt(LANES);
     const x = roadCenterX(y) + laneX(lane) + rand(-.25, .25);
     const progress = min(distance / 1400, 1);
@@ -868,7 +875,7 @@ function resetGame()
 
     resetRoad();
     player = new PlayerCar();
-    for (let i=0; i<4; i++) spawnCar();
+    // no initial car seed — let the player start on an empty road; cars enter from above as the player gets moving
     for (let i=0; i<14; i++) spawnProp();
 }
 
@@ -909,13 +916,16 @@ function gameUpdate()
     score += player.speed * timeDelta * .45;
     checkExtraLife();
 
-    // spawn cars
+    // spawn cars — wait until the player is actually cruising so traffic doesn't pile up off-screen at startup
     if (!carSpawnTimer.active())
     {
         const d = min(distance / 1200, 1);
         carSpawnTimer.set(lerp(2.35, 1.55, d));
-        if (cars.length < 7) spawnCar();
-        if (cars.length < 7 && randBool(lerp(.02, .08, d))) spawnCar();
+        if (player.passedMinSpeed)
+        {
+            if (cars.length < 7) spawnCar();
+            if (cars.length < 7 && randBool(lerp(.02, .08, d))) spawnCar();
+        }
     }
 
     // spawn props — denser, with frequent doubles/triples for varied roadsides
@@ -1061,38 +1071,46 @@ function gameRender()
     // grass (full screen)
     drawRect(cameraPos, camSize, rgb(.05,.25,.07));
 
-    // road drawn as thin Y-slices so it can curve along the road anchors
+    // gray road surface drawn as thin Y-slices so it can follow the curve
     const sliceH = .80;
-    const sliceColor      = rgb(.16,.16,.17);
-    const sliceHilight    = rgb(.10,.10,.12,.30);
-    const dirtSide        = rgb(.03,.18,.05);
-    const edgeLine        = rgb(.92,.92,.92);
+    const sliceColor   = rgb(.16,.16,.17);
+    const sliceHilight = rgb(.10,.10,.12,.30);
+    const dirtSide     = rgb(.03,.18,.05);
     for (let y = startY; y < endY; y += sliceH)
     {
         const cx = roadCenterX(y + sliceH/2);
-        // dark dirt strips just outside the road
         drawRect(vec2(cx - ROAD_HALF - 2.2, y + sliceH/2), vec2(4.0, sliceH), dirtSide);
         drawRect(vec2(cx + ROAD_HALF + 2.2, y + sliceH/2), vec2(4.0, sliceH), dirtSide);
-        // road base
         drawRect(vec2(cx, y + sliceH/2), vec2(ROAD_WIDTH, sliceH), sliceColor);
-        // very subtle highlight
         drawRect(vec2(cx, y + sliceH/2), vec2(ROAD_WIDTH*.92, sliceH), sliceHilight);
-        // white edge lines
-        drawRect(vec2(cx - ROAD_HALF + .25, y + sliceH/2), vec2(.18, sliceH), edgeLine);
-        drawRect(vec2(cx + ROAD_HALF - .25, y + sliceH/2), vec2(.18, sliceH), edgeLine);
     }
 
-    // dashed center line — dashes ride the road centerline
-    const scroll = player ? player.pos.y : 0;
+    // smooth white edge lines drawn as polylines through sampled centerline + offset
+    const edgeColor = rgb(.95,.95,.95);
+    const sampleStep = .8;
+    const leftPoints = [];
+    const rightPoints = [];
+    for (let y = startY; y <= endY + sampleStep; y += sampleStep)
     {
-        const dashH = 1.6;
-        const gapH  = 1.4;
-        for (let y = startY; y < endY + 6; y += dashH + gapH)
-        {
-            const yy = y - mod(scroll, dashH + gapH);
-            const cx = roadCenterX(yy + dashH/2);
-            drawRect(vec2(cx, yy + dashH/2), vec2(.32, dashH), rgb(1,1,1));
-        }
+        const cx = roadCenterX(y);
+        leftPoints.push (vec2(cx - ROAD_HALF + .25, y));
+        rightPoints.push(vec2(cx + ROAD_HALF - .25, y));
+    }
+    drawLineList(leftPoints,  .22, edgeColor);
+    drawLineList(rightPoints, .22, edgeColor);
+
+    // dashed center line — each dash is a single tilted line segment so it aligns with the road's slope
+    const scroll = player ? player.pos.y : 0;
+    const dashH = 1.6;
+    const gapH  = 1.4;
+    for (let y = startY; y < endY + 6; y += dashH + gapH)
+    {
+        const y0 = y - mod(scroll, dashH + gapH);
+        const y1 = y0 + dashH;
+        drawLine(
+            vec2(roadCenterX(y0), y0),
+            vec2(roadCenterX(y1), y1),
+            .32, rgb(1,1,1));
     }
 
     // intro hint
