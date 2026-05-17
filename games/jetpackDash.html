@@ -31,19 +31,120 @@ debugWatermark = false;
 showEngineVersion = false;
 paused = false;
 
-// engine settings, customize if necessary
-gravity = vec2(0, 0);
-cameraPos = vec2(0, 0);
-cameraScale = 32;
-// Default LittleJS canvas cap is 1920x1080 — raise it so the canvas
-// fills modern high-res monitors instead of letterboxing.
+// engine defaults
+gravity = vec2(0, -0.001);     // tiny negative so groundObject sign tests work if needed later
+cameraPos = vec2(0, 6);
+cameraScale = 48;
 canvasMaxSize = vec2(2048, 2048);
+canvasClearColor = new Color().setHex('#1a1a2a');
 
 ///////////////////////////////////////////////////////////////////////////////
 // JETPACK DASH — prototype built on the menus.js helper
 
-let playerPos = vec2(0, 0);
-const playerSize = vec2(2, 2);
+// world / camera
+const SCROLL_SPEED_DEFAULT = 0.15;   // world units per frame at 60fps
+const CEILING_Y_DEFAULT    = 12;
+let scrollSpeed = SCROLL_SPEED_DEFAULT;
+let ceilingY    = CEILING_Y_DEFAULT;
+let playerStartScreenX = -8;         // world x offset of player from cameraPos.x
+
+// player physics
+const THRUST_FORCE_DEFAULT = 0.018;
+const GRAVITY_Y_DEFAULT    = -0.012;
+const MAX_RISE_DEFAULT     = 0.35;
+const MAX_FALL_DEFAULT     = 0.55;
+let thrustForce = THRUST_FORCE_DEFAULT;
+let gravityY    = GRAVITY_Y_DEFAULT;
+let maxRiseSpeed = MAX_RISE_DEFAULT;
+let maxFallSpeed = MAX_FALL_DEFAULT;
+
+// player state
+let player;                  // Player instance, recreated each run
+let alive = false;
+let distance = 0;            // floored player.pos.x in meters
+let deathTimer = 0;          // counts up after death; opens dialog at ~1s
+
+///////////////////////////////////////////////////////////////////////////////
+function startRun()
+{
+    // wipe any leftover objects from a prior run
+    engineObjectsDestroy();
+
+    alive = true;
+    deathTimer = 0;
+    distance = 0;
+
+    // player sits at world x=0; camera offset keeps it ~1/3 from left of screen
+    player = new Player(vec2(0, ceilingY / 2));
+    player.velocity = vec2(scrollSpeed, 0);
+
+    cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
+    setPlaying(true);
+}
+
+function killPlayer()
+{
+    if (!alive) return;
+    alive = false;
+    deathTimer = 0;
+}
+
+function returnToTitle()
+{
+    setPlaying(false);
+    engineObjectsDestroy();
+    player = undefined;
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+class Player extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(1.2, 1.6));    // no tileInfo yet — solid color in render
+        this.gravityScale = 0;          // we apply our own gravity
+        this.damping = 1;
+        this.friction = 0;
+        this.restitution = 0;
+        this.thrusting = false;
+        this.color = hsl(.08, .9, .55); // orange placeholder
+    }
+
+    update()
+    {
+        if (!alive) { super.update(); return; }
+
+        // input
+        this.thrusting = mouseIsDown(0) ||
+            keyIsDown('Space') || keyIsDown('ArrowUp') ||
+            gamepadIsDown(0);
+
+        // apply per-frame gravity + thrust
+        this.velocity.y += gravityY;
+        if (this.thrusting) this.velocity.y += thrustForce;
+
+        // clamp vertical speed
+        this.velocity.y = clamp(this.velocity.y, -maxFallSpeed, maxRiseSpeed);
+
+        // horizontal velocity is the scroll rate (engine moves pos via velocity)
+        this.velocity.x = scrollSpeed;
+
+        super.update();
+
+        // ceiling / floor death
+        if (this.pos.y >= ceilingY || this.pos.y <= 0)
+            killPlayer();
+    }
+
+    render()
+    {
+        // placeholder: solid rounded body. Real sprite arrives in Task 3.
+        drawRect(this.pos, this.size, this.color);
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Pause the engine whenever any menu (including alert/confirm dialogs) is
@@ -66,10 +167,6 @@ function setPlaying(p)
 
 async function gameInit()
 {
-    // Initial bg shared with the color picker in OPTIONS, so opening the
-    // menu shows the swatch matching what's actually on screen.
-    canvasClearColor = new Color().setHex('#264d40');
-
     // Match the engine's master volume to whatever the options slider starts at,
     // so the very first menu sound plays at the user-visible volume.
     setSoundVolume(.8);
@@ -93,7 +190,7 @@ async function gameInit()
     // menu on the next click / Space / Enter / A / Start.
     // onStart wires gamepad Start to launch "play" directly without the
     // player having to navigate to the PLAY item first.
-    const playFromTitle = () => { setPlaying(true); titleMenu.hide(); };
+    const playFromTitle = () => { titleMenu.hide(); startRun(); };
     const titleMenu = createMenu({
         id: 'title',
         title: 'JETPACK DASH',
@@ -172,13 +269,7 @@ async function gameInit()
             {
                 showConfirmDialog({
                     message: 'Quit to title?',
-                    onYes: () =>
-                    {
-                        clearSubmenuStack();
-                        hideAllMenus();
-                        setPlaying(false);
-                        showMenu('title');
-                    },
+                    onYes: returnToTitle,
                 });
             }},
         ],
@@ -223,24 +314,36 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    // gameUpdate only runs when paused=false, which only happens when no
-    // menu is visible. Gate on isPlaying so the Esc/Start pause shortcut
-    // doesn't fire from the "CLICK TO PLAY" pre-play state — title-menu
-    // reveal owns Esc/Start there via attachClickToReveal.
-    if (isPlaying && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    // pause hotkey — gate so it doesn't fire from the pre-play state
+    if (isPlaying && alive &&
+        (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         playMenuSound('activate');
         showMenu('pause');
         inputClearKey('Escape');
-        // Partial clear (only the pressed bit, not down) so the engine
-        // doesn't re-trigger pressed every frame the button is held.
         inputClearKey(9, 1, false, true, false);
+        return;
     }
 
-    if (isPlaying)
+    if (!isPlaying || !player) return;
+
+    // camera follows the player horizontally; vertical stays centered
+    cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
+    distance = Math.max(0, Math.floor(player.pos.x));
+
+    // after death, give the player a moment to fall, then surface dialog
+    if (!alive)
     {
-        const dir = keyDirection();
-        playerPos = playerPos.add(dir.scale(.2));
+        deathTimer += 1/60;
+        if (deathTimer > 1)
+        {
+            deathTimer = -999;  // prevent re-trigger
+            showAlertDialog({
+                title: 'CRASHED',
+                message: 'Distance: ' + distance + ' M',
+                onOk: returnToTitle,
+            });
+        }
     }
 }
 
@@ -250,10 +353,12 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    // Draw gameplay content only while actually playing — the pre-play
-    // / post-quit "title screen" state shows just the prompt below.
-    if (isPlaying)
-        drawRect(playerPos, playerSize, hsl(.13, 1, .6));
+    if (!isPlaying) return;
+
+    // floor
+    drawRect(vec2(cameraPos.x, -0.5), vec2(60, 1), hsl(.08, .3, .15));
+    // ceiling
+    drawRect(vec2(cameraPos.x, ceilingY + 0.5), vec2(60, 1), hsl(.08, .3, .15));
 }
 
 function gameRenderPost()
