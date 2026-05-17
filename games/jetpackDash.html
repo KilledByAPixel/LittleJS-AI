@@ -56,6 +56,14 @@ let scrollSpeed = SCROLL_SPEED_DEFAULT;
 let ceilingY    = CEILING_Y_DEFAULT;
 let playerStartScreenX = -8;         // world x offset of player from cameraPos.x
 
+// spawn director
+const CHUNK_WIDTH_DEFAULT = 7;
+const MIN_GAP_DEFAULT     = 2.5;
+const SPAWN_AHEAD         = 30;   // world units past the camera to keep spawned
+let chunkWidth = CHUNK_WIDTH_DEFAULT;
+let minGap     = MIN_GAP_DEFAULT;
+let nextSpawnX = 0;
+
 // player physics
 const THRUST_FORCE_DEFAULT = 0.018;
 const GRAVITY_Y_DEFAULT    = -0.012;
@@ -87,6 +95,7 @@ function startRun()
     player.velocity = vec2(scrollSpeed, 0);
 
     cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
+    nextSpawnX = chunkWidth;   // first chunk a bit ahead so the player gets a moment
     setPlaying(true);
 }
 
@@ -105,6 +114,102 @@ function returnToTitle()
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+class Hazard extends EngineObject
+{
+    constructor(pos, size, tileIndex)
+    {
+        super(pos, size, tileIndex !== undefined ? tile(tileIndex) : undefined);
+        this.gravityScale = 0;
+        this.damping = 1;
+    }
+
+    update()
+    {
+        // despawn well behind the camera
+        if (this.pos.x < cameraPos.x - 25) this.destroy();
+        super.update();
+    }
+
+    hitsPlayer(p)
+    {
+        const dx = Math.abs(p.pos.x - this.pos.x);
+        const dy = Math.abs(p.pos.y - this.pos.y);
+        return dx < (this.size.x + p.size.x) / 2 &&
+               dy < (this.size.y + p.size.y) / 2;
+    }
+}
+
+class Zapper extends Hazard
+{
+    // axis: 'v' (vertical beam, caps top/bottom) or 'h' (horizontal beam)
+    constructor(pos, length, axis)
+    {
+        const size = axis === 'v' ? vec2(0.5, length) : vec2(length, 0.5);
+        super(pos, size);
+        this.axis = axis;
+        this.length = length;
+    }
+
+    render()
+    {
+        const t = time * 30;
+        const half = this.length / 2 - 0.25;
+        const nodeA = this.axis === 'v'
+            ? this.pos.add(vec2(0, +half))
+            : this.pos.add(vec2(+half, 0));
+        const nodeB = this.axis === 'v'
+            ? this.pos.add(vec2(0, -half))
+            : this.pos.add(vec2(-half, 0));
+        drawTile(nodeA, vec2(0.8), tile(TILE_ZAP));
+        drawTile(nodeB, vec2(0.8), tile(TILE_ZAP));
+
+        // jittery beam — three offset line segments for an electric look
+        for (let s = 0; s < 3; s++)
+        {
+            const jitter = Math.sin(t + s * 1.3) * 0.08;
+            const a = this.axis === 'v'
+                ? nodeA.add(vec2(jitter, 0))
+                : nodeA.add(vec2(0, jitter));
+            const b = this.axis === 'v'
+                ? nodeB.add(vec2(jitter, 0))
+                : nodeB.add(vec2(0, jitter));
+            drawLine(a, b, 0.1, hsl(.16, 1, .7, 0.9));
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function spawnChunk(chunkX)
+{
+    // Decide a safe-gap Y band — center of the gap and its half-height
+    const gapCenter = lerp(2 + minGap/2, ceilingY - 2 - minGap/2, Math.random());
+    const gapHalf   = minGap / 2;
+
+    // Spawn 1 zapper per chunk for now (other hazards arrive later).
+    // Place either above or below the safe gap.
+    const placeAbove = Math.random() < 0.5;
+
+    if (placeAbove)
+    {
+        const top = ceilingY - 0.5;
+        const bot = gapCenter + gapHalf;
+        if (top - bot < 1.2) return;
+        const y = (top + bot) / 2;
+        const len = top - bot;
+        new Zapper(vec2(chunkX, y), len, 'v');
+    }
+    else
+    {
+        const bot = 0.5;
+        const top = gapCenter - gapHalf;
+        if (top - bot < 1.2) return;
+        const y = (top + bot) / 2;
+        const len = top - bot;
+        new Zapper(vec2(chunkX, y), len, 'v');
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -174,6 +279,16 @@ class Player extends EngineObject
 
         // toggle the thrust flame
         this.thrustEmitter.emitRate = (this.thrusting && alive) ? 80 : 0;
+
+        // hazard collisions
+        for (const obj of engineObjects)
+        {
+            if (obj instanceof Hazard && obj.hitsPlayer(this))
+            {
+                killPlayer();
+                break;
+            }
+        }
 
         // ceiling / floor death
         if (this.pos.y >= ceilingY || this.pos.y <= 0)
@@ -452,6 +567,16 @@ function gameUpdate()
     // camera follows the player horizontally; vertical stays centered
     cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
     distance = Math.max(0, Math.floor(player.pos.x));
+
+    // spawn chunks ahead of the camera
+    if (alive)
+    {
+        while (cameraPos.x + SPAWN_AHEAD > nextSpawnX)
+        {
+            spawnChunk(nextSpawnX);
+            nextSpawnX += chunkWidth;
+        }
+    }
 
     // after death, give the player a moment to fall, then surface dialog
     if (!alive)
