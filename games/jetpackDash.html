@@ -197,13 +197,13 @@ class Coin extends EngineObject
     update()
     {
         if (this.pos.x < cameraPos.x - 25) { this.destroy(); return; }
+        this.spin += 0.15;
         super.update();
     }
 
     render()
     {
         // squash on X to fake a spin
-        this.spin += 0.15;
         const sx = Math.abs(Math.cos(this.spin)) * 0.7 + 0.05;
         drawTile(this.pos, vec2(sx, 0.7), tile(TILE_COIN));
     }
@@ -239,19 +239,23 @@ function spawnChunk(chunkX)
     {
         const top = ceilingY - 0.5;
         const bot = gapCenter + gapHalf;
-        if (top - bot < 1.2) return;
-        const y = (top + bot) / 2;
-        const len = top - bot;
-        new Zapper(vec2(chunkX, y), len, 'v');
+        if (top - bot >= 1.2)
+        {
+            const y = (top + bot) / 2;
+            const len = top - bot;
+            new Zapper(vec2(chunkX, y), len, 'v');
+        }
     }
     else
     {
         const bot = 0.5;
         const top = gapCenter - gapHalf;
-        if (top - bot < 1.2) return;
-        const y = (top + bot) / 2;
-        const len = top - bot;
-        new Zapper(vec2(chunkX, y), len, 'v');
+        if (top - bot >= 1.2)
+        {
+            const y = (top + bot) / 2;
+            const len = top - bot;
+            new Zapper(vec2(chunkX, y), len, 'v');
+        }
     }
 
     // coin pattern in the safe gap — pick one of: line, arc, stair
