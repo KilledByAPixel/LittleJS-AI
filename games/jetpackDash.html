@@ -129,7 +129,7 @@ class Hazard extends EngineObject
     update()
     {
         // despawn well behind the camera
-        if (this.pos.x < cameraPos.x - 25) this.destroy();
+        if (this.pos.x < cameraPos.x - 25) { this.destroy(); return; }
         super.update();
     }
 
