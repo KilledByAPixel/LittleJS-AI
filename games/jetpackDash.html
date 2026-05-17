@@ -203,11 +203,11 @@ class Missile extends Hazard
         this._beepTimer = 0;
 
         // flame trail behind the missile (emitter sits at the tail offset).
-        // emitRate stays 0 until launch; flame angle PI emits to the right
-        // (so flames stream out behind a left-moving missile).
+        // emitRate stays 0 until launch; flame angle PI/2 emits to the right
+        // (behind a left-moving missile).
         this.flameEmitter = this.addChild(new ParticleEmitter(
             vec2(),
-            0,                  // emit toward +X (behind the left-moving missile)
+            PI/2,               // emit toward +X (behind left-moving missile)
             0.2, 0, 0, 0.5,
             undefined,
             hsl(.10, 1, .7, 1), hsl(.04, 1, .6, 1),
@@ -425,7 +425,7 @@ class Player extends EngineObject
         // emitRate starts at 0 and is toggled on in update() while thrusting.
         this.thrustEmitter = this.addChild(new ParticleEmitter(
             vec2(),                 // local pos handled by addChild's localPos arg
-            -PI/2,                  // emit downward (y-up world)
+            PI,                     // emit downward (PI = vec2(0,-1) in LittleJS angle convention)
             vec2(0.6, 0.1),         // rect across both nozzles
             0,                      // emitTime forever
             0,                      // emitRate off until thrusting
