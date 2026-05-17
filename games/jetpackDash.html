@@ -145,6 +145,42 @@ function killPlayer()
     alive = false;
     deathTimer = 0;
     sndHit && sndHit.play();
+
+    // silence the jetpack flame
+    if (player && player.thrustEmitter) player.thrustEmitter.emitRate = 0;
+
+    // explosion burst — one-shot emitter that self-destructs after emitTime
+    if (player)
+    {
+        new ParticleEmitter(
+            player.pos.copy(),       // pos
+            0,                       // angle (cone is full circle below)
+            0.4,                     // emitSize (circular)
+            0.15,                    // emitTime (auto-destroys after)
+            300,                     // emitRate (burst)
+            PI,                      // emitConeAngle (full circle)
+            undefined,               // tileInfo (colored square)
+            hsl(.12, 1, .7, 1),      // colorStartA (yellow)
+            hsl(.02, 1, .55, 1),     // colorStartB (red-orange)
+            hsl(.0,  1, .3, 0),      // colorEndA
+            hsl(.0,  0, .1, 0),      // colorEndB (smoky end)
+            0.7,                     // particleTime
+            0.6,                     // sizeStart
+            0.05,                    // sizeEnd
+            0.4,                     // speed
+            0.1,                     // angleSpeed
+            0.93,                    // damping
+            1,                       // angleDamping
+            0.4,                     // gravityScale (chunks arc down)
+            PI,                      // particleConeAngle
+            0.1,                     // fadeRate
+            0.5,                     // randomness
+            false,                   // collideTiles
+            true,                    // additive
+            true,                    // randomColorLinear
+            1e9                      // renderOrder
+        );
+    }
 }
 
 function returnToTitle()
@@ -685,13 +721,31 @@ class Player extends EngineObject
             else if (obj instanceof ShieldPickup) obj.tryCollect(this);
         }
 
-        // ceiling / floor death
-        if (this.pos.y >= ceilingY || this.pos.y <= 0)
-            killPlayer();
+        // floor and ceiling are runway surfaces, not death — clamp pos+velocity.
+        // hazards do the killing.
+        const half = this.size.y / 2;
+        if (this.pos.y < half)
+        {
+            this.pos.y = half;
+            if (this.velocity.y < 0) this.velocity.y = 0;
+            this.grounded = true;
+        }
+        else
+        {
+            this.grounded = false;
+        }
+        if (this.pos.y > ceilingY - half)
+        {
+            this.pos.y = ceilingY - half;
+            if (this.velocity.y > 0) this.velocity.y = 0;
+        }
     }
 
     render()
     {
+        // hide the player entirely once dead — explosion takes over visually
+        if (!alive) return;
+
         // flicker during invuln — skip the sprite this frame to flash
         if (shieldInvuln > 0 && Math.floor(time * 20) % 2 === 0)
             return;
