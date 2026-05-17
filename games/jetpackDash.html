@@ -135,7 +135,7 @@ function startRun()
     player.velocity = vec2(scrollSpeed, 0);
 
     cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
-    nextSpawnX = chunkWidth;   // first chunk a bit ahead so the player gets a moment
+    nextSpawnX = 25;   // ~3s of clear runway before the first chunk spawns
     setPlaying(true);
 }
 
