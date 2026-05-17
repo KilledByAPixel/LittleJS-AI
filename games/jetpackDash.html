@@ -975,6 +975,31 @@ async function gameInit()
     // The () => !isPlaying gate keeps clicks during gameplay from
     // accidentally re-revealing the title menu.
     attachClickToReveal('title', () => !isPlaying);
+
+    // ----- tweakables panel (press ~ to toggle) -----
+    tweakEngineDefaults();
+
+    tweakDivider('Player');
+    tweak('thrustForce',  {min: 0.005, max: 0.05});
+    tweak('gravityY',     {min: -0.03, max: 0});
+    tweak('maxRiseSpeed', {min: 0.1, max: 0.8});
+    tweak('maxFallSpeed', {min: 0.1, max: 1.0});
+
+    tweakDivider('World');
+    tweak('scrollSpeed', {min: 0.05, max: 0.4});
+    tweak('ceilingY',    {min: 8, max: 18});
+
+    tweakDivider('Spawning');
+    tweak('chunkWidth',    {min: 4, max: 14});
+    tweak('minGap',        {min: 1.5, max: 4});
+    tweak('shieldChance',  {min: 0, max: 0.3});
+
+    tweakDivider('Missile');
+    tweak('missileWarnTime', {min: 0.3, max: 2});
+    tweak('missileSpeed',    {min: 0.2, max: 0.8});
+
+    tweakDivider('Laser');
+    tweak('laserRotateSpeed', {min: 0.2, max: 1.5});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
