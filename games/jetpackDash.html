@@ -64,6 +64,12 @@ let chunkWidth = CHUNK_WIDTH_DEFAULT;
 let minGap     = MIN_GAP_DEFAULT;
 let nextSpawnX = 0;
 
+// missile tunables
+const MISSILE_WARN_DEFAULT  = 1.0;
+const MISSILE_SPEED_DEFAULT = 0.45;
+let missileWarnTime = MISSILE_WARN_DEFAULT;
+let missileSpeed    = MISSILE_SPEED_DEFAULT;
+
 // player physics
 const THRUST_FORCE_DEFAULT = 0.018;
 const GRAVITY_Y_DEFAULT    = -0.012;
@@ -184,6 +190,98 @@ class Zapper extends Hazard
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+class Missile extends Hazard
+{
+    constructor(targetY)
+    {
+        // spawn off-screen right; position is held until the warning expires
+        const pos = vec2(cameraPos.x + 18, targetY);
+        super(pos, vec2(1.4, 0.6), TILE_MISSILE);
+        this.warnTimer = missileWarnTime;
+        this.flying = false;
+        this.targetY = targetY;
+        this._beepTimer = 0;
+
+        // flame trail behind the missile (emitter sits at the tail offset).
+        // emitRate stays 0 until launch; flame angle PI emits to the right
+        // (so flames stream out behind a left-moving missile).
+        this.flameEmitter = this.addChild(new ParticleEmitter(
+            vec2(),
+            0,                  // emit toward +X (behind the left-moving missile)
+            0.2, 0, 0, 0.5,
+            undefined,
+            hsl(.10, 1, .7, 1), hsl(.04, 1, .6, 1),
+            hsl(.0,  1, .3, 0), hsl(.0,  1, .2, 0),
+            0.25, 0.35, 0.05,
+            0.2, 0,
+            0.95, 1, 0,
+            0.4, 0.1, 0.3,
+            false, true, true, 1e9
+        ), vec2(0.7, 0));   // local offset: trail emerges from the rear
+
+        sndMissileWarn && sndMissileWarn.play();
+    }
+
+    update()
+    {
+        // despawn behind camera (same rule as Hazard base, kept here so the warning
+        // anchor logic stays in one place)
+        if (this.pos.x < cameraPos.x - 25) { this.destroy(); return; }
+
+        if (!this.flying)
+        {
+            // hold position at the screen edge during the warning phase
+            this.pos.x = cameraPos.x + 18;
+            this.warnTimer -= 1/60;
+
+            // periodic warn beep so it doesn't sound like a one-shot
+            this._beepTimer -= 1/60;
+            if (this._beepTimer <= 0)
+            {
+                sndMissileWarn && sndMissileWarn.play();
+                this._beepTimer = 0.25;
+            }
+
+            if (this.warnTimer <= 0)
+            {
+                this.flying = true;
+                this.flameEmitter.emitRate = 100;
+                sndMissileLaunch && sndMissileLaunch.play();
+            }
+            super.update();
+            return;
+        }
+
+        // flying — engine moves pos via velocity; we just set it
+        this.velocity = vec2(-missileSpeed, 0);
+        super.update();
+    }
+
+    hitsPlayer(p)
+    {
+        if (!this.flying) return false;
+        return super.hitsPlayer(p);
+    }
+
+    render()
+    {
+        if (this.flying)
+        {
+            drawTile(this.pos, vec2(1.6, 0.8), tile(TILE_MISSILE));
+            return;
+        }
+        // warning arrow at right screen edge, blinking
+        const blink = Math.sin(time * 20) > 0;
+        if (!blink) return;
+        const rightX = cameraPos.x + 14;
+        drawLine(vec2(rightX, this.targetY),       vec2(rightX - 1, this.targetY + 0.6), 0.15, hsl(0, 1, .55));
+        drawLine(vec2(rightX - 1, this.targetY+.6),vec2(rightX - 2, this.targetY),       0.15, hsl(0, 1, .55));
+        drawLine(vec2(rightX, this.targetY),       vec2(rightX - 1, this.targetY - 0.6), 0.15, hsl(0, 1, .55));
+        drawLine(vec2(rightX - 1, this.targetY-.6),vec2(rightX - 2, this.targetY),       0.15, hsl(0, 1, .55));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 class Coin extends EngineObject
 {
     constructor(pos)
@@ -231,30 +329,42 @@ function spawnChunk(chunkX)
     const gapCenter = lerp(2 + minGap/2, ceilingY - 2 - minGap/2, Math.random());
     const gapHalf   = minGap / 2;
 
-    // Spawn 1 zapper per chunk for now (other hazards arrive later).
-    // Place either above or below the safe gap.
-    const placeAbove = Math.random() < 0.5;
+    // ramp difficulty: missile weight grows with distance
+    const missileWeight = clamp(0.05 + distance / 4000, 0.05, 0.35);
+    const roll = Math.random();
 
-    if (placeAbove)
+    if (roll < missileWeight)
     {
-        const top = ceilingY - 0.5;
-        const bot = gapCenter + gapHalf;
-        if (top - bot >= 1.2)
-        {
-            const y = (top + bot) / 2;
-            const len = top - bot;
-            new Zapper(vec2(chunkX, y), len, 'v');
-        }
+        // missile crosses near gapCenter, slightly randomized
+        const y = clamp(gapCenter + (Math.random() - 0.5) * 2, 1.5, ceilingY - 1.5);
+        new Missile(y);
+        // no zapper this chunk; coins still spawn below
     }
     else
     {
-        const bot = 0.5;
-        const top = gapCenter - gapHalf;
-        if (top - bot >= 1.2)
+        // zapper above or below the safe gap
+        const placeAbove = Math.random() < 0.5;
+        if (placeAbove)
         {
-            const y = (top + bot) / 2;
-            const len = top - bot;
-            new Zapper(vec2(chunkX, y), len, 'v');
+            const top = ceilingY - 0.5;
+            const bot = gapCenter + gapHalf;
+            if (top - bot >= 1.2)
+            {
+                const y = (top + bot) / 2;
+                const len = top - bot;
+                new Zapper(vec2(chunkX, y), len, 'v');
+            }
+        }
+        else
+        {
+            const bot = 0.5;
+            const top = gapCenter - gapHalf;
+            if (top - bot >= 1.2)
+            {
+                const y = (top + bot) / 2;
+                const len = top - bot;
+                new Zapper(vec2(chunkX, y), len, 'v');
+            }
         }
     }
 
@@ -506,6 +616,8 @@ async function gameInit()
 
     // sounds — real definitions land in Task 10; placeholder so collect calls work.
     window.sndCoin = new SoundGenerator({ frequency: 1200, attack: 0.005, release: 0.08, volume: 0.4, pitchJump: 600, pitchJumpTime: 0.05 });
+    window.sndMissileWarn   = new SoundGenerator({ frequency: 880, release: 0.1, volume: 0.3 });
+    window.sndMissileLaunch = new SoundGenerator({ frequency: 220, release: 0.4, volume: 0.5, slide: -3 });
 
     // ----- global UI sounds (LittleJS Sound class wraps zzfx params and
     //       routes through the engine's audio system, so master volume,
