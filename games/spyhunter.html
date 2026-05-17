@@ -8,17 +8,22 @@
 'use strict';
 
 // engine settings, do not remove
-debugWatermark = false; // Hide debug watermark in corner
-showEngineVersion = false; // Hide engine version console display
-paused = false; // Start unpaused
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
 
-// engine settings, customize if necessary
-gravity = vec2(0, 0); // No gravity by default
-cameraPos = vec2(0, 0); // Camera centered at origin
-cameraScale = 32; // Zoomed OUT (smaller shows more world)
+// engine settings
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 32;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Spy-Hunter-ish: top down endless road, traffic vs bad cars, shooting.
+// Spy Hunter prototype: top-down endless road. Mouse steers, mouse aims guns.
+// Enemy kinds based on the arcade game:
+//   - Switchblade (red, side blades): can be shot
+//   - Bulletproof Bully (light blue, chunky): bullets bounce, must ram off road
+//   - Enforcer (yellow, roof gun): can be shot, fires back at player
+//   - Civilian Limo (blue) / Civilian Wagon (brown): hitting/shooting them is bad
 
 // Road layout
 const LANES = 3;
@@ -31,18 +36,38 @@ const ROAD_HALF = ROAD_WIDTH/2;
 const PLAYER_MIN_SPEED = 8;
 const PLAYER_MAX_SPEED = 24;
 const PLAYER_ACCEL = 18;
-const PLAYER_FRICTION = 14;
-const PLAYER_STRAFE = 18;
-const BULLET_SPEED = 30;
+const PLAYER_CRUISE = 14;
+const PLAYER_BULLET_SPEED = 50;   // flat world-space speed, no velocity inheritance
+const ENEMY_BULLET_SPEED = 22;
+const PLAYER_FIRE_COOLDOWN = .15;
+const STEER_TIGHTNESS = .35;        // mouse-x → car-x lerp per frame
+const KEY_STEER_TARGET_OFFSET = 3.5; // how far ahead A/D nudges target
+const CIVILIAN_PENALTY = 750;
+const SCORE_SWITCHBLADE = 200;
+const SCORE_ENFORCER = 300;
+const SCORE_BULLY_RAM = 500;
+const CAMERA_LOOKAHEAD = 7.5;
 
-const BAD_CAR_CHANCE = .34;        // percent of spawned cars that are hostile
-const CIVILIAN_PENALTY = 35;       // score penalty for shooting a civilian
-const CAMERA_LOOKAHEAD = 3.0;      // put player closer to center
+// Enemy kinds
+const KIND_CIV_BLUE     = 0;
+const KIND_CIV_WAGON    = 1;
+const KIND_SWITCHBLADE  = 2;
+const KIND_BULLY        = 3;
+const KIND_ENFORCER     = 4;
+
+const KIND_INFO = {
+    [KIND_CIV_BLUE]:    {hostile:false, hp:2, bulletproof:false, baseSpeed:6.0, speedVar:1.8, size:vec2(1.50, 3.40)},
+    [KIND_CIV_WAGON]:   {hostile:false, hp:2, bulletproof:false, baseSpeed:5.5, speedVar:1.5, size:vec2(1.45, 2.55)},
+    [KIND_SWITCHBLADE]: {hostile:true,  hp:3, bulletproof:false, baseSpeed:9.0, speedVar:3.0, size:vec2(1.40, 2.85)},
+    [KIND_BULLY]:       {hostile:true,  hp:0, bulletproof:true,  baseSpeed:7.0, speedVar:1.8, size:vec2(1.75, 3.05)},
+    [KIND_ENFORCER]:    {hostile:true,  hp:3, bulletproof:false, baseSpeed:8.5, speedVar:2.4, size:vec2(1.50, 2.90), shoots:true},
+};
 
 let player;
 let bullets = [];
-let cars = [];     // traffic + bad cars
-let props = [];    // roadside objects
+let enemyBullets = [];
+let cars = [];
+let props = [];
 
 let score = 0;
 let distance = 0;
@@ -52,10 +77,12 @@ let carSpawnTimer = new Timer();
 let propSpawnTimer = new Timer();
 
 // Sounds
-const sndShoot = new SoundGenerator({volume:.30, frequency:520, attack:0, release:.07, shapeCurve:1.6, slide:-1.2, noise:.02});
-const sndHitBad = new SoundGenerator({volume:.55, frequency:180, attack:0, release:.14, shapeCurve:.55, slide:-.6, noise:.25, delay:.015});
-const sndHitCiv = new SoundGenerator({volume:.35, frequency:240, attack:0, release:.12, shapeCurve:1.2, slide:-.2, noise:.12, delay:0});
-const sndBoom  = new SoundGenerator({volume:.65, frequency:95,  attack:0, release:.28, shapeCurve:.25, slide:-.9, noise:.32, delay:.02});
+const sndShoot   = new SoundGenerator({volume:.30, frequency:520, attack:0, release:.07, shapeCurve:1.6, slide:-1.2, noise:.02});
+const sndEnemyShoot = new SoundGenerator({volume:.25, frequency:280, attack:0, release:.10, shapeCurve:1.4, slide:-.6, noise:.06});
+const sndHitBad  = new SoundGenerator({volume:.55, frequency:180, attack:0, release:.14, shapeCurve:.55, slide:-.6, noise:.25, delay:.015});
+const sndHitCiv  = new SoundGenerator({volume:.35, frequency:240, attack:0, release:.12, shapeCurve:1.2, slide:-.2, noise:.12});
+const sndBoom    = new SoundGenerator({volume:.65, frequency:95,  attack:0, release:.28, shapeCurve:.25, slide:-.9, noise:.32, delay:.02});
+const sndRicochet = new SoundGenerator({volume:.30, frequency:1100, attack:0, release:.05, shapeCurve:1.8, slide:-1.6, noise:.10});
 
 function laneX(i)
 {
@@ -74,13 +101,11 @@ function overlapAABB(a, b)
     return isOverlapping(a.pos, a.size, b.pos, b.size);
 }
 
-// More controlled explosion: small sparks + smoke, no massive additive yellow.
 function explodeCar(pos, big=false)
 {
     const sparkA = rgb(1,.65,.15,.9);
     const sparkB = rgb(1,.35,.05,.85);
     const sparkEnd = rgb(.2,.05,.02,0);
-
     const smokeA = rgb(.20,.20,.22,.55);
     const smokeB = rgb(.12,.12,.14,.45);
     const smokeEnd = rgb(.08,.08,.09,0);
@@ -88,105 +113,225 @@ function explodeCar(pos, big=false)
     const rateScale = big ? 1.25 : 1;
     const sizeScale = big ? 1.15 : 1;
 
-    // sparks (short, punchy)
     new ParticleEmitter(
-        pos, 0,
-        vec2(0), .045, 90*rateScale, PI,
-        undefined,
-        sparkA, sparkB,
-        sparkEnd, sparkEnd,
+        pos, 0, vec2(0), .045, 90*rateScale, PI, undefined,
+        sparkA, sparkB, sparkEnd, sparkEnd,
         .22, .22*sizeScale, .05, 12, 14,
-        .90, .92, 0, PI,
-        .12, .6, false, false
+        .90, .92, 0, PI, .12, .6, false, false
     );
-
-    // smoke (slower, larger, non-additive)
     new ParticleEmitter(
-        pos, 0,
-        vec2(.2), .08, 38*rateScale, PI,
-        undefined,
-        smokeA, smokeB,
-        smokeEnd, smokeEnd,
+        pos, 0, vec2(.2), .08, 38*rateScale, PI, undefined,
+        smokeA, smokeB, smokeEnd, smokeEnd,
         .65, .55*sizeScale, .95*sizeScale, 4.2, 4,
-        .95, .98, 0, PI,
-        .04, .45, false, false
+        .95, .98, 0, PI, .04, .45, false, false
     );
 }
 
-// Unified vehicle renderer (adds 4 wheels as side rectangles)
-function renderVehicle(pos, size, bodyColor, isBad=false, isPlayer=false)
-{
-    const wheelColor = rgb(.06,.06,.07);
-    const trimColor  = isPlayer ? rgb(.08,.2,.35) : rgb(.12,.12,.14);
+///////////////////////////////////////////////////////////////////////////////
+// Rendering helpers — flat arcade look with stacked rects to taper noses.
 
-    // wheels (4) on the sides
+function drawWheels(pos, size, color=rgb(.05,.05,.07))
+{
     const wheelW = max(.22, size.x * .22);
     const wheelH = max(.34, size.y * .18);
     const xOff   = size.x/2 + wheelW/2 - .06;
     const yF     = size.y * .27;
     const yB     = -size.y * .27;
-
-    // left wheels
-    drawRect(pos.add(vec2(-xOff, yF)), vec2(wheelW, wheelH), wheelColor);
-    drawRect(pos.add(vec2(-xOff, yB)), vec2(wheelW, wheelH), wheelColor);
-    // right wheels
-    drawRect(pos.add(vec2( xOff, yF)), vec2(wheelW, wheelH), wheelColor);
-    drawRect(pos.add(vec2( xOff, yB)), vec2(wheelW, wheelH), wheelColor);
-
-    // body
-    drawRect(pos, size, bodyColor);
-
-    // windshield
-    drawRect(pos.add(vec2(0, .65)), vec2(size.x*.66, size.y*.22), rgb(.78,.88,1));
-
-    // bumper/trim
-    drawRect(pos.add(vec2(0, -1.15)), vec2(size.x*.75, .22), trimColor);
-
-    if (isBad)
-    {
-        // hostile stripe
-        drawRect(pos.add(vec2(0, .05)), vec2(size.x*.85, .22), rgb(.18,.02,.02,.9));
-    }
-
-    if (isPlayer)
-    {
-        // twin guns
-        drawRect(pos.add(vec2(-.55, .1)), vec2(.18, .5), trimColor);
-        drawRect(pos.add(vec2( .55, .1)), vec2(.18, .5), trimColor);
-
-        // subtle center stripe
-        drawRect(pos.add(vec2(0, .2)), vec2(.14, size.y*.65), rgb(1,1,1,.16));
-    }
-
-    // tail lights
-    drawRect(pos.add(vec2(-.4, -1.1)), vec2(.25,.18), rgb(1,.2,.2));
-    drawRect(pos.add(vec2( .4, -1.1)), vec2(.25,.18), rgb(1,.2,.2));
-
-    if (!isBad && !isPlayer)
-    {
-        // civilian roof highlight
-        drawRect(pos.add(vec2(0, .95)), vec2(size.x*.6, .16), rgb(1,1,1,.2));
-    }
+    drawRect(pos.add(vec2(-xOff, yF)), vec2(wheelW, wheelH), color);
+    drawRect(pos.add(vec2(-xOff, yB)), vec2(wheelW, wheelH), color);
+    drawRect(pos.add(vec2( xOff, yF)), vec2(wheelW, wheelH), color);
+    drawRect(pos.add(vec2( xOff, yB)), vec2(wheelW, wheelH), color);
 }
 
+function drawTailLights(pos, size)
+{
+    drawRect(pos.add(vec2(-size.x*.27, -size.y/2 + .12)), vec2(.28,.18), rgb(1,.20,.20));
+    drawRect(pos.add(vec2( size.x*.27, -size.y/2 + .12)), vec2(.28,.18), rgb(1,.20,.20));
+}
+
+function renderPlayer(pos, size)
+{
+    drawWheels(pos, size);
+    // Rear spoiler bar
+    drawRect(pos.add(vec2(0, -size.y/2 + .08)), vec2(size.x*1.02, .22), rgb(.05,.05,.07));
+    // Main body
+    drawRect(pos, size, rgb(.10,.55,1));
+    // Cabin (narrower, slightly darker)
+    drawRect(pos.add(vec2(0, .10)), vec2(size.x*.78, size.y*.58), rgb(.06,.42,.85));
+    // Tapered hood
+    drawRect(pos.add(vec2(0, size.y*.35)), vec2(size.x*.86, size.y*.28), rgb(.10,.55,1));
+    // Front taper
+    drawRect(pos.add(vec2(0, size.y/2 - .18)), vec2(size.x*.62, .36), rgb(.10,.55,1));
+    // Windshield
+    drawRect(pos.add(vec2(0, .55)), vec2(size.x*.62, size.y*.20), rgb(.80,.92,1));
+    // Center stripe
+    drawRect(pos.add(vec2(0, .05)), vec2(.16, size.y*.78), rgb(1,1,1,.30));
+    // Front bumper
+    drawRect(pos.add(vec2(0, size.y/2 - .07)), vec2(size.x*.92, .18), rgb(.04,.04,.06));
+    // Twin guns at top corners
+    drawRect(pos.add(vec2(-.55, size.y*.30)), vec2(.18, .55), rgb(.10,.10,.12));
+    drawRect(pos.add(vec2( .55, size.y*.30)), vec2(.18, .55), rgb(.10,.10,.12));
+    drawTailLights(pos, size);
+}
+
+function renderSwitchblade(pos, size)
+{
+    drawWheels(pos, size);
+    // Side blades — the iconic Switchblade
+    const bladeY = 0;
+    drawRect(pos.add(vec2(-size.x/2 - .30, bladeY)), vec2(.55, .22), rgb(.70,.70,.78));
+    drawRect(pos.add(vec2( size.x/2 + .30, bladeY)), vec2(.55, .22), rgb(.70,.70,.78));
+    // Sharp blade tips
+    drawRect(pos.add(vec2(-size.x/2 - .56, bladeY)), vec2(.16, .34), rgb(.90,.90,.95));
+    drawRect(pos.add(vec2( size.x/2 + .56, bladeY)), vec2(.16, .34), rgb(.90,.90,.95));
+    // Main body
+    drawRect(pos, size, rgb(.95,.18,.18));
+    // Tapered nose
+    drawRect(pos.add(vec2(0, size.y*.36)), vec2(size.x*.82, size.y*.26), rgb(.95,.18,.18));
+    drawRect(pos.add(vec2(0, size.y/2 - .18)), vec2(size.x*.55, .34), rgb(.85,.10,.10));
+    // Cabin
+    drawRect(pos.add(vec2(0, .05)), vec2(size.x*.72, size.y*.52), rgb(.72,.08,.08));
+    // Dark visor windshield (enemy)
+    drawRect(pos.add(vec2(0, .45)), vec2(size.x*.58, size.y*.18), rgb(.10,.10,.14));
+    // Hostile stripe down the middle
+    drawRect(pos.add(vec2(0, 0)), vec2(.10, size.y*.62), rgb(.10,.02,.02));
+    // Bumper
+    drawRect(pos.add(vec2(0, size.y/2 - .06)), vec2(size.x*.7, .18), rgb(.10,.05,.05));
+    drawTailLights(pos, size);
+}
+
+function renderBully(pos, size)
+{
+    drawWheels(pos, size, rgb(.05,.05,.07));
+    // Wide armored body
+    drawRect(pos, size, rgb(.42,.70,.92));
+    // Side armor plates (darker stripes along edges)
+    drawRect(pos.add(vec2(-size.x*.42, 0)), vec2(.22, size.y*.85), rgb(.20,.40,.62));
+    drawRect(pos.add(vec2( size.x*.42, 0)), vec2(.22, size.y*.85), rgb(.20,.40,.62));
+    // Heavy rear bumper
+    drawRect(pos.add(vec2(0, -size.y/2 + .10)), vec2(size.x*1.05, .30), rgb(.10,.10,.12));
+    // Heavy front bumper (mean ram bar)
+    drawRect(pos.add(vec2(0, size.y/2 - .10)), vec2(size.x*1.05, .30), rgb(.10,.10,.12));
+    // Tiny mean cabin
+    drawRect(pos.add(vec2(0, .15)), vec2(size.x*.55, size.y*.36), rgb(.28,.55,.78));
+    drawRect(pos.add(vec2(0, .35)), vec2(size.x*.50, size.y*.14), rgb(.10,.10,.14));
+    // Center grill detail
+    drawRect(pos.add(vec2(0, -.10)), vec2(size.x*.45, .14), rgb(.20,.40,.62));
+    drawTailLights(pos, size);
+}
+
+function renderEnforcer(pos, size)
+{
+    drawWheels(pos, size);
+    // Body
+    drawRect(pos, size, rgb(.95,.82,.12));
+    // Tapered nose
+    drawRect(pos.add(vec2(0, size.y*.36)), vec2(size.x*.80, size.y*.26), rgb(.95,.82,.12));
+    drawRect(pos.add(vec2(0, size.y/2 - .18)), vec2(size.x*.55, .34), rgb(.78,.65,.06));
+    // Cabin
+    drawRect(pos.add(vec2(0, .05)), vec2(size.x*.72, size.y*.50), rgb(.78,.65,.06));
+    // Dark windshield
+    drawRect(pos.add(vec2(0, .42)), vec2(size.x*.58, size.y*.18), rgb(.10,.10,.14));
+    // Roof turret base
+    drawRect(pos.add(vec2(0, -.05)), vec2(.70, .60), rgb(.10,.10,.12));
+    drawRect(pos.add(vec2(0, -.05)), vec2(.50, .50), rgb(.30,.30,.34));
+    // Roof gun barrel pointing forward
+    drawRect(pos.add(vec2(0, .35)), vec2(.18, .80), rgb(.05,.05,.06));
+    // Bumper
+    drawRect(pos.add(vec2(0, size.y/2 - .06)), vec2(size.x*.7, .18), rgb(.20,.16,.04));
+    drawTailLights(pos, size);
+}
+
+function renderCivBlue(pos, size)
+{
+    drawWheels(pos, size);
+    // Long limo body
+    drawRect(pos, size, rgb(.30,.55,.95));
+    // Roof
+    drawRect(pos.add(vec2(0, .15)), vec2(size.x*.78, size.y*.52), rgb(.20,.42,.78));
+    // Front + rear windshields
+    drawRect(pos.add(vec2(0, size.y*.30)), vec2(size.x*.62, size.y*.16), rgb(.80,.90,1));
+    drawRect(pos.add(vec2(0, -size.y*.10)), vec2(size.x*.62, size.y*.14), rgb(.80,.90,1));
+    // Door line
+    drawRect(pos.add(vec2(0, .05)), vec2(size.x*.62, .04), rgb(.10,.20,.40));
+    // Bumper
+    drawRect(pos.add(vec2(0, size.y/2 - .07)), vec2(size.x*.88, .14), rgb(.85,.85,.90));
+    drawTailLights(pos, size);
+}
+
+function renderCivWagon(pos, size)
+{
+    drawWheels(pos, size);
+    // Boxy wagon body
+    drawRect(pos, size, rgb(.62,.40,.20));
+    // Boxy cargo roof
+    drawRect(pos.add(vec2(0, .05)), vec2(size.x*.82, size.y*.66), rgb(.48,.30,.14));
+    // Wood-panel side stripes (the classic family-truckster look)
+    drawRect(pos.add(vec2(-size.x*.40, .05)), vec2(.12, size.y*.60), rgb(.78,.55,.25));
+    drawRect(pos.add(vec2( size.x*.40, .05)), vec2(.12, size.y*.60), rgb(.78,.55,.25));
+    // Front windshield
+    drawRect(pos.add(vec2(0, size.y*.30)), vec2(size.x*.60, size.y*.18), rgb(.80,.88,.95));
+    // Side window
+    drawRect(pos.add(vec2(0, -.05)), vec2(size.x*.52, size.y*.20), rgb(.65,.78,.85));
+    // Roof rack
+    drawRect(pos.add(vec2(0, size.y/2 - .25)), vec2(size.x*.55, .06), rgb(.20,.20,.22));
+    // Bumper
+    drawRect(pos.add(vec2(0, size.y/2 - .07)), vec2(size.x*.86, .14), rgb(.80,.80,.82));
+    drawTailLights(pos, size);
+}
+
+function renderCarByKind(kind, pos, size)
+{
+    if (kind == KIND_SWITCHBLADE) renderSwitchblade(pos, size);
+    else if (kind == KIND_BULLY)  renderBully(pos, size);
+    else if (kind == KIND_ENFORCER) renderEnforcer(pos, size);
+    else if (kind == KIND_CIV_BLUE) renderCivBlue(pos, size);
+    else renderCivWagon(pos, size);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 class Bullet extends EngineObject
 {
     constructor(pos, vel)
     {
         super(pos, vec2(.20, .65));
         this.vel = vel;
-        this.life = new Timer(1.3);
+        this.life = new Timer(1.6);
         this.renderOrder = 6;
     }
     update()
     {
         this.pos = this.pos.add(this.vel.scale(timeDelta));
-        if (this.life.elapsed() || this.pos.y > cameraPos.y + 50)
+        if (this.life.elapsed() || abs(this.pos.x) > ROAD_HALF + 6 || this.pos.y > cameraPos.y + 50 || this.pos.y < cameraPos.y - 50)
             this.destroy();
     }
     render()
     {
         drawRect(this.pos, this.size, rgb(1,1,.2));
+    }
+}
+
+class EnemyBullet extends EngineObject
+{
+    constructor(pos, vel)
+    {
+        super(pos, vec2(.24, .55));
+        this.vel = vel;
+        this.life = new Timer(2.4);
+        this.renderOrder = 6;
+    }
+    update()
+    {
+        this.pos = this.pos.add(this.vel.scale(timeDelta));
+        const offScreen = abs(this.pos.x) > ROAD_HALF + 6 ||
+                          this.pos.y > cameraPos.y + 50 ||
+                          this.pos.y < cameraPos.y - 50;
+        if (this.life.elapsed() || offScreen)
+            this.destroy();
+    }
+    render()
+    {
+        drawRect(this.pos, this.size, rgb(1,.45,.10));
     }
 }
 
@@ -198,11 +343,10 @@ class RoadsideProp extends EngineObject
         this.kind = kind;
         this.renderOrder = 1;
 
-        // vary size by kind
-        if (kind == 0) this.size = vec2(1.2, 2.2);      // sign
-        if (kind == 1) this.size = vec2(1.3, 2.8);      // tree
-        if (kind == 2) this.size = vec2(.8, 1.6);       // post
-        if (kind == 3) this.size = vec2(1.7, 2.0);      // billboard
+        if (kind == 0) this.size = vec2(1.2, 2.2);
+        if (kind == 1) this.size = vec2(1.3, 2.8);
+        if (kind == 2) this.size = vec2(.8, 1.6);
+        if (kind == 3) this.size = vec2(1.7, 2.0);
 
         this.flip = randBool();
     }
@@ -215,33 +359,27 @@ class RoadsideProp extends EngineObject
     {
         const x = this.pos.x;
         const y = this.pos.y;
-
-        // a little shadow
         drawRect(vec2(x, y- this.size.y/2 + .15), vec2(this.size.x*1.1, .25), rgb(0,0,0,.25));
 
         if (this.kind == 0)
         {
-            // road sign
             drawRect(vec2(x, y - .7), vec2(.18, 1.2), rgb(.35,.30,.22));
             drawRect(vec2(x, y + .25), vec2(1.2, .7), rgb(.85,.85,.9));
             drawRect(vec2(x, y + .25), vec2(1.05, .55), rgb(.15,.25,.85,.95));
         }
         else if (this.kind == 1)
         {
-            // tree: trunk + canopy (rect-y so no reliance on circle signature)
             drawRect(vec2(x, y - .55), vec2(.3, 1.0), rgb(.32,.22,.15));
             drawRect(vec2(x, y + .55), vec2(1.25, 1.15), rgb(.08,.35,.12));
             drawRect(vec2(x + (this.flip?-.35:.35), y + .85), vec2(.85, .75), rgb(.06,.28,.10));
         }
         else if (this.kind == 2)
         {
-            // reflector post
             drawRect(vec2(x, y - .2), vec2(.22, 1.3), rgb(.75,.75,.75));
             drawRect(vec2(x, y + .55), vec2(.28, .18), rgb(1,.25,.25));
         }
         else
         {
-            // billboard
             drawRect(vec2(x, y - .6), vec2(.22, 1.1), rgb(.30,.22,.15));
             drawRect(vec2(x, y + .35), vec2(1.7, .9), rgb(.12,.12,.14));
             drawRect(vec2(x, y + .35), vec2(1.45, .65), rgb(.95,.75,.1,.9));
@@ -251,59 +389,95 @@ class RoadsideProp extends EngineObject
 
 class Car extends EngineObject
 {
-    constructor(pos, speed, isBad)
+    constructor(pos, kind)
     {
-        super(pos, vec2(1.45, 2.8));
-        this.speed = speed;
-        this.isBad = isBad;
-        this.hp = isBad ? 2 : 1;
+        const info = KIND_INFO[kind];
+        super(pos, info.size);
 
-        // Spy Hunter feel: bad cars are red; civilians mostly blue/gray
-        if (isBad)
-            this.color = rgb(.95,.18,.18);
-        else
-        {
-            const pick = randInt(4);
-            this.color = pick == 0 ? rgb(.25,.55,1) :
-                         pick == 1 ? rgb(.55,.62,.7) :
-                         pick == 2 ? rgb(.2,.8,.65) :
-                                     rgb(.7,.7,.75);
-        }
+        this.kind = kind;
+        this.hostile = info.hostile;
+        this.bulletproof = info.bulletproof;
+        this.hp = info.hp;
+        this.speed = info.baseSpeed + rand(-info.speedVar, info.speedVar);
+        this.speed = max(3.0, this.speed);
 
-        this.turnTimer = new Timer(rand(isBad?.45:.85, isBad?1.1:1.8));
+        this.turnTimer = new Timer(rand(.4, 1.6));
         this.targetLane = randInt(LANES);
+        this.aggression = this.hostile ? rand(.45, .85) : rand(.05, .25);
+        this.fireTimer = info.shoots ? new Timer(rand(.6, 1.5)) : null;
         this.renderOrder = 3;
 
-        // bad cars “hunt” the player more
-        this.aggression = isBad ? rand(.35, .75) : rand(.05, .25);
+        // small horizontal velocity used when being rammed (bully)
+        this.rammedVX = 0;
+
+        // flashes white briefly when hit but not destroyed
+        this.hitFlash = new Timer();
     }
 
     update()
     {
-        // move forward
+        // forward motion
         this.pos.y += this.speed * timeDelta;
 
-        // lane decisions
+        // bully has more menacing lane-changes pressing toward player
         if (this.turnTimer.elapsed())
         {
-            this.turnTimer.set(rand(this.isBad?.45:.85, this.isBad?1.1:1.8));
-
+            this.turnTimer.set(rand(this.hostile?.45:.85, this.hostile?1.1:1.8));
             if (player && randBool(this.aggression))
             {
                 const playerLane = clamp(Math.round((player.pos.x / LANE_SPACING) + (LANES-1)/2), 0, LANES-1);
-                // bad cars bias harder towards player; civilians drift near, but less so
-                const drift = this.isBad ? (randInt(3)-1) : (randBool(.7)?0:(randInt(3)-1));
+                const drift = this.hostile ? (randInt(3)-1) : (randBool(.7)?0:(randInt(3)-1));
                 this.targetLane = clamp(playerLane + drift, 0, LANES-1);
             }
             else
                 this.targetLane = randInt(LANES);
         }
 
-        // steer towards lane
-        const targetX = laneX(this.targetLane);
-        const steer = this.isBad ? .11 : .07;
-        this.pos.x = lerp(this.pos.x, targetX, steer);
-        this.pos.x = clampToRoad(this.pos.x, this.size.x/2);
+        const beingRammed = this.kind == KIND_BULLY && abs(this.rammedVX) > .5;
+        if (!beingRammed)
+        {
+            const targetX = laneX(this.targetLane);
+            const steer = this.kind == KIND_BULLY ? .05 :
+                          this.hostile ? .12 : .07;
+            this.pos.x = lerp(this.pos.x, targetX, steer);
+        }
+
+        // ramming displacement (from player pushing the bully)
+        if (this.rammedVX)
+        {
+            this.pos.x += this.rammedVX * timeDelta;
+            this.rammedVX = lerp(this.rammedVX, 0, .035);
+        }
+
+        // bully + bulletproof cars can be pushed off the road; everyone else clamps
+        if (this.kind == KIND_BULLY)
+        {
+            // no clamp — once pushed off, it crashes (handled below)
+            if (abs(this.pos.x) > ROAD_HALF + this.size.x*.5 + .4)
+            {
+                sndBoom.play(this.pos, 1, rand(.95,1.05));
+                explodeCar(this.pos, true);
+                score += SCORE_BULLY_RAM;
+                this.destroy();
+                return;
+            }
+        }
+        else
+        {
+            this.pos.x = clampToRoad(this.pos.x, this.size.x/2);
+        }
+
+        // enforcer fires periodically toward player
+        if (this.fireTimer && this.fireTimer.elapsed() && player && !gameOver)
+        {
+            this.fireTimer.set(rand(1.2, 2.2));
+            const muzzle = this.pos.add(vec2(0, this.size.y/2 + .25));
+            const aim = player.pos.subtract(muzzle);
+            const dir = aim.length() > .1 ? aim.scale(1/aim.length()) : vec2(0, -1);
+            const vel = dir.scale(ENEMY_BULLET_SPEED);
+            enemyBullets.push(new EnemyBullet(muzzle, vel));
+            sndEnemyShoot.play(this.pos, 1, rand(.95,1.1));
+        }
 
         if (this.pos.y < cameraPos.y - 45)
             this.destroy();
@@ -311,88 +485,128 @@ class Car extends EngineObject
 
     render()
     {
-        renderVehicle(this.pos, this.size, this.color, this.isBad, false);
+        renderCarByKind(this.kind, this.pos, this.size);
+        if (this.hitFlash.active())
+            drawRect(this.pos, this.size.add(vec2(.10)), rgb(1,1,1,.55));
     }
+}
+
+function spawnHitSpark(pos)
+{
+    new ParticleEmitter(
+        pos, 0, vec2(0), .04, 22, PI, undefined,
+        rgb(1,1,.85,.95), rgb(1,.65,.20,.90),
+        rgb(.35,.20,.10,0), rgb(.35,.20,.10,0),
+        .20, .14, .04, 9, 9,
+        .92, .92, 0, PI, .08, .35, false, false
+    );
 }
 
 class PlayerCar extends EngineObject
 {
     constructor()
     {
-        super(vec2(0, 0), vec2(1.55, 3.0));
+        super(vec2(0, -2), vec2(1.55, 3.0));
         this.speed = 14;
-        this.velX = 0;
         this.fireCooldown = new Timer();
         this.lives = 3;
         this.invuln = new Timer();
         this.renderOrder = 4;
-
-        // closer to the center of the view
-        this.pos = vec2(0, -2);
     }
 
     update()
     {
-        // accelerate / brake
+        // speed control (W/S only)
         const accel = (keyIsDown('ArrowUp') || keyIsDown('KeyW')) ? 1 : 0;
         const brake = (keyIsDown('ArrowDown') || keyIsDown('KeyS')) ? 1 : 0;
         this.speed += (accel - brake) * PLAYER_ACCEL * timeDelta;
-
-        // gentle pull to cruising speed
-        const cruise = 14;
-        this.speed = lerp(this.speed, cruise, PLAYER_FRICTION * timeDelta * .02);
+        this.speed = lerp(this.speed, PLAYER_CRUISE, .02);
         this.speed = clamp(this.speed, PLAYER_MIN_SPEED, PLAYER_MAX_SPEED);
 
         // forward
         this.pos.y += this.speed * timeDelta;
 
-        // strafe
-        const left  = (keyIsDown('ArrowLeft') || keyIsDown('KeyA')) ? 1 : 0;
+        // steering — mouse drives target; A/D nudges target as fallback
+        let targetX = clampToRoad(mousePos.x, this.size.x/2);
+        const left  = (keyIsDown('ArrowLeft')  || keyIsDown('KeyA')) ? 1 : 0;
         const right = (keyIsDown('ArrowRight') || keyIsDown('KeyD')) ? 1 : 0;
-        const input = right - left;
-        this.velX = lerp(this.velX, input * PLAYER_STRAFE, .22);
-        this.pos.x += this.velX * timeDelta;
+        if (left || right)
+            targetX = clampToRoad(this.pos.x + (right - left) * KEY_STEER_TARGET_OFFSET, this.size.x/2);
+
+        // tight tracking
+        this.pos.x = lerp(this.pos.x, targetX, STEER_TIGHTNESS);
         this.pos.x = clampToRoad(this.pos.x, this.size.x/2);
 
-        // shooting (hold Space or hold Left Mouse)
+        // shooting — aim toward mouse
         const wantFire = (keyIsDown('Space') || mouseIsDown(0));
         if (wantFire && !this.fireCooldown.active() && !gameOver)
         {
-            this.fireCooldown.set(.095);
+            this.fireCooldown.set(PLAYER_FIRE_COOLDOWN);
 
-            // Double shot from twin guns near the front/top of the car
             const muzzleY = this.size.y/2 + .25;
-            const muzzleX = .55;
-            const bVel = vec2(0, BULLET_SPEED + this.speed);
+            const muzzleL = this.pos.add(vec2(-.55, muzzleY));
+            const muzzleR = this.pos.add(vec2( .55, muzzleY));
 
-            bullets.push(
-                new Bullet(this.pos.add(vec2(-muzzleX, muzzleY)), bVel),
-                new Bullet(this.pos.add(vec2( muzzleX, muzzleY)), bVel),
-            );
+            // bullets always fly straight ahead, flat speed
+            const bVel = vec2(0, PLAYER_BULLET_SPEED);
 
+            bullets.push(new Bullet(muzzleL, bVel), new Bullet(muzzleR, bVel));
             sndShoot.play(this.pos, 1, 1.08);
         }
-
-        // edge scrub
-        const edge = ROAD_HALF - this.size.x/2;
-        if (abs(this.pos.x) > edge - .05)
-            this.speed = max(PLAYER_MIN_SPEED, this.speed - 10 * timeDelta);
     }
 
     render()
     {
-        // invuln blink
         if (this.invuln.active() && ((time*10|0)%2))
             drawRect(this.pos, this.size.add(vec2(.35)), rgb(1,1,1,.22));
-
-        renderVehicle(this.pos, this.size, rgb(.25,.75,1), false, true);
+        renderPlayer(this.pos, this.size);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function pickKind(progress)
+{
+    // progress is 0..1 over distance
+    const hostileShare = lerp(.30, .55, progress);
+    if (rand() > hostileShare)
+        return randBool(.65) ? KIND_CIV_BLUE : KIND_CIV_WAGON;
+
+    // hostile mix — enforcer + bully unlock with progress
+    const enforcerW = lerp(0,    .35, progress);
+    const bullyW    = lerp(0,    .30, progress);
+    const switchW   = 1 - enforcerW - bullyW;
+    const h = rand();
+    if (h < switchW)              return KIND_SWITCHBLADE;
+    if (h < switchW + enforcerW)  return KIND_ENFORCER;
+    return KIND_BULLY;
+}
+
+function spawnCar()
+{
+    if (!player) return;
+    const y = player.pos.y + rand(14, 26);
+    const lane = randInt(LANES);
+    const x = laneX(lane) + rand(-.25, .25);
+    const progress = min(distance / 1400, 1);
+    const kind = pickKind(progress);
+    cars.push(new Car(vec2(x, y), kind));
+}
+
+function spawnProp()
+{
+    if (!player) return;
+    const y = player.pos.y + rand(35, 75);
+    const side = randBool() ? -1 : 1;
+    const x = side * (ROAD_HALF + rand(2.0, 6.5));
+    const kind = randInt(4);
+    props.push(new RoadsideProp(vec2(x, y), kind));
 }
 
 function resetGame()
 {
     engineObjectsDestroy();
     bullets.length = 0;
+    enemyBullets.length = 0;
     cars.length = 0;
     props.length = 0;
 
@@ -404,52 +618,8 @@ function resetGame()
     propSpawnTimer.unset();
 
     player = new PlayerCar();
-
-    // Seed some traffic + props immediately so the road isn't empty
     for (let i=0; i<4; i++) spawnCar();
     for (let i=0; i<4; i++) spawnProp();
-}
-
-function spawnCar()
-{
-    if (!player) return;
-
-    // spawn within/near view so you see traffic quickly
-    const y = player.pos.y + rand(14, 26);
-
-    const lane = randInt(LANES);
-    const x = laneX(lane) + rand(-.25, .25);
-
-    const d = min(distance / 1400, 1);
-
-    // bad cars are rarer early
-    const isBad = randBool(lerp(BAD_CAR_CHANCE, BAD_CAR_CHANCE+.14, d));
-
-    // Traffic is mostly slower than the player so speed changes matter.
-    // Bad cars can be fast enough to keep up or pressure you.
-    const civBase = lerp(5.5, 8.0, d);
-    const civVar  = 3.5;
-    const badBase = lerp(8.0, 11.5, d);
-    const badVar  = 4.0;
-
-    const speed = (isBad ? badBase : civBase) + rand(-(isBad?badVar:civVar), (isBad?badVar:civVar));
-
-    const c = new Car(vec2(x, y), max(3.5, speed), isBad);
-    cars.push(c);
-}
-
-function spawnProp()
-{
-    if (!player) return;
-
-    const y = player.pos.y + rand(35, 75);
-    const side = randBool() ? -1 : 1;
-    const x = side * (ROAD_HALF + rand(2.0, 6.5));
-
-    // pick prop kind
-    const kind = randInt(4);
-    const p = new RoadsideProp(vec2(x, y), kind);
-    props.push(p);
 }
 
 function runSanityTests()
@@ -460,10 +630,9 @@ function runSanityTests()
     ASSERT(laneX(1) === 0, 'middle lane should be x=0 for 3 lanes');
     ASSERT(typeof drawRect === 'function', 'drawRect should exist');
     ASSERT(typeof ParticleEmitter === 'function', 'ParticleEmitter should exist');
-    // distribution sanity (non-deterministic but should not be extreme)
-    let badCount = 0;
-    for (let i=0;i<200;i++) if (randBool(BAD_CAR_CHANCE)) badCount++;
-    ASSERT(badCount > 30 && badCount < 110, 'bad car chance seems off');
+    ASSERT(KIND_INFO[KIND_SWITCHBLADE].hostile === true, 'switchblade hostile');
+    ASSERT(KIND_INFO[KIND_BULLY].bulletproof === true, 'bully bulletproof');
+    ASSERT(KIND_INFO[KIND_CIV_BLUE].hostile === false, 'civilian not hostile');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -486,23 +655,16 @@ function gameUpdate()
     distance += player.speed * timeDelta;
     score += player.speed * timeDelta * .45;
 
-    // spawn cars (a lot less vehicles, but always some visible)
+    // spawn cars
     if (!carSpawnTimer.active())
     {
         const d = min(distance / 1200, 1);
-        const interval = lerp(2.35, 1.75, d);
-        carSpawnTimer.set(interval);
-
-        // hard cap on cars to keep things readable
-        if (cars.length < 6)
-            spawnCar();
-
-        // rare extra car
-        if (cars.length < 6 && randBool(lerp(.01, .03, d)))
-            spawnCar();
+        carSpawnTimer.set(lerp(2.35, 1.55, d));
+        if (cars.length < 7) spawnCar();
+        if (cars.length < 7 && randBool(lerp(.02, .08, d))) spawnCar();
     }
 
-    // spawn roadside props
+    // spawn props
     if (!propSpawnTimer.active())
     {
         propSpawnTimer.set(rand(.28, .55));
@@ -510,7 +672,7 @@ function gameUpdate()
         if (randBool(.25)) spawnProp();
     }
 
-    // bullets vs cars
+    // player bullets vs cars
     for (const b of bullets)
     {
         if (b.destroyed) continue;
@@ -519,38 +681,47 @@ function gameUpdate()
             if (c.destroyed) continue;
             if (!overlapAABB(b, c)) continue;
 
+            if (c.bulletproof)
+            {
+                // ricochet — small spark, slight nudge to the car away from impact
+                b.destroy();
+                sndRicochet.play(b.pos, 1, rand(.95,1.1));
+                new ParticleEmitter(
+                    b.pos, 0, vec2(0), .03, 18, PI, undefined,
+                    rgb(1,1,.7,.9), rgb(1,.6,.2,.9),
+                    rgb(.3,.2,.1,0), rgb(.3,.2,.1,0),
+                    .15, .12, .04, 8, 8,
+                    .9, .9, 0, PI, .08, .3, false, false
+                );
+                break;
+            }
+
             b.destroy();
-
-            // Everyone can be destroyed; civilians cost points.
             c.hp--;
+            c.hitFlash.set(.09);
+            spawnHitSpark(b.pos);
 
-            if (c.isBad)
+            if (c.hostile)
             {
                 sndHitBad.play(c.pos, 1, rand(.9, 1.1));
-                explodeCar(c.pos, false);
-
                 if (c.hp <= 0)
                 {
                     c.destroy();
-                    sndBoom.play(c.pos, 1, rand(.95, 1.05));
+                    sndBoom.play(c.pos, 1, rand(.95,1.05));
                     explodeCar(c.pos, true);
-                    score += 80;
+                    score += (c.kind == KIND_ENFORCER) ? SCORE_ENFORCER : SCORE_SWITCHBLADE;
                 }
             }
             else
             {
-                // civilian hit/kill: smaller boom + penalty
                 sndHitCiv.play(c.pos, 1, rand(.95, 1.05));
-                explodeCar(c.pos, false);
-
                 if (c.hp <= 0)
                 {
                     c.destroy();
-                    // don't reward, just penalize
+                    explodeCar(c.pos, false);
                     score = max(0, score - CIVILIAN_PENALTY);
                 }
             }
-
             break;
         }
     }
@@ -563,14 +734,50 @@ function gameUpdate()
             if (c.destroyed) continue;
             if (!overlapAABB(player, c)) continue;
 
+            if (c.kind == KIND_BULLY)
+            {
+                // ram contest — accumulate sideways push as long as contact holds
+                const dx = c.pos.x - player.pos.x;
+                const pushDir = dx >= 0 ? 1 : -1;
+                c.rammedVX = clamp(c.rammedVX + pushDir * 4, -22, 22);
+                // small player kickback + slight speed scrub
+                player.pos.x -= pushDir * .10;
+                player.speed = max(PLAYER_MIN_SPEED, player.speed - 1);
+                // sound throttle so we don't machine-gun the hit sfx
+                if (!player.bullyTouchTimer || !player.bullyTouchTimer.active())
+                {
+                    player.bullyTouchTimer = player.bullyTouchTimer || new Timer();
+                    player.bullyTouchTimer.set(.18);
+                    sndHitBad.play(player.pos, 1, .8);
+                }
+                continue;
+            }
+
+            // every other car kills you
             c.destroy();
             sndBoom.play(player.pos, 1, .9);
             explodeCar(player.pos, true);
-
             player.lives--;
             player.invuln.set(1.1);
             player.speed = max(PLAYER_MIN_SPEED, player.speed - 7);
+            if (player.lives <= 0)
+                gameOver = true;
+            break;
+        }
+    }
 
+    // enemy bullets vs player
+    if (!player.invuln.active())
+    {
+        for (const b of enemyBullets)
+        {
+            if (b.destroyed) continue;
+            if (!overlapAABB(b, player)) continue;
+            b.destroy();
+            sndBoom.play(player.pos, 1, .95);
+            explodeCar(player.pos, false);
+            player.lives--;
+            player.invuln.set(1.1);
             if (player.lives <= 0)
                 gameOver = true;
             break;
@@ -578,6 +785,7 @@ function gameUpdate()
     }
 
     bullets = bullets.filter(o=>!o.destroyed);
+    enemyBullets = enemyBullets.filter(o=>!o.destroyed);
     cars = cars.filter(o=>!o.destroyed);
     props = props.filter(o=>!o.destroyed);
 }
@@ -600,40 +808,36 @@ function gameRender()
     drawRect(cameraPos.add(vec2(-ROAD_HALF-4.4, 0)), vec2(4.0, camSize.y), rgb(.03,.18,.05));
     drawRect(cameraPos.add(vec2( ROAD_HALF+4.4, 0)), vec2(4.0, camSize.y), rgb(.03,.18,.05));
 
-    // road base (lighter so black wheels read better)
+    // road base
     drawRect(cameraPos, vec2(ROAD_WIDTH, camSize.y), rgb(.16,.16,.17));
-
-    // subtle center highlight (draw BEFORE dashes so lines remain visible)
     drawRect(cameraPos, vec2(ROAD_WIDTH*.92, camSize.y), rgb(.10,.10,.12,.30));
 
     // shoulders
     drawRect(cameraPos.add(vec2(-ROAD_HALF + .60, 0)), vec2(1.2, camSize.y), rgb(.16,.16,.17));
     drawRect(cameraPos.add(vec2( ROAD_HALF - .60, 0)), vec2(1.2, camSize.y), rgb(.16,.16,.17));
 
-    // road markings (tie to player movement so speed changes feel right)
+    // dashed center line
     const startY = cameraPos.y - camSize.y/2 - 6;
     const endY   = cameraPos.y + camSize.y/2 + 6;
-
-    // ONLY ONE divider line: center dotted line
-    // Use player position for scroll so accelerating/braking changes flow naturally.
     const scroll = player ? player.pos.y : 0;
-
     {
-        const x = 0;
         const dashH = 1.6;
         const gapH  = 1.4;
         for (let y = startY; y < endY; y += dashH + gapH)
         {
             const yy = y - mod(scroll, dashH + gapH);
-            drawRect(vec2(x, yy + dashH/2), vec2(.32, dashH), rgb(1,1,1));
+            drawRect(vec2(0, yy + dashH/2), vec2(.32, dashH), rgb(1,1,1));
         }
     }
 
-    // subtle center highlight already drawn above
-
-    // starting hint
-    if (distance < 40 && !gameOver)
-        drawText('Shoot RED cars only', cameraPos.add(vec2(0, -camSize.y*.33)), 1.1, rgb(1,1,1), .15, rgb(0,0,0));
+    // intro hint
+    if (distance < 50 && !gameOver)
+    {
+        drawText('Mouse: steer + aim   LMB/Space: fire   W/S: throttle',
+            cameraPos.add(vec2(0, -camSize.y*.36)), .85, rgb(1,1,1), .14, rgb(0,0,0));
+        drawText('Shoot RED Switchblade & YELLOW Enforcer.  Ram BLUE Bully off the road.  Avoid civilians.',
+            cameraPos.add(vec2(0, -camSize.y*.42)), .72, rgb(1,1,.7), .14, rgb(0,0,0));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -655,3 +859,5 @@ function gameRenderPost()
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 
 </script>
+</body>
+</html>
