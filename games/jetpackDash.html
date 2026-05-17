@@ -121,8 +121,8 @@ class Player extends EngineObject
 
         // thrust flame emitter — parented to player so it follows along.
         // emitRate starts at 0 and is toggled on in update() while thrusting.
-        this.thrustEmitter = new ParticleEmitter(
-            vec2(0, -0.7),          // local offset (under the body)
+        this.thrustEmitter = this.addChild(new ParticleEmitter(
+            vec2(),                 // local pos handled by addChild's localPos arg
             -PI/2,                  // emit downward (y-up world)
             vec2(0.6, 0.1),         // rect across both nozzles
             0,                      // emitTime forever
@@ -148,8 +148,7 @@ class Player extends EngineObject
             true,                   // additive
             true,                   // randomColorLinear
             1e9                     // renderOrder
-        );
-        this.thrustEmitter.parent = this;
+        ), vec2(0, -0.7));
     }
 
     update()
