@@ -23,6 +23,14 @@ const sHit    = new SoundGenerator({volume:.8, frequency:220, release:.18, slide
 const sThrust = new SoundGenerator({volume:.35, frequency:120, release:.12, slide:.2,  shapeCurve:.2, noise:.18});
 const sZap    = new SoundGenerator({volume:.6, frequency:520, release:.12, slide:1.4,  shapeCurve:.8, noise:.05});
 
+// UFO sounds (woo-woo alternating tones + fire + extra-life)
+const sUfoLargeHi = new SoundGenerator({volume:.32, frequency:175, release:.22, shapeCurve:1.4, noise:.0});
+const sUfoLargeLo = new SoundGenerator({volume:.32, frequency:140, release:.22, shapeCurve:1.4, noise:.0});
+const sUfoSmallHi = new SoundGenerator({volume:.32, frequency:340, release:.18, shapeCurve:1.4, noise:.0});
+const sUfoSmallLo = new SoundGenerator({volume:.32, frequency:280, release:.18, shapeCurve:1.4, noise:.0});
+const sUfoFire    = new SoundGenerator({volume:.55, frequency:380, release:.12, slide:-1.0, shapeCurve:.7, noise:.06});
+const sExtraLife  = new SoundGenerator({volume:.55, frequency:1320, release:.4, slide:1.5, shapeCurve:.3, noise:0});
+
 // ============================================================
 // Game constants
 // ============================================================
@@ -53,17 +61,21 @@ let ship;
 let bullets = [];
 let rocks = [];
 let debris = [];
+let ufos = [];
+let ufoBullets = [];
 
 let score = 0;
 let lives = 3;
 let level = 1;
 let gameOver = false;
+let nextExtraLifeAt = 10000;
 
 let respawnTimer = new Timer();
 let invulnTimer = new Timer();
 let shootTimer = new Timer();
 let thrustSoundTimer = new Timer();
 let hyperTimer = new Timer();
+let ufoSpawnTimer = new Timer();
 
 // simple star field
 let stars = [];
@@ -131,11 +143,15 @@ function resetGame()
     bullets = [];
     rocks = [];
     debris = [];
+    ufos = [];
+    ufoBullets = [];
 
     score = 0;
     lives = 3;
     level = 1;
     gameOver = false;
+    nextExtraLifeAt = 10000;
+    ufoSpawnTimer.set(rand(22, 14));
 
     spawnShip(true);
     spawnWave(level);
@@ -165,6 +181,12 @@ function spawnWave(wave)
 function addScore(points)
 {
     score += points;
+    while (score >= nextExtraLifeAt)
+    {
+        lives++;
+        nextExtraLifeAt += 10000;
+        sExtraLife.play();
+    }
 }
 
 function explodeAt(pos, intensity=1)
@@ -485,6 +507,198 @@ class Debris extends EngineObject
     }
 }
 
+class Ufo extends EngineObject
+{
+    constructor(small)
+    {
+        const r = small ? .42 : .75;
+        const dirX = randBool() ? 1 : -1;
+        const startY = rand(worldHalf.y*.75, -worldHalf.y*.75);
+        const startX = dirX > 0 ? cameraPos.x - worldHalf.x - 1 : cameraPos.x + worldHalf.x + 1;
+        super(vec2(startX, startY), vec2(r*2));
+
+        this.mass = 0;
+        this.setCollision(false, false, false, false);
+
+        this.small = small;
+        this.r = r;
+        this.dirX = dirX;
+        this.exitX = dirX > 0 ? cameraPos.x + worldHalf.x + 1.5 : cameraPos.x - worldHalf.x - 1.5;
+
+        const speed = small ? .075 : .05;
+        this.velocity = vec2(dirX * speed, 0);
+
+        this.zigzagTimer = new Timer(rand(1.3, .5));
+        this.fireTimer   = new Timer(small ? rand(1.3, .7) : rand(2.0, 1.2));
+        this.tonePhase   = 0;
+        this.toneTimer   = new Timer(.4);
+
+        ufos.push(this);
+    }
+
+    update()
+    {
+        // zigzag vertical motion
+        if (this.zigzagTimer.elapsed())
+        {
+            const baseSpeed = this.small ? .075 : .05;
+            this.velocity.y = rand(-baseSpeed*.7, baseSpeed*.7);
+            this.zigzagTimer.set(rand(1.3, .5));
+        }
+
+        this.pos = this.pos.add(this.velocity);
+
+        // wrap vertically only; despawn when crossing exit side
+        if (this.pos.y < cameraPos.y - worldHalf.y - WRAP_MARGIN) this.pos.y = cameraPos.y + worldHalf.y + WRAP_MARGIN;
+        if (this.pos.y > cameraPos.y + worldHalf.y + WRAP_MARGIN) this.pos.y = cameraPos.y - worldHalf.y - WRAP_MARGIN;
+        if ((this.dirX > 0 && this.pos.x > this.exitX) ||
+            (this.dirX < 0 && this.pos.x < this.exitX))
+        {
+            this.destroy();
+            return;
+        }
+
+        // shoot
+        if (this.fireTimer.elapsed())
+        {
+            this.fire();
+            this.fireTimer.set(this.small ? rand(1.4, .9) : rand(2.2, 1.3));
+        }
+
+        // woo-woo
+        if (this.toneTimer.elapsed())
+        {
+            if (this.small)
+                (this.tonePhase ? sUfoSmallLo : sUfoSmallHi).play(this.pos, .6);
+            else
+                (this.tonePhase ? sUfoLargeLo : sUfoLargeHi).play(this.pos, .6);
+            this.tonePhase ^= 1;
+            this.toneTimer.set(.4);
+        }
+    }
+
+    fire()
+    {
+        let aim;
+        if (this.small && ship && !ship.dead)
+        {
+            // lead the player; accuracy ramps with score
+            const accuracy = clamp01(score / 35000);
+            const bSpeed = .19;
+            const dist = ship.pos.distance(this.pos);
+            const predT = dist / bSpeed;
+            const leadAmount = .35 + accuracy * .65;
+            const target = ship.pos.add(ship.velocity.scale(predT * leadAmount));
+            aim = target.subtract(this.pos).normalize();
+            // add aim noise that shrinks with score
+            const noise = (1 - accuracy) * .55;
+            const jitter = rand(-noise, noise);
+            aim = vec2(
+                aim.x * Math.cos(jitter) - aim.y * Math.sin(jitter),
+                aim.x * Math.sin(jitter) + aim.y * Math.cos(jitter)
+            );
+        }
+        else
+        {
+            // large UFO: random direction
+            const a = rand(TAU);
+            aim = vec2(Math.sin(a), Math.cos(a));
+        }
+        const v = aim.scale(.19);
+        new UfoBullet(this.pos.add(aim.scale(this.r * 1.1)), v);
+        sUfoFire.play(this.pos, .55);
+    }
+
+    destroy(immediate=true)
+    {
+        super.destroy(immediate);
+        ufos = ufos.filter(u => u !== this && !u.destroyed);
+    }
+
+    render()
+    {
+        const col = rgb(1, 1, 1);
+        const r = this.r;
+        // saucer outline (hex-disc with cockpit dome)
+        const lw = .07;
+        const body = [
+            vec2(-r,        r*.08),
+            vec2(-r*.55,    r*.32),
+            vec2( r*.55,    r*.32),
+            vec2( r,        r*.08),
+            vec2( r*.6,    -r*.22),
+            vec2(-r*.6,    -r*.22),
+        ];
+        for (let i=0;i<body.length;i++)
+        {
+            const a = this.pos.add(body[i]);
+            const b = this.pos.add(body[(i+1)%body.length]);
+            drawLine(a, b, lw, col);
+        }
+        // dome
+        const dome = [
+            vec2(-r*.32, r*.32),
+            vec2(-r*.18, r*.5),
+            vec2( r*.18, r*.5),
+            vec2( r*.32, r*.32),
+        ];
+        for (let i=0;i<dome.length-1;i++)
+            drawLine(this.pos.add(dome[i]), this.pos.add(dome[i+1]), lw, col);
+        // belt
+        drawLine(this.pos.add(vec2(-r,    r*.08)), this.pos.add(vec2( r,    r*.08)), lw*.85, col);
+    }
+}
+
+class UfoBullet extends EngineObject
+{
+    constructor(pos, vel)
+    {
+        super(pos, vec2(.18));
+        this.mass = 0;
+        this.setCollision(false, false, false, false);
+        this.velocity = vel;
+        this.life = new Timer(1.6);
+        ufoBullets.push(this);
+    }
+
+    update()
+    {
+        this.pos = this.pos.add(this.velocity);
+        wrapPos(this.pos);
+        if (this.life.elapsed())
+            this.destroy();
+    }
+
+    destroy(immediate=true)
+    {
+        super.destroy(immediate);
+        ufoBullets = ufoBullets.filter(b => b !== this && !b.destroyed);
+    }
+
+    render()
+    {
+        // distinct from player bullet: warm red-orange glow
+        drawCircle(this.pos, .13, rgb(1, .35, .35));
+    }
+}
+
+function maybeSpawnUfo()
+{
+    if (gameOver) return;
+    if (!ufoSpawnTimer.elapsed()) return;
+    if (ufos.length) return;
+
+    // small-saucer chance ramps from 0 at score 0 to ~0.85 above 35k
+    const smallChance = clamp01(score / 35000) * .85;
+    const small = randBool(smallChance);
+    new Ufo(small);
+
+    // next spawn delay shrinks with score (22-14s at start, ~10-6s late)
+    const t = clamp01(score / 25000);
+    const base = lerp(18, 8, t);
+    ufoSpawnTimer.set(rand(base + 4, base - 4));
+}
+
 // ============================================================
 // Core callbacks
 // ============================================================
@@ -498,6 +712,65 @@ function gameInit()
     // We do our own collisions; keep the physics solver off for speed/simplicity
     setEnablePhysicsSolver(false);
     setGravity(vec2());
+
+    // ============================================================
+    // Vector-arcade bloom (post-process). Composites HUD into the
+    // glow so the score readout matches the look of the world.
+    // Two-radius gaussian-ish blur with a soft bright-pass, plus
+    // a touch of chromatic aberration and scanlines.
+    // ============================================================
+    const glowShader = `
+        vec3 sampleBlur(vec2 uv, float radius)
+        {
+            vec3 sum = vec3(0.0);
+            float total = 0.0;
+            for (float x = -2.0; x <= 2.0; x += 1.0)
+            for (float y = -2.0; y <= 2.0; y += 1.0)
+            {
+                vec2 off = vec2(x, y) * radius / iResolution.xy;
+                float w = exp(-(x*x + y*y) * 0.25);
+                sum += texture(iChannel0, uv + off).rgb * w;
+                total += w;
+            }
+            return sum / total;
+        }
+
+        void mainImage(out vec4 c, vec2 fragCoord)
+        {
+            vec2 uv = fragCoord / iResolution.xy;
+
+            // chromatic aberration on the base layer
+            float ca = 1.5 / iResolution.x;
+            vec3 base;
+            base.r = texture(iChannel0, uv + vec2( ca, 0.0)).r;
+            base.g = texture(iChannel0, uv).g;
+            base.b = texture(iChannel0, uv - vec2( ca, 0.0)).b;
+
+            // two bloom radii: tight halo + wide haze
+            vec3 bloomNear = sampleBlur(uv, 3.0);
+            vec3 bloomFar  = sampleBlur(uv, 14.0);
+
+            // bright-pass on the blurs so dark pixels don't lift
+            float nl = dot(bloomNear, vec3(0.299, 0.587, 0.114));
+            float fl = dot(bloomFar,  vec3(0.299, 0.587, 0.114));
+            bloomNear *= smoothstep(0.15, 0.6, nl);
+            bloomFar  *= smoothstep(0.10, 0.5, fl);
+
+            vec3 col = base + bloomNear * 0.85 + bloomFar * 0.7;
+
+            // subtle scanlines
+            float scan = 0.93 + 0.07 * sin(fragCoord.y * 2.2);
+            col *= scan;
+
+            // gentle vignette
+            vec2 v = uv - 0.5;
+            float vig = 1.0 - dot(v, v) * 0.65;
+            col *= vig;
+
+            c = vec4(col, 1.0);
+        }
+    `;
+    new PostProcessPlugin(glowShader, true);
 
     // stars
     stars = [];
@@ -529,8 +802,11 @@ function gameUpdate()
     // collisions
     handleCollisions();
 
-    // next wave
-    if (!gameOver && rocks.length === 0)
+    // UFO spawning
+    maybeSpawnUfo();
+
+    // next wave (only when rocks AND ufos cleared, like arcade)
+    if (!gameOver && rocks.length === 0 && ufos.length === 0)
     {
         level++;
         spawnWave(level);
@@ -556,7 +832,8 @@ function handleCollisions()
                 sHit.play(r.pos, .85);
                 explodeAt(r.pos, r.tier/3);
 
-                addScore(20 * r.tier);
+                // arcade scoring: small=100, med=50, large=20
+                addScore([0, 100, 50, 20][r.tier]);
                 const prevVel = r.velocity.copy();
                 r.split(prevVel);
                 r.destroy();
@@ -576,6 +853,87 @@ function handleCollisions()
                 if (r.destroyed) continue;
                 if (circlesHit(ship.pos, SHIP_RADIUS, r.pos, r.r*.92))
                 {
+                    ship.kill();
+                    ship = undefined;
+                    break;
+                }
+            }
+        }
+    }
+
+    // player bullets vs ufos
+    for (const b of bullets)
+    {
+        if (b.destroyed) continue;
+        for (const u of ufos)
+        {
+            if (u.destroyed) continue;
+            if (circlesHit(b.pos, .12, u.pos, u.r))
+            {
+                b.destroy();
+                sBoom.play(u.pos, .9);
+                explodeAt(u.pos, .9);
+                addScore(u.small ? 1000 : 200);
+                u.destroy();
+                break;
+            }
+        }
+    }
+
+    // ufo bullets vs ship
+    if (ship && !ship.destroyed)
+    {
+        const invuln = invulnTimer.isSet() && invulnTimer.active();
+        if (!invuln)
+        {
+            for (const b of ufoBullets)
+            {
+                if (b.destroyed) continue;
+                if (circlesHit(ship.pos, SHIP_RADIUS, b.pos, .13))
+                {
+                    b.destroy();
+                    ship.kill();
+                    ship = undefined;
+                    break;
+                }
+            }
+        }
+    }
+
+    // ufo bullets vs rocks (split but no score)
+    for (const b of ufoBullets)
+    {
+        if (b.destroyed) continue;
+        for (const r of rocks)
+        {
+            if (r.destroyed) continue;
+            if (circlesHit(b.pos, .13, r.pos, r.r))
+            {
+                b.destroy();
+                sHit.play(r.pos, .85);
+                explodeAt(r.pos, r.tier/3);
+                const prevVel = r.velocity.copy();
+                r.split(prevVel);
+                r.destroy();
+                break;
+            }
+        }
+    }
+
+    // ufo vs ship (ramming)
+    if (ship && !ship.destroyed)
+    {
+        const invuln = invulnTimer.isSet() && invulnTimer.active();
+        if (!invuln)
+        {
+            for (const u of ufos)
+            {
+                if (u.destroyed) continue;
+                if (circlesHit(ship.pos, SHIP_RADIUS, u.pos, u.r))
+                {
+                    sBoom.play(u.pos, .9);
+                    explodeAt(u.pos, .9);
+                    u.destroy();
                     ship.kill();
                     ship = undefined;
                     break;
