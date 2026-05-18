@@ -875,21 +875,19 @@ function gameRenderPost()
     // shooter + arrow-style aim
     const shooterPos = vec2(0, SHOOT_Y);
     const dir = vec2(Math.cos(aimAngle), Math.sin(aimAngle));
-    const aimStart = shooterPos.add(dir.scale(BUBBLE_R + .15)); // start just outside the shooter bubble
-    const aimEnd = shooterPos.add(dir.scale(6));
-    const aimColor = hsl(0, 0, 1, .55);
-    drawLine(aimStart, aimEnd, .12, aimColor);
+    const aimStart = shooterPos.add(dir.scale(BUBBLE_R)); // start just outside the shooter bubble
+    const aimEnd = shooterPos.add(dir.scale(2));
+    const aimColor = hsl(0, 0, 1);
+    const arrowWidth = .1;
     // arrowhead — two wings rotated ±0.5 rad back from the tip
     const headLen = .55;
     const headSpread = .55;
-    const wing1 = aimEnd.add(vec2(
-        Math.cos(aimAngle + PI - headSpread),
-        Math.sin(aimAngle + PI - headSpread)).scale(headLen));
-    const wing2 = aimEnd.add(vec2(
-        Math.cos(aimAngle + PI + headSpread),
-        Math.sin(aimAngle + PI + headSpread)).scale(headLen));
-    drawLine(aimEnd, wing1, .12, aimColor);
-    drawLine(aimEnd, wing2, .12, aimColor);
+    const wing1 = aimEnd.add(vec2().setAngle(-PI/2-aimAngle - headSpread, headLen));
+    const wing2 = aimEnd.add(vec2().setAngle(-PI/2-aimAngle + headSpread, headLen));
+    // draw arrow as a poly
+    drawLine(shooterPos.add(dir.scale(-2)), shooterPos.add(dir.scale(1.6)), arrowWidth, aimColor);
+    drawPoly([aimEnd, wing1, wing2], aimColor, arrowWidth, CLEAR_WHITE);
+
     drawCircle(shooterPos, BUBBLE_DIAM, COLORS[currentColorIndex], .06, OUTLINE);
 
     // next bubble preview + NEXT label
