@@ -209,12 +209,12 @@ function buildLevel()
     // exit pipe at right of room (height 4, same as the surface entry pipe)
     addPipe(ugX + ugW - 3, 4);
 
-    // -- powerup-bearing ? blocks (canonical SMB 1-1 picks first ? block = mushroom,
-    //    high floating block above the early row = star)
+    // -- powerup-bearing ? blocks. First ? = mushroom (SMB 1-1 canonical),
+    //    one star at the midpoint ? block (~half the run to the flag at x=192),
+    //    second mushroom past the first pit. All other ? blocks pop coins.
     qBlockContents.set(tileKey(16, 4), 'mushroom');
-    qBlockContents.set(tileKey(22, 8), 'star');
     qBlockContents.set(tileKey(78, 4), 'mushroom');
-    qBlockContents.set(tileKey(168, 4), 'star');
+    qBlockContents.set(tileKey(98, 4), 'star');
 
     // -- enemy spawns --
     // Goombas
@@ -667,6 +667,9 @@ class Goomba extends Enemy
         {
             this.squishTimer++;
             this.velocity.x = 0;
+            // keep gravity so a goomba squished mid-air (off a brick) still falls to the ground
+            this.velocity.y -= ENEMY_GRAVITY;
+            this.velocity.y = max(this.velocity.y, ENEMY_TERMINAL);
             if (this.squishTimer > 30) this.destroy();
             return;
         }
@@ -734,16 +737,20 @@ class Goomba extends Enemy
         }
 
         const sq = this.squished;
-        const h  = sq ? .25 : .8;
-        const yo = sq ? -.3 : 0;
-
-        // body
-        drawRect(this.pos.add(vec2(0, yo + .05)), vec2(.85, h), rgb(.55, .30, .08));
-        // head highlight
-        drawRect(this.pos.add(vec2(0, yo + .25)), vec2(.65, h * .35), rgb(.7, .42, .15));
-
-        if (!sq)
+        if (sq)
         {
+            // pancaked: body sits flat on the floor (bottom flush with collision box bottom)
+            const h = .22;
+            const cy = -this.size.y * .5 + h * .5;
+            drawRect(this.pos.add(vec2(0, cy)),       vec2(.95, h),       rgb(.55, .30, .08));
+            drawRect(this.pos.add(vec2(0, cy + .04)), vec2(.75, h * .35), rgb(.7, .42, .15));
+        }
+        else
+        {
+            // body
+            drawRect(this.pos.add(vec2(0, .05)), vec2(.85, .8),  rgb(.55, .30, .08));
+            // head highlight
+            drawRect(this.pos.add(vec2(0, .25)), vec2(.65, .28), rgb(.7, .42, .15));
             // eyes
             drawRect(this.pos.add(vec2(-.18, .15)), vec2(.13, .18), rgb(1, 1, 1));
             drawRect(this.pos.add(vec2(.18, .15)),  vec2(.13, .18), rgb(1, 1, 1));
