@@ -42,6 +42,7 @@ const FIELD_MAX_X = FIELD_RIGHT - BUBBLE_R;
 const TOP_Y    = 8;
 const SHOOT_Y  = -8;
 const BOTTOM_Y = SHOOT_Y;
+const LOSE_Y   = TOP_Y - (ROWS_VISIBLE-1)*ROW_STEP_Y;
 
 // Pop / fall FX tuning
 const POP_LIFE        = .22;
@@ -407,12 +408,11 @@ function addRow()
 
 function anyBubblePastLoseLine()
 {
-    const loseY = TOP_Y - (ROWS_VISIBLE-1)*ROW_STEP_Y;
     for (let r=0; r<ROWS_MAX; ++r)
     for (let c=0; c<COLS; ++c)
     {
         if (grid[r][c] === null) continue;
-        if (TOP_Y - r*ROW_STEP_Y - descendOffset <= loseY)
+        if (TOP_Y - r*ROW_STEP_Y - descendOffset <= LOSE_Y)
             return true;
     }
     return false;
@@ -609,11 +609,15 @@ function gameInit()
     });
 
     // ----- title menu -----
+    // Stays up at startup (no click-to-reveal). onShow resets the field so the
+    // grid behind the menu is always a fresh game — PLAY just drops the player
+    // straight in without re-resetting.
     createTitleMenu({
         title: 'SNOOD',
         subtitle: 'Bubble Shooter — Match 3+ to pop. Clear the field!',
-        onPlay: startNewGame,
-        canReveal: () => !isPlaying && !gameOver,
+        revealOnClick: false,
+        onShow: resetGame,
+        onPlay: () => setPlaying(true),
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
             {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
@@ -701,9 +705,8 @@ function gameInit()
         ],
     });
 
-    resetGame();
     setPlaying(false);
-    // (click-to-reveal wired automatically by createTitleMenu)
+    showMenu('title'); // title's onShow runs resetGame
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -777,12 +780,16 @@ function gameRender()
 {
     // called before objects are rendered
 
-    // background panel — slight cool tint so the bubbles read brighter against it
+    // outer panel — extends slightly past the walls, blends with canvas-clear color
     const panelTop = TOP_Y;
     const panelBot = SHOOT_Y - 1;
     const panelPos = vec2(0, (panelTop + panelBot)/2);
     const panelSize = vec2(FIELD_W + 1.2, panelTop - panelBot);
     drawRect(panelPos, panelSize, hsl(.6, .18, .14));
+
+    // playfield interior — darker tint inside the walls so the column reads as
+    // the "screen" and the area beside it reads as the cabinet/frame
+    drawRect(panelPos, vec2(FIELD_W, panelTop - panelBot), hsl(.62, .35, .07));
 
     // walls — lighter and slightly tinted to read against the panel
     const wallTop = TOP_Y;
@@ -796,21 +803,31 @@ function gameRender()
     drawLine(vec2(FIELD_LEFT, accentY), vec2(FIELD_RIGHT, accentY), .03, hsl(.6, .4, .55, .5));
 
     // lose line indicator — warning red
-    const loseY = TOP_Y - (ROWS_VISIBLE-1)*ROW_STEP_Y;
-    drawLine(vec2(FIELD_LEFT, loseY), vec2(FIELD_RIGHT, loseY), .08, hsl(.02, .9, .55, .55));
+    drawLine(vec2(FIELD_LEFT, LOSE_Y), vec2(FIELD_RIGHT, LOSE_Y), .08, hsl(.02, .9, .55, .55));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    // draw bubbles
+    // draw bubbles — flash white any bubble whose bottom has crossed the lose
+    // line but whose center hasn't (game-ending threshold). Last-chance warning.
+    const flashPulse = .5 + .5 * Math.sin(time * 14);
     for (let r=0; r<ROWS_MAX; ++r)
     for (let c=0; c<COLS; ++c)
     {
         const v = grid[r][c];
         if (v === null) continue;
         const p = gridToWorld(r,c);
-        drawCircle(p, BUBBLE_DIAM, COLORS[v], .06, OUTLINE);
+        let fill = COLORS[v];
+        if (p.y > LOSE_Y && p.y - BUBBLE_R < LOSE_Y)
+        {
+            const k = flashPulse * .85;
+            fill = fill.copy();
+            fill.r = fill.r * (1-k) + k;
+            fill.g = fill.g * (1-k) + k;
+            fill.b = fill.b * (1-k) + k;
+        }
+        drawCircle(p, BUBBLE_DIAM, fill, .06, OUTLINE);
         // tiny highlight
         drawCircle(p.add(vec2(-.12,.12)), .22, hsl(0,0,1,.18));
     }
@@ -855,11 +872,24 @@ function gameRenderPost()
         drawCircle(projectile.pos.add(vec2(-.12,.12)), .22, hsl(0,0,1,.18));
     }
 
-    // shooter + aim line
+    // shooter + arrow-style aim
     const shooterPos = vec2(0, SHOOT_Y);
     const dir = vec2(Math.cos(aimAngle), Math.sin(aimAngle));
+    const aimStart = shooterPos.add(dir.scale(BUBBLE_R + .15)); // start just outside the shooter bubble
     const aimEnd = shooterPos.add(dir.scale(6));
-    drawLine(shooterPos, aimEnd, .08, hsl(0,0,1,.25));
+    const aimColor = hsl(0, 0, 1, .55);
+    drawLine(aimStart, aimEnd, .12, aimColor);
+    // arrowhead — two wings rotated ±0.5 rad back from the tip
+    const headLen = .55;
+    const headSpread = .55;
+    const wing1 = aimEnd.add(vec2(
+        Math.cos(aimAngle + PI - headSpread),
+        Math.sin(aimAngle + PI - headSpread)).scale(headLen));
+    const wing2 = aimEnd.add(vec2(
+        Math.cos(aimAngle + PI + headSpread),
+        Math.sin(aimAngle + PI + headSpread)).scale(headLen));
+    drawLine(aimEnd, wing1, .12, aimColor);
+    drawLine(aimEnd, wing2, .12, aimColor);
     drawCircle(shooterPos, BUBBLE_DIAM, COLORS[currentColorIndex], .06, OUTLINE);
 
     // next bubble preview + NEXT label
@@ -880,14 +910,6 @@ function gameRenderPost()
             hsl(0,0,0),
             'right'
         );
-    }
-    else if (!isMenuVisible())
-    {
-        // Pre-play prompt — pulses so it reads as actionable.
-        const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
-        const a = 0.5 + 0.5 * Math.sin(time * 3);
-        drawTextScreen(prompt, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2),
-            48, hsl(0, 0, 1, a), 6, hsl(0, 0, 0, a));
     }
 }
 
