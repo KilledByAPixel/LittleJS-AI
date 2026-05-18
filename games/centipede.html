@@ -498,7 +498,7 @@
 
       render()
       {
-          drawTile(this.pos.add(vec2(0, .15)), vec2(1.5, 1.7), sprites.player, WHITE);
+          drawTile(this.pos.add(vec2(0, .15)), vec2(2), sprites.player, WHITE);
       }
   }
 
@@ -558,7 +558,7 @@
 
       render()
       {
-          drawTile(this.pos, vec2(.5, 1.0), sprites.bullet, WHITE);
+          drawTile(this.pos, vec2(2), sprites.bullet, WHITE);
       }
   }
 
@@ -589,7 +589,7 @@
       render()
       {
           const hp = clamp(this.hp, 1, 4);
-          drawTile(this.pos, vec2(1.5), sprites.mushroomByHp[hp - 1], WHITE);
+          drawTile(this.pos, vec2(1.2), sprites.mushroomByHp[hp - 1], WHITE);
       }
   }
 
@@ -616,7 +616,7 @@
           const sprite = this.isHead ? sprites.head : sprites.body;
           // head sprite faces right; mirror when motion is leftward
           const mirror = this.isHead && this.headDirX < 0;
-          drawTile(this.pos, vec2(1.5), sprite, WHITE, 0, mirror);
+          drawTile(this.pos, vec2(1.2), sprite, WHITE, 0, mirror);
       }
   }
 
@@ -715,7 +715,7 @@
       {
           // spider sprite faces right; mirror when motion is leftward
           const mirror = this.vel.x < 0;
-          drawTile(this.pos, vec2(2.0, 1.6), sprites.spider, WHITE, 0, mirror);
+          drawTile(this.pos, vec2(2), sprites.spider, WHITE, 0, mirror);
       }
   }
 
