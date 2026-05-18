@@ -130,8 +130,10 @@
               sShoot.play(this.pos, 1);
           }
 
-          // restart
-          if ((gameOver || gameWon) && (keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0)))
+          // restart: R any time, or Enter/Space/Click on game over
+          if (keyWasPressed('KeyR'))
+              resetGame();
+          else if ((gameOver || gameWon) && (keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0)))
               resetGame();
       }
 
@@ -586,7 +588,7 @@
       drawTextScreen(`Level ${level}`, vec2(left, top+52), 22, rgb(1,1,1), 4, rgb(0,0,0), 'left');
 
       if (gameOver)
-          drawTextScreen('GAME OVER\nPress Enter / Space / Click', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 52, rgb(1,.35,.35), 8, rgb(0,0,0));
+          drawTextScreen('GAME OVER\nPress R / Enter / Space / Click', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 52, rgb(1,.35,.35), 8, rgb(0,0,0));
       else if (gameWon)
           drawTextScreen('CLEARED!  Next wave…', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 52, rgb(.35,1,.55), 8, rgb(0,0,0));
   }
