@@ -91,3 +91,4 @@ Rough early experiments — playable concepts that haven't been curated yet. Exp
 | Pokemon | 🗺️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/pokemon.html) |
 | Puzzle Fighter | 🧩 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/puzzleFighter.html) |
 | Pole Position | 🏎️ | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/polePosition.html) |
+| Jetpack Dash  | 🏃 | | | | [Play](https://killedbyapixel.github.io/LittleJS-AI/games/jetpackDash.html) |
