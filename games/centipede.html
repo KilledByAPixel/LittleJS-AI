@@ -585,10 +585,6 @@
       drawTextScreen(`Lives ${lives}`, vec2(left, top+26), 22, rgb(1,1,1), 4, rgb(0,0,0), 'left');
       drawTextScreen(`Level ${level}`, vec2(left, top+52), 22, rgb(1,1,1), 4, rgb(0,0,0), 'left');
 
-      // instructions
-      const help = 'Move: Mouse or WASD/Arrows  •  Shoot: Hold Space/Click  •  Restart: Enter';
-      drawTextScreen(help, vec2(mainCanvasSize.x/2, mainCanvasSize.y-18), 18, rgb(1,1,1,.9), 4, rgb(0,0,0,.7));
-
       if (gameOver)
           drawTextScreen('GAME OVER\nPress Enter / Space / Click', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 52, rgb(1,.35,.35), 8, rgb(0,0,0));
       else if (gameWon)
