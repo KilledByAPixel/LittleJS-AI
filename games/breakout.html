@@ -278,7 +278,6 @@ function resetGame()
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
-    setCanvasFixedSize(vec2(1280, 720));
     cameraPos = levelSize.scale(.5);
 
     sfxBounce = new SoundGenerator({ volume: .6, frequency: 400, release: .06, shapeCurve: 1.6 });

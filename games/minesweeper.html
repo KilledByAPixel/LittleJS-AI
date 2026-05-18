@@ -264,9 +264,6 @@ async function gameInit()
     // prevent browser right click menu
     document.addEventListener('contextmenu', e=>e.preventDefault());
 
-    // a comfy fixed canvas for a board game
-    setCanvasFixedSize(vec2(960, 720));
-
     // sound palette
     sReveal = new SoundGenerator({frequency:420, release:.05, volume:.7});
     sFlag   = new SoundGenerator({frequency:280, release:.08, shapeCurve:0, volume:.7});

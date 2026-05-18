@@ -41,7 +41,6 @@ let sMove, sMerge, sSpawn, sLose, sWin;
 
 function gameInit()
 {
-    setCanvasFixedSize(vec2(720, 900));
     canvasClearColor = hsl(0, 0, .08);
 
     best = +localStorage.getItem('ljs2048_best') || 0;

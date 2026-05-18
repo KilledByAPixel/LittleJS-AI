@@ -14,6 +14,7 @@
 <body>
   <script src="../dist/littlejs.js?1.18.12"></script>
   <script src="../templates/soundGenerator.js"></script>
+  <script src="../templates/textureGenerator.js"></script>
   <script>
   'use strict';
 
@@ -72,6 +73,19 @@
   let bottomReached;
   let reinforcementTimer;
   let reinforcementsThisLevel;
+
+  // Sprite atlas — each TileInfo is built procedurally by paint functions in gameInit.
+  // Press P to save the atlas + AI prompt; press L to reload centipede.png from disk.
+  // Drop a `centipede.png` next to this file (2048x2048, 4x4 grid of 500px tiles, 6px gutters)
+  // and it will load automatically on startup.
+  const sprites = {
+      player: null,
+      bullet: null,
+      mushroomByHp: [],   // index 0..3 == hp 1..4
+      head: null,
+      body: null,
+      spider: null,
+  };
 
   function cellKey(x, y) { return (x|0) + ',' + (y|0); }
   function clampCell(c) { c.x = clamp(c.x|0, 0, gridSize.x-1); c.y = clamp(c.y|0, 0, gridSize.y-1); return c; }
@@ -151,6 +165,273 @@
   }
 
   ///////////////////////////////////////////////////////////////////////////////
+  // Sprite painters — each fills a 500x500 tile in the atlas.
+  // Canvas Y is down; LittleJS samples with V inverted, so canvas-top → world-top.
+  // Head + spider sprites face RIGHT; mirror when motion is leftward.
+
+  function paintPlayer(ctx)
+  {
+      const cx = 250, cy = 250;
+      ctx.lineWidth = 18;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#000';
+
+      // ship hull — trapezoid pointing up
+      ctx.fillStyle = '#33ddff';
+      ctx.beginPath();
+      ctx.moveTo(cx - 210, cy + 150);
+      ctx.lineTo(cx + 210, cy + 150);
+      ctx.lineTo(cx + 90, cy - 60);
+      ctx.lineTo(cx - 90, cy - 60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // barrel/turret
+      ctx.fillStyle = '#33ddff';
+      ctx.beginPath();
+      ctx.rect(cx - 38, cy - 220, 76, 160);
+      ctx.fill();
+      ctx.stroke();
+
+      // cockpit
+      ctx.fillStyle = '#0d4d5d';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 50, 55, 0, Math.PI * 2);
+      ctx.fill();
+  }
+
+  function paintBullet(ctx)
+  {
+      const cx = 250;
+      ctx.lineWidth = 14;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#ffea3a';
+      ctx.beginPath();
+      ctx.rect(cx - 55, 80, 110, 350);
+      ctx.fill();
+      ctx.stroke();
+      // hot tip
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, 110, 32, 0, Math.PI * 2);
+      ctx.fill();
+  }
+
+  function paintMushroom(ctx, capColor, dotCount)
+  {
+      const cx = 250;
+      const capCy = 230;            // dome's flat baseline (top of canvas → top in world)
+      const stemTop = capCy + 5;
+      ctx.lineWidth = 18;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#000';
+
+      // stem
+      ctx.fillStyle = '#f4ecd0';
+      ctx.beginPath();
+      ctx.rect(cx - 80, stemTop + 30, 160, 150);
+      ctx.fill();
+      ctx.stroke();
+
+      // gill ring just below the cap
+      ctx.fillStyle = '#cbc3a8';
+      ctx.beginPath();
+      ctx.rect(cx - 220, stemTop, 440, 45);
+      ctx.fill();
+      ctx.stroke();
+
+      // cap (semicircle dome, flat bottom at capCy)
+      const rad = 220;
+      ctx.fillStyle = capColor;
+      ctx.beginPath();
+      ctx.arc(cx, capCy, rad, Math.PI, 0, false);  // arc the top half
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // white polka dots on the dome (fewer when damaged)
+      ctx.fillStyle = '#ffffff';
+      if (dotCount >= 1) { ctx.beginPath(); ctx.arc(cx - 90, capCy - 70, 55, 0, Math.PI * 2); ctx.fill(); }
+      if (dotCount >= 2) { ctx.beginPath(); ctx.arc(cx + 75, capCy - 30, 45, 0, Math.PI * 2); ctx.fill(); }
+      if (dotCount >= 3) { ctx.beginPath(); ctx.arc(cx + 30, capCy - 140, 38, 0, Math.PI * 2); ctx.fill(); }
+  }
+
+  function paintCentipedeBody(ctx)
+  {
+      const cx = 250, cy = 250;
+      // legs (drawn first so they tuck behind the body)
+      ctx.strokeStyle = '#175c1c';
+      ctx.lineWidth = 26;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; ++i)
+      {
+          const x = cx + (i - 1.5) * 90;
+          ctx.beginPath();
+          ctx.moveTo(x, cy + 110);
+          ctx.lineTo(x + (i % 2 ? -25 : 25), cy + 230);
+          ctx.stroke();
+      }
+
+      // round body
+      ctx.fillStyle = '#5bf270';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 18;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 195, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+  }
+
+  function paintCentipedeHead(ctx)
+  {
+      const cx = 250, cy = 250;
+      // legs (drawn first)
+      ctx.strokeStyle = '#175c1c';
+      ctx.lineWidth = 26;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; ++i)
+      {
+          const x = cx + (i - 1.5) * 90;
+          ctx.beginPath();
+          ctx.moveTo(x, cy + 110);
+          ctx.lineTo(x + (i % 2 ? -25 : 25), cy + 230);
+          ctx.stroke();
+      }
+
+      // head body
+      ctx.fillStyle = '#ff5566';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 18;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 195, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // antennae sweeping forward-right (sprite faces right)
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx + 60, cy - 130); ctx.lineTo(cx + 170, cy - 240); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + 110, cy - 100); ctx.lineTo(cx + 240, cy - 170); ctx.stroke();
+
+      // big white eyes (stacked on the right/front side)
+      ctx.fillStyle = '#ffffff';
+      ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(cx + 70, cy - 65, 60, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx + 70, cy + 65, 60, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+      // pupils looking right
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(cx + 95, cy - 65, 28, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 95, cy + 65, 28, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function paintSpider(ctx)
+  {
+      const cx = 250, cy = 250;
+      // 8 legs splayed out, drawn first
+      ctx.strokeStyle = '#3d0040';
+      ctx.lineWidth = 22;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; ++i)
+      {
+          const t = (i - 1.5) * 40;            // vertical attach offset
+          const reach = 230;
+          const drop = 90 + i * 12;
+          // left side
+          ctx.beginPath();
+          ctx.moveTo(cx - 60, cy + t);
+          ctx.lineTo(cx - 180, cy + t + drop * .5);
+          ctx.lineTo(cx - reach, cy + t + drop);
+          ctx.stroke();
+          // right side
+          ctx.beginPath();
+          ctx.moveTo(cx + 60, cy + t);
+          ctx.lineTo(cx + 180, cy + t + drop * .5);
+          ctx.lineTo(cx + reach, cy + t + drop);
+          ctx.stroke();
+      }
+
+      // abdomen (rear = left, since sprite faces right)
+      ctx.fillStyle = '#e240f0';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 18;
+      ctx.beginPath();
+      ctx.arc(cx - 70, cy + 20, 165, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // belly highlight
+      ctx.fillStyle = '#6b1080';
+      ctx.beginPath();
+      ctx.arc(cx - 90, cy + 70, 80, 0, Math.PI * 2);
+      ctx.fill();
+
+      // head (front = right)
+      ctx.fillStyle = '#e240f0';
+      ctx.strokeStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(cx + 90, cy - 30, 115, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // yellow eyes
+      ctx.fillStyle = '#fff044';
+      ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(cx + 55, cy - 70, 48, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx + 145, cy - 60, 48, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      // pupils
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(cx + 68, cy - 70, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 158, cy - 60, 22, 0, Math.PI * 2); ctx.fill();
+
+      // fangs
+      ctx.strokeStyle = '#e8e0c0';
+      ctx.lineWidth = 14;
+      ctx.beginPath(); ctx.moveTo(cx + 60, cy + 60); ctx.lineTo(cx + 55, cy + 130); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + 115, cy + 60); ctx.lineTo(cx + 120, cy + 130); ctx.stroke();
+  }
+
+  function buildSpriteAtlas()
+  {
+      initDrawToTexture();
+
+      sprites.player = drawToTexture(0,
+          paintPlayer,
+          'cyan retro arcade starship pointing up, dark cockpit dome, black outline, 2D top-down sprite');
+      sprites.bullet = drawToTexture(1,
+          paintBullet,
+          'small bright yellow vertical laser bolt with white hot tip, dark outline');
+
+      const capColors = [
+          { hex:'#b3b3b3', desc:'gray (nearly destroyed)' },   // hp=1
+          { hex:'#f0d640', desc:'yellow' },                     // hp=2
+          { hex:'#f08c40', desc:'orange' },                     // hp=3
+          { hex:'#f04050', desc:'red (fresh)' },                // hp=4
+      ];
+      for (let hp = 1; hp <= 4; ++hp)
+      {
+          const cap = capColors[hp-1];
+          const dots = hp >= 4 ? 3 : hp >= 2 ? 2 : 1;
+          sprites.mushroomByHp[hp-1] = drawToTexture(
+              1 + hp,  // tiles 2,3,4,5
+              ctx => paintMushroom(ctx, cap.hex, dots),
+              'mushroom with ' + cap.desc + ' dome cap, white polka dots, cream stem with gill ring, black outline, top-down arcade sprite');
+      }
+
+      sprites.head = drawToTexture(6,
+          paintCentipedeHead,
+          'red centipede head facing right, two big white eyes with black pupils on the right side, two antennae, four green legs hanging below, top-down arcade sprite');
+      sprites.body = drawToTexture(7,
+          paintCentipedeBody,
+          'round green centipede body segment, four green legs hanging below, black outline, top-down arcade sprite');
+      sprites.spider = drawToTexture(8,
+          paintSpider,
+          'purple two-body spider facing right, large abdomen and smaller head, eight splayed two-segment legs, big yellow eyes with black pupils, pale fangs, top-down arcade sprite');
+  }
+
+  ///////////////////////////////////////////////////////////////////////////////
   // Objects
 
   class Player extends EngineObject
@@ -217,14 +498,7 @@
 
       render()
       {
-          // ship body
-          drawOutlinedRect(this.pos, this.size, rgb(.2,.9,1));
-
-          // barrel
-          drawOutlinedRect(this.pos.add(vec2(0, .55)), vec2(.22, .55), rgb(.2,.9,1));
-
-          // little cockpit
-          drawRect(this.pos.add(vec2(0, .05)), vec2(.55, .35), rgb(.1,.4,.5));
+          drawTile(this.pos.add(vec2(0, .15)), vec2(1.5, 1.7), sprites.player, WHITE);
       }
   }
 
@@ -284,7 +558,7 @@
 
       render()
       {
-          drawRect(this.pos, this.size, rgb(1,1,.2));
+          drawTile(this.pos, vec2(.5, 1.0), sprites.bullet, WHITE);
       }
   }
 
@@ -314,32 +588,8 @@
 
       render()
       {
-          // arcade-style color shifts as cap takes damage: red → orange → yellow → gray
-          const capPalette = [
-              rgb(.95, .25, .35),  // fresh
-              rgb(.95, .55, .25),
-              rgb(.95, .85, .25),
-              rgb(.7,  .7,  .7),   // nearly dead
-          ];
-          const cap = capPalette[clamp(mushroomHP - this.hp, 0, capPalette.length-1)];
-          const stem = rgb(.96, .92, .82);
-          const ol = rgb(0, 0, 0, .9);
-
-          // stem
-          drawRect(this.pos.add(vec2(0, -.32)), vec2(.46, .4), ol);
-          drawRect(this.pos.add(vec2(0, -.32)), vec2(.36, .32), stem);
-
-          // gill ring just under the cap
-          drawRect(this.pos.add(vec2(0, -.13)), vec2(1.0, .12), rgb(.85, .82, .72));
-
-          // dome cap (flat-bottom semicircle)
-          drawPoly(MUSHROOM_CAP_POINTS, cap, .08, ol, this.pos.add(vec2(0, -.08)));
-
-          // bigger white polka dots — fewer as the cap takes damage
-          const dotColor = rgb(1, 1, 1);
-          drawCircle(this.pos.add(vec2(-.25, .18)), .26, dotColor);
-          if (this.hp >= 2) drawCircle(this.pos.add(vec2(.22, .3)),  .22, dotColor);
-          if (this.hp >= 3) drawCircle(this.pos.add(vec2(.05, .05)), .18, dotColor);
+          const hp = clamp(this.hp, 1, 4);
+          drawTile(this.pos, vec2(1.5), sprites.mushroomByHp[hp - 1], WHITE);
       }
   }
 
@@ -363,41 +613,10 @@
 
       render()
       {
-          const headColor = rgb(1, .35, .4);
-          const bodyColor = rgb(.35, .95, .45);
-          const c = this.isHead ? headColor : bodyColor;
-          const ol = rgb(0, 0, 0, .9);
-          const legColor = rgb(.1, .55, .15);
-          const t = time * 8 + this.pos.x * .7;
-
-          // wiggling legs — bottom side only, 4 across
-          for (let i = 0; i < 4; ++i)
-          {
-              const xoff = (i - 1.5) * .2;
-              const wig = Math.sin(t + i) * .15;
-              drawLine(this.pos.add(vec2(xoff, -.25)),
-                       this.pos.add(vec2(xoff + wig, -.65)), .08, legColor);
-          }
-
-          // round body
-          drawCircle(this.pos, .85, c, .08, ol);
-
-          if (this.isHead)
-          {
-              const dx = this.headDirX;
-              // antennae curving forward
-              const antWig = Math.sin(t) * .05;
-              drawLine(this.pos.add(vec2(.18 * dx, .22)),
-                       this.pos.add(vec2(.45 * dx + antWig, .55)), .06, ol);
-              drawLine(this.pos.add(vec2(.32 * dx, .15)),
-                       this.pos.add(vec2(.6 * dx + antWig, .4)), .06, ol);
-
-              // big eyes (whites + pupils) toward direction of motion
-              drawCircle(this.pos.add(vec2(.12 * dx - .15, .08)), .38, rgb(1,1,1), .05, ol);
-              drawCircle(this.pos.add(vec2(.12 * dx + .15, .08)), .38, rgb(1,1,1), .05, ol);
-              drawCircle(this.pos.add(vec2(.12 * dx - .15 + .07 * dx, .08)), .18, rgb(0,0,0));
-              drawCircle(this.pos.add(vec2(.12 * dx + .15 + .07 * dx, .08)), .18, rgb(0,0,0));
-          }
+          const sprite = this.isHead ? sprites.head : sprites.body;
+          // head sprite faces right; mirror when motion is leftward
+          const mirror = this.isHead && this.headDirX < 0;
+          drawTile(this.pos, vec2(1.5), sprite, WHITE, 0, mirror);
       }
   }
 
@@ -845,6 +1064,11 @@
       setCanvasFixedSize(vec2(1280, 720));
       setCameraScale(28);
       setCameraPos(levelSize.scale(.5));
+
+      // build the procedural sprite atlas, then try to swap in centipede.png
+      // if one is sitting next to this file (silent 404 if missing)
+      buildSpriteAtlas();
+      useAtlasImage('centipede.png');
 
       resetGame();
   }
