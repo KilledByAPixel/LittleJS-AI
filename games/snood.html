@@ -891,24 +891,22 @@ function gameRenderPost()
     drawCircle(shooterPos, BUBBLE_DIAM, COLORS[currentColorIndex], .06, OUTLINE);
 
     // next bubble preview + NEXT label
-    const nextPos = shooterPos.add(vec2(2.8, -0.2));
-    drawText('NEXT', nextPos.add(vec2(-1.05, 0)), .5, hsl(0,0,1), .08, hsl(0,0,0));
-    drawCircle(nextPos, .65, COLORS[nextColorIndex], .05, OUTLINE);
-    drawCircle(nextPos.add(vec2(-.08, .08)), .2, hsl(0,0,1,.18));
+    const nextPos = shooterPos.add(vec2(3.5, 0));
+    drawText('NEXT', nextPos.add(vec2(-1.1, 0)), .5, hsl(0,0,1), .08, hsl(0,0,0));
+    const nextCirclePos = nextPos.add(vec2(0,.05));
+    drawCircle(nextCirclePos, .65, COLORS[nextColorIndex], .05, OUTLINE);
+    drawCircle(nextCirclePos.add(vec2(-.08, .08)), .2, hsl(0,0,1,.18));
 
     // score / shots — world space, right-aligned just left of the shooter to mirror NEXT
-    if (isPlaying)
-    {
-        drawText(
-            `SCORE ${score}    SHOTS ${shots}`,
-            vec2(-1.0, SHOOT_Y - .2),
-            .5,
-            hsl(0,0,1),
-            .08,
-            hsl(0,0,0),
-            'right'
-        );
-    }
+    drawText(
+        `SCORE ${score}`,
+        vec2(-2.0, SHOOT_Y ),
+        .5,
+        hsl(0,0,1),
+        .08,
+        hsl(0,0,0),
+        'right'
+    );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
