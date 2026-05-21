@@ -1,0 +1,278 @@
+<!DOCTYPE html><head>
+<title>LittleJS Texture Atlas Template</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1.18.12"></script>
+<script src="../templates/soundGenerator.js"></script>
+<script src="../templates/textureGenerator.js"></script>
+<script src="../templates/tweakables.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+// engine settings, customize if necessary
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 64;
+
+///////////////////////////////////////////////////////////////////////////////
+// TEXTURE ATLAS TEMPLATE
+//
+// Builds a 4x4 atlas of 500px tiles entirely from canvas draw ops via the
+// textureGenerator module. Press S to save the atlas PNG + prompt blob,
+// press L to swap to an "atlas.png" sitting next to this file.
+
+const sprites = {};
+
+///////////////////////////////////////////////////////////////////////////////
+// SPRITE PAINTERS — each fills the 500x500 drawable area of a tile.
+// (0,0) is the tile's drawable top-left; clipping is handled by the module.
+
+function paintCircle(ctx)
+{
+    const r = 226;
+    const g = ctx.createRadialGradient(200, 175, r * .1, 250, 250, r);
+    g.addColorStop(0, '#ffb3b3');
+    g.addColorStop(1, '#b40000');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(250, 250, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#400';
+    ctx.lineWidth = 16;
+    ctx.stroke();
+}
+
+function paintStar(ctx)
+{
+    const cx = 250, cy = 250, rOuter = 220, rInner = rOuter * .45;
+    ctx.beginPath();
+    for (let i = 0; i < 10; ++i)
+    {
+        const a = -Math.PI / 2 + i * Math.PI / 5;
+        const r = i % 2 ? rInner : rOuter;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#ffd23f';
+    ctx.fill();
+    ctx.strokeStyle = '#8a5a00';
+    ctx.lineWidth = 20;
+    ctx.stroke();
+}
+
+function paintGem(ctx)
+{
+    const cx = 250, top = 55, bot = 445, sideY = 190;
+    const left = 65, right = 435;
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(right, sideY);
+    ctx.lineTo(cx, bot);
+    ctx.lineTo(left, sideY);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, top, 0, bot);
+    g.addColorStop(0, '#9be9ff');
+    g.addColorStop(1, '#0a5f8a');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = '#022';
+    ctx.lineWidth = 16;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx - 60, sideY);
+    ctx.lineTo(cx, bot);
+    ctx.lineTo(cx + 60, sideY);
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+}
+
+function paintGear(ctx)
+{
+    const cx = 250, cy = 250, teeth = 10, rOuter = 220, rInner = rOuter - 56;
+    ctx.beginPath();
+    for (let i = 0; i < teeth * 2; ++i)
+    {
+        const a = i * Math.PI / teeth;
+        const r = i % 2 ? rInner : rOuter;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#888';
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 16;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner * .45, 0, Math.PI * 2);
+    ctx.fillStyle = '#222';
+    ctx.fill();
+}
+
+function paintHeart(ctx)
+{
+    const cx = 250, cy = 150, w = 100;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + w * .4);
+    ctx.bezierCurveTo(cx, cy - w * .4, cx - w * 2, cy - w * .4, cx - w * 2, cy + w * .3);
+    ctx.bezierCurveTo(cx - w * 2, cy + w * 1.1, cx, cy + w * 2.2, cx, cy + w * 3);
+    ctx.bezierCurveTo(cx, cy + w * 2.2, cx + w * 2, cy + w * 1.1, cx + w * 2, cy + w * .3);
+    ctx.bezierCurveTo(cx + w * 2, cy - w * .4, cx, cy - w * .4, cx, cy + w * .4);
+    ctx.closePath();
+    ctx.fillStyle = '#ff3b6c';
+    ctx.fill();
+    ctx.strokeStyle = '#661022';
+    ctx.lineWidth = 16;
+    ctx.stroke();
+}
+
+function paintBolt(ctx)
+{
+    ctx.beginPath();
+    ctx.moveTo(275, 50);
+    ctx.lineTo(100, 275);
+    ctx.lineTo(225, 275);
+    ctx.lineTo(150, 450);
+    ctx.lineTo(400, 200);
+    ctx.lineTo(275, 200);
+    ctx.lineTo(400, 50);
+    ctx.closePath();
+    ctx.fillStyle = '#fff46a';
+    ctx.fill();
+    ctx.strokeStyle = '#7a5a00';
+    ctx.lineWidth = 16;
+    ctx.stroke();
+}
+
+function paintFace(ctx)
+{
+    const cx = 250, cy = 250, r = 220;
+    ctx.fillStyle = '#ffd18a';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#5a3a00';
+    ctx.lineWidth = 24;
+    ctx.stroke();
+    // eyes
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(cx - r * .35, cy - r * .15, r * .12, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + r * .35, cy - r * .15, r * .12, 0, Math.PI * 2); ctx.fill();
+    // smile
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * .1, r * .45, .15 * Math.PI, .85 * Math.PI);
+    ctx.lineWidth = 28;
+    ctx.strokeStyle = '#5a1010';
+    ctx.stroke();
+}
+
+function paintSpaceship(ctx)
+{
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#222';
+    const beam = ctx.createLinearGradient(250, 220, 250, 480);
+    beam.addColorStop(0, 'rgba(255,255,170,0.7)');
+    beam.addColorStop(1, 'rgba(255,255,170,0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(180, 240);
+    ctx.lineTo(120, 480);
+    ctx.lineTo(380, 480);
+    ctx.lineTo(320, 240);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#8a9bb0';
+    ctx.beginPath();
+    ctx.ellipse(250, 210, 200, 55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    const g = ctx.createLinearGradient(250, 80, 250, 210);
+    g.addColorStop(0, '#9be9ff');
+    g.addColorStop(1, '#4a7a99');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(250, 210, 100, 90, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fffacd';
+    ctx.beginPath();
+    ctx.arc(250, 240, 12, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+async function gameInit()
+{
+    initDrawToTexture();
+
+    sprites.circle = drawToTexture(0, paintCircle, 'a glossy red rubber ball with dark outline');
+    sprites.star   = drawToTexture(1, paintStar,   'a five-pointed gold star with dark outline');
+    sprites.gem    = drawToTexture(2, paintGem,    'a cyan-to-deep-blue diamond gem with white facet highlight');
+    sprites.gear   = drawToTexture(3, paintGear,   'a gray ten-toothed mechanical gear with a dark center hole');
+    sprites.heart  = drawToTexture(4, paintHeart,  'a hot-pink heart with dark crimson outline');
+    sprites.bolt   = drawToTexture(5, paintBolt,   'a yellow lightning bolt with brown outline');
+    sprites.face   = drawToTexture(6, paintFace,   'a friendly tan smiley face with black eyes and red smile');
+    sprites.spaceship = drawToTexture(7, paintSpaceship, 'cartoon spaceship with tractor beam');
+
+    canvasClearColor = hsl(.6, .2, .15);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate()
+{
+    if (keyWasPressed('KeyS'))
+    {
+        saveAtlasImage();
+        saveAtlasPrompt();
+    }
+    if (keyWasPressed('KeyL'))
+        useAtlasImage('atlas.png');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdatePost()
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRender()
+{
+    // show the full atlas underneath the sprite row
+    const atlasView = vec2(6);
+    const fullAtlas = new TileInfo(vec2(), vec2(2048));
+    drawRect(vec2(0, -1), atlasView, GRAY);
+    drawTile(vec2(0, -1), atlasView, fullAtlas, WHITE);
+
+    // sprites in a row on top, gently rotating
+    const row = [sprites.circle, sprites.star, sprites.gem,
+                 sprites.gear, sprites.heart, sprites.bolt, sprites.face];
+    const angle = time;
+    for (let i = 0; i < row.length; ++i)
+    {
+        const x = (i - (row.length - 1) / 2) * 1.8;
+        drawTile(vec2(x, 3), vec2(1.5), row[i], WHITE, angle);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRenderPost()
+{
+    drawTextScreen('Texture Atlas Template',
+        vec2(mainCanvasSize.x / 2, 60), 50, WHITE, 4, BLACK);
+    drawTextScreen('S = save atlas + prompt   L = load atlas.png',
+        vec2(mainCanvasSize.x / 2, 110), 24, hsl(0, 0, .7), 2, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script></body></html>
