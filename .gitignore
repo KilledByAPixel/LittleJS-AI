@@ -6,4 +6,10 @@ local/
 docs/
 .github/
 .vscode/
-.claude/
+
+# personal Claude Code settings (machine-specific)
+.claude/settings.json
+.claude/settings.local.json
+
+# runtime data from skills (per-session scratch dirs)
+.claude/skills/*/sessions/

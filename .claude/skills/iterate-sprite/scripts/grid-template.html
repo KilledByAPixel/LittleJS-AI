@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>iterate-sprite — «description»</title>
+    <link rel="stylesheet" href="/scripts/grid.css">
+</head>
+<body>
+    <header>
+        <h1>«description»</h1>
+        <div class="meta">Round «N» · target: «games/foo.html» tile «3»</div>
+    </header>
+
+    <div class="grid">
+        <div class="cell" data-cell="1">
+            <canvas></canvas>
+            <div class="index">1</div>
+            <div class="badge">Current pick</div>
+        </div>
+        <div class="cell" data-cell="2"><canvas></canvas><div class="index">2</div></div>
+        <div class="cell" data-cell="3"><canvas></canvas><div class="index">3</div></div>
+        <div class="cell" data-cell="4"><canvas></canvas><div class="index">4</div></div>
+        <div class="cell" data-cell="5"><canvas></canvas><div class="index">5</div></div>
+        <div class="cell" data-cell="6"><canvas></canvas><div class="index">6</div></div>
+        <div class="cell" data-cell="7"><canvas></canvas><div class="index">7</div></div>
+        <div class="cell" data-cell="8"><canvas></canvas><div class="index">8</div></div>
+        <div class="cell" data-cell="9"><canvas></canvas><div class="index">9</div></div>
+    </div>
+
+    <div class="hint">
+        Click any cell to mark it as your current pick. Then return to the Claude Code chat and say what you want — "ship it" to commit, "more variations" to refine, "try X" to steer the next round, or "cancel" to abort.
+    </div>
+
+    <script>
+    // Cell 1 = champion (carried over from previous round). Round 1: no badge,
+    // all 9 are fresh. Each paint runs on a 500x500 canvas at the textureGenerator
+    // tile size; (0,0) is the cell's top-left.
+
+    function paint1(ctx) {
+        ctx.fillStyle = '#4af';
+        ctx.beginPath();
+        ctx.arc(250, 250, 200, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    function paint2(ctx) { /* ... per-round variation ... */ }
+    function paint3(ctx) { /* ... */ }
+    function paint4(ctx) { /* ... */ }
+    function paint5(ctx) { /* ... */ }
+    function paint6(ctx) { /* ... */ }
+    function paint7(ctx) { /* ... */ }
+    function paint8(ctx) { /* ... */ }
+    function paint9(ctx) { /* ... */ }
+
+    window.paints = [paint1, paint2, paint3, paint4, paint5,
+                     paint6, paint7, paint8, paint9];
+    </script>
+    <script src="/scripts/grid.js"></script>
+</body>
+</html>
