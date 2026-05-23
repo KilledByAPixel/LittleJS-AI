@@ -1546,7 +1546,8 @@ class Player extends EngineObject
         if (shootInput && this.cooldown <= 0)
         {
             // Bullets fire straight from the player — no aim barrel in arcade Robotron
-            bullets.push(new Bullet(this.pos.copy(), this.facing.scale(1)));
+            const bulletSpeed = 1;
+            bullets.push(new Bullet(this.pos.copy(), this.facing.scale(bulletSpeed)));
             this.cooldown = 5;
             sfxShoot.play(this.pos);
         }
