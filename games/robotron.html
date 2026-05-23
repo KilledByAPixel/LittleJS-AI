@@ -4,6 +4,7 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.12"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -52,7 +53,7 @@ const scoreEnforcer = 150;
 const scoreTank     = 200;
 const scoreQuark    = 1000;
 const scoreEnemyBullet = 25;       // shooting down sparks / cruise missiles / shells
-const scoreElectrodeKill = 25;     // grunt walked into electrode
+const scoreElectrodeKill = 0;      // grunt walks into electrode — arcade gives no credit
 
 // lives and bonus (arcade default)
 const startingLives = 3;
@@ -76,7 +77,8 @@ let waveActive = false;
 let waveTime = 0;
 let interWaveTimer = 0;
 let respawnTimer = 0;
-let lastAimSource = 'mouse';   // mouse / gamepad / stick — used to hide crosshair on gamepad
+let gameOverTimer = 0;          // frames after death before the GAME OVER menu surfaces
+let isPlaying = false;          // true once the player hits PLAY (menu system gates state)
 let humanRescueBonus = humanRescueStart;
 let nextBonusLifeAt = bonusLifeInterval;
 let playerControlLocked = true;
@@ -1530,9 +1532,9 @@ class Player extends EngineObject
         const leftStickActive = leftStick.lengthSquared() > .04;
 
         let aimDir = null;
-        if (rightStickActive)               { aimDir = rightStick; lastAimSource = 'stick'; }
-        else if (fireButtonHeld && leftStickActive) { aimDir = leftStick; lastAimSource = 'stick'; }
-        else                                { aimDir = getMouseWorld().subtract(this.pos); lastAimSource = 'mouse'; }
+        if (rightStickActive)                       aimDir = rightStick;
+        else if (fireButtonHeld && leftStickActive) aimDir = leftStick;
+        else                                        aimDir = getMouseWorld().subtract(this.pos);
 
         if (aimDir.lengthSquared() > .0001)
         {
@@ -1564,6 +1566,7 @@ class Player extends EngineObject
         {
             gameOver = true;
             best = max(best, score);
+            gameOverTimer = 90;     // let the death animation play before the menu surfaces
             return;
         }
         respawnMidWave();
@@ -1774,6 +1777,7 @@ function resetGame()
 
     score = 0;
     gameOver = false;
+    gameOverTimer = 0;
     nextBonusLifeAt = bonusLifeInterval;
 
     player = new Player();
@@ -1812,24 +1816,230 @@ function runSelfTests()
 ///////////////////////////////////////////////////////////////////////////////
 // LittleJS callbacks
 
+///////////////////////////////////////////////////////////////////////////////
+// Menu integration
+
+function setPlaying(p)
+{
+    isPlaying = p;
+    const hud = (typeof getToolbar === 'function') && getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+function startGame()
+{
+    resetGame();
+    setPlaying(true);
+}
+
+function quitToTitle()
+{
+    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
+    if (typeof hideAllMenus === 'function') hideAllMenus();
+    setPlaying(false);
+
+    engineObjectsDestroy(true);
+    bullets = []; enemyBullets = [];
+    clearAllEnemies(); clearAllElectrodes(); clearAllHumans();
+    particles = []; floaters = [];
+    player = null;
+    gameOver = false;
+    gameOverTimer = 0;
+    waveActive = false;
+    score = 0;
+    gameWave = 1;
+    interWaveTimer = 0;
+    respawnTimer = 0;
+    if (typeof showMenu === 'function') showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return; // menus.js not loaded — fail gracefully
+
+    // Global UI feedback sounds
+    const sndSelect   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sndActivate = new Sound([.6,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sndSelect.play(),
+        activate: () => sndActivate.play(),
+    });
+
+    // Title menu — shows on first user input
+    createTitleMenu({
+        title: 'ROBOTRON',
+        subtitle: '2084',
+        onPlay: startGame,
+        canReveal: () => !isPlaying,
+        itemsBefore: [
+            {type:'label', id:'bestLabel', text:'BEST 0'},
+        ],
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+        ],
+        onShow: () =>
+        {
+            const m = getMenu('title');
+            if (m) m.getItem('bestLabel')?.setLabel(`BEST ${best}`);
+        },
+    });
+
+    // Options menu (shared between title and pause)
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value:.8, min:0, max:1,
+                persist:'robotron.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // How to play
+    createMenu({
+        id: 'about',
+        title: 'HOW TO PLAY',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:
+                'You are the last defender. Robotrons are killing or ' +
+                'reprogramming the last human family.\n\n' +
+                'MOVE with WASD or left stick.\n' +
+                'AIM and FIRE with mouse, right stick, or touch.\n' +
+                'Shots snap to 8 directions.\n\n' +
+                'TOUCH the family (Mommy, Daddy, Mikey) to rescue them ' +
+                '(bonus rises 1000 to 5000).\n\n' +
+                'AVOID electrodes — they kill.\n' +
+                'HULKS cannot be killed; bullets push them.\n' +
+                'BRAINS reprogram humans into PROGS.\n' +
+                'SPHEROIDS drop ENFORCERS. QUARKS drop TANKS.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // Pause menu
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({
+                    message:'Quit to title?',
+                    onYes: quitToTitle,
+                });
+            }},
+        ],
+    });
+
+    // Game-over menu — score shown on open
+    createMenu({
+        id: 'gameOver',
+        title: 'GAME OVER',
+        dismissable: false,
+        onShow: () =>
+        {
+            const m = getMenu('gameOver');
+            if (m)
+            {
+                m.getItem('finalScore')?.setLabel(`SCORE  ${score}`);
+                m.getItem('bestScore')?.setLabel(`BEST   ${best}`);
+                m.getItem('waveReached')?.setLabel(`WAVE   ${gameWave}`);
+            }
+        },
+        items: [
+            {type:'label', id:'finalScore',  text:'SCORE  0'},
+            {type:'label', id:'bestScore',   text:'BEST   0'},
+            {type:'label', id:'waveReached', text:'WAVE   0'},
+            {type:'separator'},
+            {type:'button', label:'PLAY AGAIN', onClick: () =>
+            {
+                hideMenu('gameOver');
+                startGame();
+            }},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+        ],
+    });
+
+    // HUD toolbar — only visible during gameplay
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else showMenu('pause');
+            }},
+        ],
+    });
+    getToolbar('hud')?.hide();
+}
+
 function gameInit()
 {
     setCanvasFixedSize(vec2(1280, 720));
     cameraScale = 32;
     cameraPos = vec2(0);
     runSelfTests();
-    resetGame();
+
+    setSoundVolume(.8);
+    if (typeof setMenuVisibilityCallback === 'function')
+        setMenuVisibilityCallback(v => paused = v);
+
+    buildMenus();
 }
 
 function gameUpdate()
 {
-    if (keyWasPressed('KeyR')) resetGame();
+    // Pause hotkey — only meaningful when actually playing
+    if (isPlaying && !gameOver &&
+        (keyWasPressed('Escape') || (typeof gamepadWasPressed === 'function' && gamepadWasPressed(9))))
+    {
+        if (typeof playMenuSound === 'function') playMenuSound('activate');
+        if (typeof showMenu === 'function') showMenu('pause');
+        if (typeof inputClearKey === 'function')
+        {
+            inputClearKey('Escape');
+            inputClearKey(9, 1, false, true, false);
+        }
+        return;
+    }
 
     // update particles/floaters always (visible during pauses)
     for (const p of particles) p.update();
     for (const f of floaters) f.update();
 
-    if (gameOver) { cleanupLists(); return; }
+    // Title screen: nothing else to do
+    if (!isPlaying) { cleanupLists(); return; }
+
+    if (gameOver)
+    {
+        if (gameOverTimer > 0)
+        {
+            gameOverTimer--;
+            if (gameOverTimer === 0 && typeof showMenu === 'function')
+                showMenu('gameOver');
+        }
+        cleanupLists();
+        return;
+    }
 
     if (respawnTimer > 0)
     {
@@ -1899,15 +2109,22 @@ function gameRenderPost()
 {
     for (const f of floaters) f.render();
 
-    // crosshair (only when using mouse — hidden for gamepad/touch)
-    if (lastAimSource === 'mouse')
-    {
-        const cross = getMouseWorld();
-        drawRect(cross, vec2(.22,.04), rgb(1,1,1));
-        drawRect(cross, vec2(.04,.22), rgb(1,1,1));
-    }
-
     const W = mainCanvasSize.x, H = mainCanvasSize.y;
+
+    // Pre-play canvas: only show the "CLICK TO PLAY" prompt when no menu is on top
+    if (!isPlaying)
+    {
+        const menuUp = (typeof isMenuVisible === 'function') && isMenuVisible();
+        if (!menuUp)
+        {
+            drawTextScreen('ROBOTRON', vec2(W/2, H/2 - 80), 80, rgb(1, .35, .2), 6, rgb(0,0,0));
+            drawTextScreen('2084',     vec2(W/2, H/2 - 20), 40, rgb(.8, .85, 1), 4, rgb(0,0,0));
+            const a = .5 + .5 * Math.sin(time * 3);
+            const prompt = (typeof isTouchDevice !== 'undefined' && isTouchDevice) ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
+            drawTextScreen(prompt, vec2(W/2, H/2 + 50), 32, hsl(0,0,1,a), 4, hsl(0,0,0,a));
+        }
+        return;
+    }
 
     // TOP-LEFT — score
     drawTextScreen(`SCORE  ${score}`, vec2(16, 26), 24, rgb(.4,1,1), 4, hsl(0,0,0), 'left');
@@ -1968,11 +2185,7 @@ function gameRenderPost()
         drawTextScreen(subtitle, vec2(W/2, H/2 + 50), 30, rgb(.9,.9,1), 4, rgb(0,0,0));
     }
 
-    if (gameOver)
-    {
-        drawTextScreen('GAME OVER', vec2(W/2, H/2 + 40), 90, rgb(1,.3,.3), 6, rgb(0,0,0));
-        drawTextScreen('Press R to Restart', vec2(W/2, H/2 - 40), 32, rgb(1,1,1), 4, hsl(0,0,0));
-    }
+    // Game-over text is handled by the gameOver menu (built in buildMenus).
 }
 
 ///////////////////////////////////////////////////////////////////////////////
