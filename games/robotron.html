@@ -2071,9 +2071,7 @@ function gameInit()
     fitCameraToArena();
     runSelfTests();
 
-    // Free up Escape — menus.js uses it for pause. Move the debug overlay toggle to tilde (`).
-    if (typeof setDebugKey === 'function') setDebugKey('Backquote');
-
+    // (menus.js auto-moves LittleJS's debug-overlay key off Escape to ` — no manual remap needed)
     setSoundVolume(.8);
     if (typeof setMenuVisibilityCallback === 'function')
         // Only pause when we're actually playing — keeps attract-mode entities
@@ -2110,9 +2108,12 @@ function gameUpdate()
     // Keep the arena fitting the canvas as the window resizes
     fitCameraToArena();
 
-    // DEBUG: N advances to the next wave (skips current wave instantly)
-    if (isPlaying && waveActive && !gameOver && keyWasPressed('KeyN'))
-        endWave();
+    // DEBUG: N advances to the next wave — also skips the GET READY pause
+    if (isPlaying && !gameOver && keyWasPressed('KeyN'))
+    {
+        if (waveActive)     endWave();            // current wave -> jump to GET READY
+        else                interWaveTimer = 0;   // GET READY -> start next wave immediately
+    }
 
     // Pause hotkey — only meaningful when actually playing
     if (isPlaying && !gameOver &&

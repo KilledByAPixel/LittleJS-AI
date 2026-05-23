@@ -1173,6 +1173,13 @@ function initMenuSystem()
 {
     if (menuSystemRoot) return;
 
+    // LittleJS defaults its debug overlay to the Escape key, which collides
+    // with the pause/dismiss flow this menu system relies on. Move it to
+    // backtick (~) automatically so games that load menus.js don't have to.
+    if (typeof setDebugKey === 'function' &&
+        typeof debugKey !== 'undefined' && debugKey === 'Escape')
+        setDebugKey('Backquote');
+
     injectStyles();
 
     menuSystemRoot = document.createElement('div');
