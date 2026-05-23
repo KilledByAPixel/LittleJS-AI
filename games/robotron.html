@@ -111,25 +111,6 @@ const clampToArena = (pos, radius=0)=>
     return pos;
 };
 
-const overlapAABB = (aPos, aSize, bPos, bSize)=>
-    abs(aPos.x - bPos.x) < (aSize.x + bSize.x) * .5 &&
-    abs(aPos.y - bPos.y) < (aSize.y + bSize.y) * .5;
-
-function screenToWorld(s)
-{
-    return vec2(s.x - mainCanvasSize.x * .5, mainCanvasSize.y * .5 - s.y)
-        .scale(1 / cameraScale).add(cameraPos);
-}
-function drawRectScreen(sp, ss, c, a=0, fill=0)
-{
-    drawRect(screenToWorld(sp), ss.scale(1/cameraScale), c, a, fill);
-}
-function getMouseWorld()
-{
-    if (typeof mousePosScreen != 'undefined') return screenToWorld(mousePosScreen);
-    return mousePos;
-}
-
 function randEdgeSpawn()
 {
     const side = randInt(4), inset = .3;
@@ -656,7 +637,7 @@ class Brain extends KillableEnemy
         {
             const dir = target.pos.subtract(this.pos).normalize(1);
             this.pos = this.pos.add(dir.scale(speed));
-            if (overlapAABB(this.pos, this.size, target.pos, target.size))
+            if (isOverlapping(this.pos, this.size, target.pos, target.size))
             {
                 // begin possession — 120-frame hold (~2 sec at 60fps)
                 this.possessing = target;
@@ -1605,7 +1586,7 @@ class Player extends EngineObject
         let aimDir = null;
         if (rightStickActive)                       aimDir = rightStick;
         else if (fireButtonHeld && leftStickActive) aimDir = leftStick;
-        else                                        aimDir = getMouseWorld().subtract(this.pos);
+        else                                        aimDir = mousePos.subtract(this.pos);
 
         if (aimDir.lengthSquared() > .0001)
         {
@@ -1697,7 +1678,7 @@ function applyElectrodeCollisions()
         for (const e of electrodes)
         {
             if (e.destroyed) continue;
-            if (overlapAABB(player.pos, vec2(.7), e.pos, e.size)) { player.damage(); return; }
+            if (isOverlapping(player.pos, vec2(.7), e.pos, e.size)) { player.damage(); return; }
         }
     for (const en of enemies)
     {
@@ -1707,7 +1688,7 @@ function applyElectrodeCollisions()
         for (const el of electrodes)
         {
             if (el.destroyed) continue;
-            if (overlapAABB(en.pos, en.size, el.pos, el.size))
+            if (isOverlapping(en.pos, en.size, el.pos, el.size))
             {
                 en.killedByElectrode(el.pos);
                 // Arcade: electrode is also destroyed when a grunt walks into it
@@ -1723,7 +1704,7 @@ function applyElectrodeCollisions()
         for (const h of humans)
         {
             if (h.destroyed) continue;
-            if (overlapAABB(el.pos, el.size, h.pos, h.size)) h.kill();
+            if (isOverlapping(el.pos, el.size, h.pos, h.size)) h.kill();
         }
     }
 }
@@ -1734,7 +1715,7 @@ function applyHumanCollisions()
         for (const h of humans)
         {
             if (h.destroyed) continue;
-            if (overlapAABB(player.pos, vec2(.9), h.pos, h.size)) h.rescue();
+            if (isOverlapping(player.pos, vec2(.9), h.pos, h.size)) h.rescue();
         }
     for (const en of enemies)
     {
@@ -1742,7 +1723,7 @@ function applyHumanCollisions()
         for (const h of humans)
         {
             if (h.destroyed) continue;
-            if (overlapAABB(en.pos, en.size, h.pos, h.size)) h.kill();
+            if (isOverlapping(en.pos, en.size, h.pos, h.size)) h.kill();
         }
     }
 }
@@ -1755,7 +1736,7 @@ function applyPlayerBulletHits()
         {
             if (b.destroyed || e.destroyed) continue;
             if (!e.killable) continue;
-            if (overlapAABB(b.pos, vec2(.35), e.pos, e.size))
+            if (isOverlapping(b.pos, vec2(.35), e.pos, e.size))
             {
                 b.destroy();
                 const hitDir = b.vel.lengthSquared() > .001 ? b.vel.normalize(1) : vec2(0,1);
@@ -1768,7 +1749,7 @@ function applyPlayerBulletHits()
         {
             if (b.destroyed || e.destroyed) continue;
             if (e.killable) continue;
-            if (overlapAABB(b.pos, vec2(.35), e.pos, e.size))
+            if (isOverlapping(b.pos, vec2(.35), e.pos, e.size))
             {
                 const dir = b.vel.lengthSquared() > .001 ? b.vel.normalize(1) : vec2(0,1);
                 e.push(dir);
@@ -1781,7 +1762,7 @@ function applyPlayerBulletHits()
         for (const eb of enemyBullets)
         {
             if (b.destroyed || eb.destroyed) continue;
-            if (overlapAABB(b.pos, vec2(.35), eb.pos, vec2(.32)))
+            if (isOverlapping(b.pos, vec2(.35), eb.pos, vec2(.32)))
             {
                 b.destroy();
                 eb.destroy();
@@ -1795,7 +1776,7 @@ function applyPlayerBulletHits()
         for (const el of electrodes)
         {
             if (b.destroyed || el.destroyed) continue;
-            if (overlapAABB(b.pos, vec2(.35), el.pos, el.size))
+            if (isOverlapping(b.pos, vec2(.35), el.pos, el.size))
             {
                 b.destroy();
                 el.destroy();
@@ -1823,7 +1804,7 @@ function applyEnemyBulletPlayer()
     for (const eb of enemyBullets)
     {
         if (eb.destroyed) continue;
-        if (overlapAABB(eb.pos, vec2(.32), player.pos, vec2(.85)))
+        if (isOverlapping(eb.pos, vec2(.32), player.pos, vec2(.85)))
         {
             eb.destroy();
             player.damage();
@@ -1869,8 +1850,8 @@ function resetGame()
 
 function runSelfTests()
 {
-    console.assert(overlapAABB(vec2(0,0), vec2(1,1), vec2(.4,.4), vec2(1,1)) === true);
-    console.assert(overlapAABB(vec2(0,0), vec2(1,1), vec2(10,10), vec2(1,1)) === false);
+    console.assert(isOverlapping(vec2(0,0), vec2(1,1), vec2(.4,.4), vec2(1,1)) === true);
+    console.assert(isOverlapping(vec2(0,0), vec2(1,1), vec2(10,10), vec2(1,1)) === false);
     // Arcade-exact wave data checks
     const w1 = getWaveComposition(1);
     console.assert(w1.grunts === 15 && w1.electrodes === 5 && w1.humans === 2, 'wave 1 arcade match');
@@ -2070,12 +2051,28 @@ function buildMenus()
     getToolbar('hud')?.hide();
 }
 
+// Auto-fit the camera so the arena fills the canvas (with a small margin for the cyan frame)
+function fitCameraToArena()
+{
+    if (!mainCanvasSize || mainCanvasSize.x < 100) return;
+    const marginX = 1.2;
+    const marginY = 1.2;
+    cameraScale = min(
+        mainCanvasSize.x / (arenaSize.x + marginX),
+        mainCanvasSize.y / (arenaSize.y + marginY)
+    );
+}
+
 function gameInit()
 {
-    setCanvasFixedSize(vec2(1280, 720));
-    cameraScale = 32;
+    // Let the canvas grow with the window. canvasMaxSize caps the internal resolution.
+    canvasMaxSize = vec2(2048, 2048);
     cameraPos = vec2(0);
+    fitCameraToArena();
     runSelfTests();
+
+    // Free up Escape — menus.js uses it for pause. Move the debug overlay toggle to tilde (`).
+    if (typeof setDebugKey === 'function') setDebugKey('Backquote');
 
     setSoundVolume(.8);
     if (typeof setMenuVisibilityCallback === 'function')
@@ -2110,21 +2107,12 @@ function spawnAttractDecoration()
 
 function gameUpdate()
 {
-    {
-        // stretch canvas to sides leaving black areas so virtual gamepads can go there
-        const a1 = 1280 / 720;
-        const a2 = innerWidth / innerHeight;
-        canvasFixedSize = vec2(1280, 720);
-        if (a2 > a1) 
-            canvasFixedSize.x *= a2/a1;
-        cameraScale = 32;
-    }
-    /*{
-        // scale up to native res
-        const scale = Math.ceil(innerHeight / canvasFixedSize.y);
-        setCanvasFixedSize(canvasFixedSize.multiply(vec2(scale)));
-        cameraScale = 32 * scale;
-    }*/
+    // Keep the arena fitting the canvas as the window resizes
+    fitCameraToArena();
+
+    // DEBUG: N advances to the next wave (skips current wave instantly)
+    if (isPlaying && waveActive && !gameOver && keyWasPressed('KeyN'))
+        endWave();
 
     // Pause hotkey — only meaningful when actually playing
     if (isPlaying && !gameOver &&
@@ -2203,7 +2191,7 @@ function gameUpdatePost()
         for (const e of enemies)
         {
             if (e.destroyed) continue;
-            if (overlapAABB(player.pos, vec2(.85), e.pos, e.size)) { player.damage(); break; }
+            if (isOverlapping(player.pos, vec2(.85), e.pos, e.size)) { player.damage(); break; }
         }
 
     cleanupLists();
@@ -2286,8 +2274,8 @@ function gameRenderPost()
         let x = 86;
         for (let i=0;i<visibleLives;i++)
         {
-            drawRectScreen(vec2(x, H - 22), vec2(16, 16), rgb(.2,.95,.9));
-            drawRectScreen(vec2(x+9, H - 22), vec2(9, 4), rgb(.05,.15,.2));
+            drawRect(vec2(x, H - 22), vec2(16, 16), rgb(.2,.95,.9), 0, undefined, true);
+            drawRect(vec2(x+9, H - 22), vec2(9, 4), rgb(.05,.15,.2), 0, undefined, true);
             x += 20;
         }
         if (player.lives > 9)
