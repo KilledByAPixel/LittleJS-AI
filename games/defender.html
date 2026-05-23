@@ -116,24 +116,33 @@ function terrainAt(x)
 }
 
 // Pre-generated starfield. Stars live in world space and wrap with the world.
-// Cull per-frame by camera bounds — keeps the field dense and gap-free no
-// matter where the camera is.
-const STAR_COUNT  = 500;
+// Each star has a `depth` in (0, 1] for parallax — 1.0 moves with the world,
+// lower values appear further away and drift more slowly with the camera.
+// Three discrete layers (far/mid/near) read cleaner than uniform depth.
 const STAR_Y_LOW  = -16;     // a bit below the terrain trough
 const STAR_Y_HIGH = SKY_TOP + 4;
+const STAR_LAYERS = [
+    {count: 240, depth: .25, sizeMul: .7,  brightMul: .55}, // far
+    {count: 180, depth: .55, sizeMul: 1.0, brightMul: .8 }, // mid
+    {count:  90, depth: 1.0, sizeMul: 1.3, brightMul: 1.0}, // near (move with world)
+];
 function genStars()
 {
     stars = [];
     const rg = new RandomGenerator(8472);
-    for (let i = 0; i < STAR_COUNT; i++)
+    for (const layer of STAR_LAYERS)
     {
-        stars.push({
-            x:     rg.float(0, WORLD_W),
-            y:     rg.float(STAR_Y_LOW, STAR_Y_HIGH),
-            b:     rg.float(.35, 1),
-            s:     rg.float(.05, .13),
-            phase: rg.float(0, Math.PI * 2),
-        });
+        for (let i = 0; i < layer.count; i++)
+        {
+            stars.push({
+                x:         rg.float(0, WORLD_W),
+                y:         rg.float(STAR_Y_LOW, STAR_Y_HIGH),
+                b:         rg.float(.35, 1) * layer.brightMul,
+                s:         rg.float(.05, .12) * layer.sizeMul,
+                phase:     rg.float(0, Math.PI * 2),
+                depth:     layer.depth,
+            });
+        }
     }
 }
 
@@ -1353,17 +1362,19 @@ function gameUpdatePost()
     let camX, camY;
     if (player)
     {
-        // Lead the player in facing direction, wrap-aware lerp
+        // Lead the player in facing direction, wrap-aware lerp. cameraPos.x
+        // is NOT wrapped — kept monotonic so parallax stars don't jump at
+        // the world seam (wrapDX-based draw math handles arbitrary values).
         const lead = 10;
         const targetX = wrapX(player.pos.x + player.facing * lead);
         const dx = wrapDX(targetX, cameraPos.x);
-        camX = wrapX(cameraPos.x + dx * .04);
+        camX = cameraPos.x + dx * .04;
         camY = 2 + clamp((player.pos.y - 2) * .25, -3, 3);
     }
     else
     {
-        // Attract mode: slow continuous pan across the world
-        camX = wrapX(cameraPos.x + .05);
+        // Attract mode: slow continuous pan, also unwrapped for parallax
+        camX = cameraPos.x + .05;
         camY = 2;
     }
     if (shakeTimer.active())
@@ -1387,9 +1398,12 @@ function drawStars()
     for (const st of stars)
     {
         if (st.y < yMin || st.y > yMax) continue;
-        const dx = wrapDX(st.x, cameraPos.x);
+        // Parallax: apparent world x lags camera motion by (1 - depth). For
+        // depth=1 the star sits in world (full speed); depth→0 nails it to
+        // the camera (no drift). wrapDX makes the field tile seamlessly.
+        const apparentX = st.x + cameraPos.x * (1 - st.depth);
+        const dx = wrapDX(apparentX, cameraPos.x);
         if (Math.abs(dx) > halfW) continue;
-        // Subtle twinkle
         const a = .6 + .4 * Math.sin(time * 2 + st.phase);
         drawRect(vec2(cameraPos.x + dx, st.y),
             vec2(st.s, st.s), hsl(0, 0, st.b, a));
