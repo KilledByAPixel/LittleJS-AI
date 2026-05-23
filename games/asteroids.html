@@ -122,6 +122,39 @@ function circlesHit(posA, rA, posB, rB)
     return dist2(posA, posB) <= rr*rr;
 }
 
+// ============================================================
+// Pre-bloom: every visible primitive is drawn as a core + halos
+// so the post-process shader has soft glow to amplify. Single
+// place to tune the layered-draw look.
+// ============================================================
+// Keep halo widths modest relative to the smallest shape (~0.4 world
+// units for the small UFO body / ship triangle) so wide halos don't
+// overlap and fill the interior. The post-process bloom does the
+// long-range spread; pre-bloom just provides soft edges to amplify.
+const GLOW_LAYERS = [
+    { width: 1.0, alpha: 1.00 }, // core
+    { width: 1.8, alpha: 0.32 }, // inner halo
+    { width: 3.0, alpha: 0.12 }, // outer haze
+];
+
+function drawGlowLine(a, b, width, col)
+{
+    for (const g of GLOW_LAYERS)
+        drawLine(a, b, width * g.width, rgb(col.r, col.g, col.b, col.a * g.alpha));
+}
+
+function drawGlowCircle(pos, diameter, col)
+{
+    for (const g of GLOW_LAYERS)
+        drawCircle(pos, diameter * g.width, rgb(col.r, col.g, col.b, col.a * g.alpha));
+}
+
+function drawGlowLineList(points, width, col, wrap=false, pos=vec2(), angle=0)
+{
+    for (const g of GLOW_LAYERS)
+        drawLineList(points, width * g.width, rgb(col.r, col.g, col.b, col.a * g.alpha), wrap, pos, angle);
+}
+
 function randEdgeSpawn(minDistanceFromCenter = 4)
 {
     // spawn just outside the view bounds
@@ -342,12 +375,10 @@ class Ship extends EngineObject
         const l = this.pos.subtract(dir.scale(SHIP_RADIUS*1.0)).add(right.scale(SHIP_RADIUS*0.95));
         const r = this.pos.subtract(dir.scale(SHIP_RADIUS*1.0)).subtract(right.scale(SHIP_RADIUS*0.95));
 
-        drawLine(nose, l, LINE_WIDTH, col);
-        drawLine(l, r, LINE_WIDTH, col);
-        drawLine(r, nose, LINE_WIDTH, col);
+        drawGlowLineList([nose, l, r], LINE_WIDTH, col, true);
 
         // tiny cockpit line
-        drawLine(this.pos.add(dir.scale(SHIP_RADIUS*.35)), this.pos.subtract(dir.scale(SHIP_RADIUS*.25)), LINE_WIDTH_THIN, col);
+        drawGlowLine(this.pos.add(dir.scale(SHIP_RADIUS*.35)), this.pos.subtract(dir.scale(SHIP_RADIUS*.25)), LINE_WIDTH_THIN, col);
     }
 }
 
@@ -381,7 +412,7 @@ class Bullet extends EngineObject
 
     render()
     {
-        drawCircle(this.pos, .12, rgb(1,1,1));
+        drawGlowCircle(this.pos, .12, rgb(1,1,1));
     }
 }
 
@@ -446,24 +477,7 @@ class Rock extends EngineObject
 
     render()
     {
-        const col = rgb(1,1,1);
-
-        // draw outline by connecting rotated points
-        let prev;
-        for (let i=0;i<this.points.length;i++)
-        {
-            const pLocal = this.points[i].rotate(this.angle);
-            const p = this.pos.add(pLocal);
-            if (i)
-                drawLine(prev, p, LINE_WIDTH, col);
-            prev = p;
-        }
-        // close
-        if (this.points.length)
-        {
-            const first = this.pos.add(this.points[0].rotate(this.angle));
-            drawLine(prev, first, LINE_WIDTH, col);
-        }
+        drawGlowLineList(this.points, LINE_WIDTH, rgb(1,1,1), true, this.pos, this.angle);
     }
 }
 
@@ -509,7 +523,7 @@ class Debris extends EngineObject
         const dir = angleToVec(this.angle);
         const aPos = this.pos.subtract(dir.scale(this.length*.5));
         const bPos = this.pos.add(dir.scale(this.length*.5));
-        drawLine(aPos, bPos, LINE_WIDTH_THIN, col);
+        drawGlowLine(aPos, bPos, LINE_WIDTH_THIN, col);
     }
 }
 
@@ -635,23 +649,17 @@ class Ufo extends EngineObject
             vec2( r*.6,    -r*.22),
             vec2(-r*.6,    -r*.22),
         ];
-        for (let i=0;i<body.length;i++)
-        {
-            const a = this.pos.add(body[i]);
-            const b = this.pos.add(body[(i+1)%body.length]);
-            drawLine(a, b, lw, col);
-        }
-        // dome
+        drawGlowLineList(body, lw, col, true, this.pos);
+        // dome (open polyline)
         const dome = [
             vec2(-r*.32, r*.32),
             vec2(-r*.18, r*.5),
             vec2( r*.18, r*.5),
             vec2( r*.32, r*.32),
         ];
-        for (let i=0;i<dome.length-1;i++)
-            drawLine(this.pos.add(dome[i]), this.pos.add(dome[i+1]), lw, col);
+        drawGlowLineList(dome, lw, col, false, this.pos);
         // belt
-        drawLine(this.pos.add(vec2(-r,    r*.08)), this.pos.add(vec2( r,    r*.08)), lw*.85, col);
+        drawGlowLine(this.pos.add(vec2(-r, r*.08)), this.pos.add(vec2(r, r*.08)), lw*.85, col);
     }
 }
 
@@ -684,7 +692,7 @@ class UfoBullet extends EngineObject
     render()
     {
         // distinct from player bullet: warm red-orange glow
-        drawCircle(this.pos, .13, rgb(1, .35, .35));
+        drawGlowCircle(this.pos, .13, rgb(1, .35, .35));
     }
 }
 
@@ -720,40 +728,36 @@ function gameInit()
     setGravity(vec2());
 
     // ============================================================
-    // Vector-arcade bloom (post-process). Composites HUD into the
-    // glow so the score readout matches the look of the world.
-    // Two-radius gaussian-ish blur with a soft bright-pass, plus
-    // a touch of chromatic aberration and scanlines.
+    // Vector-arcade post-process. Two stacked bloom passes (tight
+    // halo + wide haze) over the pre-bloomed geometry, plus a
+    // soft vignette. HUD is composited in so it glows too.
     // ============================================================
     const televisionShader = `
-    // Simple TV Shader Code
+    // 5-tap cross-pattern blur, reused at multiple radii
+    vec4 bloomPass(vec2 p, float blurSize)
+    {
+        vec4 bloom = vec4(0);
+        bloom += texture(iChannel0, p + vec2(-2.*blurSize, 0)) * .12;
+        bloom += texture(iChannel0, p + vec2(   -blurSize, 0)) * .24;
+        bloom += texture(iChannel0, p)                         * .28;
+        bloom += texture(iChannel0, p + vec2(    blurSize, 0)) * .24;
+        bloom += texture(iChannel0, p + vec2( 2.*blurSize, 0)) * .12;
+        bloom += texture(iChannel0, p + vec2(0, -2.*blurSize)) * .12;
+        bloom += texture(iChannel0, p + vec2(0,    -blurSize)) * .24;
+        bloom += texture(iChannel0, p)                         * .28;
+        bloom += texture(iChannel0, p + vec2(0,     blurSize)) * .24;
+        bloom += texture(iChannel0, p + vec2(0,  2.*blurSize)) * .12;
+        return bloom;
+    }
 
     void mainImage(out vec4 c, vec2 p)
     {
-        // setup the shader
-        vec2 uv = p;
         p /= iResolution.xy;
         c = texture(iChannel0, p);
 
-        {
-            // bloom effect
-            const float blurSize = .001;
-            const float bloomIntensity = .8;
-
-            // 5-tap Gaussian blur
-            vec4 bloom = vec4(0);
-            bloom += texture(iChannel0, p + vec2(-2.*blurSize, 0)) * .12;
-            bloom += texture(iChannel0, p + vec2(   -blurSize, 0)) * .24;
-            bloom += texture(iChannel0, p)                         * .28;
-            bloom += texture(iChannel0, p + vec2(    blurSize, 0)) * .24;
-            bloom += texture(iChannel0, p + vec2( 2.*blurSize, 0)) * .12;
-            bloom += texture(iChannel0, p + vec2(0, -2.*blurSize)) * .12;
-            bloom += texture(iChannel0, p + vec2(0,    -blurSize)) * .24;
-            bloom += texture(iChannel0, p)                         * .28;
-            bloom += texture(iChannel0, p + vec2(0,     blurSize)) * .24;
-            bloom += texture(iChannel0, p + vec2(0,  2.*blurSize)) * .12;
-            c += bloom * bloomIntensity;
-        }
+        // stacked bloom: tight halo + wide haze
+        c += bloomPass(p, .0007) * 1.0;
+        c += bloomPass(p, .001) * 0.7;
 
         // black vignette around edges
         const float vignette = 2.;
@@ -959,10 +963,7 @@ function gameRender()
     // faint border
     const w = worldHalf.x, h = worldHalf.y;
     const col = rgb(1,1,1,.08);
-    drawLine(vec2(-w,-h), vec2(w,-h), LINE_WIDTH_FAINT, col);
-    drawLine(vec2(w,-h), vec2(w,h), LINE_WIDTH_FAINT, col);
-    drawLine(vec2(w,h), vec2(-w,h), LINE_WIDTH_FAINT, col);
-    drawLine(vec2(-w,h), vec2(-w,-h), LINE_WIDTH_FAINT, col);
+    drawLineList([vec2(-w,-h), vec2(w,-h), vec2(w,h), vec2(-w,h)], LINE_WIDTH_FAINT, col, true);
 }
 
 function gameRenderPost()
