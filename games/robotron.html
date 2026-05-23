@@ -559,13 +559,16 @@ class Brain extends KillableEnemy
         this.shootTimer = randInt(120, 240);
         this.walkPhase = 0;
         this.brainPulse = rand(0, 6.28);
+        this.possessing = null;     // human being reprogrammed
+        this.possessTimer = 0;      // frames remaining in the grab
     }
     findHuman()
     {
         let best = null, bestDist = Infinity;
         for (const h of humans)
         {
-            if (h.destroyed) continue;
+            // skip humans already being possessed by another brain
+            if (h.destroyed || h.possessedBy) continue;
             const d = h.pos.subtract(this.pos).length();
             if (d < bestDist) { bestDist = d; best = h; }
         }
@@ -576,6 +579,39 @@ class Brain extends KillableEnemy
         if (gameOver || playerControlLocked || !player) return;
         const speed = .045 + min(.02, gameWave * .001);
 
+        // POSSESSION: locked onto a human, hover above them while reprogramming
+        if (this.possessing && !this.possessing.destroyed)
+        {
+            this.pos = this.possessing.pos.add(vec2(0, .9));
+            this.pos = clampToArena(this.pos, .5);
+            this.possessTimer--;
+            // sparkle particles arcing between brain and human
+            if (this.possessTimer % 3 === 0)
+                particles.push(new SimpleParticle(
+                    this.possessing.pos.add(vec2(rand(-.2,.2), rand(-.2,.5))),
+                    randVec2(rand(.02, .08)), randInt(8, 18), rand(.08, .14),
+                    rgb(1, rand(.3, .7), 1)));
+            if (this.possessTimer <= 0)
+            {
+                // reprogram complete: spawn Prog, destroy human
+                enemies.push(new Prog(this.possessing.pos.copy(), this.possessing.type));
+                burst(this.possessing.pos, 30, rgb(1, .3, .9));
+                sfxReprogram.play(this.possessing.pos);
+                this.possessing.destroy();
+                this.possessing = null;
+            }
+            this.walkPhase += speed * 2;
+            this.brainPulse += .25;
+            if (this.flash > 0) this.flash--;
+            return;
+        }
+        // possessing target was rescued / killed before we finished — release
+        if (this.possessing && this.possessing.destroyed)
+        {
+            this.possessing = null;
+            this.possessTimer = 0;
+        }
+
         const target = this.findHuman();
         if (target)
         {
@@ -583,11 +619,11 @@ class Brain extends KillableEnemy
             this.pos = this.pos.add(dir.scale(speed));
             if (overlapAABB(this.pos, this.size, target.pos, target.size))
             {
-                // reprogram: human -> prog at same position
-                enemies.push(new Prog(target.pos.copy(), target.type));
-                burst(target.pos, 30, rgb(1, .3, .9));
-                sfxReprogram.play(target.pos);
-                target.destroy();
+                // begin possession — 90-frame hold (~1.5 sec at 60fps)
+                this.possessing = target;
+                this.possessTimer = 90;
+                target.possessedBy = this;
+                sfxHit.play(target.pos);
             }
         }
         else
@@ -647,7 +683,7 @@ class Brain extends KillableEnemy
     }
 }
 
-// Prog: reprogrammed family, runs at the player in a zigzag with a magenta trail
+// Prog: reprogrammed family — wanders around with a weak pull toward the player, magenta trail
 class Prog extends KillableEnemy
 {
     constructor(pos, humanType)
@@ -655,25 +691,25 @@ class Prog extends KillableEnemy
         super(pos, vec2(.55, .9), 1, scoreProg, rgb(1, .2, .85));
         this.humanType = humanType;
         this.walkPhase = rand(0, 6.28);
-        this.zigPhase = rand(0, 6.28);
         this.trailTimer = 0;
         this.eyePulse = rand(0, 6.28);
+        this.wanderDir = randVec2(1);   // current heading
     }
     update()
     {
         if (gameOver || playerControlLocked || !player) return;
-        const speed = .12 + min(.04, gameWave * .002);  // much faster than humans
+        const speed = .10 + min(.03, gameWave * .002);
 
-        // zigzag toward player — base toward, plus perpendicular sine wobble
+        // Drift the wander direction randomly each frame
+        this.wanderDir = this.wanderDir.add(randVec2(.18));
+        // Weak pull toward player — they kind of go for you but mostly wander
         const toP = player.pos.subtract(this.pos);
-        const d = toP.length();
-        const baseDir = d > .001 ? toP.scale(1/d) : vec2(0,1);
-        this.zigPhase += .28;
-        const perp = vec2(-baseDir.y, baseDir.x);
-        const zig = Math.sin(this.zigPhase) * .9;
-        const moveDir = baseDir.add(perp.scale(zig));
-        const mag = moveDir.length();
-        const finalDir = mag > .001 ? moveDir.scale(1/mag) : baseDir;
+        if (toP.lengthSquared() > .01)
+            this.wanderDir = this.wanderDir.add(toP.normalize(1).scale(.06));
+        // Normalize so speed stays constant
+        const m = this.wanderDir.length();
+        const finalDir = m > .001 ? this.wanderDir.scale(1/m) : vec2(0, 1);
+        this.wanderDir = finalDir;   // keep it unit-length
 
         this.pos = this.pos.add(finalDir.scale(speed));
         this.pos = clampToArena(this.pos, .4);
@@ -1083,10 +1119,22 @@ class Human extends EngineObject
         this.walkPhase = rand(0, 6.28);
         this.renderOrder = 3;
         this.startled = 0;
+        this.possessedBy = null;
     }
     update()
     {
         if (gameOver || playerControlLocked || !waveActive) return;
+
+        // Drop stale possession reference if the brain was killed mid-grab
+        if (this.possessedBy && this.possessedBy.destroyed)
+            this.possessedBy = null;
+
+        // Frozen while a brain is reprogramming us — shake but don't walk
+        if (this.possessedBy)
+        {
+            this.startled = 8;
+            return;
+        }
         let runDir = null;
         // run from hulks and brains (anything that wants to kill/take them)
         for (const e of enemies)
@@ -1142,24 +1190,31 @@ class Human extends EngineObject
     render()
     {
         const bob = Math.sin(this.walkPhase) * .06;
-        const legSwing = Math.sin(this.walkPhase) * .08;
+        // Small leg swing so legs stay anchored to the body (was .08 — caused detach)
+        const legSwing = Math.sin(this.walkPhase) * .03;
         const palette = [
             { body: rgb(1, .45, .75), head: rgb(1, .85, .7), hair: rgb(.85, .55, .25) },
             { body: rgb(.3, .55, 1),  head: rgb(1, .85, .7), hair: rgb(.25, .15, .1)  },
             { body: rgb(1, .9, .25),  head: rgb(1, .85, .7), hair: rgb(.95, .65, .15) },
         ];
         const c = palette[this.type];
+
+        // Shake violently while being possessed by a brain
+        const shake = (this.possessedBy && !this.possessedBy.destroyed)
+            ? vec2(rand(-.1, .1), rand(-.1, .1)) : vec2(0);
+        const p = this.pos.add(shake);
+
         const flash = this.startled && (this.startled & 4) ? rgb(1,1,1) : c.body;
-        drawRect(this.pos.add(vec2(0,-.45)), vec2(.5, .1), rgb(0,0,0,.35));
-        drawRect(this.pos.add(vec2(-.1, -.32 - legSwing)), vec2(.13, .22), c.body);
-        drawRect(this.pos.add(vec2( .1, -.32 + legSwing)), vec2(.13, .22), c.body);
-        drawRect(this.pos.add(vec2(0, -.05 + bob)), vec2(.42, .42), flash);
-        drawRect(this.pos.add(vec2(-.27,  bob)), vec2(.12, .3), flash);
-        drawRect(this.pos.add(vec2( .27, -bob)), vec2(.12, .3), flash);
-        drawRect(this.pos.add(vec2(0, .3 + bob)), vec2(.26, .26), c.head);
-        drawRect(this.pos.add(vec2(0, .42 + bob)), vec2(.28, .08), c.hair);
-        drawRect(this.pos.add(vec2(-.06, .32 + bob)), vec2(.04), rgb(0,0,0));
-        drawRect(this.pos.add(vec2( .06, .32 + bob)), vec2(.04), rgb(0,0,0));
+        drawRect(p.add(vec2(0,-.45)), vec2(.5, .1), rgb(0,0,0,.35));
+        drawRect(p.add(vec2(-.1, -.32 - legSwing)), vec2(.13, .22), c.body);
+        drawRect(p.add(vec2( .1, -.32 + legSwing)), vec2(.13, .22), c.body);
+        drawRect(p.add(vec2(0, -.05 + bob)), vec2(.42, .42), flash);
+        drawRect(p.add(vec2(-.27,  bob)), vec2(.12, .3), flash);
+        drawRect(p.add(vec2( .27, -bob)), vec2(.12, .3), flash);
+        drawRect(p.add(vec2(0, .3 + bob)), vec2(.26, .26), c.head);
+        drawRect(p.add(vec2(0, .42 + bob)), vec2(.28, .08), c.hair);
+        drawRect(p.add(vec2(-.06, .32 + bob)), vec2(.04), rgb(0,0,0));
+        drawRect(p.add(vec2( .06, .32 + bob)), vec2(.04), rgb(0,0,0));
     }
 }
 
@@ -1422,6 +1477,8 @@ class Player extends EngineObject
         this.cooldown = 0;
         this.renderOrder = 6;
         this.facing = vec2(0,1);
+        this.walkPhase = 0;
+        this.moveAmount = 0;
     }
     update()
     {
@@ -1446,6 +1503,8 @@ class Player extends EngineObject
         if (move.lengthSquared() > 0) move = move.normalize(1);
         this.pos = this.pos.add(move.scale(.17));
         this.pos = clampToArena(this.pos, .5);
+        this.moveAmount = move.length();
+        if (this.moveAmount > .01) this.walkPhase += this.moveAmount * .4;
 
         // AIM: right stick (twin-stick) > left stick + fire button (touch / single-stick) > mouse
         const rightStick = (typeof gamepadStick === 'function') ? gamepadStick(1) : vec2(0);
@@ -1470,11 +1529,10 @@ class Player extends EngineObject
         if (this.cooldown > 0) this.cooldown--;
         if (shootInput && this.cooldown <= 0)
         {
-            const muzzle = this.pos.add(this.facing.scale(.75));
-            bullets.push(new Bullet(muzzle, this.facing.scale(.85)));
+            // Bullets fire straight from the player — no aim barrel in arcade Robotron
+            bullets.push(new Bullet(this.pos.copy(), this.facing.scale(.85)));
             this.cooldown = 5;
-            sfxShoot.play(muzzle);
-            burst(muzzle, 2, rgb(1,1,.6));
+            sfxShoot.play(this.pos);
         }
         if (this.invuln > 0) this.invuln--;
     }
@@ -1497,13 +1555,35 @@ class Player extends EngineObject
         // hide player during the first half of the mid-wave death pause (breathing room)
         if (respawnTimer > respawnHiddenFrames) return;
 
-        const angle = this.facing.angle();
-        const body = (this.invuln > 0 && Math.floor(this.invuln/4) & 1) ? rgb(1,1,1) : rgb(.2,.95,.9);
-        drawRect(this.pos, vec2(1.05, 1.05), rgb(0,0,0,.25));
-        drawRect(this.pos, vec2(1,1), body);
-        drawRect(this.pos.add(this.facing.scale(.55)), vec2(.75,.18), rgb(.1,.2,.25), angle);
-        drawRect(this.pos.add(this.facing.scale(.85)), vec2(.22,.22), rgb(1,1,.4));
-        drawRect(this.pos, vec2(.35,.35), rgb(1,1,1));
+        const bob = Math.sin(this.walkPhase) * .06;
+        const legSwing = Math.sin(this.walkPhase) * .03;
+        const blink = this.invuln > 0 && (Math.floor(this.invuln/4) & 1);
+
+        // Arcade Robotron hero: red helmet, white torso, dark legs
+        const body = blink ? rgb(1, 1, 1) : rgb(.95, .95, .95);
+        const dark = rgb(.25, .25, .3);
+        const head = blink ? rgb(1, .6, .6) : rgb(1, .2, .2);
+        const headDark = rgb(.55, .05, .05);
+        const eyes = rgb(1, 1, 1);
+
+        // shadow
+        drawRect(this.pos.add(vec2(0, -.55)), vec2(.7, .14), rgb(0,0,0,.4));
+        // legs (alternating swing — uses same small offset as humans so they stay attached)
+        drawRect(this.pos.add(vec2(-.14, -.4 - legSwing)), vec2(.2, .32), dark);
+        drawRect(this.pos.add(vec2( .14, -.4 + legSwing)), vec2(.2, .32), dark);
+        // white torso
+        drawRect(this.pos.add(vec2(0, -.02 + bob)), vec2(.55, .55), body);
+        // arms
+        drawRect(this.pos.add(vec2(-.35,  bob)), vec2(.16, .42), body);
+        drawRect(this.pos.add(vec2( .35, -bob)), vec2(.16, .42), body);
+        // big red helmet/head
+        drawRect(this.pos.add(vec2(0, .42 + bob)), vec2(.6, .5), head);
+        // helmet shadow band along the bottom
+        drawRect(this.pos.add(vec2(0, .22 + bob)), vec2(.62, .08), headDark);
+        // eye visor slit
+        drawRect(this.pos.add(vec2(0, .42 + bob)), vec2(.42, .1), headDark);
+        drawRect(this.pos.add(vec2(-.1, .42 + bob)), vec2(.08, .08), eyes);
+        drawRect(this.pos.add(vec2( .1, .42 + bob)), vec2(.08, .08), eyes);
     }
 }
 
