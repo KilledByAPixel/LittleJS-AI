@@ -756,8 +756,8 @@ function gameInit()
         c = texture(iChannel0, p);
 
         // stacked bloom: tight halo + wide haze
-        c += bloomPass(p, .0005) * 1.0;
-        c += bloomPass(p, .001) * 1.0 ;
+        c += bloomPass(p, .0005) * 0.5;
+        c += bloomPass(p, .001) * 0.5;
 
         // black vignette around edges
         const float vignette = 2.;
