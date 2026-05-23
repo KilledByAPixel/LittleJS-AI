@@ -1029,9 +1029,46 @@ function doGameOver()
         {
             clearSubmenuStack();
             hideAllMenus();
+            startAttractMode();
             showMenu('title');
         },
     });
+}
+
+// Attract mode — title-screen backdrop. Same world simulation, no player,
+// no HUD. Periodically respawns landers/mutants so the scene stays alive.
+function startAttractMode()
+{
+    score = 0;
+    lives = 3;
+    smartBombs = 3;
+    wave = 1;
+    nextExtra = EXTRA_LIFE_EVERY;
+    humansAlive = HUMAN_COUNT;
+    planetDestroyed = false;
+    mutantWavesLeft = 0;
+    enemies = [];
+    bullets = [];
+    humans = [];
+    particles = [];
+    pendingSpawns = [];
+    bombFlash = 0;
+    shakeTimer = new Timer();
+    spawnTimer = new Timer();
+    baiterTimer = new Timer();
+    isPlaying = false;
+    gameOver = false;
+    player = null;
+    genTerrain();
+    for (let i = 0; i < HUMAN_COUNT; i++)
+        humans.push(new Human(rand(0, WORLD_W)));
+    // Seed the scene with some action
+    for (let i = 0; i < 4; i++)
+        enemies.push(new Lander(rand(0, WORLD_W), SKY_TOP - rand(2, 6)));
+    for (let i = 0; i < 2; i++)
+        enemies.push(new Mutant(rand(0, WORLD_W), rand(4, SKY_TOP - 2)));
+    cameraPos = vec2(rand(0, WORLD_W), 2);
+    setHudVisible(false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1100,7 +1137,9 @@ async function gameInit()
 {
     initSounds();
     setSoundVolume(.6);
-    setMenuVisibilityCallback(v => paused = v);
+    // Only pause when a menu surfaces during gameplay. Title-screen menus
+    // leave paused=false so the attract-mode world keeps animating behind.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
 
     const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
     const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
@@ -1186,9 +1225,7 @@ async function gameInit()
                     {
                         clearSubmenuStack();
                         hideAllMenus();
-                        isPlaying = false;
-                        gameOver = false;
-                        setHudVisible(false);
+                        startAttractMode();
                         showMenu('title');
                     },
                 }),
@@ -1210,31 +1247,28 @@ async function gameInit()
         ],
     });
 
-    // Show the title menu immediately on startup
+    // Seed the attract-mode world and surface the title menu
+    startAttractMode();
     showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (!isPlaying) return;
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (isPlaying && bindPauseKey({when: () => isPlaying && !gameOver})) return;
 
-    // Update player
-    player.update();
+    // Player input + simulation (only while actually playing)
+    if (player) player.update();
 
-    // Update enemies
+    // World simulation runs in both attract mode and gameplay
     for (const e of enemies) if (!e.dead) e.update();
-    // Update humans
     for (const h of humans) if (!h.dead) h.update();
-    // Update bullets
     for (const b of bullets)
     {
         if (!b.life.active()) continue;
         b.pos.x = wrapX(b.pos.x + b.vel.x);
         b.pos.y += b.vel.y;
     }
-    // Update particles
     for (const p of particles)
     {
         if (!p.life.active()) continue;
@@ -1243,45 +1277,71 @@ function gameUpdate()
         p.vel = p.vel.scale(.92);
     }
 
-    // Collisions
     bulletHits();
     enemyHitsPlayer();
 
-    // Cleanup
     enemies = enemies.filter(e => !e.dead);
     bullets = bullets.filter(b => b.life.active());
     particles = particles.filter(p => p.life.active());
 
-    // Wave / spawn logic
-    if (pendingSpawns.length && !spawnTimer.active())
+    if (isPlaying)
     {
-        spawnOne(pendingSpawns.shift());
-        spawnTimer.set(rand(.4, 1.2));
-    }
-    if (!pendingSpawns.length && !landersOrMutantsLeft() && !player.dead)
-        waveComplete();
+        // Wave / spawn logic — only during real gameplay
+        if (pendingSpawns.length && !spawnTimer.active())
+        {
+            spawnOne(pendingSpawns.shift());
+            spawnTimer.set(rand(.4, 1.2));
+        }
+        if (!pendingSpawns.length && !landersOrMutantsLeft() && !player.dead)
+            waveComplete();
 
-    // Baiter appears if wave drags on
-    if (!baiterTimer.active() && !planetDestroyed)
+        if (!baiterTimer.active() && !planetDestroyed)
+        {
+            baiterTimer.set(15);
+            pendingSpawns.push('baiter');
+        }
+    }
+    else
     {
-        baiterTimer.set(15);
-        pendingSpawns.push('baiter');
+        // Attract mode: keep the scene populated
+        if (!spawnTimer.active() && enemies.length < 8)
+        {
+            spawnTimer.set(rand(2, 4));
+            const roll = rand();
+            if (roll < .6) enemies.push(new Lander(rand(0, WORLD_W), SKY_TOP - rand(2, 6)));
+            else if (roll < .9) enemies.push(new Mutant(rand(0, WORLD_W), rand(4, SKY_TOP - 2)));
+            else enemies.push(new Pod(rand(0, WORLD_W), rand(4, SKY_TOP - 4)));
+        }
+        // Top up humans if landers have stolen them all
+        if (humansAlive < HUMAN_COUNT && rand() < .005)
+        {
+            humans.push(new Human(rand(0, WORLD_W)));
+            humansAlive++;
+        }
     }
 
-    // Bomb flash fade
     bombFlash = max(0, bombFlash - .04);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    if (!isPlaying || !player) return;
-    // Camera: lead the player in facing direction, wrap-aware lerp
-    const lead = 10;
-    const targetX = wrapX(player.pos.x + player.facing * lead);
-    const dx = wrapDX(targetX, cameraPos.x);
-    let camX = wrapX(cameraPos.x + dx * .04);
-    let camY = 2 + clamp((player.pos.y - 2) * .25, -3, 3);
+    let camX, camY;
+    if (player)
+    {
+        // Lead the player in facing direction, wrap-aware lerp
+        const lead = 10;
+        const targetX = wrapX(player.pos.x + player.facing * lead);
+        const dx = wrapDX(targetX, cameraPos.x);
+        camX = wrapX(cameraPos.x + dx * .04);
+        camY = 2 + clamp((player.pos.y - 2) * .25, -3, 3);
+    }
+    else
+    {
+        // Attract mode: slow continuous pan across the world
+        camX = wrapX(cameraPos.x + .05);
+        camY = 2;
+    }
     if (shakeTimer.active())
     {
         const s = shakeTimer.getPercent();
@@ -1363,7 +1423,6 @@ function drawParticles()
 
 function gameRender()
 {
-    if (!isPlaying) return;
     drawStars();
     drawTerrain();
     // Humans
