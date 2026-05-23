@@ -193,6 +193,32 @@ function ringBurst(pos, color, count = 14)
     }
 }
 
+// Mini player sprite drawn in screen space — used for the LIVES HUD icons.
+// Matches the in-game player look: white torso, red helmet with visor, dark legs.
+function drawLifeIcon(cx, cy)
+{
+    const body     = rgb(.95, .95, .95);
+    const head     = rgb(1, .2, .2);
+    const headDark = rgb(.55, .05, .05);
+    const dark     = rgb(.25, .25, .3);
+    const eyes     = rgb(1, 1, 1);
+
+    // legs
+    drawRect(vec2(cx - 4, cy + 13), vec2(6, 8), dark, 0, undefined, true);
+    drawRect(vec2(cx + 4, cy + 13), vec2(6, 8), dark, 0, undefined, true);
+    // white torso
+    drawRect(vec2(cx, cy + 3), vec2(16, 14), body, 0, undefined, true);
+    // arms (small white bars at the sides)
+    drawRect(vec2(cx - 10, cy + 3), vec2(4, 12), body, 0, undefined, true);
+    drawRect(vec2(cx + 10, cy + 3), vec2(4, 12), body, 0, undefined, true);
+    // red helmet/head
+    drawRect(vec2(cx, cy - 10), vec2(20, 14), head, 0, undefined, true);
+    // visor band
+    drawRect(vec2(cx, cy - 10), vec2(15, 4), headDark, 0, undefined, true);
+    drawRect(vec2(cx - 4, cy - 10), vec2(3, 3), eyes, 0, undefined, true);
+    drawRect(vec2(cx + 4, cy - 10), vec2(3, 3), eyes, 0, undefined, true);
+}
+
 class FloatText
 {
     constructor(pos, text, color)
@@ -250,7 +276,7 @@ class Spark extends EngineObject
     {
         super(pos, vec2(.3));
         this.vel = vel.copy();
-        this.life = 220;
+        this.life = 440;
         this.renderOrder = 5;
         this.phase = rand(0, 1);
         this.spinAngle = rand(0, 6.28);
@@ -299,7 +325,7 @@ class CruiseMissile extends EngineObject
     {
         super(pos, vec2(.28));
         this.target = target;
-        this.life = 480;
+        this.life = 960;
         this.renderOrder = 5;
         this.segments = [];
         this.huePhase = rand(0, 1);
@@ -520,6 +546,13 @@ class Hulk extends EngineObject
     }
     pickMarchDir()
     {
+        // Attract mode: ignore humans, just wander a random cardinal direction
+        if (!isPlaying)
+        {
+            const dirs = [vec2(1,0), vec2(-1,0), vec2(0,1), vec2(0,-1)];
+            this.marchDir = dirs[randInt(4)];
+            return;
+        }
         let target = null, bestDist = Infinity;
         for (const h of humans)
         {
@@ -728,9 +761,9 @@ class Prog extends KillableEnemy
     pickCardinalDir()
     {
         if (!player) return vec2(1, 0);
-        // 70% chance to head roughly toward player on a cardinal axis;
-        // 30% chance to pick a random cardinal direction
-        if (rand() < .7)
+        // 85% chance to head roughly toward player on a cardinal axis;
+        // 15% chance to pick a random cardinal direction (still wanders a little)
+        if (rand() < .85)
         {
             const toP = player.pos.subtract(this.pos);
             if (abs(toP.x) > abs(toP.y))
@@ -984,7 +1017,7 @@ class TankShell extends EngineObject
     {
         super(pos, vec2(.4));
         this.vel = vel.copy();
-        this.life = 360;
+        this.life = 720;
         this.renderOrder = 5;
         this.bouncesLeft = 2;
         this.phase = 0;
@@ -1187,20 +1220,24 @@ class Human extends EngineObject
             return;
         }
         let runDir = null;
-        // run from hulks and brains (anything that wants to kill/take them)
-        for (const e of enemies)
+        // Attract mode: don't react to enemies — just wander randomly so nobody traps them
+        if (isPlaying)
         {
-            if (e.destroyed) continue;
-            const isHulk = !e.killable;
-            const isBrain = e instanceof Brain;
-            if (!isHulk && !isBrain) continue;
-            const away = this.pos.subtract(e.pos);
-            const d = away.length();
-            if (d < 4.5)
+            // run from hulks and brains (anything that wants to kill/take them)
+            for (const e of enemies)
             {
-                runDir = away.scale(1/Math.max(.01, d));
-                this.startled = 30;
-                break;
+                if (e.destroyed) continue;
+                const isHulk = !e.killable;
+                const isBrain = e instanceof Brain;
+                if (!isHulk && !isBrain) continue;
+                const away = this.pos.subtract(e.pos);
+                const d = away.length();
+                if (d < 4.5)
+                {
+                    runDir = away.scale(1/Math.max(.01, d));
+                    this.startled = 30;
+                    break;
+                }
             }
         }
         this.changeDirTimer--;
@@ -2115,6 +2152,10 @@ function gameUpdate()
         else                interWaveTimer = 0;   // GET READY -> start next wave immediately
     }
 
+    // Quick restart: R resets the whole run (back to wave 1, fresh lives)
+    if (isPlaying && keyWasPressed('KeyR'))
+        startGame();
+
     // Pause hotkey — only meaningful when actually playing
     if (isPlaying && !gameOver &&
         (keyWasPressed('Escape') || (typeof gamepadWasPressed === 'function' && gamepadWasPressed(9))))
@@ -2247,8 +2288,8 @@ function gameRenderPost()
         drawTextScreen('ROBOTRON', vec2(cx, cy + wobbleY),
             titleSize, hsl(hue, .85, .75), 9, rgb(0,0,0));
 
-        // 2084 subtitle — counter-cycling hue, just below the title
-        drawTextScreen('2084', vec2(cx, cy + 75),
+        // 2048 subtitle — counter-cycling hue, just below the title
+        drawTextScreen('Made With LittleJS', vec2(cx, cy + 75),
             52, hsl((hue + .5) % 1, .9, .7), 5, rgb(0,0,0));
 
         // Pulsing CLICK / TOUCH TO PLAY prompt — only when no menu is up yet
@@ -2263,30 +2304,30 @@ function gameRenderPost()
     }
 
     // TOP-LEFT — score
-    drawTextScreen(`SCORE  ${score}`, vec2(16, 26), 24, rgb(.4,1,1), 4, hsl(0,0,0), 'left');
-    drawTextScreen(`BEST   ${best}`,  vec2(16, 54), 18, rgb(.85,.85,.85), 3, hsl(0,0,0), 'left');
+    drawTextScreen(`SCORE  ${score}`, vec2(20, 44), 48, rgb(.4,1,1), 7, hsl(0,0,0), 'left');
+    drawTextScreen(`BEST   ${best}`,  vec2(20, 96), 36, rgb(.85,.85,.85), 5, hsl(0,0,0), 'left');
     // TOP-RIGHT is reserved for the HUD toolbar (fullscreen / menu buttons)
 
     // BOTTOM-LEFT — lives + next extra-life threshold
+    const bottomOffset = 48;
     if (player)
     {
-        drawTextScreen('LIVES', vec2(16, H - 22), 18, rgb(.7,1,1), 3, hsl(0,0,0), 'left');
+        drawTextScreen('LIVES', vec2(20, H - bottomOffset), 36, rgb(.7,1,1), 5, hsl(0,0,0), 'left');
         const visibleLives = min(player.lives, 9);
-        let x = 86;
+        let x = 180;
         for (let i=0;i<visibleLives;i++)
         {
-            drawRect(vec2(x, H - 22), vec2(16, 16), rgb(.2,.95,.9), 0, undefined, true);
-            drawRect(vec2(x+9, H - 22), vec2(9, 4), rgb(.05,.15,.2), 0, undefined, true);
-            x += 20;
+            drawLifeIcon(x-20, H - bottomOffset);
+            x += 34;
         }
         if (player.lives > 9)
-            drawTextScreen(`+${player.lives - 9}`, vec2(x + 2, H - 22), 18, rgb(.7,1,1), 3, hsl(0,0,0), 'left');
-        // next extra-life threshold (small)
-        drawTextScreen(`NEXT LIFE ${nextBonusLifeAt}`, vec2(16, H - 48), 14, rgb(.6, .85, .85), 2, hsl(0,0,0), 'left');
+            drawTextScreen(`+${player.lives - 9}`, vec2(x + 4, H - bottomOffset), 36, rgb(.7,1,1), 5, hsl(0,0,0), 'left');
+        // next extra-life threshold (above LIVES)
+        drawTextScreen(`NEXT LIFE ${nextBonusLifeAt}`, vec2(20, H - bottomOffset - 42), 26, rgb(.6, .85, .85), 4, hsl(0,0,0), 'left');
     }
 
     // BOTTOM-RIGHT — wave number
-    drawTextScreen(`WAVE  ${gameWave}`, vec2(W - 16, H - 22), 24, rgb(1,.8,.3), 4, hsl(0,0,0), 'right');
+    drawTextScreen(`WAVE  ${gameWave}`, vec2(W - 20, H - bottomOffset), 48, rgb(1,.8,.3), 7, hsl(0,0,0), 'right');
 
     // CENTER BIG — between waves
     if (!waveActive && !gameOver && respawnTimer === 0)
