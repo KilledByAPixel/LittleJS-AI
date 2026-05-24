@@ -617,15 +617,6 @@ function drawBoard()
                 rgb(0.8, 0.8, 0.8, isHover ? 0.6 : 0.3);
             
             drawCircle(pos, DISC_RADIUS * 0.8, color);
-            
-            // Show flip count on hover
-            if (isHover)
-            {
-                const flipCount = getFlipsForMove(move.row, move.col, currentPlayer).length;
-                const offsetY = 0.6;
-                drawText(`+${flipCount}`, pos.add(vec2(0, offsetY)), 0.5, 
-                    rgb(1, 1, 0.3), 0.15, rgb(0, 0, 0, 0.8));
-            }
         }
     }
     
