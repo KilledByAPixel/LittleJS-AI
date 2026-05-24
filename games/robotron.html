@@ -1425,7 +1425,9 @@ class Human extends EngineObject
         // Attract mode: don't react to enemies — just wander randomly so nobody traps them
         if (isPlaying)
         {
-            // run from hulks and brains (anything that wants to kill/take them)
+            // run from hulks and brains (anything that wants to kill/take them).
+            // Only Brains trigger the startled white-flicker — hulks wander aimlessly so
+            // their proximity isn't an active threat, just incidental danger.
             for (const e of enemies)
             {
                 if (e.destroyed) continue;
@@ -1437,7 +1439,7 @@ class Human extends EngineObject
                 if (d < 4.5)
                 {
                     runDir = away.scale(1/Math.max(.01, d));
-                    this.startled = 30;
+                    if (isBrain) this.startled = 30;
                     break;
                 }
             }
