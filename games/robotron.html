@@ -246,10 +246,10 @@ function spawnPlayerWarpIn(target)
     for (let i = 0; i < count; i++)
     {
         const ang = rand(0, 6.28);
-        const dist = rand(8, 17);                // wide scatter across most of the arena
+        const dist = rand(6, 14);                // wide scatter across most of the arena
         const startPos = target.add(vec2(Math.cos(ang), Math.sin(ang)).scale(dist));
         const life = randInt(55, 95);
-        const size = rand(.18, .36);              // chunky pieces
+        const size = rand(.12, .3);              // chunky pieces
         // Mix the player's palette + rainbow flecks
         let c;
         const roll = rand();

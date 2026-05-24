@@ -1,8 +1,10 @@
 <!DOCTYPE html><head>
 <title>LittleJS Othello</title>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.12"></script>
+<script src="../templates/menus.js"></script>
 <script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
@@ -38,7 +40,7 @@ let winner = null;
 let blackScore = 2;
 let whiteScore = 2;
 let validMoves = [];
-let gameMode = 'menu'; // 'menu', 'pvp', 'ai'
+let gameMode = 'pvp'; // 'pvp' | 'ai' | 'aivai' — set on startGame
 let passCount = 0;
 let moveHistory = [];
 let lastMove = null; // {row, col} for highlighting
@@ -51,7 +53,7 @@ const PLACE_DURATION = 0.25;
 
 // UI
 let hoverCell = null;
-let btnVsAI, btnVsPlayer;
+let isPlaying = false;
 
 // Sounds
 let sfxPlaceWhite, sfxPlaceBlack, sfxWin, sfxLose, sfxSelect;
