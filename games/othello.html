@@ -870,13 +870,13 @@ function gameUpdate()
     
     // AI move — covers both 'ai' mode (AI is white only) and 'aivai' mode (AI plays both sides).
     const isAITurn = (gameMode === 'ai' && currentPlayer === PLAYER_AI) || gameMode === 'aivai';
-    if (isAITurn && !gameOver && flippingDiscs.length === 0)
+    if (isAITurn && flippingDiscs.length === 0)
     {
         const delay = gameMode === 'aivai' ? AI_VS_AI_DELAY : AI_THINK_DELAY;
         aiThinkTimer += timeDelta;
         if (aiThinkTimer >= delay)
         {
-            const move = strategyForDifficulty(difficulty)(othelloGame, getCurrentState());
+            const move = findBestAIMove();
             if (move)
             {
                 makeMove(move.row, move.col, currentPlayer);
