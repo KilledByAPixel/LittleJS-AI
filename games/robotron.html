@@ -39,6 +39,7 @@ const warpInHideDuration = 70;           // frames the player stays hidden durin
 // electrode placement
 const electrodeKeepout = safeZoneRadius + 2.2;
 const electrodeMaxCount = 20;
+const enemySpawnElectrodeBuffer = 2.0;   // killable enemies must spawn at least this far from any electrode
 
 // humans
 const humanRescueStart = 1000;
@@ -79,6 +80,7 @@ let waveTime = 0;
 let interWaveTimer = 0;
 let respawnTimer = 0;
 let warpInHideTimer = 0;        // frames remaining of player-hidden telebeam window
+let warpInSfxDelay = 0;         // frames until queued warp-in sfx fires (lands as player materializes)
 let gruntStepTimer = 0;         // frames until next grunt march sfx pulse
 let gruntStepBeat  = 0;         // alternates 0/1 each step → two-pitch boom-boom march
 let gameOverTimer = 0;          // frames after death before the GAME OVER menu surfaces
@@ -132,13 +134,13 @@ const sfxPop       = new SoundGenerator({volume:.4, frequency:340, randomness:.3
 const sfxRescue    = new SoundGenerator({volume:.55, frequency:660, randomness:.05, attack:0, release:.22, shapeCurve:1.2, pitchJump:520, pitchJumpTime:.07});
 const sfxHumanDie  = new SoundGenerator({volume:.55, frequency:300, randomness:.10, attack:0, release:.30, shapeCurve:.6, slide:-1.4, noise:.15});
 const sfxGruntStep = new SoundGenerator({volume:.30, frequency:75,  randomness:.06, attack:0, release:.07, shapeCurve:.3, slide:-.4, noise:.15});
-const sfxPlayerDie = new Sound([.5,,,.05,.1,.5,3,,5,-26,,,.1,.5,1,.5,,.7,.05,1,120]); // explode
+const sfxPlayerDie = new Sound([.5,,,.05,.1,.3,3,,5,-26,,,.1,.5,1,.5,,.7,.05,1,120]);
 const sfxSpark     = new SoundGenerator({volume:.30, frequency:880, randomness:.30, attack:0, release:.06, shapeCurve:1.8, noise:.1});
 const sfxMissile   = new SoundGenerator({volume:.35, frequency:330, randomness:.15, attack:0, release:.15, shapeCurve:.7, slide:.2, noise:.15});
 const sfxReprogram = new SoundGenerator({volume:.55, frequency:200, randomness:.25, attack:0, release:.40, shapeCurve:.5, slide:-.8, noise:.5, pitchJump:-180, pitchJumpTime:.1});
 const sfxSpawn     = new SoundGenerator({volume:.45, frequency:140, randomness:.10, attack:0, release:.20, shapeCurve:.6, pitchJump:300, pitchJumpTime:.08});
 const sfxWaveStart = new SoundGenerator({volume:.35, frequency:520, randomness:.08, attack:0, release:.18, shapeCurve:.9, noise:.06});
-const sfxWarpIn    = new Sound([1.2,,180,.01,.05,1,1,2.6,17,3,,,.1,.6,,.1,,.54,.02,.2]);;
+const sfxWarpIn    = new Sound([.8,,420,.3,,1,1,1.5,-9,,48,.05,.1]);
 
 ///////////////////////////////////////////////////////////////////////////////
 // helpers
@@ -163,16 +165,27 @@ function randEdgeSpawn()
     return            vec2(-arenaHalf.x+inset, rand(-arenaHalf.y+inset, arenaHalf.y-inset));
 }
 
-function randArenaPosAvoid(minDistFromPlayer, minDistFromCenter)
+function randArenaPosAvoid(minDistFromPlayer, minDistFromCenter, minDistFromElectrodes=0)
 {
     for (let i=0;i<80;i++)
     {
         const p = vec2(rand(-arenaHalf.x+2, arenaHalf.x-2), rand(-arenaHalf.y+2, arenaHalf.y-2));
         if (minDistFromCenter && p.length() < minDistFromCenter) continue;
         if (player && minDistFromPlayer && p.subtract(player.pos).length() < minDistFromPlayer) continue;
+        if (minDistFromElectrodes && tooCloseToElectrode(p, minDistFromElectrodes)) continue;
         return p;
     }
     return randEdgeSpawn();
+}
+
+function tooCloseToElectrode(p, minDist)
+{
+    for (const e of electrodes)
+    {
+        if (e.destroyed) continue;
+        if (p.subtract(e.pos).length() < minDist) return true;
+    }
+    return false;
 }
 
 function randArenaPosAvoidStuff(minDistFromCenter, minDistBetween, minDistFromHumans=0)
@@ -247,7 +260,8 @@ class ConvergingParticle
 // Player "telebeam" reassembly — chunks streak inward from far away and snap together at center.
 function spawnPlayerWarpIn(target)
 {
-    sfxWarpIn.play(vec2(0));
+    // Delay the warp-in sfx ~1s so it lands as the player materializes, not at the start of the chunk streak
+    warpInSfxDelay = 30;
     const count = 140;
     for (let i = 0; i < count; i++)
     {
@@ -504,7 +518,7 @@ class Electrode extends EngineObject
         this.renderOrder = 2;
         this.pulse = rand(0, 6.28);
         this.shape = randInt(2);              // 0:diamond  1:triangle
-        this.hue = rand(0, 1);                // random starting hue per electrode
+        this.hue = 0; // base hue for the rainbow color-shift effect
     }
     update()
     {
@@ -1699,45 +1713,57 @@ function countKillableEnemiesAlive()
 function spawnGrunt()
 {
     // Arcade: grunts spawn at random arena positions, kept outside a safety box around the player
-    const pos = randArenaPosAvoid(7, electrodeKeepout);
+    const pos = randArenaPosAvoid(7, electrodeKeepout, enemySpawnElectrodeBuffer);
     const baseSpeed = .030 + rand(0, .012) + min(.02, gameWave * .0015);
     const hp = 1 + (gameWave >= 8) + (gameWave >= 16);
     enemies.push(new Grunt(pos, baseSpeed, hp));
 }
 function spawnHulk()
 {
+    // Hulks pass through electrodes harmlessly, so no electrode buffer needed
     const pos = randArenaPosAvoid(7, electrodeKeepout);
     const speed = .05 + min(.04, gameWave * .003);
     enemies.push(new Hulk(pos, speed));
 }
 function spawnBrain()
 {
-    const pos = randArenaPosAvoid(8, electrodeKeepout);
+    const pos = randArenaPosAvoid(8, electrodeKeepout, enemySpawnElectrodeBuffer);
     enemies.push(new Brain(pos));
 }
 function spawnSpheroid()
 {
-    // Arcade: spheroids enter from the LEFT or RIGHT edge at a random Y
+    // Arcade: spheroids enter from the LEFT or RIGHT edge at a random Y.
+    // Retry along the edge until we find a Y that isn't sitting on an electrode.
     const onLeft = rand() < .5;
     const inset = .9;
     const x = onLeft ? -arenaHalf.x + arenaPadding + inset
                      :  arenaHalf.x - arenaPadding - inset;
-    const y = rand(-arenaHalf.y + arenaPadding + 1, arenaHalf.y - arenaPadding - 1);
-    enemies.push(new Spheroid(vec2(x, y)));
+    let pos = vec2(x, 0);
+    for (let i = 0; i < 30; i++)
+    {
+        pos = vec2(x, rand(-arenaHalf.y + arenaPadding + 1, arenaHalf.y - arenaPadding - 1));
+        if (!tooCloseToElectrode(pos, enemySpawnElectrodeBuffer)) break;
+    }
+    enemies.push(new Spheroid(pos));
 }
 function spawnQuark()
 {
-    // Arcade: quarks enter from the TOP or BOTTOM edge at a random X
+    // Arcade: quarks enter from the TOP or BOTTOM edge at a random X — retry to avoid electrodes
     const onTop = rand() < .5;
     const inset = .9;
     const y = onTop ? arenaHalf.y - arenaPadding - inset
                     : -arenaHalf.y + arenaPadding + inset;
-    const x = rand(-arenaHalf.x + arenaPadding + 1, arenaHalf.x - arenaPadding - 1);
-    enemies.push(new Quark(vec2(x, y)));
+    let pos = vec2(0, y);
+    for (let i = 0; i < 30; i++)
+    {
+        pos = vec2(rand(-arenaHalf.x + arenaPadding + 1, arenaHalf.x - arenaPadding - 1), y);
+        if (!tooCloseToElectrode(pos, enemySpawnElectrodeBuffer)) break;
+    }
+    enemies.push(new Quark(pos));
 }
 function spawnTank()
 {
-    const pos = randArenaPosAvoid(8, electrodeKeepout);
+    const pos = randArenaPosAvoid(8, electrodeKeepout, enemySpawnElectrodeBuffer);
     enemies.push(new Tank(pos));
 }
 
@@ -2494,6 +2520,7 @@ function gameUpdate()
     for (const p of particles) p.update();
     for (const f of floaters) f.update();
     if (warpInHideTimer > 0) warpInHideTimer--;
+    if (warpInSfxDelay > 0 && --warpInSfxDelay === 0) sfxWarpIn.play(vec2(0));
 
     // Title screen: nothing else to do
     if (!isPlaying) { cleanupLists(); return; }
