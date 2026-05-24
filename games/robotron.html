@@ -285,8 +285,8 @@ class Bullet extends EngineObject
     }
 }
 
-// Spark: spinning rainbow cross. Speed scales with distance to player (slow up close, fast far away).
-// Arcade: lifetime random 20–35 ticks. Globally capped at MAX_SPARKS.
+// Spark: arcade-faithful dumb-fire — fixed velocity at fire time, random X/Y acceleration drift,
+// no homing. Speed is baked in by the Enforcer based on fire-time distance to player.
 class Spark extends EngineObject
 {
     constructor(pos, vel)
@@ -294,12 +294,10 @@ class Spark extends EngineObject
         super(pos, vec2(.3));
         sparkCount++;
         this.vel = vel.copy();
-        const m = this.vel.length();
-        this.dir = m > .001 ? this.vel.scale(1/m) : vec2(1, 0);
         this.renderOrder = 5;
         this.phase = rand(0, 1);
         this.spinAngle = rand(0, 6.28);
-        this.life = randInt(60, 110);   // ~1–2 sec — slightly longer than arcade for larger arena
+        this.life = randInt(60, 110);
     }
     destroy()
     {
@@ -309,23 +307,8 @@ class Spark extends EngineObject
     }
     update()
     {
-        if (player && !gameOver)
-        {
-            const toP = player.pos.subtract(this.pos);
-            const d = toP.length();
-            if (d > .01)
-            {
-                // Far away → fast; close → slow. Lets the player kite near sparks
-                // but a long shot whips across the arena before you can react.
-                const speed = clamp(.06 + d * .022, .06, .42);
-                // Gentle homing — high inertia so the player can outmaneuver sparks
-                const dirHome = toP.scale(1/d);
-                this.dir = this.dir.scale(.95).add(dirHome.scale(.05));
-                const m2 = this.dir.length();
-                if (m2 > .001) this.dir = this.dir.scale(1/m2);
-                this.vel = this.dir.scale(speed);
-            }
-        }
+        // Arcade: random X/Y acceleration each frame causes sparks to drift unpredictably (no homing)
+        this.vel = this.vel.add(vec2(rand(-.004, .004), rand(-.004, .004)));
         this.pos = this.pos.add(this.vel);
         this.phase = (this.phase + .12) % 1;
         this.spinAngle += .35;
@@ -894,60 +877,42 @@ class Spheroid extends KillableEnemy
     constructor(pos)
     {
         super(pos, vec2(1.3), 1, scoreSpheroid, rgb(1, .3, .3));
-        this.cw = rand() < .5;
-        this.snapToNearestEdge();
-        this.vel = vec2(0);
-        this.setEdgeVelocity();
+        // Arcade: spheroids drift around with random X/Y acceleration, bouncing off walls
+        this.vel = randVec2(rand(.05, .15));
+        this.accelTimer = randInt(1, 16);
         this.spawnTimer = randInt(25, 70);   // first enforcer drops almost immediately
         this.phase = rand(0, 6.28);
         this.spawnsRemaining = randInt(2, 6);  // arcade: ceil(rand(1..ENFNUM)/2) ≈ 1–5 per spheroid
     }
-    snapToNearestEdge()
-    {
-        const inset = .9;
-        const maxX = arenaHalf.x - arenaPadding - inset;
-        const maxY = arenaHalf.y - arenaPadding - inset;
-        const dTop = abs(this.pos.y - maxY);
-        const dBot = abs(this.pos.y + maxY);
-        const dRight = abs(this.pos.x - maxX);
-        const dLeft = abs(this.pos.x + maxX);
-        const m = min(min(dTop, dBot), min(dRight, dLeft));
-        if (m === dTop)       this.pos.y =  maxY;
-        else if (m === dBot)  this.pos.y = -maxY;
-        else if (m === dRight) this.pos.x =  maxX;
-        else                   this.pos.x = -maxX;
-        this.pos.x = clamp(this.pos.x, -maxX, maxX);
-        this.pos.y = clamp(this.pos.y, -maxY, maxY);
-    }
-    setEdgeVelocity()
-    {
-        const speed = .11;
-        const inset = .9;
-        const maxX = arenaHalf.x - arenaPadding - inset;
-        const maxY = arenaHalf.y - arenaPadding - inset;
-        const dTop = abs(this.pos.y - maxY);
-        const dBot = abs(this.pos.y + maxY);
-        const dRight = abs(this.pos.x - maxX);
-        const dLeft = abs(this.pos.x + maxX);
-        const m = min(min(dTop, dBot), min(dRight, dLeft));
-        if (m === dTop)      this.vel = vec2(this.cw ?  speed : -speed, 0);
-        else if (m === dBot) this.vel = vec2(this.cw ? -speed :  speed, 0);
-        else if (m === dRight) this.vel = vec2(0, this.cw ? -speed :  speed);
-        else                   this.vel = vec2(0, this.cw ?  speed : -speed);
-    }
     update()
     {
         if (gameOver || playerControlLocked) return;
+
+        // Random X/Y acceleration kicks every 1-15 frames (arcade)
+        this.accelTimer--;
+        if (this.accelTimer <= 0)
+        {
+            this.accelTimer = randInt(1, 16);
+            // Y kicks are larger than X (arcade: X ±16, Y ±32 in fixed-point)
+            this.vel = this.vel.add(vec2(rand(-.06, .06), rand(-.10, .10)));
+        }
+        // Light damping
+        this.vel = this.vel.scale(.98);
+        // Cap top speed (arcade clamps X around ±256, Y around ±512 in 16-bit)
+        const maxVX = .20, maxVY = .28;
+        this.vel.x = clamp(this.vel.x, -maxVX, maxVX);
+        this.vel.y = clamp(this.vel.y, -maxVY, maxVY);
+
         this.pos = this.pos.add(this.vel);
+
+        // Bounce off arena edges
         const inset = .9;
         const maxX = arenaHalf.x - arenaPadding - inset;
         const maxY = arenaHalf.y - arenaPadding - inset;
-        let hit = false;
-        if (this.pos.x >  maxX) { this.pos.x =  maxX; hit = true; }
-        if (this.pos.x < -maxX) { this.pos.x = -maxX; hit = true; }
-        if (this.pos.y >  maxY) { this.pos.y =  maxY; hit = true; }
-        if (this.pos.y < -maxY) { this.pos.y = -maxY; hit = true; }
-        if (hit) this.setEdgeVelocity();
+        if (this.pos.x >  maxX) { this.pos.x =  maxX; this.vel.x = -abs(this.vel.x); }
+        if (this.pos.x < -maxX) { this.pos.x = -maxX; this.vel.x =  abs(this.vel.x); }
+        if (this.pos.y >  maxY) { this.pos.y =  maxY; this.vel.y = -abs(this.vel.y); }
+        if (this.pos.y < -maxY) { this.pos.y = -maxY; this.vel.y =  abs(this.vel.y); }
 
         this.spawnTimer--;
         if (this.spawnTimer <= 0)
@@ -994,7 +959,8 @@ class Enforcer extends KillableEnemy
     {
         super(pos, vec2(.9, 1.1), 1, scoreEnforcer, rgb(.4, .6, 1));
         enforcerCount++;
-        this.vel = randVec2(.07);
+        this.vel = randVec2(.05);
+        this.velTimer = randInt(1, 32);
         this.shootTimer = randInt(50, 100);
         this.walkPhase = rand(0, 6.28);
     }
@@ -1008,35 +974,43 @@ class Enforcer extends KillableEnemy
     {
         if (gameOver || playerControlLocked || !player) return;
 
-        const toP = player.pos.subtract(this.pos);
-        const d = toP.length();
-        const dir = d > .01 ? toP.scale(1/d) : vec2(0, 1);
-
-        // keep ideal distance from player (~8 units)
-        const idealDist = 8;
-        const radial = clamp((d - idealDist) * .1, -.7, .7);     // toward when far, away when close
-        // tangential drift (orbit-style)
-        const perp = vec2(-dir.y, dir.x);
-        this.walkPhase += .12;
-        const tangent = Math.sin(this.walkPhase) * .7 + .3;     // bias to one orbit direction
-
-        const desire = dir.scale(radial).add(perp.scale(tangent));
-        this.vel = this.vel.scale(.9).add(desire.scale(.025));
-
-        const maxSp = .15 + min(.06, gameWave * .003);
-        const sp = this.vel.length();
-        if (sp > maxSp) this.vel = this.vel.scale(maxSp / sp);
+        // Arcade: every 0–31 frames, pick a new velocity aimed near (offset) player position
+        this.velTimer--;
+        if (this.velTimer <= 0)
+        {
+            const offsetPos = player.pos.add(vec2(rand(-3, 3), rand(-3, 3)));
+            const dir = offsetPos.subtract(this.pos);
+            const m = dir.length();
+            if (m > .001)
+            {
+                const speed = .09 + min(.05, gameWave * .003);
+                this.vel = dir.scale(speed / m);
+            }
+            this.velTimer = randInt(1, 32);
+        }
 
         this.pos = this.pos.add(this.vel);
         this.pos = clampToArena(this.pos, .5);
+        this.walkPhase += .12;
 
+        // Shoot dumb-fire spark — speed baked in by fire-time distance, no homing
+        const toP = player.pos.subtract(this.pos);
+        const d = toP.length();
         this.shootTimer--;
         if (this.shootTimer <= 0 && sparkCount < MAX_SPARKS && d < 22)
         {
-            const aim = dir.scale(.08); // initial direction; Spark scales speed by distance per-frame
-            enemyBullets.push(new Spark(this.pos.copy(), aim));
-            this.shootTimer = randInt(70, 150);
-            sfxSpark.play(this.pos);
+            // Aim at a slightly offset player position (arcade adds noise to aim)
+            const offsetPos = player.pos.add(vec2(rand(-1.5, 1.5), rand(-1.5, 1.5)));
+            const fireDir = offsetPos.subtract(this.pos);
+            const fd = fireDir.length();
+            if (fd > .001)
+            {
+                // Farther away → faster spark (baked in at fire time)
+                const speed = clamp(.08 + d * .015, .08, .35);
+                enemyBullets.push(new Spark(this.pos.copy(), fireDir.scale(speed / fd)));
+                this.shootTimer = randInt(70, 150);
+                sfxSpark.play(this.pos);
+            }
         }
 
         if (this.flash > 0) this.flash--;
@@ -1534,7 +1508,8 @@ function countKillableEnemiesAlive()
 
 function spawnGrunt()
 {
-    const pos = randEdgeSpawn();
+    // Arcade: grunts spawn at random arena positions, kept outside a safety box around the player
+    const pos = randArenaPosAvoid(5, 0);
     const baseSpeed = .030 + rand(0, .012) + min(.02, gameWave * .0015);
     const hp = 1 + (gameWave >= 8) + (gameWave >= 16);
     enemies.push(new Grunt(pos, baseSpeed, hp));
@@ -1552,12 +1527,23 @@ function spawnBrain()
 }
 function spawnSpheroid()
 {
-    enemies.push(new Spheroid(randEdgeSpawn()));
+    // Arcade: spheroids enter from the LEFT or RIGHT edge at a random Y
+    const onLeft = rand() < .5;
+    const inset = .9;
+    const x = onLeft ? -arenaHalf.x + arenaPadding + inset
+                     :  arenaHalf.x - arenaPadding - inset;
+    const y = rand(-arenaHalf.y + arenaPadding + 1, arenaHalf.y - arenaPadding - 1);
+    enemies.push(new Spheroid(vec2(x, y)));
 }
 function spawnQuark()
 {
-    const pos = randArenaPosAvoid(8, electrodeKeepout);
-    enemies.push(new Quark(pos));
+    // Arcade: quarks enter from the TOP or BOTTOM edge at a random X
+    const onTop = rand() < .5;
+    const inset = .9;
+    const y = onTop ? arenaHalf.y - arenaPadding - inset
+                    : -arenaHalf.y + arenaPadding + inset;
+    const x = rand(-arenaHalf.x + arenaPadding + 1, arenaHalf.x - arenaPadding - 1);
+    enemies.push(new Quark(vec2(x, y)));
 }
 function spawnTank()
 {
