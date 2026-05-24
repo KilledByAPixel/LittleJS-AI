@@ -510,6 +510,53 @@ const checkersGame = {
                 else score -= val;
             }
         }
+
+        // Mobility — restricted opponents lose in checkers
+        const playerMoves = checkersGame.getLegalMoves(state, player);
+        const opponentMoves = checkersGame.getLegalMoves(state, opponent);
+        score += (playerMoves.length - opponentMoves.length) * 0.5;
+
+        // Center control — middle-board pieces have more options
+        for (let r = 0; r < BOARD_SIZE; r++)
+        {
+            for (let c = 2; c <= 5; c++)
+            {
+                const piece = b[r][c];
+                if (piece !== P_EMPTY)
+                {
+                    if (playerOfPiece(piece) === player) score += 0.1;
+                    else if (playerOfPiece(piece) === opponent) score -= 0.1;
+                }
+            }
+        }
+
+        // Available-jumps bonus — captures gain material on the next move
+        const playerJumps = playerMoves.filter(m => m.capture);
+        const opponentJumps = opponentMoves.filter(m => m.capture);
+        score += (playerJumps.length - opponentJumps.length) * 0.2;
+
+        // Endgame king positioning — kings on the long diagonals dominate
+        let totalPieces = 0;
+        for (let r = 0; r < BOARD_SIZE; r++)
+            for (let c = 0; c < BOARD_SIZE; c++)
+                if (b[r][c] !== P_EMPTY) totalPieces++;
+
+        if (totalPieces <= 6)
+        {
+            for (let r = 0; r < BOARD_SIZE; r++)
+            {
+                for (let c = 0; c < BOARD_SIZE; c++)
+                {
+                    const piece = b[r][c];
+                    if (!isKingPiece(piece)) continue;
+                    const onLongDiag = (r === c) || (r + c === BOARD_SIZE - 1);
+                    if (!onLongDiag) continue;
+                    if (playerOfPiece(piece) === player) score += 0.5;
+                    else if (playerOfPiece(piece) === opponent) score -= 0.5;
+                }
+            }
+        }
+
         return score;
     },
 };
