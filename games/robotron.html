@@ -104,6 +104,7 @@ const MAX_SHELLS         = 20;
 // Arcade grunt speedup: ROBSPD is reduced per kill (faster), clamped at RMXSPD.
 // Modeled here as a per-wave multiplier that climbs each grunt kill.
 let gruntsKilledThisWave = 0;   // arcade: each kill nudges ROBSPD toward RMXSPD for remaining grunts
+let hulkTargetCursor = 0;       // round-robin index into humans[] for hulk target assignment (arcade GTARG)
 
 // JUICE: screen shake (offsets cameraPos before render), flash overlays, wave transitions
 let shakeTimer = 0;
@@ -684,7 +685,9 @@ class Grunt extends KillableEnemy
     }
 }
 
-// Hulk: indestructible. Marches in cardinal directions toward nearest human. Bullets push.
+// Hulk: indestructible. Arcade target-homing per RRH11.ASM HULKND — picks a target on spawn
+// (round-robin through humans, falls back to player), then every 1-32 frames picks a new cardinal
+// axis (alternating X and Y based on previous direction) and steps toward target.axis + noise.
 class Hulk extends EngineObject
 {
     constructor(pos, speed)
@@ -694,26 +697,42 @@ class Hulk extends EngineObject
         this.renderOrder = 4;
         this.speed = speed;
         this.marchDir = vec2(Math.sign(rand(-1,1)) || 1, 0);
-        this.marchTimer = 0;
+        this.marchTimer = randInt(1, 33);
         this.knockback = vec2(0);
         this.walkPhase = 0;
+        this.target = this.pickTarget();    // assigned at spawn (GTARG round-robin)
+        this.lastAxis = rand() < .5 ? 'x' : 'y';
+    }
+    pickTarget()
+    {
+        // Arcade GTARG (RRH11.ASM): rotating cursor walks through HTAB, grabs next live human.
+        // No "closest" calculation — pure round-robin assignment.
+        const live = humans.filter(h => !h.destroyed);
+        if (live.length === 0) return null;
+        const t = live[hulkTargetCursor % live.length];
+        hulkTargetCursor++;
+        return t;
     }
     pickMarchDir()
     {
-        // Arcade hulks mostly wander randomly. They do NOT pursue humans —
-        // humans only die when a hulk happens to wander into them.
-        // Roughly 10% of the time the hulk picks a cardinal step toward the player.
-        const dirs = [vec2(1,0), vec2(-1,0), vec2(0,1), vec2(0,-1)];
-        if (isPlaying && player && rand() < .1)
+        // Refresh target if the assigned human died. Falls back to player (PLOBJ in arcade).
+        if (this.target && this.target.destroyed) this.target = this.pickTarget();
+        const tgt = this.target || (isPlaying ? player : null);
+        if (!tgt) { this.marchDir = vec2(0); return; }
+
+        // Alternate X/Y axis (arcade HNDY/HNDX path). Noise ±2 world units ≈ arcade ±16 px.
+        this.lastAxis = this.lastAxis === 'x' ? 'y' : 'x';
+        const noise = rand(-2, 2);
+        if (this.lastAxis === 'x')
         {
-            const diff = player.pos.subtract(this.pos);
-            if (abs(diff.x) > abs(diff.y))
-                this.marchDir = vec2(Math.sign(diff.x) || 1, 0);
-            else
-                this.marchDir = vec2(0, Math.sign(diff.y) || 1);
+            const targetX = tgt.pos.x + noise;
+            this.marchDir = vec2(targetX > this.pos.x ? 1 : -1, 0);
         }
         else
-            this.marchDir = dirs[randInt(4)];
+        {
+            const targetY = tgt.pos.y + noise;
+            this.marchDir = vec2(0, targetY > this.pos.y ? 1 : -1);
+        }
     }
     push(dir)
     {
@@ -725,7 +744,11 @@ class Hulk extends EngineObject
         if (gameOver) return;
         if (isPlaying && playerControlLocked) return;
         this.marchTimer--;
-        if (this.marchTimer <= 0) { this.pickMarchDir(); this.marchTimer = randInt(50, 110); }
+        if (this.marchTimer <= 0)
+        {
+            this.pickMarchDir();
+            this.marchTimer = randInt(1, 33);    // arcade LSEED & $1F + 1
+        }
         this.pos = this.pos.add(this.knockback);
         this.knockback = this.knockback.scale(.82);
         // HLKSPD scaling: wave 1 (HLKSPD=8) → 1.0×, late waves (HLKSPD=5) → 1.6×
@@ -765,12 +788,14 @@ class Brain extends KillableEnemy
     }
     findHuman()
     {
+        // Arcade GETHTG (RRB10.ASM): pure Manhattan distance (|dx|+|dy|),
+        // comment in source literally says "SUM OF ABS VALUES DX,DY"
         let best = null, bestDist = Infinity;
         for (const h of humans)
         {
             // skip humans already being possessed by another brain
             if (h.destroyed || h.possessedBy) continue;
-            const d = h.pos.subtract(this.pos).length();
+            const d = abs(h.pos.x - this.pos.x) + abs(h.pos.y - this.pos.y);
             if (d < bestDist) { bestDist = d; best = h; }
         }
         return best;
@@ -1014,10 +1039,22 @@ class Spheroid extends KillableEnemy
         // Arcade: ceil(rand(1..ENFNUM)/2) — ENFNUM=10 → 1–5 enforcers, ENFNUM=11 → 1–6
         const ENFNUM = getWaveTuning(gameWave).enforcerDropCount;
         this.spawnsRemaining = Math.ceil(randInt(1, ENFNUM + 1) / 2);
+        this.fleeing = false;                // CIRC3 escape phase
     }
     update()
     {
         if (gameOver || playerControlLocked) return;
+
+        // Arcade CIRC3 escape phase: constant horizontal velocity, no drops, despawn at X edge
+        if (this.fleeing)
+        {
+            this.pos = this.pos.add(this.vel);
+            this.phase += .18;
+            if (this.flash > 0) this.flash--;
+            const exitX = arenaHalf.x - arenaPadding + .5;
+            if (this.pos.x > exitX || this.pos.x < -exitX) this.destroy();
+            return;
+        }
 
         // Random X/Y acceleration kicks every 1-15 frames (arcade)
         this.accelTimer--;
@@ -1056,12 +1093,11 @@ class Spheroid extends KillableEnemy
                 sfxSpawn.play(this.pos);
                 const t = getWaveTuning(gameWave);
                 this.spawnTimer = randInt(t.spheroidDropTime, t.spheroidDropTime * 3);
-                // Spheroid vanishes (no score) after dropping its quota
+                // Arcade CIRC3: after quota, enter escape phase — horizontal flee until off-screen
                 if (--this.spawnsRemaining <= 0)
                 {
-                    burst(this.pos, 28, rgb(1, .5, .5));
-                    this.destroy();
-                    return;
+                    this.fleeing = true;
+                    this.vel = vec2(rand() < .5 ? -.18 : .18, 0);
                 }
             }
             else
@@ -1095,6 +1131,7 @@ class Enforcer extends KillableEnemy
         this.velTimer = randInt(1, 32);
         this.shootTimer = randInt(50, 100);
         this.walkPhase = rand(0, 6.28);
+        this.growTimer = 40;          // arcade: 5 grow frames × NAP 8 ticks each ≈ 40 frames
     }
     destroy()
     {
@@ -1105,6 +1142,9 @@ class Enforcer extends KillableEnemy
     update()
     {
         if (gameOver || playerControlLocked || !player) return;
+
+        // Grow phase: hold position, don't move, don't shoot until fully materialized
+        if (this.growTimer > 0) { this.growTimer--; if (this.flash > 0) this.flash--; return; }
 
         // Arcade: every 0–31 frames, pick a new velocity aimed near (offset) player position
         this.velTimer--;
@@ -1150,6 +1190,17 @@ class Enforcer extends KillableEnemy
     }
     render()
     {
+        // Grow phase: scale up from a small core to full size with sparkle
+        if (this.growTimer > 0)
+        {
+            const t = 1 - this.growTimer / 40;          // 0 → 1
+            const s = .25 + t * .9;
+            const a = .4 + t * .6;
+            drawRect(this.pos, vec2(.85 * s), rgb(.4, .6, 1, a * .35));
+            drawRect(this.pos, vec2(.55 * s), rgb(.6, .8, 1, a));
+            drawRect(this.pos, vec2(.22 * s), rgb(1, 1, 1, a));
+            return;
+        }
         const c = this.flash ? rgb(1,1,1) : rgb(.4, .6, 1);
         const dark = rgb(.1, .25, .55);
         const yellow = rgb(1, .85, .25);
@@ -1240,6 +1291,7 @@ class Tank extends KillableEnemy
         this.shootTimer = randInt(80, 160);
         this.turnTimer = randInt(40, 100);
         this.turretAngle = 0;
+        this.growTimer = 40;     // arcade: ~3 mini-tank frames × NAP 12 ticks ≈ 36–48 frames
     }
     destroy()
     {
@@ -1250,6 +1302,8 @@ class Tank extends KillableEnemy
     update()
     {
         if (gameOver || playerControlLocked) return;
+        // Grow phase: hold position, don't move, don't shoot until full-size
+        if (this.growTimer > 0) { this.growTimer--; if (this.flash > 0) this.flash--; return; }
         this.turnTimer--;
         if (this.turnTimer <= 0)
         {
@@ -1292,6 +1346,17 @@ class Tank extends KillableEnemy
     }
     render()
     {
+        // Mini-tank grow phase: scale up from small treaded blob
+        if (this.growTimer > 0)
+        {
+            const t = 1 - this.growTimer / 40;          // 0 → 1
+            const s = .3 + t * .9;
+            const a = .4 + t * .6;
+            drawRect(this.pos, vec2(1.7 * s, 1.5 * s), rgb(.95, .22, .28, a * .35));
+            drawRect(this.pos, vec2(1.1 * s, .9 * s),  rgb(1, .4, .4, a));
+            drawRect(this.pos, vec2(.5 * s),           rgb(1, 1, .6, a));
+            return;
+        }
         const c = this.flash ? rgb(1,1,1) : rgb(.95, .22, .28);    // red body
         const dark = rgb(.35, .05, .08);
         const blue = rgb(.3, .55, 1);
@@ -1338,10 +1403,23 @@ class Quark extends KillableEnemy
         // Same arcade formula as spheroids — ceil(rand(1..ENFNUM)/2)
         const ENFNUM = getWaveTuning(gameWave).enforcerDropCount;
         this.spawnsRemaining = Math.ceil(randInt(1, ENFNUM + 1) / 2);
+        this.fleeing = false;                // SQ3 escape phase
     }
     update()
     {
         if (gameOver || playerControlLocked) return;
+
+        // Arcade SQ3 escape phase: constant vertical velocity (2× spheroid speed), no drops
+        if (this.fleeing)
+        {
+            this.pos = this.pos.add(this.vel);
+            this.phase += .14;
+            if (this.flash > 0) this.flash--;
+            const exitY = arenaHalf.y - arenaPadding + .5;
+            if (this.pos.y > exitY || this.pos.y < -exitY) this.destroy();
+            return;
+        }
+
         this.pos = this.pos.add(this.vel);
         const minX = -arenaHalf.x + arenaPadding + .6;
         const maxX =  arenaHalf.x - arenaPadding - .6;
@@ -1362,11 +1440,11 @@ class Quark extends KillableEnemy
                 sfxSpawn.play(this.pos);
                 const t = getWaveTuning(gameWave);
                 this.spawnTimer = randInt(t.spheroidDropTime * 2, t.spheroidDropTime * 4);
+                // Arcade SQ3: after quota, flee vertically at 2× spheroid speed
                 if (--this.spawnsRemaining <= 0)
                 {
-                    burst(this.pos, 28, rgb(.5, .7, 1));
-                    this.destroy();
-                    return;
+                    this.fleeing = true;
+                    this.vel = vec2(0, rand() < .5 ? -.36 : .36);
                 }
             }
             else
