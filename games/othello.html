@@ -602,12 +602,17 @@ function drawUI()
     // Current player indicator
     if (!gameOver)
     {
-        const playerText = gameMode === 'ai' ? 
-            (currentPlayer === DISC_BLACK ? "Your Turn" : "AI Thinking...") :
-            (currentPlayer === DISC_BLACK ? "Black's Turn" : "White's Turn");
-        
+        let playerText;
+        if (gameMode === 'ai')
+            playerText = currentPlayer === DISC_BLACK ? "Your Turn" : "AI Thinking...";
+        else if (gameMode === 'aivai')
+            playerText = currentPlayer === DISC_BLACK ? "AI Black Thinking..." : "AI White Thinking...";
+        else
+            playerText = currentPlayer === DISC_BLACK ? "Black's Turn" : "White's Turn";
+
         const color = currentPlayer === BLACK ? rgb(0.3, 0.3, 0.3) : rgb(0.95, 0.95, 0.95);
-        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');    }
+        drawTextScreen(playerText, vec2(30, 110), 28, color, 4, BLACK, 'left');
+    }
     
     // Undo availability
     if (moveHistory.length > 0 && !gameOver)
@@ -634,6 +639,11 @@ function drawUI()
             resultText = winner === PLAYER_HUMAN ? "You Win!" : "AI Wins!";
             resultColor = winner === PLAYER_HUMAN ? rgb(0, 1, 0.3) : rgb(1, 0.3, 0.3);
         }
+        else if (gameMode === 'aivai')
+        {
+            resultText = winner === DISC_BLACK ? "AI Black Wins!" : "AI White Wins!";
+            resultColor = winner === DISC_BLACK ? rgb(0.5, 0.5, 0.5) : rgb(1, 1, 1);
+        }
         else
         {
             resultText = winner === DISC_BLACK ? "Black Wins!" : "White Wins!";
@@ -643,7 +653,7 @@ function drawUI()
         drawTextScreen(resultText, vec2(screenSize.x / 2, screenSize.y / 2), 48, 
             resultColor, 5, BLACK);
         
-        drawTextScreen('Press R to restart or ESC for menu', vec2(screenSize.x / 2, screenSize.y / 2 + 60), 24, 
+        drawTextScreen('Press R to restart or ESC to pause', vec2(screenSize.x / 2, screenSize.y / 2 + 60), 24,
             WHITE, 3, BLACK);
     }
     
@@ -657,6 +667,7 @@ function drawUI()
 
 let aiThinkTimer = 0;
 const AI_THINK_DELAY = 0.8;
+const AI_VS_AI_DELAY = 0.5;
 
 async function gameInit()
 {
@@ -693,7 +704,7 @@ async function gameInit()
         items: [
             {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => startGame('ai')},
             {type:'button',              label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
-            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => console.log('AI vs AI: wired in Task 4')},
+            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => startGame('aivai')},
             {type:'button',              label:'OPTIONS',          onClick: () => pushMenu('options')},
             {type:'button',              label:'ABOUT',            onClick: () => pushMenu('about')},
         ],
@@ -857,23 +868,26 @@ function gameUpdate()
     // Update hover cell
     hoverCell = worldPosToCell(mousePos);
     
-    // AI turn
-    if (gameMode === 'ai' && currentPlayer === PLAYER_AI && !gameOver && flippingDiscs.length === 0)
+    // AI move — covers both 'ai' mode (AI is white only) and 'aivai' mode (AI plays both sides).
+    const isAITurn = (gameMode === 'ai' && currentPlayer === PLAYER_AI) || gameMode === 'aivai';
+    if (isAITurn && !gameOver && flippingDiscs.length === 0)
     {
+        const delay = gameMode === 'aivai' ? AI_VS_AI_DELAY : AI_THINK_DELAY;
         aiThinkTimer += timeDelta;
-        if (aiThinkTimer >= AI_THINK_DELAY)
+        if (aiThinkTimer >= delay)
         {
-            const move = findBestAIMove();
+            const move = strategyForDifficulty(difficulty)(othelloGame, getCurrentState());
             if (move)
             {
-                makeMove(move.row, move.col, PLAYER_AI);
+                makeMove(move.row, move.col, currentPlayer);
                 aiThinkTimer = 0;
             }
         }
     }
-    
-    // Human input
-    if ((gameMode === 'pvp' || currentPlayer === PLAYER_HUMAN) && mouseWasPressed(0))
+
+    // Human input — PvP always, or PvAI when it's the human's turn. Never in aivai.
+    const isHumanTurn = gameMode === 'pvp' || (gameMode === 'ai' && currentPlayer === PLAYER_HUMAN);
+    if (isHumanTurn && mouseWasPressed(0))
     {
         const cell = worldPosToCell(mousePos);
         if (cell && isValidMove(cell.row, cell.col, currentPlayer))
