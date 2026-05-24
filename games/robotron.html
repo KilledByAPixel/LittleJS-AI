@@ -131,13 +131,14 @@ const sfxHit       = new SoundGenerator({volume:.40, frequency:160, randomness:.
 const sfxPop       = new SoundGenerator({volume:.4, frequency:340, randomness:.3, attack:0, release:.05, shapeCurve:.8, slide:21.4, noise:3});
 const sfxRescue    = new SoundGenerator({volume:.55, frequency:660, randomness:.05, attack:0, release:.22, shapeCurve:1.2, pitchJump:520, pitchJumpTime:.07});
 const sfxHumanDie  = new SoundGenerator({volume:.55, frequency:300, randomness:.10, attack:0, release:.30, shapeCurve:.6, slide:-1.4, noise:.15});
-const sfxGruntStep = new SoundGenerator({volume:.20, frequency:75,  randomness:.06, attack:0, release:.07, shapeCurve:.3, slide:-.4, noise:.15});
-const sfxPlayerDie = new SoundGenerator({volume:.70, frequency:200, randomness:.20, attack:0, release:.50, shapeCurve:.5, slide:-1.6, noise:3.4});
+const sfxGruntStep = new SoundGenerator({volume:.30, frequency:75,  randomness:.06, attack:0, release:.07, shapeCurve:.3, slide:-.4, noise:.15});
+const sfxPlayerDie = new Sound([.5,,,.05,.1,.5,3,,5,-26,,,.1,.5,1,.5,,.7,.05,1,120]); // explode
 const sfxSpark     = new SoundGenerator({volume:.30, frequency:880, randomness:.30, attack:0, release:.06, shapeCurve:1.8, noise:.1});
 const sfxMissile   = new SoundGenerator({volume:.35, frequency:330, randomness:.15, attack:0, release:.15, shapeCurve:.7, slide:.2, noise:.15});
 const sfxReprogram = new SoundGenerator({volume:.55, frequency:200, randomness:.25, attack:0, release:.40, shapeCurve:.5, slide:-.8, noise:.5, pitchJump:-180, pitchJumpTime:.1});
 const sfxSpawn     = new SoundGenerator({volume:.45, frequency:140, randomness:.10, attack:0, release:.20, shapeCurve:.6, pitchJump:300, pitchJumpTime:.08});
 const sfxWaveStart = new SoundGenerator({volume:.35, frequency:520, randomness:.08, attack:0, release:.18, shapeCurve:.9, noise:.06});
+const sfxWarpIn    = new Sound([1.2,,180,.01,.05,1,1,2.6,17,3,,,.1,.6,,.1,,.54,.02,.2]);;
 
 ///////////////////////////////////////////////////////////////////////////////
 // helpers
@@ -246,6 +247,7 @@ class ConvergingParticle
 // Player "telebeam" reassembly — chunks streak inward from far away and snap together at center.
 function spawnPlayerWarpIn(target)
 {
+    sfxWarpIn.play(vec2(0));
     const count = 140;
     for (let i = 0; i < count; i++)
     {
