@@ -206,6 +206,60 @@ class SimpleParticle
     render() { drawRect(this.pos, vec2(this.size), this.color); }
 }
 
+// Converging particle — eases inward from startPos toward target over its lifetime.
+// Used for the player "telebeam" reassembly on respawn.
+class ConvergingParticle
+{
+    constructor(startPos, target, life, size, color)
+    {
+        this.pos      = startPos.copy();
+        this.startPos = startPos.copy();
+        this.target   = target.copy();
+        this.life     = life;
+        this.maxLife  = life;
+        this.size     = size;
+        this.color    = color;
+    }
+    update()
+    {
+        this.life--;
+        const t = 1 - this.life / this.maxLife;     // 0 → 1 over lifetime
+        const eased = t * t * t;                     // ease-in cubic — accelerates as it reaches center
+        this.pos = vec2(
+            this.startPos.x + (this.target.x - this.startPos.x) * eased,
+            this.startPos.y + (this.target.y - this.startPos.y) * eased);
+    }
+    render()
+    {
+        // Brighten + grow slightly as the chunk converges so the assembly feels charged
+        const t = 1 - this.life / this.maxLife;
+        const a = .5 + t * .5;
+        const s = this.size * (1 + t * .4);
+        drawRect(this.pos, vec2(s), rgb(this.color.r, this.color.g, this.color.b, a));
+    }
+}
+
+// Player "telebeam" reassembly — chunks streak inward from far away and snap together at center.
+function spawnPlayerWarpIn(target)
+{
+    const count = 140;
+    for (let i = 0; i < count; i++)
+    {
+        const ang = rand(0, 6.28);
+        const dist = rand(8, 17);                // wide scatter across most of the arena
+        const startPos = target.add(vec2(Math.cos(ang), Math.sin(ang)).scale(dist));
+        const life = randInt(55, 95);
+        const size = rand(.18, .36);              // chunky pieces
+        // Mix the player's palette + rainbow flecks
+        let c;
+        const roll = rand();
+        if (roll < .3)      c = rgb(.95, .95, .95);                 // white torso chunks
+        else if (roll < .6) c = rgb(1, .25, .25);                   // red helmet chunks
+        else                c = hsl(rand(0, 1), 1, .65);            // rainbow accent
+        particles.push(new ConvergingParticle(startPos, target, life, size, c));
+    }
+}
+
 function burst(pos, count, baseColor)
 {
     for (let i=0;i<count;i++)
@@ -1660,15 +1714,16 @@ function spawnTank()
 function startWave(w)
 {
     // Enemies, electrodes, and humans were all laid out during GET READY.
-    // Starting the wave just unlocks the player and begins the speed-ramp timer.
     waveActive = true;
     waveTime = 0;
-    playerControlLocked = false;
-    respawnTimer = 0;
+    // Brief warp-in lockout — player materializes at center via the telebeam reassembly
+    respawnTimer = 80;                         // ~1.3 sec: hidden ~20 frames, visible during convergence
+    playerControlLocked = true;
 
     sfxWaveStart.play(vec2(0));
     waveStartSweep = 50;
     whiteFlashTimer = 3;
+    if (player) spawnPlayerWarpIn(player.pos);
 }
 
 function enterGetReadyForWave(nextWave)
@@ -1773,6 +1828,8 @@ function respawnMidWave()
     }
     respawnTimer = respawnPauseFrames;
     playerControlLocked = true;
+    // Telebeam reassembly chunks streak in toward the player position
+    if (player) spawnPlayerWarpIn(player.pos);
 
     // ring poofs on the fresh enemy spawns so respawn feels like a wave-start mini-event
     for (const e of enemies)
