@@ -104,46 +104,6 @@ function isInBounds(row, col)
     return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
 }
 
-function checkDirection(row, col, player, dRow, dCol)
-{
-    const opponent = getOpponent(player);
-    let r = row + dRow;
-    let c = col + dCol;
-    let hasOpponent = false;
-    
-    while (isInBounds(r, c))
-    {
-        if (board[r][c] === DISC_EMPTY)
-            return [];
-        
-        if (board[r][c] === opponent)
-        {
-            hasOpponent = true;
-            r += dRow;
-            c += dCol;
-        }
-        else if (board[r][c] === player)
-        {
-            if (hasOpponent)
-            {
-                // Found valid flip sequence
-                const flips = [];
-                r = row + dRow;
-                c = col + dCol;
-                while (board[r][c] === opponent)
-                {
-                    flips.push({row: r, col: c});
-                    r += dRow;
-                    c += dCol;
-                }
-                return flips;
-            }
-            return [];
-        }
-    }
-    
-    return [];
-}
 
 function getFlipsForState(board, row, col, player)
 {
@@ -293,30 +253,14 @@ const othelloGame = {
 
 function strategyForDifficulty(d)
 {
-    if (d === 'easy')   return (game, state) => randomAI(game, state);
-    if (d === 'medium') return (game, state) => greedyAI(game, state);
+    if (d === 'easy')   return randomAI;
+    if (d === 'medium') return greedyAI;
     return (game, state) => alphaBetaAI(game, state, 4); // 'hard'
 }
 
 function getFlipsForMove(row, col, player)
 {
-    if (board[row][col] !== DISC_EMPTY)
-        return [];
-    
-    const allFlips = [];
-    const directions = [
-        [-1, -1], [-1, 0], [-1, 1],
-        [0, -1],           [0, 1],
-        [1, -1],  [1, 0],  [1, 1]
-    ];
-    
-    for (const [dRow, dCol] of directions)
-    {
-        const flips = checkDirection(row, col, player, dRow, dCol);
-        allFlips.push(...flips);
-    }
-    
-    return allFlips;
+    return getFlipsForState(board, row, col, player);
 }
 
 function isValidMove(row, col, player)
