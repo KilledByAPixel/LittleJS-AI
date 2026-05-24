@@ -97,6 +97,28 @@ const MAX_SHELLS         = 20;
 // Arcade grunt speedup: ROBSPD is reduced per kill (faster), clamped at RMXSPD.
 // Modeled here as a per-wave multiplier that climbs each grunt kill.
 let gruntSpeedMul = 1;
+
+// JUICE: screen shake (offsets cameraPos before render), flash overlays, wave transitions
+let shakeTimer = 0;
+let shakeMag = 0;
+let whiteFlashTimer = 0;
+let waveClearTimer = 0;       // frames since wave clear (drives the celebration banner)
+let waveStartSweep = 0;       // frames since wave started (drives the perimeter sweep)
+function triggerShake(mag, dur)
+{
+    shakeTimer = max(shakeTimer, dur);
+    shakeMag   = max(shakeMag, mag);
+}
+
+// Background drift particles (filling the dead space outside the arena)
+const driftStars = [];
+for (let i = 0; i < 50; i++)
+    driftStars.push({
+        pos: vec2(rand(-60, 60), rand(-40, 40)),
+        size: rand(.05, .15),
+        speed: rand(.008, .025),
+        phase: rand(0, 6.28),
+    });
 let playerControlLocked = true;
 
 // sfx
@@ -678,6 +700,7 @@ class Brain extends KillableEnemy
                 enemies.push(new Prog(this.possessing.pos.copy(), this.possessing.type));
                 burst(this.possessing.pos, 30, rgb(1, .3, .9));
                 sfxReprogram.play(this.possessing.pos);
+                triggerShake(.1, 12);   // brain conversion punch
                 this.possessing.destroy();
                 this.possessing = null;
             }
@@ -1092,6 +1115,7 @@ class TankShell extends EngineObject
             if (--this.bouncesLeft < 0) { this.destroy(); return; }
             sfxHit.play(this.pos);
             burst(this.pos, 6, rgb(1, .5, .2));
+            triggerShake(.06, 6);   // tiny shake on shell bounce
         }
     }
     render()
@@ -1643,6 +1667,8 @@ function startWave(w)
     respawnTimer = 0;
 
     sfxWaveStart.play(vec2(0));
+    waveStartSweep = 50;
+    whiteFlashTimer = 3;
 }
 
 function enterGetReadyForWave(nextWave)
@@ -1675,6 +1701,25 @@ function enterGetReadyForWave(nextWave)
 
 function endWave()
 {
+    // Wave-clear celebration: rainbow radial burst from arena center + banner timer
+    for (let i = 0; i < 36; i++)
+    {
+        const ang = (i / 36) * Math.PI * 2;
+        const speed = rand(.35, .65);
+        const vel = vec2(Math.cos(ang), Math.sin(ang)).scale(speed);
+        const c = hsl(i / 36, 1, .7);
+        particles.push(new SimpleParticle(vec2(0), vel, randInt(40, 80), rand(.18, .32), c));
+    }
+    // Second concentric burst, slower + brighter
+    for (let i = 0; i < 24; i++)
+    {
+        const ang = (i / 24) * Math.PI * 2;
+        const vel = vec2(Math.cos(ang), Math.sin(ang)).scale(rand(.15, .3));
+        particles.push(new SimpleParticle(vec2(0), vel, randInt(30, 60), rand(.2, .35), rgb(1, 1, 1)));
+    }
+    waveClearTimer = 90;
+    whiteFlashTimer = 4;
+    sfxRescue.play(vec2(0));
     enterGetReadyForWave(gameWave + 1);
     interWaveTimer = interWaveDelayFrames;
 }
@@ -1808,13 +1853,17 @@ class Player extends EngineObject
     {
         if (this.invuln > 0 || gameOver) return;
         sfxPlayerDie.play(this.pos);
-        burst(this.pos, 60, rgb(.4,.9,1));
+        // chunkier death — big burst + ring shockwave + screen flash + screen shake
+        burst(this.pos, 90, rgb(.4,.9,1));
+        ringBurst(this.pos, rgb(.6, 1, 1), 24);
+        whiteFlashTimer = 8;
+        triggerShake(.5, 35);
         this.lives--;
         if (this.lives < 0)
         {
             gameOver = true;
             best = max(best, score);
-            gameOverTimer = 90;     // let the death animation play before the menu surfaces
+            gameOverTimer = 90;
             return;
         }
         respawnMidWave();
@@ -1828,12 +1877,14 @@ class Player extends EngineObject
         const bob = phase * .05;
         const armSwing = phase * .08;
         const legStretch = phase * .06;
-        const blink = this.invuln > 0 && (Math.floor(this.invuln/4) & 1);
-
-        const body = blink ? rgb(1, 1, 1) : rgb(.95, .95, .95);
-        const dark = rgb(.25, .25, .3);
-        const head = blink ? rgb(1, .6, .6) : rgb(1, .2, .2);
-        const headDark = rgb(.55, .05, .05);
+        // Invuln rainbow flash — cycles whole body through hues so it stays visible
+        // against the white default body color.
+        const isInvuln = this.invuln > 0;
+        const hue = isInvuln ? (frame * .05) % 1 : 0;
+        const body     = isInvuln ? hsl(hue, 1, .7)              : rgb(.95, .95, .95);
+        const head     = isInvuln ? hsl((hue + .33) % 1, 1, .6) : rgb(1, .2, .2);
+        const headDark = isInvuln ? hsl((hue + .33) % 1, 1, .3) : rgb(.55, .05, .05);
+        const dark     = isInvuln ? hsl((hue + .66) % 1, .8, .4): rgb(.25, .25, .3);
         const eyes = rgb(1, 1, 1);
 
         const bodyCenterY = -.02 + bob;
@@ -2038,6 +2089,9 @@ function resetGame()
     // but force-clear in case anything slipped through)
     enforcerCount = sparkCount = cruiseMissileCount = tankCount = shellCount = 0;
     gruntSpeedMul = 1;
+    // Reset juice effect timers so they don't leak across sessions
+    shakeTimer = shakeMag = whiteFlashTimer = waveClearTimer = waveStartSweep = 0;
+    cameraPos = vec2(0);
 
     player = new Player();
     // Lay out wave 1 (electrodes, humans, enemies — all visible during GET READY).
@@ -2404,14 +2458,54 @@ function gameUpdatePost()
 
 function gameRender()
 {
+    // === SCREEN SHAKE === apply offset to cameraPos before drawing
+    if (shakeTimer > 0)
+    {
+        const decay = shakeTimer / 30;
+        const m = shakeMag * decay;
+        cameraPos = vec2(rand(-m, m), rand(-m, m));
+        shakeTimer--;
+        if (shakeTimer === 0) { shakeMag = 0; cameraPos = vec2(0); }
+    }
+    else
+        cameraPos = vec2(0);
+
     drawRect(cameraPos, vec2(200), rgb(.03,.03,.04));
+
+    // === BACKGROUND DRIFT STARS === filling dead space outside the arena
+    for (const s of driftStars)
+    {
+        s.pos.y += s.speed;
+        if (s.pos.y > 35) { s.pos.y = -35; s.pos.x = rand(-60, 60); }
+        s.phase += .02;
+        // only render if outside the playfield
+        if (abs(s.pos.x) < arenaHalf.x + .5 && abs(s.pos.y) < arenaHalf.y + .5) continue;
+        const a = .25 + Math.sin(s.phase) * .15;
+        drawRect(s.pos, vec2(s.size), rgb(.55, .75, 1, a));
+    }
+
     for (let x=-arenaHalf.x; x<=arenaHalf.x; x+=1)
         drawRect(vec2(x,0), vec2(.02, arenaSize.y), rgb(.06,.06,.08));
     for (let y=-arenaHalf.y; y<=arenaHalf.y; y+=1)
         drawRect(vec2(0,y), vec2(arenaSize.x, .02), rgb(.06,.06,.08));
-    // bright cyan frame at exactly the playable edge
-    drawRect(vec2(0), arenaSize.add(vec2(.6)),  rgb(.1, .35, .45));
-    drawRect(vec2(0), arenaSize.add(vec2(.35)), rgb(.35, .9, 1));
+
+    // === ARENA BOUNDARY === color cycles slowly, brighter on wave-start sweep
+    const borderHue = (time * .04) % 1;
+    const borderCol = hsl(borderHue, .65, .65);
+    const haloCol   = hsl(borderHue, .65, .35);
+    // Wave-start sweep: pulse boundary brightness over ~50 frames
+    let sweepBoost = 0;
+    if (waveStartSweep > 0)
+    {
+        sweepBoost = (waveStartSweep / 50);
+        waveStartSweep--;
+    }
+    const baseW = .35 + sweepBoost * .9;
+    drawRect(vec2(0), arenaSize.add(vec2(.6 + sweepBoost * .8)), rgb(haloCol.r, haloCol.g, haloCol.b, .9));
+    drawRect(vec2(0), arenaSize.add(vec2(baseW)), rgb(
+        borderCol.r + sweepBoost * .35,
+        borderCol.g + sweepBoost * .35,
+        borderCol.b + sweepBoost * .35));
     drawRect(vec2(0), arenaSize.add(vec2(.08)), rgb(.05, .25, .35));
     drawRect(vec2(0), arenaSize, rgb(.02,.02,.04));
 
@@ -2421,6 +2515,28 @@ function gameRender()
 
 function gameRenderPost()
 {
+    // === FULL-SCREEN WHITE FLASH === short bright pulse on death / wave events
+    if (whiteFlashTimer > 0)
+    {
+        const a = (whiteFlashTimer / 8) * .6;
+        drawRect(cameraPos, vec2(200), rgb(1, 1, 1, a));
+        whiteFlashTimer--;
+    }
+
+    // === WAVE CLEAR BANNER === zoomed text after a wave finishes
+    if (waveClearTimer > 0)
+    {
+        const W = mainCanvasSize.x, H = mainCanvasSize.y;
+        const t = 1 - waveClearTimer / 90;            // 0 → 1
+        const size = 60 + t * 60;                       // zoom 60→120
+        const a = waveClearTimer < 25 ? waveClearTimer / 25 : 1;  // fade out at the end
+        const hue = (time * .3) % 1;
+        const c = hsl(hue, .8, .7);
+        drawTextScreen('WAVE CLEAR', vec2(W/2, H/2 - 20), size,
+            rgb(c.r, c.g, c.b, a), 7, rgb(0, 0, 0, a));
+        waveClearTimer--;
+    }
+
     for (const f of floaters) f.render();
 
     const W = mainCanvasSize.x, H = mainCanvasSize.y;
