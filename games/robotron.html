@@ -128,9 +128,9 @@ for (let i = 0; i < 50; i++)
 let playerControlLocked = true;
 
 // sfx
-const sfxShoot     = new SoundGenerator({volume:.28, frequency:520, randomness:.08, attack:0, release:.05, shapeCurve:1.4, noise:.05});
+const sfxShoot     = new Sound([.2,.2,340,,.02,.07,,.1,-4,,,,,,,,.1,,.07]); // Shoot 8387 - Copy 1
 const sfxHit       = new SoundGenerator({volume:.40, frequency:160, randomness:.12, attack:0, release:.12, shapeCurve:.6, slide:-.7, noise:.2});
-const sfxPop       = new SoundGenerator({volume:.4, frequency:340, randomness:.3, attack:0, release:.05, shapeCurve:.8, slide:21.4, noise:3});
+const sfxPop       = new SoundGenerator({volume:.4, frequency:240, randomness:.3, attack:0, release:.05, shapeCurve:.8, slide:21.4, noise:3});
 const sfxRescue    = new SoundGenerator({volume:.55, frequency:660, randomness:.05, attack:0, release:.22, shapeCurve:1.2, pitchJump:520, pitchJumpTime:.07});
 const sfxHumanDie  = new SoundGenerator({volume:.55, frequency:300, randomness:.10, attack:0, release:.30, shapeCurve:.6, slide:-1.4, noise:.15});
 const sfxGruntStep = new SoundGenerator({volume:.30, frequency:75,  randomness:.06, attack:0, release:.07, shapeCurve:.3, slide:-.4, noise:.15});
