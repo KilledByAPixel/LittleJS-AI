@@ -634,24 +634,7 @@ function drawUI()
     }
     
     // Controls
-    drawTextScreen('U: Undo | R: Restart | ESC: Menu', vec2(screenSize.x / 2, screenSize.y - 30), 20, 
-        rgb(0.7, 0.7, 0.7), 2, BLACK);
-}
-
-function drawMenu()
-{
-    const screenSize = vec2(mainCanvasSize.x, mainCanvasSize.y);
-    
-    // Title
-    drawTextScreen('OTHELLO', vec2(screenSize.x / 2, 230), 150, hsl(0, 0, 0.9), 8, hsl(0, 0, 0.2), 'center', undefined, 'bold');
-    
-    // Instructions
-    const instructY = screenSize.y - 150;
-    drawTextScreen('How to Play:', vec2(screenSize.x / 2, instructY), 28, 
-        rgb(0.8, 0.8, 0.8), 3, BLACK);
-    drawTextScreen('Sandwich opponent discs to flip them', vec2(screenSize.x / 2, instructY + 40), 22, 
-        rgb(0.7, 0.7, 0.7), 2, BLACK);
-    drawTextScreen('Player with most discs wins!', vec2(screenSize.x / 2, instructY + 70), 22, 
+    drawTextScreen('U: Undo | R: Restart | ESC: Pause', vec2(screenSize.x / 2, screenSize.y - 30), 20, 
         rgb(0.7, 0.7, 0.7), 2, BLACK);
 }
 
@@ -665,66 +648,134 @@ async function gameInit()
 {
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(0, 0);
-    
-    // Initialize UI system
-    new UISystemPlugin();
-    uiSystem.defaultCornerRadius = 8;
-    uiSystem.defaultLineWidth = 3;
-    
-    // Create menu buttons
-    const cx = 0;
-    const cy = 0;
-    
-    btnVsAI = new UIButton(vec2(cx, cy), vec2(500, 100), 'PLAYER VS AI');
-    btnVsAI.color = hsl(.55, .7, .35);
-    btnVsAI.hoverColor = hsl(.55, .8, .5);
-    btnVsAI.textColor = WHITE;
-    btnVsAI.textLineColor = BLACK;
-    btnVsAI.textLineWidth = 6;
-    btnVsAI.soundClick = sfxSelect;
-    btnVsAI.onClick = () => startGame('ai');
-    
-    btnVsPlayer = new UIButton(vec2(cx, cy + 120), vec2(500, 100), 'PLAYER VS PLAYER');
-    btnVsPlayer.color = hsl(.02, .7, .4);
-    btnVsPlayer.hoverColor = hsl(.02, .8, .55);
-    btnVsPlayer.textColor = WHITE;
-    btnVsPlayer.textLineColor = BLACK;
-    btnVsPlayer.textLineWidth = 6;
-    btnVsPlayer.soundClick = sfxSelect;
-    btnVsPlayer.onClick = () => startGame('pvp');
-    
-    // Create sounds
+    canvasClearColor = new Color().setHex('#0d0d14');
+    setSoundVolume(.8);
+
+    // One callback drives `paused` for every menu (including dialogs).
+    setMenuVisibilityCallback(v => paused = v);
+
+    // Sounds (gameplay)
     sfxPlaceWhite = new SoundGenerator({frequency: 220, release: 0.05, volume: 0.3});
     sfxPlaceBlack = new SoundGenerator({frequency: 440, release: 0.05, volume: 0.3});
     sfxWin = new SoundGenerator({frequency: 660, release: 0.3, pitchJump: 220, pitchJumpTime: 0.1, volume: 0.6});
     sfxLose = new SoundGenerator({frequency: 220, release: 0.35, slide: -0.5, volume: 0.5});
     sfxSelect = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
-    
-    // Apply sounds to buttons after creating them
-    btnVsAI.soundClick = sfxSelect;
-    btnVsPlayer.soundClick = sfxSelect;
-    
-    showMenuButtons(true);
-    gameMode = 'menu';
+
+    // Global menu sounds (LittleJS Sound class — routes through engine audio).
+    const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
+
+    // ----- title menu -----
+    createMenu({
+        id: 'title',
+        title: 'OTHELLO',
+        dismissable: false,
+        onStart: () => startGame('ai'),
+        items: [
+            {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => startGame('ai')},
+            {type:'button',              label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
+            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => console.log('AI vs AI: wired in Task 4')},
+            {type:'button',              label:'OPTIONS',          onClick: () => pushMenu('options')},
+            {type:'button',              label:'ABOUT',            onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- options menu (volume + fullscreen; difficulty added in Task 3) -----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min:0, max:1,
+                persist:'othello.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'button', label:'BACK',       onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ----- about menu -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Othello (Reversi) — sandwich opponent discs between two of yours ' +
+                'to flip them. Most discs at the end wins. Includes a watchable AI-vs-AI mode.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ----- pause menu -----
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',  onClick: () => hideMenu('pause')},
+            {type:'button', id:'restart', label:'RESTART', onClick: () => { initBoard(); aiThinkTimer = 0; hideMenu('pause'); }},
+            {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button',               label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({message: 'Quit to title?', onYes: quitToTitle});
+            }},
+        ],
+    });
+
+    // ----- HUD toolbar (gameplay-only — setPlaying toggles visibility) -----
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
+
+    initBoard();
+    setPlaying(false);
+    showMenu('title');
 }
 
-function showMenuButtons(visible)
+function setPlaying(p)
 {
-    btnVsAI.visible = visible;
-    btnVsPlayer.visible = visible;
+    isPlaying = p;
+    const hud = getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+function quitToTitle()
+{
+    setPlaying(false);
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
 }
 
 function startGame(mode)
 {
     gameMode = mode;
-    showMenuButtons(false);
     initBoard();
+    aiThinkTimer = 0;
+    setPlaying(true);
+    hideMenu('title');
 }
 
 function gameUpdate()
 {
-    if (gameMode === 'menu')
-        return;
+    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying) return;
     
     // Update flip animations
     for (let i = flippingDiscs.length - 1; i >= 0; i--)
@@ -753,13 +804,6 @@ function gameUpdate()
     {
         undoMove();
         aiThinkTimer = 0;
-    }
-    
-    if (keyWasPressed('Escape'))
-    {
-        gameMode = 'menu';
-        showMenuButtons(true);
-        return;
     }
     
     if (gameOver)
@@ -802,21 +846,13 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    // Background
-    drawRect(cameraPos, vec2(100, 100), rgb(0.05, 0.05, 0.08));
-    
-    if (gameMode === 'menu')
-        return;
-    
+    if (!isPlaying) return;
     drawBoard();
 }
 
 function gameRenderPost()
 {
-    if (gameMode === 'menu')
-        drawMenu();
-    else
-        drawUI();
+    if (isPlaying) drawUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
