@@ -497,7 +497,7 @@ const checkersGame = {
         }
 
         // Switch to opponent; check if opponent has any moves.
-        const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+        const opponent = getOpponent(player);
         const opponentMoves = getLegalMovesForState(newBoard, opponent);
         if (opponentMoves.length === 0)
             return {board: newBoard, currentPlayer: player, gameOver: true, redCount: newRed, blackCount: newBlack};
@@ -508,7 +508,7 @@ const checkersGame = {
     evaluate(state, player)
     {
         const b = state.board;
-        const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+        const opponent = getOpponent(player);
         let score = 0;
 
         for (let row = 0; row < BOARD_SIZE; row++)

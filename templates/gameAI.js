@@ -10,9 +10,14 @@
 //       evaluate(state, player),         // → number (higher = better for `player`)
 //       isTerminal(state),               // → bool
 //       getCurrentPlayer(state),         // → player
-//       getOpponent(player),             // → player (optional convenience)
+//       getOpponent(player),             // → player
 //   };
 //   const move = alphaBetaAI(game, currentState, 4);
+//
+// `alphaBetaAI` internally uses iterative deepening, a transposition table,
+// and a killer-move heuristic — the caller just supplies a max depth. The
+// other strategies (randomAI, greedyAI, minimaxAI) are kept as a naive
+// reference; alphaBetaAI is what production game integrations should use.
 //
 // All strategies return `null` if there are no legal moves — the caller
 // decides whether to pass / end / etc.
@@ -109,6 +114,7 @@ function alphaBetaAI(game, state, depth)
 {
     const player = game.getCurrentPlayer(state);
     if (!game.getLegalMoves(state, player).length) return null;
+    if (depth < 1) depth = 1; // clamp — depth 0 would skip the search loop entirely
 
     // Transposition table — local to this search invocation.
     const tt = new Map();
@@ -207,11 +213,13 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
     return {score: bestScore, move: bestMove};
 }
 
+// Move equality via JSON.stringify — generic across all current games'
+// move shapes ({row,col}, {col}, {fromRow,fromCol,...,capture}).
+const movesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 // orderMoves — in-place reorder: TT best-move to front, then killer moves.
 function orderMoves(moves, ttEntry, killerPair)
 {
-    const movesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
     // Build hint list: [ttBestMove, killer0, killer1] in that priority order.
     // We insert them in reverse so that after all insertions the highest-
     // priority hint sits at index 0.
@@ -241,7 +249,6 @@ function orderMoves(moves, ttEntry, killerPair)
 // recordKiller — update a ply's two killer slots with a new cutoff move.
 function recordKiller(killerPair, move)
 {
-    const movesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     if (killerPair[0] && movesEqual(killerPair[0], move)) return;
     killerPair[1] = killerPair[0];
     killerPair[0] = move;
