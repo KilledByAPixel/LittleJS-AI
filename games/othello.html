@@ -398,16 +398,22 @@ function endGame()
         winner = DISC_BLACK;
         if (gameMode === 'ai')
             sfxWin && sfxWin.play();
+        else if (gameMode === 'aivai')
+            sfxSelect && sfxSelect.play();
     }
     else if (whiteScore > blackScore)
     {
         winner = DISC_WHITE;
         if (gameMode === 'ai')
             sfxLose && sfxLose.play();
+        else if (gameMode === 'aivai')
+            sfxSelect && sfxSelect.play();
     }
     else
     {
         winner = null; // Tie
+        if (gameMode === 'aivai')
+            sfxSelect && sfxSelect.play();
     }
 }
 
