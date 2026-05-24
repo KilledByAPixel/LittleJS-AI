@@ -79,6 +79,8 @@ let waveTime = 0;
 let interWaveTimer = 0;
 let respawnTimer = 0;
 let warpInHideTimer = 0;        // frames remaining of player-hidden telebeam window
+let gruntStepTimer = 0;         // frames until next grunt march sfx pulse
+let gruntStepBeat  = 0;         // alternates 0/1 each step → two-pitch boom-boom march
 let gameOverTimer = 0;          // frames after death before the GAME OVER menu surfaces
 let isPlaying = false;          // true once the player hits PLAY (menu system gates state)
 let humanRescueBonus = humanRescueStart;
@@ -126,11 +128,11 @@ let playerControlLocked = true;
 // sfx
 const sfxShoot     = new SoundGenerator({volume:.28, frequency:520, randomness:.08, attack:0, release:.05, shapeCurve:1.4, noise:.05});
 const sfxHit       = new SoundGenerator({volume:.40, frequency:160, randomness:.12, attack:0, release:.12, shapeCurve:.6, slide:-.7, noise:.2});
-const sfxPop       = new SoundGenerator({volume:.50, frequency:240, randomness:.22, attack:0, release:.14, shapeCurve:.8, pitchJump:220, pitchJumpTime:.03, noise:.25});
+const sfxPop       = new SoundGenerator({volume:.4, frequency:340, randomness:.3, attack:0, release:.05, shapeCurve:.8, slide:21.4, noise:3});
 const sfxRescue    = new SoundGenerator({volume:.55, frequency:660, randomness:.05, attack:0, release:.22, shapeCurve:1.2, pitchJump:520, pitchJumpTime:.07});
 const sfxHumanDie  = new SoundGenerator({volume:.55, frequency:300, randomness:.10, attack:0, release:.30, shapeCurve:.6, slide:-1.4, noise:.15});
-const sfxHulkStep  = new SoundGenerator({volume:.28, frequency:90,  randomness:.10, attack:0, release:.08, shapeCurve:.4, noise:.3});
-const sfxPlayerDie = new SoundGenerator({volume:.70, frequency:200, randomness:.20, attack:0, release:.50, shapeCurve:.5, slide:-1.6, noise:.4});
+const sfxGruntStep = new SoundGenerator({volume:.20, frequency:75,  randomness:.06, attack:0, release:.07, shapeCurve:.3, slide:-.4, noise:.15});
+const sfxPlayerDie = new SoundGenerator({volume:.70, frequency:200, randomness:.20, attack:0, release:.50, shapeCurve:.5, slide:-1.6, noise:3.4});
 const sfxSpark     = new SoundGenerator({volume:.30, frequency:880, randomness:.30, attack:0, release:.06, shapeCurve:1.8, noise:.1});
 const sfxMissile   = new SoundGenerator({volume:.35, frequency:330, randomness:.15, attack:0, release:.15, shapeCurve:.7, slide:.2, noise:.15});
 const sfxReprogram = new SoundGenerator({volume:.55, frequency:200, randomness:.25, attack:0, release:.40, shapeCurve:.5, slide:-.8, noise:.5, pitchJump:-180, pitchJumpTime:.1});
@@ -677,7 +679,6 @@ class Hulk extends EngineObject
         this.marchTimer = 0;
         this.knockback = vec2(0);
         this.walkPhase = 0;
-        this.stepSfx = 0;
     }
     pickMarchDir()
     {
@@ -714,7 +715,6 @@ class Hulk extends EngineObject
         this.pos = this.pos.add(this.marchDir.scale(this.speed * hMul));
         this.pos = clampToArena(this.pos, .75);
         this.walkPhase += this.speed * 4;
-        if (++this.stepSfx > 40) { this.stepSfx = 0; sfxHulkStep.play(this.pos); }
     }
     render()
     {
@@ -1918,7 +1918,7 @@ class Player extends EngineObject
             // Bullets fire straight from the player — no aim barrel in arcade Robotron
             const bulletSpeed = 1;
             bullets.push(new Bullet(this.pos.copy(), this.facing.scale(bulletSpeed)));
-            this.cooldown = 5;
+            this.cooldown = 7;
             sfxShoot.play(this.pos);
         }
         if (this.invuln > 0) this.invuln--;
@@ -2433,6 +2433,31 @@ function spawnAttractDecoration()
     enemies.push(new Hulk(randArenaPosAvoid(0, 5), .05));
 }
 
+function updateGruntStepBeat()
+{
+    // Arcade-style march: a global "step" pulse whose tempo follows the nearest grunt.
+    // Two alternating pitches give the classic boom-boom marching cadence.
+    if (!player || playerControlLocked) return;
+    let nearest = Infinity;
+    for (const e of enemies)
+    {
+        if (e.destroyed || !(e instanceof Grunt)) continue;
+        const d = e.pos.subtract(player.pos).length();
+        if (d < nearest) nearest = d;
+    }
+    if (nearest === Infinity) return;            // no grunts on screen — silent
+
+    if (gruntStepTimer > 0) { gruntStepTimer--; return; }
+
+    // Distance → interval: 2 units away ≈ 7 frames, 25+ units ≈ 36 frames
+    const interval = clamp(7 + (nearest - 2) * 1.3, 7, 36) | 0;
+    const pitch = gruntStepBeat ? 1.0 : .78;     // two-tone march
+    const vol   = clamp(1.1 - nearest / 26, .35, 1);
+    sfxGruntStep.play(vec2(0), vol, pitch);
+    gruntStepBeat ^= 1;
+    gruntStepTimer = interval;
+}
+
 function gameUpdate()
 {
     // Keep the arena fitting the canvas as the window resizes
@@ -2496,6 +2521,7 @@ function gameUpdate()
         waveTime++;
         if (countKillableEnemiesAlive() === 0)
             endWave();
+        updateGruntStepBeat();
     }
     else
     {
