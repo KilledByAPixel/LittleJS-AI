@@ -29,7 +29,7 @@ const arenaPadding = 0;  // visual wall == playable edge (no dead band)
 
 // respawn / safety
 const safeZoneRadius = 5;
-const respawnInvulnFrames = 120;
+const respawnInvulnFrames = 180;   // longer than the lock so player keeps a brief grace window
 const respawnPauseFrames = 120;    // mid-wave death pause — 1 sec gone, 1 sec materializing
 const respawnHiddenFrames = 60;    // first half: player invisible
 const interWaveDelayFrames = 120;
@@ -466,19 +466,21 @@ class CruiseMissile extends EngineObject
         if (this.pos.y > maxY) { this.pos.y = maxY; this.dir.y = -abs(this.dir.y); }
 
         this.segments.unshift(this.pos.copy());
-        if (this.segments.length > 8) this.segments.pop();   // arcade: 8-point trail
+        if (this.segments.length > 30) this.segments.pop();   // path-memory trail (half-length)
         this.huePhase = (this.huePhase + .04) % 1;
 
         if (--this.life <= 0) this.destroy();
     }
     render()
     {
-        // bright color-shifting trail
-        for (let i = this.segments.length - 1; i >= 0; i--)
+        // bright color-shifting trail — narrower than the missile head, taper to tail
+        const n = this.segments.length;
+        for (let i = n - 1; i >= 0; i--)
         {
-            const a = 1 - i / this.segments.length;
-            const c = hsl((this.huePhase + i * .05) % 1, 1, .55);
-            drawRect(this.segments[i], vec2(.22 * (a + .2)), rgb(c.r, c.g, c.b, a * .8));
+            const a = 1 - i / n;              // 1 at head, 0 at tail
+            const size = .04 + .12 * a;       // max .16 — clearly thinner than .3 head
+            const c = hsl((this.huePhase + i * .03) % 1, 1, .55);
+            drawRect(this.segments[i], vec2(size), rgb(c.r, c.g, c.b, .35 + .55 * a));
         }
         const head = hsl(this.huePhase, 1, .65);
         drawRect(this.pos, vec2(.45), rgb(head.r, head.g, head.b, .5));
@@ -497,20 +499,44 @@ class Electrode extends EngineObject
         super(pos, vec2(.95, .95));
         this.renderOrder = 2;
         this.pulse = rand(0, 6.28);
-        this.tint = rand() < .5;
+        this.shape = randInt(2);              // 0:diamond  1:triangle
+        this.hue = rand(0, 1);                // random starting hue per electrode
     }
-    update() { this.pulse += .15; }
+    update()
+    {
+        this.pulse += .12;
+        this.hue = (this.hue + .005) % 1;     // cycle through the rainbow
+    }
     render()
     {
-        const p = .85 + Math.sin(this.pulse) * .15;
-        const dark = this.tint ? rgb(.0, .55, .9) : rgb(.9, .2, .8);
-        const light = rgb(.5, 1, 1);
-        drawRect(this.pos, vec2(1.4 * p), rgb(dark.r, dark.g, dark.b, .15));
-        drawRect(this.pos, vec2(.32, 1.25 * p), dark,  PI/4);
-        drawRect(this.pos, vec2(.32, 1.25 * p), dark, -PI/4);
-        drawRect(this.pos, vec2(.16, 1.10 * p), light, PI/4);
-        drawRect(this.pos, vec2(.16, 1.10 * p), light, -PI/4);
-        drawRect(this.pos, vec2(.28 * p), rgb(1,1,1));
+        const p = .92 + Math.sin(this.pulse) * .08;   // subtle breathing, no rotation
+        const r = .55 * p;
+        const dark  = hsl(this.hue, 1, .45);
+        const light = hsl(this.hue, 1, .75);
+
+        if (this.shape === 0)
+        {
+            // diamond — rotated square, fixed orientation
+            drawRect(this.pos, vec2(r * 1.4), dark,  PI/4);
+            drawRect(this.pos, vec2(r * 1.0), light, PI/4);
+        }
+        else
+        {
+            // triangle — fixed point-up
+            const poly = (radius, color) => {
+                const pts = [];
+                for (let i = 0; i < 3; i++)
+                {
+                    const a = PI/2 + i * (2 * PI / 3);
+                    pts.push(vec2(Math.cos(a) * radius, Math.sin(a) * radius));
+                }
+                drawPoly(pts, color, 0, undefined, this.pos);
+            };
+            poly(r * 1.05, dark);
+            poly(r * 0.7,  light);
+        }
+        // bright core
+        drawRect(this.pos, vec2(.22 * p), rgb(1,1,1));
     }
 }
 
@@ -1671,7 +1697,7 @@ function countKillableEnemiesAlive()
 function spawnGrunt()
 {
     // Arcade: grunts spawn at random arena positions, kept outside a safety box around the player
-    const pos = randArenaPosAvoid(5, 0);
+    const pos = randArenaPosAvoid(7, electrodeKeepout);
     const baseSpeed = .030 + rand(0, .012) + min(.02, gameWave * .0015);
     const hp = 1 + (gameWave >= 8) + (gameWave >= 16);
     enemies.push(new Grunt(pos, baseSpeed, hp));
