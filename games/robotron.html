@@ -505,11 +505,11 @@ class Grunt extends KillableEnemy
     }
     getSpeed()
     {
-        // Arcade: grunts speed up per kill (ROBSPD reduces, clamped at RMXSPD ≈ 3×).
-        // Also a small wave-time ramp so a passive wave still gets harder.
-        const t = waveTime;
-        const ramp = 1 + min(1.5, t / 1800) * .5;       // gentler than before — kills are the main driver
-        const waveMul = 1 + (gameWave - 1) * .05;
+        // Arcade: ROBSPD shrinks each wave (faster). Wave 1=20, wave 33=12 → ~1.67×.
+        // Combined with per-kill speedup (gruntSpeedMul) and a light passive ramp.
+        const tu = getWaveTuning(gameWave);
+        const waveMul = 20 / tu.gruntDelay;
+        const ramp = 1 + min(1.5, waveTime / 1800) * .5;
         return this.baseSpeed * ramp * waveMul * gruntSpeedMul;
     }
     update()
@@ -605,7 +605,9 @@ class Hulk extends EngineObject
         if (this.marchTimer <= 0) { this.pickMarchDir(); this.marchTimer = randInt(50, 110); }
         this.pos = this.pos.add(this.knockback);
         this.knockback = this.knockback.scale(.82);
-        this.pos = this.pos.add(this.marchDir.scale(this.speed));
+        // HLKSPD scaling: wave 1 (HLKSPD=8) → 1.0×, late waves (HLKSPD=5) → 1.6×
+        const hMul = isPlaying ? (8 / getWaveTuning(gameWave).hulkDelay) : 1;
+        this.pos = this.pos.add(this.marchDir.scale(this.speed * hMul));
         this.pos = clampToArena(this.pos, .75);
         this.walkPhase += this.speed * 4;
         if (++this.stepSfx > 40) { this.stepSfx = 0; sfxHulkStep.play(this.pos); }
@@ -654,7 +656,9 @@ class Brain extends KillableEnemy
     update()
     {
         if (gameOver || playerControlLocked || !player) return;
-        const speed = .045 + min(.02, gameWave * .001);
+        // BRNSPD scaling: wave 1 (BRNSPD=8) → 1.0×, late waves (BRNSPD=6) → 1.33×
+        const brnMul = 8 / getWaveTuning(gameWave).brainDelay;
+        const speed = (.045 + min(.02, gameWave * .001)) * brnMul;
 
         // POSSESSION: locked onto a human, hover above them while reprogramming
         if (this.possessing && !this.possessing.destroyed)
@@ -707,7 +711,8 @@ class Brain extends KillableEnemy
             if (this.shootTimer <= 0 && cruiseMissileCount < MAX_CRUISE_MISSILES && player)
             {
                 enemyBullets.push(new CruiseMissile(this.pos.copy(), player));
-                this.shootTimer = randInt(200, 360);
+                const t = getWaveTuning(gameWave);
+                this.shootTimer = randInt(t.brainShootTime, t.brainShootTime * 2);
                 sfxMissile.play(this.pos);
             }
         }
@@ -722,7 +727,8 @@ class Brain extends KillableEnemy
             if (this.shootTimer <= 0 && cruiseMissileCount < MAX_CRUISE_MISSILES)
             {
                 enemyBullets.push(new CruiseMissile(this.pos.copy(), player));
-                this.shootTimer = randInt(140, 260);
+                const t = getWaveTuning(gameWave);
+                this.shootTimer = randInt(t.brainShootTime, t.brainShootTime * 2);
                 sfxMissile.play(this.pos);
             }
         }
@@ -923,7 +929,8 @@ class Spheroid extends KillableEnemy
                 enemies.push(new Enforcer(this.pos.copy()));
                 burst(this.pos, 22, rgb(1, .4, .4));
                 sfxSpawn.play(this.pos);
-                this.spawnTimer = randInt(80, 160);
+                const t = getWaveTuning(gameWave);
+                this.spawnTimer = randInt(t.spheroidDropTime, t.spheroidDropTime * 3);
                 // Spheroid vanishes (no score) after dropping its quota
                 if (--this.spawnsRemaining <= 0)
                 {
@@ -1008,7 +1015,8 @@ class Enforcer extends KillableEnemy
                 // Farther away → faster spark (baked in at fire time)
                 const speed = clamp(.08 + d * .015, .08, .35);
                 enemyBullets.push(new Spark(this.pos.copy(), fireDir.scale(speed / fd)));
-                this.shootTimer = randInt(70, 150);
+                const t = getWaveTuning(gameWave);
+                this.shootTimer = randInt(t.sparkTime, t.sparkTime * 2);
                 sfxSpark.play(this.pos);
             }
         }
@@ -1119,7 +1127,15 @@ class Tank extends KillableEnemy
         this.turnTimer--;
         if (this.turnTimer <= 0)
         {
-            this.vel = randVec2(.045);
+            // Arcade: tank direction sometimes seeks player (~40%), sometimes random
+            if (player && rand() < .4)
+            {
+                const toP = player.pos.subtract(this.pos);
+                const m = toP.length();
+                this.vel = m > .001 ? toP.scale(.045 / m) : randVec2(.045);
+            }
+            else
+                this.vel = randVec2(.045);
             this.turnTimer = randInt(60, 140);
         }
         this.pos = this.pos.add(this.vel);
@@ -1142,7 +1158,8 @@ class Tank extends KillableEnemy
                 const dir = vec2(Math.sin(this.turretAngle), Math.cos(this.turretAngle));
                 enemyBullets.push(new TankShell(this.pos.add(dir.scale(.9)), dir.scale(.16)));
                 sfxMissile.play(this.pos);
-                this.shootTimer = randInt(110, 220);
+                const t = getWaveTuning(gameWave);
+                this.shootTimer = randInt(t.tankShootTime, t.tankShootTime * 2);
             }
         }
         if (this.flash > 0) this.flash--;
@@ -1215,7 +1232,8 @@ class Quark extends KillableEnemy
                 enemies.push(new Tank(this.pos.copy()));
                 burst(this.pos, 22, rgb(.4, .6, 1));
                 sfxSpawn.play(this.pos);
-                this.spawnTimer = randInt(140, 240);
+                const t = getWaveTuning(gameWave);
+                this.spawnTimer = randInt(t.spheroidDropTime * 2, t.spheroidDropTime * 4);
                 if (--this.spawnsRemaining <= 0)
                 {
                     burst(this.pos, 28, rgb(.5, .7, 1));
@@ -1441,6 +1459,70 @@ const arcadeWaveData = [
     [80,  0,  3, 3, 3,  6,  0, 5,  1],
     [30, 15, 10, 10, 10, 2, 25, 1,  1],
 ];
+
+// Arcade per-wave tuning table (decoded from RRG23.ASM at $2C12).
+// Columns: [ROBSPD, RMXSPD, ENFNUM, ENSTIM, CDPTIM, HLKSPD, BSHTIM, BRNSPD, TNKSHT]
+// Lower numbers = faster threats (the values are NAP-tick delays, ~1 tick per 60fps frame).
+// After wave 40, waves 21–40 repeat (same as the enemy-count table).
+const arcadeWaveTuning = [
+    [20, 9, 10, 30, 30, 8, 64, 8, 32],   // 1
+    [15, 7, 10, 28, 28, 8, 64, 8, 32],   // 2
+    [15, 6, 10, 26, 26, 7, 64, 8, 32],   // 3
+    [15, 5, 10, 24, 24, 7, 64, 8, 32],   // 4
+    [15, 5, 10, 22, 30, 7, 64, 8, 32],   // 5
+    [15, 5, 10, 20, 20, 7, 40, 7, 32],   // 6
+    [15, 5, 10, 18, 18, 7, 40, 7, 32],   // 7
+    [15, 4, 10, 18, 16, 6, 38, 7, 30],   // 8
+    [15, 4, 10, 16, 18, 6, 38, 7, 30],   // 9
+    [15, 4, 10, 14, 25, 6, 38, 7, 30],   // 10
+    [14, 4, 10, 14, 12, 6, 38, 7, 30],   // 11
+    [14, 4, 10, 14, 12, 5, 38, 7, 30],   // 12
+    [14, 4, 10, 14, 12, 5, 38, 7, 30],   // 13
+    [14, 4, 10, 14, 25, 5, 38, 7, 28],   // 14
+    [14, 4, 10, 14, 25, 5, 38, 7, 28],   // 15
+    [13, 4, 10, 14, 12, 5, 38, 6, 28],   // 16
+    [13, 4, 10, 14, 12, 5, 36, 6, 28],   // 17
+    [13, 4, 10, 14, 12, 5, 36, 6, 28],   // 18
+    [13, 4, 10, 14, 18, 5, 36, 6, 28],   // 19
+    [13, 4, 10, 14, 20, 5, 36, 6, 28],   // 20
+    [14, 4, 11, 15, 14, 5, 32, 6, 30],   // 21
+    [14, 4, 11, 15, 14, 5, 32, 6, 30],   // 22
+    [14, 4, 11, 15, 14, 5, 32, 6, 30],   // 23
+    [14, 4, 11, 15, 14, 5, 32, 6, 30],   // 24
+    [14, 4, 11, 15, 14, 5, 32, 6, 30],   // 25
+    [14, 4, 11, 15, 25, 5, 32, 6, 30],   // 26
+    [13, 3, 11, 15, 14, 5, 32, 6, 28],   // 27
+    [13, 3, 11, 15, 14, 5, 30, 6, 28],   // 28
+    [13, 4, 11, 15, 18, 5, 30, 6, 28],   // 29
+    [13, 3, 11, 14, 25, 5, 30, 6, 28],   // 30
+    [13, 3, 11, 14, 12, 5, 30, 6, 28],   // 31
+    [13, 3, 11, 14, 12, 5, 30, 6, 26],   // 32
+    [12, 3, 11, 14, 12, 5, 25, 6, 26],   // 33
+    [12, 3, 11, 14, 12, 5, 25, 6, 26],   // 34
+    [12, 3, 11, 14, 25, 5, 25, 6, 26],   // 35
+    [12, 3, 11, 14, 12, 5, 25, 6, 26],   // 36
+    [12, 3, 11, 14, 12, 5, 25, 6, 24],   // 37
+    [12, 3, 11, 14, 12, 5, 25, 6, 24],   // 38
+    [15, 4, 11, 14, 18, 5, 25, 6, 24],   // 39
+    [12, 3, 11, 14, 20, 5, 25, 6, 24],   // 40
+];
+
+function getWaveTuning(w)
+{
+    const effW = w > 40 ? ((w - 21) % 20) + 21 : w;
+    const d = arcadeWaveTuning[effW - 1];
+    return {
+        gruntDelay:        d[0],   // ROBSPD — used as a speed scalar (base wave 1 = 20)
+        gruntDelayMin:     d[1],   // RMXSPD — per-kill speedup cap
+        enforcerDropCount: d[2],   // ENFNUM
+        sparkTime:         d[3],   // ENSTIM — frames between enforcer sparks
+        spheroidDropTime:  d[4],   // CDPTIM — frames between spheroid drops
+        hulkDelay:         d[5],   // HLKSPD — used as a speed scalar (base wave 1 = 8)
+        brainShootTime:    d[6],   // BSHTIM — frames between brain cruise missiles
+        brainDelay:        d[7],   // BRNSPD — used as a speed scalar (base wave 1 = 8)
+        tankShootTime:     d[8],   // TNKSHT — frames between tank shells
+    };
+}
 
 function getWaveComposition(w)
 {
