@@ -153,6 +153,32 @@ function hasLegalMovesForState(board, player)
     return false;
 }
 
+function isStableDisc(board, row, col)
+{
+    // For each of the 4 line directions, the disc must be "safe" — i.e.
+    // at least one side of the line through it has no empty cells reachable.
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (const [dr, dc] of directions)
+    {
+        let safePositive = true;
+        for (let r = row + dr, c = col + dc;
+             r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+             r += dr, c += dc)
+        {
+            if (board[r][c] === DISC_EMPTY) { safePositive = false; break; }
+        }
+        let safeNegative = true;
+        for (let r = row - dr, c = col - dc;
+             r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+             r -= dr, c -= dc)
+        {
+            if (board[r][c] === DISC_EMPTY) { safeNegative = false; break; }
+        }
+        if (!safePositive && !safeNegative) return false;
+    }
+    return true;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // AI adapter — pure-functional view of the game for gameAI.js search.
 // State shape: { board, currentPlayer, gameOver }.
@@ -257,6 +283,21 @@ const othelloGame = {
             }
         }
 
+        // Stable disc bonus — discs that can never be flipped (corners and
+        // anything anchored to them) are permanent gains.
+        let playerStable = 0, opponentStable = 0;
+        for (let r = 0; r < BOARD_SIZE; r++)
+        {
+            for (let c = 0; c < BOARD_SIZE; c++)
+            {
+                if (b[r][c] === DISC_EMPTY) continue;
+                if (!isStableDisc(b, r, c)) continue;
+                if (b[r][c] === player) playerStable++;
+                else opponentStable++;
+            }
+        }
+        score += (playerStable - opponentStable) * 10;
+
         // Edge bonus
         for (let i = 0; i < BOARD_SIZE; i++)
         {
@@ -317,7 +358,17 @@ function strategyForDifficulty(d)
 {
     if (d === 'easy')   return randomAI;
     if (d === 'medium') return greedyAI;
-    return (game, state) => alphaBetaAI(game, state, 6); // 'hard' (depth 6 with move ordering)
+    return (game, state) =>
+    {
+        // Count empty squares — switch to perfect endgame search when ≤10 remain.
+        // Each move fills one cell, so depth = empties searches to game end.
+        let empties = 0;
+        for (let r = 0; r < BOARD_SIZE; r++)
+            for (let c = 0; c < BOARD_SIZE; c++)
+                if (state.board[r][c] === DISC_EMPTY) empties++;
+        const depth = empties <= 10 ? empties : 6;
+        return alphaBetaAI(game, state, depth);
+    };
 }
 
 function getFlipsForMove(row, col, player)

@@ -94,6 +94,41 @@ function getLowestEmptyRowForState(b, col)
     return -1; // column full
 }
 
+function countActiveThreats(board, player)
+{
+    // An "active threat" is a 4-window where `player` has 3 stones and the
+    // remaining empty cell is the next playable cell in its column. If the
+    // player has ≥2 active threats, the opponent can only block one.
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    let threats = 0;
+    for (let row = 0; row < ROWS; row++)
+    {
+        for (let col = 0; col < COLS; col++)
+        {
+            for (const [dr, dc] of directions)
+            {
+                let mine = 0, theirs = 0, emptyR = -1, emptyC = -1;
+                let inBounds = true;
+                for (let i = 0; i < 4; i++)
+                {
+                    const r = row + dr * i;
+                    const c = col + dc * i;
+                    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) { inBounds = false; break; }
+                    if (board[r][c] === player) mine++;
+                    else if (board[r][c] === DISC_EMPTY) { emptyR = r; emptyC = c; }
+                    else theirs++;
+                }
+                if (!inBounds) continue;
+                if (mine !== 3 || theirs !== 0) continue;
+                // Window has exactly 3 player + 1 empty. Is the empty cell playable now?
+                if (emptyR === 0 || board[emptyR - 1][emptyC] !== DISC_EMPTY)
+                    threats++;
+            }
+        }
+    }
+    return threats;
+}
+
 function getLowestEmptyRow(col)
 {
     return getLowestEmptyRowForState(board, col);
@@ -328,6 +363,13 @@ const connect4Game = {
             if (b[row][3] === opponent) score -= 6;
         }
 
+        // Double-threat bonus — two simultaneous immediately-playable winning
+        // threats can't both be blocked.
+        const playerThreats = countActiveThreats(b, player);
+        const opponentThreats = countActiveThreats(b, opponent);
+        if (playerThreats >= 2) score += 500;
+        if (opponentThreats >= 2) score -= 500;
+
         return score;
     },
 };
@@ -336,7 +378,7 @@ function strategyForDifficulty(d)
 {
     if (d === 'easy')   return randomAI;
     if (d === 'medium') return greedyAI;
-    return (game, state) => alphaBetaAI(game, state, 7); // 'hard' — depth 7 with center-first ordering
+    return (game, state) => alphaBetaAI(game, state, 9); // 'hard' (depth 9 with ID + TT)
 }
 
 function findBestAIMove()
