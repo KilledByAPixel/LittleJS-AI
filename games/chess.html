@@ -1,0 +1,891 @@
+<!DOCTYPE html><head>
+<title>LittleJS Chess</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1.18.12"></script>
+<script src="../templates/menus.js"></script>
+<script src="../templates/soundGenerator.js"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 60;
+
+///////////////////////////////////////////////////////////////////////////////
+// CHESS GAME
+
+const BOARD_SIZE = 8;
+const SQUARE_SIZE = 1.0;
+
+// Piece types
+const PIECE_PAWN   = 'P';
+const PIECE_KNIGHT = 'N';
+const PIECE_BISHOP = 'B';
+const PIECE_ROOK   = 'R';
+const PIECE_QUEEN  = 'Q';
+const PIECE_KING   = 'K';
+
+// Colors
+const COLOR_WHITE = 'w';
+const COLOR_BLACK = 'b';
+
+// Unicode glyphs for rendering (filled)
+const PIECE_GLYPHS = {
+    w: { P:'♙', N:'♘', B:'♗', R:'♖', Q:'♕', K:'♔' },
+    b: { P:'♟', N:'♞', B:'♝', R:'♜', Q:'♛', K:'♚' },
+};
+
+// Square colors
+const LIGHT_SQUARE = hsl(.1, .35, .75);
+const DARK_SQUARE  = hsl(.08, .4, .42);
+
+// Game state globals
+let board = [];                  // 8x8 array of {type, color} | null. board[0] = rank 1 (white's back rank), board[7] = rank 8.
+let currentPlayer = COLOR_WHITE;
+let castlingRights = {wK:true, wQ:true, bK:true, bQ:true};
+let enPassantTarget = null;      // {row, col} | null — square BEHIND a pawn that just double-moved
+let halfmoveClock = 0;           // since last pawn move or capture
+let fullmoveNumber = 1;
+let positionHistory = [];        // array of position hashes for threefold detection
+let gameOver = false;
+let result = null;               // 'checkmate' | 'stalemate' | 'draw-50' | 'draw-3fold' | 'draw-material'
+let winner = null;               // COLOR_WHITE | COLOR_BLACK | null (null = draw)
+let lastMove = null;             // {from, to} for highlighting
+
+// UI state
+let selectedSquare = null;       // {row, col} | null — currently-selected own piece
+let legalMovesForSelected = [];  // pre-filtered legal moves from selectedSquare
+let promotingMove = null;        // {from, to} stashed while promotion dialog is up
+let hoverSquare = null;
+let isPlaying = false;
+let gameMode = 'pvp';            // 'pvp' | 'ai' | 'aivai' — set on startGame
+
+// Sounds
+let sfxMove, sfxCapture, sfxCheck, sfxWin, sfxLose, sfxSelect;
+
+///////////////////////////////////////////////////////////////////////////////
+// BOARD HELPERS
+
+function initBoard()
+{
+    // board[row][col]: row 0 = rank 1 (white back rank), row 7 = rank 8 (black back rank).
+    // Standard starting position.
+    board = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        board.push(new Array(BOARD_SIZE).fill(null));
+    }
+    // Pawns
+    for (let c = 0; c < BOARD_SIZE; c++) {
+        board[1][c] = { type: PIECE_PAWN, color: COLOR_WHITE };
+        board[6][c] = { type: PIECE_PAWN, color: COLOR_BLACK };
+    }
+    // Back ranks: R N B Q K B N R
+    const backRank = [PIECE_ROOK, PIECE_KNIGHT, PIECE_BISHOP, PIECE_QUEEN, PIECE_KING, PIECE_BISHOP, PIECE_KNIGHT, PIECE_ROOK];
+    for (let c = 0; c < BOARD_SIZE; c++) {
+        board[0][c] = { type: backRank[c], color: COLOR_WHITE };
+        board[7][c] = { type: backRank[c], color: COLOR_BLACK };
+    }
+    currentPlayer = COLOR_WHITE;
+    castlingRights = {wK:true, wQ:true, bK:true, bQ:true};
+    enPassantTarget = null;
+    halfmoveClock = 0;
+    fullmoveNumber = 1;
+    positionHistory = [positionHash()];
+    gameOver = false;
+    result = null;
+    winner = null;
+    lastMove = null;
+    selectedSquare = null;
+    legalMovesForSelected = [];
+    promotingMove = null;
+}
+
+function isInBounds(r, c) { return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
+
+function opponentColor(color) { return color === COLOR_WHITE ? COLOR_BLACK : COLOR_WHITE; }
+
+function findKing(b, color)
+{
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (b[r][c] && b[r][c].type === PIECE_KING && b[r][c].color === color)
+                return {row: r, col: c};
+    return null;
+}
+
+function cloneBoard(b)
+{
+    const nb = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        const row = new Array(BOARD_SIZE);
+        for (let c = 0; c < BOARD_SIZE; c++) row[c] = b[r][c]; // pieces are immutable {type, color}
+        nb.push(row);
+    }
+    return nb;
+}
+
+function positionHash()
+{
+    // Position determined by board + side to move + castling rights + en passant target.
+    // (NOT halfmove clock or fullmove number — those don't determine position.)
+    return JSON.stringify({
+        b: board,
+        p: currentPlayer,
+        c: castlingRights,
+        e: enPassantTarget,
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PSEUDO-LEGAL MOVE GENERATION (does not check for own-king-in-check)
+
+// Move shape: {from: {row, col}, to: {row, col}, promotion?: 'Q'|'R'|'B'|'N', isCastle?: 'K'|'Q', isEnPassant?: bool, captured?: {type, color}}
+
+function pseudoLegalMovesForPiece(b, fromRow, fromCol, state)
+{
+    const piece = b[fromRow][fromCol];
+    if (!piece) return [];
+    const moves = [];
+    const c = piece.color;
+    const o = opponentColor(c);
+
+    function addMove(toRow, toCol, extra = {})
+    {
+        const dest = b[toRow][toCol];
+        if (dest && dest.color === c) return false; // blocked by own piece
+        moves.push({
+            from: {row: fromRow, col: fromCol},
+            to: {row: toRow, col: toCol},
+            captured: dest || null,
+            ...extra,
+        });
+        return !dest; // continue sliding only if square was empty
+    }
+
+    function sliding(dirs)
+    {
+        for (const [dr, dc] of dirs) {
+            let r = fromRow + dr, cc = fromCol + dc;
+            while (isInBounds(r, cc)) {
+                if (!addMove(r, cc)) break;
+                r += dr; cc += dc;
+            }
+        }
+    }
+
+    switch (piece.type) {
+        case PIECE_PAWN: {
+            const dir = c === COLOR_WHITE ? 1 : -1;
+            const startRank = c === COLOR_WHITE ? 1 : 6;
+            const promoRank = c === COLOR_WHITE ? 7 : 0;
+            // forward 1
+            const f1r = fromRow + dir;
+            if (isInBounds(f1r, fromCol) && !b[f1r][fromCol]) {
+                if (f1r === promoRank) {
+                    for (const promo of [PIECE_QUEEN, PIECE_ROOK, PIECE_BISHOP, PIECE_KNIGHT])
+                        moves.push({from:{row:fromRow,col:fromCol}, to:{row:f1r,col:fromCol}, promotion:promo, captured:null});
+                } else {
+                    moves.push({from:{row:fromRow,col:fromCol}, to:{row:f1r,col:fromCol}, captured:null});
+                    // forward 2 (only from starting rank, only if both squares empty)
+                    if (fromRow === startRank && !b[fromRow + 2*dir][fromCol]) {
+                        moves.push({from:{row:fromRow,col:fromCol}, to:{row:fromRow+2*dir,col:fromCol}, captured:null});
+                    }
+                }
+            }
+            // diagonal captures
+            for (const dc of [-1, 1]) {
+                const tr = fromRow + dir, tc = fromCol + dc;
+                if (!isInBounds(tr, tc)) continue;
+                const target = b[tr][tc];
+                if (target && target.color === o) {
+                    if (tr === promoRank) {
+                        for (const promo of [PIECE_QUEEN, PIECE_ROOK, PIECE_BISHOP, PIECE_KNIGHT])
+                            moves.push({from:{row:fromRow,col:fromCol}, to:{row:tr,col:tc}, promotion:promo, captured:target});
+                    } else {
+                        moves.push({from:{row:fromRow,col:fromCol}, to:{row:tr,col:tc}, captured:target});
+                    }
+                }
+                // en passant
+                if (state.enPassantTarget && state.enPassantTarget.row === tr && state.enPassantTarget.col === tc) {
+                    moves.push({
+                        from:{row:fromRow,col:fromCol}, to:{row:tr,col:tc},
+                        isEnPassant: true,
+                        captured: {type: PIECE_PAWN, color: o},
+                    });
+                }
+            }
+            break;
+        }
+        case PIECE_KNIGHT: {
+            const jumps = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+            for (const [dr, dc] of jumps) {
+                const tr = fromRow + dr, tc = fromCol + dc;
+                if (isInBounds(tr, tc)) addMove(tr, tc);
+            }
+            break;
+        }
+        case PIECE_BISHOP:
+            sliding([[-1,-1],[-1,1],[1,-1],[1,1]]);
+            break;
+        case PIECE_ROOK:
+            sliding([[-1,0],[1,0],[0,-1],[0,1]]);
+            break;
+        case PIECE_QUEEN:
+            sliding([[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]);
+            break;
+        case PIECE_KING: {
+            for (let dr = -1; dr <= 1; dr++)
+                for (let dc = -1; dc <= 1; dc++)
+                    if (dr || dc) {
+                        const tr = fromRow + dr, tc = fromCol + dc;
+                        if (isInBounds(tr, tc)) addMove(tr, tc);
+                    }
+            // Castling — adds the move, doesn't check pass-through-attacked-square yet (that's in step 1.4).
+            const kingRank = c === COLOR_WHITE ? 0 : 7;
+            if (fromRow === kingRank && fromCol === 4) {
+                const ksKey = c === COLOR_WHITE ? 'wK' : 'bK';
+                const qsKey = c === COLOR_WHITE ? 'wQ' : 'bQ';
+                // King-side: squares 5,6 empty, rook on 7
+                if (state.castlingRights[ksKey] && !b[kingRank][5] && !b[kingRank][6]
+                    && b[kingRank][7] && b[kingRank][7].type === PIECE_ROOK && b[kingRank][7].color === c) {
+                    moves.push({from:{row:kingRank,col:4}, to:{row:kingRank,col:6}, isCastle:'K', captured:null});
+                }
+                // Queen-side: squares 1,2,3 empty, rook on 0
+                if (state.castlingRights[qsKey] && !b[kingRank][1] && !b[kingRank][2] && !b[kingRank][3]
+                    && b[kingRank][0] && b[kingRank][0].type === PIECE_ROOK && b[kingRank][0].color === c) {
+                    moves.push({from:{row:kingRank,col:4}, to:{row:kingRank,col:2}, isCastle:'Q', captured:null});
+                }
+            }
+            break;
+        }
+    }
+    return moves;
+}
+
+function pseudoLegalMovesForColor(b, color, state)
+{
+    const moves = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (b[r][c] && b[r][c].color === color)
+                moves.push(...pseudoLegalMovesForPiece(b, r, c, state));
+    return moves;
+}
+
+function isSquareAttackedBy(b, row, col, byColor, state)
+{
+    // Generate all pseudo-legal moves for byColor and see if any target (row,col).
+    // For attack detection we don't need castling (kings don't attack via castling).
+    // We DO need pawn diagonal attacks, even on empty squares.
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const piece = b[r][c];
+            if (!piece || piece.color !== byColor) continue;
+            // Pawn attacks: diagonals only (not forward moves)
+            if (piece.type === PIECE_PAWN) {
+                const dir = byColor === COLOR_WHITE ? 1 : -1;
+                if (r + dir === row && (c - 1 === col || c + 1 === col)) return true;
+                continue;
+            }
+            // For other pieces, use the move generator but ignore castling
+            const moves = pseudoLegalMovesForPiece(b, r, c, state);
+            for (const m of moves) {
+                if (m.isCastle) continue;
+                if (m.to.row === row && m.to.col === col) return true;
+            }
+        }
+    }
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LEGAL MOVES + APPLY MOVE (pure-functional, operates on passed state)
+
+function applyMoveOnState(state, move)
+{
+    // Returns a new state. Does NOT detect game-end conditions (that's handled by the caller after the move lands).
+    const nb = cloneBoard(state.board);
+    const piece = nb[move.from.row][move.from.col];
+    const o = opponentColor(piece.color);
+
+    // Update castling rights based on what moved or was captured
+    const newRights = { ...state.castlingRights };
+    if (piece.type === PIECE_KING) {
+        if (piece.color === COLOR_WHITE) { newRights.wK = false; newRights.wQ = false; }
+        else { newRights.bK = false; newRights.bQ = false; }
+    }
+    if (piece.type === PIECE_ROOK) {
+        if (move.from.row === 0 && move.from.col === 0) newRights.wQ = false;
+        if (move.from.row === 0 && move.from.col === 7) newRights.wK = false;
+        if (move.from.row === 7 && move.from.col === 0) newRights.bQ = false;
+        if (move.from.row === 7 && move.from.col === 7) newRights.bK = false;
+    }
+    // Captured rook also revokes opponent rights
+    if (move.captured && move.captured.type === PIECE_ROOK) {
+        if (move.to.row === 0 && move.to.col === 0) newRights.wQ = false;
+        if (move.to.row === 0 && move.to.col === 7) newRights.wK = false;
+        if (move.to.row === 7 && move.to.col === 0) newRights.bQ = false;
+        if (move.to.row === 7 && move.to.col === 7) newRights.bK = false;
+    }
+
+    // Place the piece (handle promotion)
+    nb[move.from.row][move.from.col] = null;
+    if (move.promotion) {
+        nb[move.to.row][move.to.col] = { type: move.promotion, color: piece.color };
+    } else {
+        nb[move.to.row][move.to.col] = piece;
+    }
+
+    // Castling: move the rook too
+    if (move.isCastle === 'K') {
+        const r = move.to.row;
+        nb[r][5] = nb[r][7];
+        nb[r][7] = null;
+    } else if (move.isCastle === 'Q') {
+        const r = move.to.row;
+        nb[r][3] = nb[r][0];
+        nb[r][0] = null;
+    }
+
+    // En passant: remove the captured pawn (it's not on the destination square)
+    if (move.isEnPassant) {
+        const capturedRow = piece.color === COLOR_WHITE ? move.to.row - 1 : move.to.row + 1;
+        nb[capturedRow][move.to.col] = null;
+    }
+
+    // Update en passant target — set only on pawn double-move, else null
+    let newEnPassant = null;
+    if (piece.type === PIECE_PAWN && Math.abs(move.to.row - move.from.row) === 2) {
+        newEnPassant = {row: (move.from.row + move.to.row) / 2, col: move.from.col};
+    }
+
+    // Halfmove clock: reset on pawn move or capture, else increment
+    const newHalfmove = (piece.type === PIECE_PAWN || move.captured) ? 0 : state.halfmoveClock + 1;
+
+    // Build new state
+    const newState = {
+        board: nb,
+        currentPlayer: o,
+        castlingRights: newRights,
+        enPassantTarget: newEnPassant,
+        halfmoveClock: newHalfmove,
+        fullmoveNumber: state.fullmoveNumber + (piece.color === COLOR_BLACK ? 1 : 0),
+        positionHistory: state.positionHistory.slice(),
+        gameOver: false,
+        result: null,
+        winner: null,
+    };
+    newState.positionHistory.push(JSON.stringify({
+        b: nb, p: o, c: newRights, e: newEnPassant,
+    }));
+    return newState;
+}
+
+function isInCheck(b, color, state)
+{
+    const king = findKing(b, color);
+    if (!king) return false;
+    return isSquareAttackedBy(b, king.row, king.col, opponentColor(color), state);
+}
+
+function legalMovesForState(state, color)
+{
+    const pseudo = pseudoLegalMovesForColor(state.board, color, state);
+    const legal = [];
+    for (const m of pseudo) {
+        // Special castling check: king cannot castle through or out of check
+        if (m.isCastle) {
+            if (isInCheck(state.board, color, state)) continue;
+            // Squares king passes through must not be attacked
+            const kingRank = color === COLOR_WHITE ? 0 : 7;
+            const stepCols = m.isCastle === 'K' ? [5, 6] : [3, 2];
+            let throughAttack = false;
+            for (const cc of stepCols) {
+                if (isSquareAttackedBy(state.board, kingRank, cc, opponentColor(color), state)) {
+                    throughAttack = true; break;
+                }
+            }
+            if (throughAttack) continue;
+        }
+        // Apply the move and check own king isn't in check after
+        const after = applyMoveOnState(state, m);
+        if (!isInCheck(after.board, color, state)) legal.push(m);
+    }
+    return legal;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIVE-GAME WRAPPERS + GAME-END DETECTION
+
+function getCurrentState()
+{
+    return {
+        board: board, // already a 2D array; cloneBoard happens in applyMoveOnState
+        currentPlayer: currentPlayer,
+        castlingRights: castlingRights,
+        enPassantTarget: enPassantTarget,
+        halfmoveClock: halfmoveClock,
+        fullmoveNumber: fullmoveNumber,
+        positionHistory: positionHistory,
+        gameOver: gameOver,
+        result: result,
+        winner: winner,
+    };
+}
+
+function legalMoves(color)
+{
+    return legalMovesForState(getCurrentState(), color);
+}
+
+function hasInsufficientMaterial(b)
+{
+    const pieces = {w: [], b: []};
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = b[r][c];
+            if (p) pieces[p.color].push({type: p.type, squareColor: (r + c) % 2});
+        }
+    const wp = pieces.w, bp = pieces.b;
+    if (wp.length === 1 && bp.length === 1) return true; // K vs K
+    // K + (B or N) vs K
+    if (wp.length === 2 && bp.length === 1) {
+        const minor = wp.find(p => p.type === PIECE_KNIGHT || p.type === PIECE_BISHOP);
+        if (minor) return true;
+    }
+    if (bp.length === 2 && wp.length === 1) {
+        const minor = bp.find(p => p.type === PIECE_KNIGHT || p.type === PIECE_BISHOP);
+        if (minor) return true;
+    }
+    // K + B vs K + B with bishops on same color
+    if (wp.length === 2 && bp.length === 2) {
+        const wB = wp.find(p => p.type === PIECE_BISHOP);
+        const bB = bp.find(p => p.type === PIECE_BISHOP);
+        if (wB && bB && wB.squareColor === bB.squareColor) return true;
+    }
+    return false;
+}
+
+function detectGameEnd()
+{
+    // Called after a move. Sets gameOver/result/winner on the globals if game ended.
+    const moves = legalMoves(currentPlayer);
+    if (moves.length === 0) {
+        const inCheck = isInCheck(board, currentPlayer, getCurrentState());
+        gameOver = true;
+        if (inCheck) {
+            result = 'checkmate';
+            winner = opponentColor(currentPlayer);
+        } else {
+            result = 'stalemate';
+            winner = null;
+        }
+        return;
+    }
+    if (halfmoveClock >= 100) { // 50 moves per side = 100 half-moves
+        gameOver = true; result = 'draw-50'; winner = null; return;
+    }
+    if (hasInsufficientMaterial(board)) {
+        gameOver = true; result = 'draw-material'; winner = null; return;
+    }
+    // Threefold repetition
+    const lastHash = positionHistory[positionHistory.length - 1];
+    let count = 0;
+    for (const h of positionHistory) if (h === lastHash) count++;
+    if (count >= 3) {
+        gameOver = true; result = 'draw-3fold'; winner = null; return;
+    }
+}
+
+function makeMove(move)
+{
+    // Applies the move to globals, updates state, plays sounds, detects game end.
+    const wasCapture = !!move.captured;
+    const newState = applyMoveOnState(getCurrentState(), move);
+    board = newState.board;
+    currentPlayer = newState.currentPlayer;
+    castlingRights = newState.castlingRights;
+    enPassantTarget = newState.enPassantTarget;
+    halfmoveClock = newState.halfmoveClock;
+    fullmoveNumber = newState.fullmoveNumber;
+    positionHistory = newState.positionHistory;
+    lastMove = {from: move.from, to: move.to};
+    selectedSquare = null;
+    legalMovesForSelected = [];
+    detectGameEnd();
+    // Sounds
+    if (wasCapture) sfxCapture && sfxCapture.play();
+    else sfxMove && sfxMove.play();
+    if (!gameOver && isInCheck(board, currentPlayer, getCurrentState())) {
+        sfxCheck && sfxCheck.play();
+    }
+    if (gameOver && result === 'checkmate') {
+        if (gameMode === 'ai') {
+            if (winner === COLOR_WHITE) sfxWin && sfxWin.play();
+            else sfxLose && sfxLose.play();
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// RENDERING
+
+function getSquareWorldPos(row, col)
+{
+    // Board is centered on origin. Square (0,0) is at lower-left.
+    const offset = -(BOARD_SIZE * SQUARE_SIZE) / 2 + SQUARE_SIZE / 2;
+    return vec2(offset + col * SQUARE_SIZE, offset + row * SQUARE_SIZE);
+}
+
+function worldPosToSquare(worldPos)
+{
+    const offset = -(BOARD_SIZE * SQUARE_SIZE) / 2;
+    const c = Math.floor((worldPos.x - offset) / SQUARE_SIZE);
+    const r = Math.floor((worldPos.y - offset) / SQUARE_SIZE);
+    if (isInBounds(r, c)) return {row: r, col: c};
+    return null;
+}
+
+function drawBoard()
+{
+    const boardSize = BOARD_SIZE * SQUARE_SIZE;
+    // Board frame
+    drawRect(vec2(0, 0), vec2(boardSize + 0.4), rgb(0.1, 0.05, 0.02));
+
+    // Squares
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const pos = getSquareWorldPos(r, c);
+            const isLight = (r + c) % 2 === 1;
+            drawRect(pos, vec2(SQUARE_SIZE), isLight ? LIGHT_SQUARE : DARK_SQUARE);
+        }
+    }
+
+    // Last-move highlight (under pieces)
+    if (lastMove) {
+        for (const sq of [lastMove.from, lastMove.to]) {
+            drawRect(getSquareWorldPos(sq.row, sq.col), vec2(SQUARE_SIZE), rgb(1, 1, 0.3, 0.25));
+        }
+    }
+
+    // Check indicator (red glow on king square)
+    if (isPlaying && !gameOver) {
+        const king = findKing(board, currentPlayer);
+        if (king && isInCheck(board, currentPlayer, getCurrentState())) {
+            drawRect(getSquareWorldPos(king.row, king.col), vec2(SQUARE_SIZE), rgb(1, 0.2, 0.2, 0.45));
+        }
+    }
+
+    // Selected square highlight
+    if (isPlaying && selectedSquare) {
+        drawRect(getSquareWorldPos(selectedSquare.row, selectedSquare.col), vec2(SQUARE_SIZE), rgb(0.4, 0.9, 0.4, 0.4));
+    }
+
+    // Legal-move destination dots
+    if (isPlaying && legalMovesForSelected.length > 0) {
+        for (const m of legalMovesForSelected) {
+            const pos = getSquareWorldPos(m.to.row, m.to.col);
+            const target = board[m.to.row][m.to.col];
+            if (target || m.isEnPassant) {
+                // Capture: ring around piece
+                drawCircle(pos, SQUARE_SIZE * 0.85, rgb(0.4, 0.9, 0.4, 0));
+                drawCircle(pos, SQUARE_SIZE * 0.85, rgb(0.4, 0.9, 0.4, 0.6));
+                drawCircle(pos, SQUARE_SIZE * 0.7, rgb(0, 0, 0, 0)); // hollow center
+            } else {
+                // Empty target: small filled dot
+                drawCircle(pos, SQUARE_SIZE * 0.3, rgb(0.4, 0.9, 0.4, 0.6));
+            }
+        }
+    }
+
+    // Pieces
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = board[r][c];
+            if (!p) continue;
+            const pos = getSquareWorldPos(r, c);
+            const glyph = PIECE_GLYPHS[p.color][p.type];
+            const fillColor = p.color === COLOR_WHITE ? hsl(0, 0, 0.95) : hsl(0, 0, 0.1);
+            const outlineColor = p.color === COLOR_WHITE ? hsl(0, 0, 0.1) : hsl(0, 0, 0.95);
+            drawText(glyph, pos, SQUARE_SIZE * 0.95, fillColor, 0.08, outlineColor);
+        }
+    }
+
+    // File / rank labels
+    const lblColor = rgb(0.8, 0.7, 0.5);
+    const lblSize = 0.3;
+    const half = boardSize / 2;
+    for (let i = 0; i < BOARD_SIZE; i++) {
+        // Files a-h along the bottom
+        drawText(String.fromCharCode(97 + i), vec2(getSquareWorldPos(0, i).x, -half - 0.35), lblSize, lblColor);
+        // Ranks 1-8 along the left
+        drawText(String(i + 1), vec2(-half - 0.35, getSquareWorldPos(i, 0).y), lblSize, lblColor);
+    }
+}
+
+function drawUI()
+{
+    const screenSize = vec2(mainCanvasSize.x, mainCanvasSize.y);
+
+    if (!gameOver) {
+        let playerText;
+        if (gameMode === 'ai') {
+            playerText = currentPlayer === COLOR_WHITE ? "Your Turn (White)" : "AI Thinking...";
+        } else if (gameMode === 'aivai') {
+            playerText = currentPlayer === COLOR_WHITE ? "AI White Thinking..." : "AI Black Thinking...";
+        } else {
+            playerText = currentPlayer === COLOR_WHITE ? "White's Turn" : "Black's Turn";
+        }
+        drawTextScreen(playerText, vec2(screenSize.x / 2, 35), 28, WHITE, 4, BLACK);
+    } else {
+        let banner;
+        if (result === 'checkmate') {
+            banner = `Checkmate — ${winner === COLOR_WHITE ? 'White' : 'Black'} wins`;
+        } else if (result === 'stalemate') banner = 'Stalemate — draw';
+        else if (result === 'draw-50') banner = 'Draw by fifty-move rule';
+        else if (result === 'draw-3fold') banner = 'Draw by threefold repetition';
+        else if (result === 'draw-material') banner = 'Draw by insufficient material';
+        drawTextScreen('GAME OVER', vec2(screenSize.x / 2, screenSize.y / 2 - 60), 64, rgb(1, 0.8, 0), 6, BLACK);
+        drawTextScreen(banner, vec2(screenSize.x / 2, screenSize.y / 2), 36, WHITE, 5, BLACK);
+        drawTextScreen('Press R to restart or ESC to pause', vec2(screenSize.x / 2, screenSize.y / 2 + 60), 22, rgb(0.7,0.7,0.7), 2, BLACK);
+    }
+
+    drawTextScreen('R: Restart | ESC: Pause', vec2(screenSize.x / 2, screenSize.y - 30), 18, rgb(0.7, 0.7, 0.7), 2, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// INPUT — click-click move selection
+
+function handleSquareClick(sq)
+{
+    if (gameOver || promotingMove) return;
+
+    const piece = board[sq.row][sq.col];
+
+    // If a square is selected and this click is on a legal destination, play the move
+    if (selectedSquare) {
+        const matchingMoves = legalMovesForSelected.filter(m => m.to.row === sq.row && m.to.col === sq.col);
+        if (matchingMoves.length > 0) {
+            // Promotion: there will be 4 matching moves (one per promotion piece)
+            if (matchingMoves[0].promotion) {
+                promotingMove = {from: matchingMoves[0].from, to: matchingMoves[0].to};
+                showMenu('promotion');
+                return;
+            }
+            makeMove(matchingMoves[0]);
+            return;
+        }
+    }
+
+    // If clicked own piece, select it
+    if (piece && piece.color === currentPlayer) {
+        selectedSquare = sq;
+        const allMoves = legalMoves(currentPlayer);
+        legalMovesForSelected = allMoves.filter(m => m.from.row === sq.row && m.from.col === sq.col);
+        sfxSelect && sfxSelect.play();
+        return;
+    }
+
+    // Otherwise, deselect
+    selectedSquare = null;
+    legalMovesForSelected = [];
+}
+
+function completePromotion(pieceType)
+{
+    // Find the matching legal move with this promotion piece and apply
+    const allMoves = legalMoves(currentPlayer);
+    const move = allMoves.find(m =>
+        m.from.row === promotingMove.from.row && m.from.col === promotingMove.from.col &&
+        m.to.row === promotingMove.to.row && m.to.col === promotingMove.to.col &&
+        m.promotion === pieceType
+    );
+    promotingMove = null;
+    hideMenu('promotion');
+    if (move) makeMove(move);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME FLOW
+
+function setPlaying(p)
+{
+    isPlaying = p;
+    const hud = getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+function startGame(mode)
+{
+    gameMode = mode;
+    initBoard();
+    setPlaying(true);
+    hideMenu('title');
+}
+
+function quitToTitle()
+{
+    setPlaying(false);
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME INIT
+
+async function gameInit()
+{
+    setCanvasFixedSize(vec2(1280, 720));
+    canvasClearColor = new Color().setHex('#0d0d14');
+    setSoundVolume(.8);
+    setMenuVisibilityCallback(v => paused = v);
+
+    // Gameplay sounds
+    sfxMove    = new SoundGenerator({frequency: 250, release: 0.06, volume: 0.3});
+    sfxCapture = new SoundGenerator({frequency: 180, release: 0.10, volume: 0.4, noise: 0.4});
+    sfxCheck   = new SoundGenerator({frequency: 700, release: 0.25, pitchJump: 150, pitchJumpTime: 0.05, volume: 0.4});
+    sfxWin     = new SoundGenerator({frequency: 660, release: 0.3, pitchJump: 220, pitchJumpTime: 0.1, volume: 0.6});
+    sfxLose    = new SoundGenerator({frequency: 220, release: 0.35, slide: -0.5, volume: 0.5});
+    sfxSelect  = new SoundGenerator({frequency: 550, release: 0.08, volume: 0.4});
+
+    // Global menu sounds
+    const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
+
+    // Title menu (AI placeholders to be wired in Task 2)
+    createMenu({
+        id: 'title',
+        title: 'CHESS',
+        dismissable: false,
+        onStart: () => startGame('ai'),
+        items: [
+            {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => console.log('AI wired in Task 2')},
+            {type:'button',              label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
+            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => console.log('AI wired in Task 2')},
+            {type:'button',              label:'OPTIONS',          onClick: () => pushMenu('options')},
+            {type:'button',              label:'ABOUT',            onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // Options menu (difficulty grid added in Task 2)
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min:0, max:1,
+                persist:'chess.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'button', label:'BACK',       onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // About menu
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Standard chess. Click a piece to select it, then click a highlighted square to move. Castling, en passant, and promotion are all handled. Draws auto-claim on stalemate, threefold repetition, fifty-move rule, and insufficient material.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // Pause menu
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button', id:'restart', label:'RESTART',       onClick: () => { initBoard(); hideMenu('pause'); }},
+            {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button',               label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({message: 'Quit to title?', onYes: quitToTitle});
+            }},
+        ],
+    });
+
+    // Promotion dialog (only shown when needed)
+    createMenu({
+        id: 'promotion',
+        title: 'PROMOTE TO',
+        dismissable: false, // pawn MUST promote
+        items: [
+            {type:'button', label:'QUEEN',  onClick: () => completePromotion(PIECE_QUEEN)},
+            {type:'button', label:'ROOK',   onClick: () => completePromotion(PIECE_ROOK)},
+            {type:'button', label:'BISHOP', onClick: () => completePromotion(PIECE_BISHOP)},
+            {type:'button', label:'KNIGHT', onClick: () => completePromotion(PIECE_KNIGHT)},
+        ],
+    });
+
+    // HUD toolbar
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
+
+    initBoard();
+    setPlaying(false);
+    showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME LOOP
+
+function gameUpdate()
+{
+    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying) return;
+
+    if (keyWasPressed('KeyR')) initBoard();
+
+    hoverSquare = worldPosToSquare(mousePos);
+
+    // Human input — PvP only in Task 1. AI handling added in Task 2.
+    if (mouseWasPressed(0) && hoverSquare) {
+        handleSquareClick(hoverSquare);
+    }
+}
+
+function gameUpdatePost() {}
+
+function gameRender()
+{
+    drawBoard();
+}
+
+function gameRenderPost()
+{
+    if (isPlaying) drawUI();
+}
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script>
+</body></html>
