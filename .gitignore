@@ -13,3 +13,10 @@ docs/
 
 # runtime data from skills (per-session scratch dirs)
 .claude/skills/*/sessions/
+
+# playwright-mcp scratch dir
+.playwright-mcp/
+
+# debug screenshots / data dumps at repo root
+/*.png
+/*_data.txt
