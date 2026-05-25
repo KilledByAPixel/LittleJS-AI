@@ -17,14 +17,13 @@ paused = false;
 
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
-cameraScale = 32;
 canvasMaxSize = vec2(2048, 2048);
 
 ///////////////////////////////////////////////////////////////////////////////
 // pool (box2d)
 
 // table layout (world units)
-const TABLE_SIZE   = vec2(30, 16);      // inner felt
+const TABLE_SIZE   = vec2(34, 17);      // inner felt
 const RAIL_THICK   = 2.2;               // wood rail outside felt
 const WALL_THICK   = 3;                 // collider thickness (overlaps rail visually)
 const BALL_DIAM    = 1;
@@ -459,7 +458,7 @@ async function gameInit()
     canvasClearColor = rgb(.05,.07,.05);
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2();
-    cameraScale = 36;
+    cameraScale = 33;
 
     // sounds — short ZzFX clicks for cushion / ball contacts
     sfxHit     = new Sound([,.1, 2e3, , , .01, , , , , , , , 1]);
