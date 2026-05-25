@@ -8,13 +8,21 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.12"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
 // engine settings
 debugWatermark = false;
 showEngineVersion = false;
-debugKey = 'Backquote'; // tilde key for debug overlay
+// (menus.js auto-moves the debug-overlay key off Escape to ` on first createMenu)
+
+// Touch gamepad: 8-way digital + 1 face button (fire). Player moves left/right
+// only, so digital is plenty.
+touchGamepadEnable = true;
+touchGamepadAnalog = false;
+touchGamepadButtonCount = 1;
+touchGamepadAlpha = .35;
 
 // ------------------------------------------------------------
 // Game constants
@@ -369,20 +377,25 @@ class Player extends RectObject
         if (gameOver || gameWin || levelAnnounce > 0 || respawnTimer > 0)
             return;
 
-        // Switch to keyboard mode if movement keys pressed
-        if (keyIsDown('ArrowLeft') || keyIsDown('ArrowRight') || keyIsDown('KeyA') || keyIsDown('KeyD'))
+        // Switch input mode based on most recent activity. Stick/D-pad press
+        // counts as keyboard-mode (uses the same "compute X delta" path).
+        const stick = gamepadStick(0);
+        const stickActive = abs(stick.x) > .3;
+        if (keyIsDown('ArrowLeft') || keyIsDown('ArrowRight') || keyIsDown('KeyA') || keyIsDown('KeyD') || stickActive)
             inputMode = 'keyboard';
-        
+
         // Switch to mouse mode if mouse clicked
         if (mouseWasPressed(0))
             inputMode = 'mouse';
-        
+
         if (inputMode === 'keyboard')
         {
-            // Keyboard mode - compute direction from keys
+            // Keyboard / gamepad: integrate per-frame horizontal velocity
             let move = 0;
             if (keyIsDown('ArrowLeft') || keyIsDown('KeyA')) move -= 1;
             if (keyIsDown('ArrowRight') || keyIsDown('KeyD')) move += 1;
+            // Analog stick adds in; clamp to [-1, 1] so combined isn't faster than max.
+            move = clamp(move + stick.x, -1, 1);
             this.pos.x += move * .55;
         }
         else
@@ -391,13 +404,13 @@ class Player extends RectObject
             if (mousePos.x >= playMin.x && mousePos.x <= playMax.x)
                 this.pos.x = mousePos.x;
         }
-        
+
         clampToPlayfield(this.pos, this.size.scale(.5));
 
-        // Shooting - keyboard uses Space/K, mouse uses click
+        // Shooting - keyboard uses Space/K or A-button (0); mouse uses click
         if (this.cooldown > 0) this.cooldown--;
-        const wantsShoot = inputMode === 'keyboard' 
-            ? (keyIsDown('Space') || keyIsDown('KeyK'))
+        const wantsShoot = inputMode === 'keyboard'
+            ? (keyIsDown('Space') || keyIsDown('KeyK') || gamepadIsDown(0))
             : mouseIsDown(0);
         if (this.cooldown === 0 && wantsShoot)
         {
@@ -647,9 +660,137 @@ function gameInit()
     setCanvasFixedSize(vec2(960, 540));
     setCameraPos(levelSize.scale(.5));
     cameraScale = 16; // pixels per world unit
-    
-    // Initialize title screen aliens
+
+    try { hiScore = +localStorage.getItem('spaceinvaders.hi') || 0; } catch(e) { hiScore = 0; }
+
+    setSoundVolume(.8);
+    if (typeof setMenuVisibilityCallback === 'function')
+        setMenuVisibilityCallback(v => paused = v && !titleScreen);
+
+    buildMenus();
     initTitleScreen();
+}
+
+function startGame()
+{
+    // Destroy title-screen aliens before starting fresh.
+    for (const a of titleAliens) a.destroy();
+    titleAliens = [];
+    titleScreen = false;
+    resetGame();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
+    if (typeof hideAllMenus === 'function') hideAllMenus();
+    goToTitleScreen();
+    getToolbar('hud')?.hide();
+    if (typeof showMenu === 'function') showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    const sndSelect   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sndActivate = new Sound([.6,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sndSelect.play(),
+        activate: () => sndActivate.play(),
+    });
+
+    // Title is canvas-drawn (LITTLEJS / INVADERS with glow). Suppress the DOM
+    // title so the menu panel doesn't double up on the heading.
+    createTitleMenu({
+        title: '',
+        onPlay: startGame,
+        canReveal: () => titleScreen,
+        itemsBefore: [
+            {type:'label', id:'hiLabel', text:`HI-SCORE ${hiScore}`},
+        ],
+        items: [
+            {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
+            {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+        ],
+        onShow: () => {
+            const m = getMenu('title');
+            if (m) m.getItem('hiLabel')?.setLabel(`HI-SCORE ${hiScore}`);
+        },
+    });
+
+    createMenu({
+        id: 'options', title: 'OPTIONS', onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value:.8, min:0, max:1,
+                persist:'spaceinvaders.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    createMenu({
+        id: 'about', title: 'HOW TO PLAY', onHide: popMenu,
+        items: [
+            {type:'text', text:
+                'Defend Earth from the descending invaders.\n\n' +
+                'MOVE with ←/→ (A/D, D-pad, or stick).\n' +
+                'FIRE with Space, K, A button, or click.\n' +
+                'Mouse mode tracks the cursor; switching to keyboard or pad ' +
+                'toggles back to keyed control.\n\n' +
+                'Hide behind the barriers — they crumble. The fewer aliens ' +
+                'left, the faster they march. Esc pauses.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    createMenu({
+        id: 'pause', title: 'PAUSED', initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button', id:'restart', label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () => {
+                showConfirmDialog({ message:'Quit to title?', onYes: quitToTitle });
+            }},
+        ],
+    });
+
+    createMenu({
+        id: 'gameOver', title: 'GAME OVER', dismissable: false,
+        onShow: () => {
+            const m = getMenu('gameOver');
+            if (!m) return;
+            m.getItem('finalScore')?.setLabel(`SCORE     ${score}`);
+            m.getItem('hiScore')?.setLabel(   `HI-SCORE  ${hiScore}`);
+            m.getItem('levelReached')?.setLabel(`LEVEL    ${currentLevel}`);
+        },
+        items: [
+            {type:'label', id:'finalScore',   text:'SCORE     0'},
+            {type:'label', id:'hiScore',      text:'HI-SCORE  0'},
+            {type:'label', id:'levelReached', text:'LEVEL     0'},
+            {type:'separator'},
+            {type:'button', label:'PLAY AGAIN',    onClick: () => { hideMenu('gameOver'); startGame(); }},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+        ],
+    });
+
+    createToolbar({
+        id:'hud', anchor:'top-right', direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () => {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
+    getToolbar('hud')?.hide();
 }
 
 function initTitleScreen()
@@ -674,12 +815,13 @@ function initTitleScreen()
 
 function gameUpdate()
 {
-    // Title screen
+    // Title screen — menu PLAY button drives startGame; we just keep the
+    // attract animation alive here.
     if (titleScreen)
     {
         titleTimer++;
         invaderAnimTick++; // Keep animation running
-        
+
         // Update floating aliens (real Alien objects)
         for (const a of titleAliens)
         {
@@ -687,32 +829,30 @@ function gameUpdate()
             a.pos.y += Math.sin(titleTimer * 0.02 + a.titlePhase) * 0.02;
             if (a.pos.x > 65) a.pos.x = -5;
         }
-        
-        // Start game on Enter or click
-        if (keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0))
+        return;
+    }
+
+    // Pause hotkey: Esc / gamepad Start. Skipped if gameOver menu already up.
+    const endMenuShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
+    if (!endMenuShowing &&
+        (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    {
+        if (typeof playMenuSound === 'function') playMenuSound('activate');
+        if (typeof showMenu === 'function') showMenu('pause');
+        inputClearKey('Escape');
+        inputClearKey(9, 1, false, true, false);
+        return;
+    }
+
+    // Surface gameOver menu once the on-canvas delay (gameOverTimer) elapses.
+    if (gameOver && gameOverTimer <= 0 && !endMenuShowing)
+    {
+        if (score > hiScore)
         {
-            // Destroy title screen aliens
-            for (const a of titleAliens) a.destroy();
-            titleAliens = [];
-            titleScreen = false;
-            resetGame();
+            hiScore = score;
+            try { localStorage.setItem('spaceinvaders.hi', hiScore); } catch(e) {}
         }
-        return;
-    }
-    
-    // Game over - click to return to title (after delay)
-    if (gameOver && gameOverTimer <= 0 && (keyWasPressed('Enter') || mouseWasPressed(0)))
-    {
-        goToTitleScreen();
-        return;
-    }
-    if (gameWin && (keyWasPressed('Enter') || mouseWasPressed(0)))
-        resetGame();
-    
-    // Return to title screen with Escape
-    if (keyWasPressed('Escape'))
-    {
-        goToTitleScreen();
+        if (typeof showMenu === 'function') showMenu('gameOver');
         return;
     }
     
@@ -834,14 +974,10 @@ function gameRenderPost()
             drawTextScreen('GET READY', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 60), 36, rgb(.95,.95,.95), 6, rgb(0,0,0));
     }
     
-    if (gameOver)
+    // Brief on-canvas banner while the delay timer runs; the gameOver menu surfaces after.
+    if (gameOver && gameOverTimer > 0)
     {
         drawTextScreen('GAME OVER', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20), 80, rgb(.95,.25,.25), 8, rgb(0,0,0));
-    }
-    else if (gameWin)
-    {
-        drawTextScreen('YOU WIN!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20), 80, rgb(.25,.95,.35), 8, rgb(0,0,0));
-        drawTextScreen('Press Enter', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 45), 34, rgb(.95,.95,.95), 6, rgb(0,0,0));
     }
 }
 
@@ -946,14 +1082,8 @@ function renderTitleScreen()
     ctx.fillText('INVADERS', w/2, titleY + 80);
     
     ctx.shadowBlur = 0;
-    
-    // Press Start text (blinking)
-    if ((titleTimer >> 5) & 1)
-    {
-        ctx.fillStyle = '#ff0';
-        ctx.font = 'bold 32px Arial';
-        ctx.fillText('CLICK TO START', w/2, h - 50);
-    }
+
+    // (CLICK TO START removed — the menus.js title menu owns the PLAY button.)
 }
 
 // ------------------------------------------------------------
