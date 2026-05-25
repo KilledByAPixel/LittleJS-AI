@@ -648,6 +648,10 @@ const chessGame = {
 
     getLegalMoves(state, color)
     {
+        // Reuse the cache that applyMove populates for the next-to-move side —
+        // avoids a duplicate full legal-move enumeration per search node.
+        if (state._legalMovesForCurrent && state.currentPlayer === color)
+            return state._legalMovesForCurrent;
         return legalMovesForState(state, color);
     },
 
@@ -662,8 +666,10 @@ const chessGame = {
     {
         // _player is ignored — move.from already identifies the moving piece.
         const next = applyMoveOnState(state, move);
-        // Detect game-end on the new state (mirror live makeMove).
+        // Detect game-end on the new state (mirror live makeMove). Cache the
+        // legal-moves list so getLegalMoves can reuse it instead of recomputing.
         const oppMoves = legalMovesForState(next, next.currentPlayer);
+        next._legalMovesForCurrent = oppMoves;
         if (oppMoves.length === 0) {
             next.gameOver = true;
             if (isInCheck(next.board, next.currentPlayer, next)) {
@@ -704,7 +710,17 @@ function strategyForDifficulty(d)
 {
     if (d === 'easy')   return (game, state, opts) => randomAI(game, state);
     if (d === 'medium') return (game, state, opts) => alphaBetaAI(game, state, 3, opts);
-    return (game, state, opts) => alphaBetaAI(game, state, 5, opts); // 'hard'
+    // HARD: adaptive depth based on piece count. Branching shrinks as pieces
+    // come off the board, so we can afford deeper search in the endgame.
+    return (game, state, opts) =>
+    {
+        let pieces = 0;
+        for (let r = 0; r < BOARD_SIZE; r++)
+            for (let c = 0; c < BOARD_SIZE; c++)
+                if (state.board[r][c]) pieces++;
+        const depth = pieces > 24 ? 4 : pieces > 12 ? 5 : 6;
+        return alphaBetaAI(game, state, depth, opts);
+    };
 }
 
 function findBestAIMove(opts = {})
@@ -1165,7 +1181,7 @@ async function gameInit()
             {type:'grid', id:'difficultyGrid', columns:3, cells: [
                 {label:'EASY',   title:'Random moves',              onClick: () => setDifficulty('easy')},
                 {label:'MEDIUM', title:'Alpha-beta search depth 3', onClick: () => setDifficulty('medium')},
-                {label:'HARD',   title:'Alpha-beta search depth 5', onClick: () => setDifficulty('hard')},
+                {label:'HARD',   title:'Adaptive depth (4-6) by piece count', onClick: () => setDifficulty('hard')},
             ]},
             {type:'separator'},
             {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min:0, max:1,
