@@ -59,9 +59,9 @@ The most polished prototypes. Playable games with menus, sound, and a complete l
 - [Missile Command](https://killedbyapixel.github.io/LittleJS-AI/games/missileCommand.html) 🎯
 - [Mini Golf](https://killedbyapixel.github.io/LittleJS-AI/games/miniGolf.html) 🎯 📦
 - [Robotron](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) 🚀 👆 🎮
+- [Pool](https://killedbyapixel.github.io/LittleJS-AI/games/pool.html) 🎯 📦
 - [Space Invaders](https://killedbyapixel.github.io/LittleJS-AI/games/spaceInvaders.html) 🚀 👆 🎮
 - [Pac-Man](https://killedbyapixel.github.io/LittleJS-AI/games/pacman.html) 👾 👆 🎮
-- [Centipede](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) 🚀 👆 🎮
 - [Asteroids](https://killedbyapixel.github.io/LittleJS-AI/games/asteroids.html) 🚀 👆 🎮
 - [Checkers](https://killedbyapixel.github.io/LittleJS-AI/games/checkers.html) ♟️
 
@@ -69,6 +69,7 @@ The most polished prototypes. Playable games with menus, sound, and a complete l
 
 Polished, complete games that didn't quite make the top list.
 
+- [Centipede](https://killedbyapixel.github.io/LittleJS-AI/games/centipede.html) 🚀 👆 🎮
 - [Sokoban](https://killedbyapixel.github.io/LittleJS-AI/games/sokoban.html) 🧩
 - [Minesweeper](https://killedbyapixel.github.io/LittleJS-AI/games/minesweeper.html) 🧩
 - [Match 3](https://killedbyapixel.github.io/LittleJS-AI/games/match3.html) 🧩
@@ -82,7 +83,6 @@ Polished, complete games that didn't quite make the top list.
 - [Columns](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) 🧩
 - [Snood](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) 🎯 👆
 - [Dr. Mario](https://killedbyapixel.github.io/LittleJS-AI/games/drMario.html) 🧩
-- [Pool](https://killedbyapixel.github.io/LittleJS-AI/games/pool.html) 🎯 📦
 
 ### 🚧 Works in Progress
 
