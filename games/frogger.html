@@ -12,8 +12,19 @@
 <body>
   <script src="../dist/littlejs.js?1.18.12"></script>
   <script src="../templates/soundGenerator.js"></script>
+  <script src="../templates/menus.js"></script>
   <script>
   'use strict';
+
+  // engine settings
+  debugWatermark = false;
+  showEngineVersion = false;
+
+  // Touch gamepad: 8-way digital — perfect for a 4-direction hop game.
+  touchGamepadEnable = true;
+  touchGamepadAnalog = false;
+  touchGamepadButtonCount = 0;
+  touchGamepadAlpha = .35;
 
   // ------------------------------------------------------------
   // Frogger (primitives only)
@@ -46,7 +57,11 @@
   let particles = [];
   let reached = new Array(homeSlots).fill(false);
   let lives = 3, level = 1;
+  let bestLevel = 1;
   let respawnTimer;
+  let isPlaying = false;
+  let gameOver = false;
+  let gameOverHoldTimer = 0; // seconds before gameOver menu surfaces
 
   // Sounds
   let sHop, sDie, sHome, sLevel;
@@ -163,11 +178,12 @@
     lives--;
     respawnTimer.set(1);
     if (lives < 0) {
-      lives = 3;
-      level = 1;
-      reached.fill(false);
-      particles.length = 0;
-      buildLanes();
+      gameOver = true;
+      gameOverHoldTimer = 1.4;
+      if (level > bestLevel) {
+        bestLevel = level;
+        try { localStorage.setItem('frogger.bestLevel', bestLevel); } catch(e) {}
+      }
     }
   }
 
@@ -206,7 +222,12 @@
     sHop.play(frog.pos);
   }
 
+  // Last cardinal direction from the analog/touch stick — used to edge-trigger
+  // hops so holding the stick doesn't auto-hop every frame.
+  let lastStickDir = vec2();
+
   function handleInput() {
+    // Keyboard: one-shot hop per press (arcade-style)
     const up    = keyWasPressed('ArrowUp')   || keyWasPressed('KeyW');
     const down  = keyWasPressed('ArrowDown') || keyWasPressed('KeyS');
     const left  = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA');
@@ -216,6 +237,29 @@
     if (down)  return tryMove(0,-1);
     if (left)  return tryMove(-1,0);
     if (right) return tryMove(1, 0);
+
+    // Physical D-pad buttons (12-15) — edge-triggered automatically.
+    if (gamepadWasPressed(12)) return tryMove(0, 1);
+    if (gamepadWasPressed(13)) return tryMove(0,-1);
+    if (gamepadWasPressed(14)) return tryMove(-1,0);
+    if (gamepadWasPressed(15)) return tryMove(1, 0);
+
+    // Stick (analog or touch): pick dominant cardinal, but only hop on the
+    // frame the stick crosses INTO that direction. Returning to neutral arms
+    // the next hop.
+    const stick = gamepadStick(0);
+    let dir = vec2();
+    if (stick.lengthSquared() > .5*.5) {
+      dir = abs(stick.x) > abs(stick.y)
+        ? vec2(sign(stick.x), 0)
+        : vec2(0, sign(stick.y));
+    }
+    if ((dir.x !== lastStickDir.x || dir.y !== lastStickDir.y) &&
+        (dir.x || dir.y))
+    {
+      tryMove(dir.x, dir.y);
+    }
+    lastStickDir = dir;
   }
 
   function updateObstacles(arr) {
@@ -294,11 +338,169 @@
     sHome = new SoundGenerator({ volume:.8, frequency:720, randomness:.06, attack:0, release:.14, shapeCurve:1.2, pitchJump:360, pitchJumpTime:.04 });
     sLevel= new SoundGenerator({ volume:.9, frequency:420, randomness:.03, attack:0, release:.35, shapeCurve:1.1, repeatTime:.08, pitchJump:140, pitchJumpTime:.02 });
 
+    try { bestLevel = +localStorage.getItem('frogger.bestLevel') || 1; } catch(e) { bestLevel = 1; }
+
+    setSoundVolume(.8);
+    if (typeof setMenuVisibilityCallback === 'function')
+        setMenuVisibilityCallback(v => paused = v && isPlaying);
+
     buildLanes();
     resetRun(true);
+    buildMenus();
+  }
+
+  function startGame() {
+    gameOver = false;
+    resetRun(true);
+    isPlaying = true;
+    getToolbar('hud')?.show();
+  }
+
+  function quitToTitle() {
+    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
+    if (typeof hideAllMenus === 'function') hideAllMenus();
+    gameOver = false;
+    resetRun(true);
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    if (typeof showMenu === 'function') showMenu('title');
+  }
+
+  function buildMenus() {
+    if (typeof createMenu !== 'function') return;
+
+    const sndSelect   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sndActivate = new Sound([.6,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+      select:   () => sndSelect.play(),
+      activate: () => sndActivate.play(),
+    });
+
+    createTitleMenu({
+      title: 'FROGGER',
+      subtitle: 'Cross the road and the river',
+      onPlay: startGame,
+      canReveal: () => !isPlaying,
+      itemsBefore: [
+        {type:'label', id:'bestLabel', text:`BEST LEVEL ${bestLevel}`},
+      ],
+      items: [
+        {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
+        {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+      ],
+      onShow: () => {
+        const m = getMenu('title');
+        if (m) m.getItem('bestLabel')?.setLabel(`BEST LEVEL ${bestLevel}`);
+      },
+    });
+
+    createMenu({
+      id: 'options', title: 'OPTIONS', onHide: popMenu,
+      items: [
+        {type:'slider', id:'volume', label:'VOLUME', value:.8, min:0, max:1,
+          persist:'frogger.volume',
+          onChange: v => setSoundVolume(v)},
+        {type:'separator'},
+        {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+        {type:'separator'},
+        {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+      ],
+    });
+
+    createMenu({
+      id: 'about', title: 'HOW TO PLAY', onHide: popMenu,
+      items: [
+        {type:'text', text:
+          'Get five frogs home, one at a time.\n\n' +
+          'HOP with arrow keys, WASD, D-pad, or left stick (one hop per press).\n\n' +
+          'Avoid the cars on the road; ride logs across the river — don\'t touch ' +
+          'the water. Fill all five home slots and the level repeats faster.\n\n' +
+          'Three lives. Esc pauses.'},
+        {type:'separator'},
+        {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+      ],
+    });
+
+    createMenu({
+      id: 'pause', title: 'PAUSED', initialItemId: 'resume',
+      items: [
+        {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+        {type:'button', id:'restart', label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+        {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+        {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () => {
+          showConfirmDialog({ message:'Quit to title?', onYes: quitToTitle });
+        }},
+      ],
+    });
+
+    createMenu({
+      id: 'gameOver', title: 'GAME OVER', dismissable: false,
+      onShow: () => {
+        const m = getMenu('gameOver');
+        if (!m) return;
+        m.getItem('levelReached')?.setLabel(`LEVEL  ${level}`);
+        m.getItem('bestLabel')?.setLabel(`BEST   ${bestLevel}`);
+      },
+      items: [
+        {type:'label', id:'levelReached', text:'LEVEL  0'},
+        {type:'label', id:'bestLabel',    text:'BEST   0'},
+        {type:'separator'},
+        {type:'button', label:'PLAY AGAIN',    onClick: () => { hideMenu('gameOver'); startGame(); }},
+        {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+      ],
+    });
+
+    createToolbar({
+      id:'hud', anchor:'top-right', direction:'horizontal',
+      items: [
+        {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+        {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () => {
+          if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+          else showMenu('pause');
+        }},
+      ],
+    });
+    getToolbar('hud')?.hide();
   }
 
   function gameUpdate() {
+    // Pause hotkey: Esc / gamepad Start. Skipped if gameOver menu is up.
+    const endMenuShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
+    if (isPlaying && !endMenuShowing &&
+        (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    {
+      if (typeof playMenuSound === 'function') playMenuSound('activate');
+      if (typeof showMenu === 'function') showMenu('pause');
+      inputClearKey('Escape');
+      inputClearKey(9, 1, false, true, false);
+      return;
+    }
+
+    if (!isPlaying) {
+      // Attract: keep cars / logs scrolling so the title screen feels alive.
+      updateObstacles(cars);
+      updateObstacles(logs);
+      return;
+    }
+
+    if (gameOver) {
+      // Tick remaining death particles so they finish their arcs cleanly.
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life += DT;
+        p.vel.y -= 8 * DT;
+        p.pos.x += p.vel.x * DT;
+        p.pos.y += p.vel.y * DT;
+        if (p.life >= p.maxLife) particles.splice(i, 1);
+      }
+      if (!endMenuShowing) {
+        gameOverHoldTimer -= DT;
+        if (gameOverHoldTimer <= 0 && typeof showMenu === 'function')
+          showMenu('gameOver');
+      }
+      return;
+    }
+
     if (respawnTimer.elapsed()) {
       respawnTimer.unset();
       resetRun(false);
@@ -615,8 +817,8 @@
     for (const l of logs) drawLog(l);
     for (const c of cars) drawCar(c);
 
-    // Alive player frog — disappears entirely on death; particles play instead.
-    if (!respawnTimer.active()) {
+    // Alive player frog — disappears on death (particles play instead) and on title.
+    if (isPlaying && !gameOver && !respawnTimer.active()) {
       const logBump = frog.onLog ? logBumpY(frog.onLog) : 0;
       drawFrog(frog.pos.add(vec2(0, logBump)), frog.facing, frog.hopAnim);
     }
@@ -630,12 +832,15 @@
   }
 
   function gameRenderPost() {
+    if (!isPlaying) return; // title screen — menu owns the display
+
     // Minimal HUD: lives + level only
     drawTextScreen(`LIVES  ${Math.max(0,lives)}     LEVEL  ${level}`,
       vec2(mainCanvasSize.x/2, 30), 26,
       hsl(105/360,.55,.85), 4, hsl(0,0,0));
 
-    if (respawnTimer.active() && lives < 0) {
+    // Brief on-canvas banner; the gameOver menu owns the rest.
+    if (gameOver && gameOverHoldTimer > 0) {
       drawTextScreen('GAME OVER',
         vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 90,
         hsl(0, .8, .55), 8, hsl(0,0,0));
