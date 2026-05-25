@@ -416,7 +416,7 @@ function legalMovesForState(state, color)
         }
         // Apply the move and check own king isn't in check after
         const after = applyMoveOnState(state, m);
-        if (!isInCheck(after.board, color, state)) legal.push(m);
+        if (!isInCheck(after.board, color, after)) legal.push(m);
     }
     return legal;
 }
@@ -594,10 +594,8 @@ function drawBoard()
             const pos = getSquareWorldPos(m.to.row, m.to.col);
             const target = board[m.to.row][m.to.col];
             if (target || m.isEnPassant) {
-                // Capture: ring around piece
-                drawCircle(pos, SQUARE_SIZE * 0.85, rgb(0.4, 0.9, 0.4, 0));
-                drawCircle(pos, SQUARE_SIZE * 0.85, rgb(0.4, 0.9, 0.4, 0.6));
-                drawCircle(pos, SQUARE_SIZE * 0.7, rgb(0, 0, 0, 0)); // hollow center
+                // Capture: hollow ring around the target piece
+                drawCircle(pos, SQUARE_SIZE * 0.85, new Color(0,0,0,0), SQUARE_SIZE * 0.07, rgb(0.4, 0.9, 0.4, 0.7));
             } else {
                 // Empty target: small filled dot
                 drawCircle(pos, SQUARE_SIZE * 0.3, rgb(0.4, 0.9, 0.4, 0.6));
@@ -769,7 +767,7 @@ async function gameInit()
         id: 'title',
         title: 'CHESS',
         dismissable: false,
-        onStart: () => startGame('ai'),
+        onStart: () => startGame('pvp'),
         items: [
             {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => console.log('AI wired in Task 2')},
             {type:'button',              label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
