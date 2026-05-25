@@ -161,9 +161,16 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
             return {score: ttEntry.score, move: ttEntry.bestMove};
     }
 
-    // Terminal / leaf node.
-    if (depth === 0 || game.isTerminal(state))
+    // Terminal / leaf node. If the adapter supports quiescence (provides
+    // getCaptureMoves), use it to resolve in-progress capture sequences past
+    // the depth limit. Otherwise return the static eval.
+    if (game.isTerminal(state))
         return {score: game.evaluate(state, maxPlayer), move: null};
+    if (depth === 0) {
+        if (game.getCaptureMoves)
+            return {score: quiescence(game, state, alpha, beta, maxPlayer, 0), move: null};
+        return {score: game.evaluate(state, maxPlayer), move: null};
+    }
 
     const player = game.getCurrentPlayer(state);
     const moves = game.getLegalMoves(state, player);
@@ -211,6 +218,46 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
     tt.set(hashKey, {depth, score: bestScore, flag, bestMove});
 
     return {score: bestScore, move: bestMove};
+}
+
+// quiescence — extend search past depth limit using capture moves only,
+// to resolve in-progress trade sequences. Returns a scalar score (no move).
+// Hard-capped at QUIESCENCE_MAX_PLY to prevent pathological infinite chains.
+const QUIESCENCE_MAX_PLY = 8;
+
+function quiescence(game, state, alpha, beta, maxPlayer, qPly)
+{
+    const standPat = game.evaluate(state, maxPlayer);
+    const player = game.getCurrentPlayer(state);
+    const isMax = player === maxPlayer;
+
+    // Stand-pat: if not capturing already beats the current alpha (or fails beta),
+    // we can stop here. The current player can always "choose not to capture."
+    if (isMax) {
+        if (standPat >= beta) return beta;
+        if (standPat > alpha) alpha = standPat;
+    } else {
+        if (standPat <= alpha) return alpha;
+        if (standPat < beta) beta = standPat;
+    }
+
+    if (qPly >= QUIESCENCE_MAX_PLY) return standPat;
+
+    const captures = game.getCaptureMoves(state, player);
+    if (!captures.length) return standPat;
+
+    for (const move of captures) {
+        const next = game.applyMove(state, move, player);
+        const score = quiescence(game, next, alpha, beta, maxPlayer, qPly + 1);
+        if (isMax) {
+            if (score >= beta) return beta;
+            if (score > alpha) alpha = score;
+        } else {
+            if (score <= alpha) return alpha;
+            if (score < beta) beta = score;
+        }
+    }
+    return isMax ? alpha : beta;
 }
 
 // Move equality via JSON.stringify — generic across all current games'

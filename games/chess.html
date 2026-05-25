@@ -569,6 +569,13 @@ const chessGame = {
         return legalMovesForState(state, color);
     },
 
+    getCaptureMoves(state, color)
+    {
+        // Subset of legalMovesForState containing only captures (including en passant).
+        const all = legalMovesForState(state, color);
+        return all.filter(m => m.captured);
+    },
+
     applyMove(state, move, _player)
     {
         // _player is ignored — move.from already identifies the moving piece.
