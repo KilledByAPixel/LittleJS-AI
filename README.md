@@ -77,6 +77,7 @@ Polished, complete games that didn't quite make the top cut.
 - [Connect 4](https://killedbyapixel.github.io/LittleJS-AI/games/connect4.html) ♟️
 - [Othello](https://killedbyapixel.github.io/LittleJS-AI/games/othello.html) ♟️
 - [Chess](https://killedbyapixel.github.io/LittleJS-AI/games/chess.html) ♟️
+- [Capture Go](https://killedbyapixel.github.io/LittleJS-AI/games/captureGo.html) ♟️
 - [Orbitswarm](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) 🧩
 - [Snake](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) 👾 👆 🎮
 - [Columns](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) 🧩
