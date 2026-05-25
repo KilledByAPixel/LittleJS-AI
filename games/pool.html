@@ -31,7 +31,12 @@ const BALL_DIAM    = 1;
 const POCKET_DIAM  = 1.6;
 const MAX_HIT      = 12;                // max aim length in world units — stretch this far for full power
 const HIT_IMPULSE  = 5;                 // impulse per unit of aim (max impulse = MAX_HIT * HIT_IMPULSE = 60)
+const MIN_IMPULSE  = 2;                 // floor — clicking at 0% power still gives the cue a soft tap
+const AIM_DEADZONE = BALL_DIAM;         // mouse within this radius of cue ball = 0 power (free direction aiming)
+const WHEEL_STEP   = .08;               // wheel ticks per unit of added power (≈12 ticks across full range)
 const STOP_SPEED   = 0.15;
+const RAPID_STOP_THRESHOLD = 1.5;       // below this world-units/sec we squash velocity each frame to end turns faster
+const RAPID_STOP_FACTOR    = 0.90;      // velocity multiplier applied each frame while in the rapid-stop band
 
 // pool ball colors (index = ball number)
 const ballColors = [
@@ -62,6 +67,7 @@ let isPlaying = false;
 let won = false;
 let scratchedThisShot = false;
 let aimAngle = 0;        // remembered for cue stick during motion
+let wheelPower = 0;      // wheel-driven power offset added on top of mouse drag (cleared on each shot)
 
 // strike animation — windup (tip travels toward ball) then follow-through.
 // Set when the player clicks; cleared after the swing finishes. While set,
@@ -364,6 +370,7 @@ function newGame()
     won = false;
     scratchedThisShot = false;
     strike = null;
+    wheelPower = 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -384,11 +391,24 @@ function canShoot()
 
 function getAim()
 {
-    // aim from cue ball toward the mouse, clamped to MAX_HIT length
+    // Direction comes from the mouse position relative to the cue ball.
+    // Power has two contributions:
+    //   1) Drag — distance past an AIM_DEADZONE around the ball, scaled into 0..1.
+    //      This lets the player keep the cursor at a comfortable distance for
+    //      aiming weak shots without pinning it on the ball.
+    //   2) Wheel — accumulated wheel ticks (up = more, down = less) added on top.
+    //      Lets the player fine-tune without having to drag.
+    // The two are summed and clamped, then `len` is back-derived so the cue
+    // stick / arrow / power readout all stay in sync with whatever the player
+    // is actually committing to.
     const d = mousePos.subtract(cueBall.pos);
-    const len = min(d.length(), MAX_HIT);
-    const dir = d.length() > 0 ? d.normalize() : vec2(1,0);
-    return { dir, power: len / MAX_HIT, len };
+    const rawLen = d.length();
+    const dir = rawLen > 0 ? d.normalize() : vec2(1, 0);
+    const dragLen = max(0, rawLen - AIM_DEADZONE);
+    const basePower = min(dragLen / MAX_HIT, 1);
+    const power = clamp(basePower + wheelPower, 0, 1);
+    const len = power * MAX_HIT;
+    return { dir, power, len };
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -529,23 +549,41 @@ function gameUpdate()
     if (!cueBall && allStopped() && !won)
         spawnCueBall();
 
+    // Debug: hold D to drag the cue ball to the mouse position. Lets you line
+    // it up against pocket mouths to verify the sensor catches it at the right
+    // spot. Aborts any in-flight strike so an impulse doesn't fire from the
+    // new location, and zeros the velocity so the ball stays put on release.
+    if (cueBall && keyIsDown('KeyD'))
+    {
+        cueBall.setTransform(mousePos, 0);
+        cueBall.setLinearVelocity(vec2());
+        cueBall.setAngularVelocity(0);
+        strike = null;
+    }
+
     // Shooting — clicking commits to a swing animation; the impulse fires when
     // the tip reaches the ball, not on the click frame. Impulse magnitude is
     // raw aim length * HIT_IMPULSE so the demo's "feel" is preserved: max
     // length 6 × HIT_IMPULSE 8 = max impulse 48.
+    // Wheel adjusts power: up = more, down = less. LittleJS sets mouseWheel
+    // to sign(deltaY) per frame, so wheel-down is +1, wheel-up is -1 — we
+    // subtract so wheel-up increases power.
+    if (canShoot() && mouseWheel)
+        wheelPower = clamp(wheelPower - mouseWheel * WHEEL_STEP, -1, 1);
+
     if (canShoot() && mouseWasPressed(0))
     {
         const {dir, power, len} = getAim();
-        if (len > .1)   // tiny dead-zone so click-on-ball doesn't fire
-        {
-            strike = {
-                dir, power, len,
-                startDist: cueRestDist(power),
-                t: 0,          // 0..1 progress through windup
-                hit: false,    // has the impulse been applied?
-                followT: 0,    // 0..1 progress through follow-through
-            };
-        }
+        // Every click fires — even at 0% power. MIN_IMPULSE keeps it from
+        // being a no-op so the swing animation always produces motion.
+        strike = {
+            dir, power, len,
+            startDist: cueRestDist(power),
+            t: 0,          // 0..1 progress through windup
+            hit: false,    // has the impulse been applied?
+            followT: 0,    // 0..1 progress through follow-through
+        };
+        wheelPower = 0;   // each shot starts from the mouse-drag baseline
     }
 
     // Advance the strike animation each frame
@@ -561,9 +599,11 @@ function gameUpdate()
             strike.t = min(1, strike.t + timeDelta / STRIKE_WINDUP_S);
             if (strike.t >= 1)
             {
-                // tip just reached the ball — apply impulse now
+                // tip just reached the ball — apply impulse now. Lerps from
+                // MIN_IMPULSE (0% power tap) to the full max impulse.
                 strike.hit = true;
-                cueBall.applyImpulse(strike.dir.scale(strike.len * HIT_IMPULSE));
+                const impulse = lerp(MIN_IMPULSE, MAX_HIT * HIT_IMPULSE, strike.power);
+                cueBall.applyImpulse(strike.dir.scale(impulse));
                 shots++;
                 scratchedThisShot = false;
                 (shots === 1 ? sfxBreak : sfxHit).play(undefined, .8);
@@ -587,6 +627,20 @@ function gameUpdate()
 function gameUpdatePost()
 {
     setCameraPos(vec2());
+
+    // Rapid stop — once a ball is slow (below RAPID_STOP_THRESHOLD) but not yet
+    // under STOP_SPEED, hammer its velocity each frame so turns don't drag on
+    // while everything coasts. Above the threshold, normal damping handles it.
+    rapidStop(cueBall);
+    for (const b of balls) rapidStop(b);
+}
+
+function rapidStop(b)
+{
+    if (!b) return;
+    const s = b.getSpeed();
+    if (s > STOP_SPEED && s < RAPID_STOP_THRESHOLD)
+        b.setLinearVelocity(b.getLinearVelocity().scale(RAPID_STOP_FACTOR));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
