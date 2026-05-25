@@ -6,6 +6,7 @@
 <script src="../dist/littlejs.js?1.18.12"></script>
 <script src="../templates/menus.js"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/gameAI.js"></script>
 <script>
 'use strict';
 
@@ -66,6 +67,10 @@ let promotingMove = null;        // {from, to} stashed while promotion dialog is
 let hoverSquare = null;
 let isPlaying = false;
 let gameMode = 'pvp';            // 'pvp' | 'ai' | 'aivai' — set on startGame
+let difficulty = 'hard';         // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
+let aiThinkTimer = 0;
+const AI_THINK_DELAY = 0.6;
+const AI_VS_AI_DELAY = 0.8;
 
 // Sounds
 let sfxMove, sfxCapture, sfxCheck, sfxWin, sfxLose, sfxSelect;
@@ -422,6 +427,93 @@ function legalMovesForState(state, color)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// AI ADAPTER for gameAI.js
+
+const PIECE_VALUES = {
+    [PIECE_PAWN]: 100, [PIECE_KNIGHT]: 320, [PIECE_BISHOP]: 330,
+    [PIECE_ROOK]: 500, [PIECE_QUEEN]: 900, [PIECE_KING]: 20000,
+};
+
+function evalMaterial(b, color)
+{
+    let score = 0;
+    const o = opponentColor(color);
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = b[r][c];
+            if (!p) continue;
+            if (p.color === color) score += PIECE_VALUES[p.type];
+            else if (p.color === o) score -= PIECE_VALUES[p.type];
+        }
+    }
+    return score;
+}
+
+const chessGame = {
+    getOpponent: (color) => opponentColor(color),
+    getCurrentPlayer: (state) => state.currentPlayer,
+    isTerminal: (state) => state.gameOver,
+
+    getLegalMoves(state, color)
+    {
+        return legalMovesForState(state, color);
+    },
+
+    applyMove(state, move, _player)
+    {
+        // _player is ignored — move.from already identifies the moving piece.
+        const next = applyMoveOnState(state, move);
+        // Detect game-end on the new state (mirror live makeMove).
+        const oppMoves = legalMovesForState(next, next.currentPlayer);
+        if (oppMoves.length === 0) {
+            next.gameOver = true;
+            if (isInCheck(next.board, next.currentPlayer, next)) {
+                next.result = 'checkmate';
+                next.winner = opponentColor(next.currentPlayer);
+            } else {
+                next.result = 'stalemate';
+                next.winner = null;
+            }
+        } else if (next.halfmoveClock >= 100) {
+            next.gameOver = true; next.result = 'draw-50'; next.winner = null;
+        } else if (hasInsufficientMaterial(next.board)) {
+            next.gameOver = true; next.result = 'draw-material'; next.winner = null;
+        } else {
+            // Threefold check
+            const lastHash = next.positionHistory[next.positionHistory.length - 1];
+            let count = 0;
+            for (const h of next.positionHistory) if (h === lastHash) count++;
+            if (count >= 3) { next.gameOver = true; next.result = 'draw-3fold'; next.winner = null; }
+        }
+        return next;
+    },
+
+    evaluate(state, color)
+    {
+        // Terminal-aware scoring
+        if (state.gameOver) {
+            if (state.result === 'checkmate') {
+                return state.winner === color ? 100000 : -100000;
+            }
+            return 0; // any draw
+        }
+        return evalMaterial(state.board, color);
+    },
+};
+
+function strategyForDifficulty(d)
+{
+    if (d === 'easy')   return randomAI;
+    if (d === 'medium') return greedyAI;
+    return (game, state) => alphaBetaAI(game, state, 5); // 'hard'
+}
+
+function findBestAIMove()
+{
+    return strategyForDifficulty(difficulty)(chessGame, getCurrentState());
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // LIVE-GAME WRAPPERS + GAME-END DETECTION
 
 function getCurrentState()
@@ -530,7 +622,12 @@ function makeMove(move)
         if (gameMode === 'ai') {
             if (winner === COLOR_WHITE) sfxWin && sfxWin.play();
             else sfxLose && sfxLose.play();
+        } else if (gameMode === 'aivai') {
+            sfxSelect && sfxSelect.play();
         }
+    }
+    if (gameOver && result !== 'checkmate' && gameMode === 'aivai') {
+        sfxSelect && sfxSelect.play();
     }
 }
 
@@ -713,6 +810,27 @@ function completePromotion(pieceType)
 ///////////////////////////////////////////////////////////////////////////////
 // GAME FLOW
 
+function setDifficulty(d)
+{
+    difficulty = d;
+    localStorage.setItem('chess.difficulty', d);
+    refreshDifficultyUI();
+}
+
+function refreshDifficultyUI()
+{
+    const grid = getMenu('options')?.getItem('difficultyGrid');
+    if (grid) {
+        grid.setCell(0, {earned: difficulty === 'easy'});
+        grid.setCell(1, {earned: difficulty === 'medium'});
+        grid.setCell(2, {earned: difficulty === 'hard'});
+    }
+    const title = getMenu('title');
+    const upper = difficulty.toUpperCase();
+    title?.getItem('vsAI')?.setLabel(`PLAYER VS AI · ${upper}`);
+    title?.getItem('aiVsAi')?.setLabel(`AI VS AI · ${upper}`);
+}
+
 function setPlaying(p)
 {
     isPlaying = p;
@@ -743,6 +861,7 @@ async function gameInit()
 {
     setCanvasFixedSize(vec2(1280, 720));
     canvasClearColor = new Color().setHex('#0d0d14');
+    difficulty = localStorage.getItem('chess.difficulty') || 'hard';
     setSoundVolume(.8);
     setMenuVisibilityCallback(v => paused = v);
 
@@ -762,27 +881,34 @@ async function gameInit()
         activate: () => sound_activate.play(),
     });
 
-    // Title menu (AI placeholders to be wired in Task 2)
+    // Title menu
     createMenu({
         id: 'title',
         title: 'CHESS',
         dismissable: false,
-        onStart: () => startGame('pvp'),
+        onStart: () => startGame('ai'),
         items: [
-            {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => console.log('AI wired in Task 2')},
+            {type:'button', id:'vsAI',   label:'PLAYER VS AI',     onClick: () => startGame('ai')},
             {type:'button',              label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
-            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => console.log('AI wired in Task 2')},
+            {type:'button', id:'aiVsAi', label:'AI VS AI',         onClick: () => startGame('aivai')},
             {type:'button',              label:'OPTIONS',          onClick: () => pushMenu('options')},
             {type:'button',              label:'ABOUT',            onClick: () => pushMenu('about')},
         ],
     });
 
-    // Options menu (difficulty grid added in Task 2)
+    // Options menu
     createMenu({
         id: 'options',
         title: 'OPTIONS',
         onHide: popMenu,
         items: [
+            {type:'label', text:'DIFFICULTY'},
+            {type:'grid', id:'difficultyGrid', columns:3, cells: [
+                {label:'EASY',   title:'Random moves',              onClick: () => setDifficulty('easy')},
+                {label:'MEDIUM', title:'Greedy 1-ply',              onClick: () => setDifficulty('medium')},
+                {label:'HARD',   title:'Alpha-beta search depth 5', onClick: () => setDifficulty('hard')},
+            ]},
+            {type:'separator'},
             {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min:0, max:1,
                 persist:'chess.volume',
                 onChange: v => setSoundVolume(v)},
@@ -851,6 +977,7 @@ async function gameInit()
     initBoard();
     setPlaying(false);
     showMenu('title');
+    refreshDifficultyUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -865,9 +992,25 @@ function gameUpdate()
 
     hoverSquare = worldPosToSquare(mousePos);
 
-    // Human input — PvP only in Task 1. AI handling added in Task 2.
-    if (mouseWasPressed(0) && hoverSquare) {
+    // AI move — covers 'ai' mode (AI is BLACK) and 'aivai' mode (AI plays both sides)
+    const isAITurn = (gameMode === 'ai' && currentPlayer === COLOR_BLACK) || gameMode === 'aivai';
+    if (isAITurn && !gameOver && !promotingMove) {
+        const delay = gameMode === 'aivai' ? AI_VS_AI_DELAY : AI_THINK_DELAY;
+        aiThinkTimer += timeDelta;
+        if (aiThinkTimer >= delay) {
+            const move = findBestAIMove();
+            if (move) {
+                makeMove(move);
+                aiThinkTimer = 0;
+            }
+        }
+    }
+
+    // Human input — PvP, or human's turn in PvAI. Never in aivai.
+    const isHumanTurn = gameMode === 'pvp' || (gameMode === 'ai' && currentPlayer === COLOR_WHITE);
+    if (isHumanTurn && mouseWasPressed(0) && hoverSquare) {
         handleSquareClick(hoverSquare);
+        aiThinkTimer = 0;
     }
 }
 
