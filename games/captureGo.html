@@ -287,40 +287,57 @@ const captureGoGame = {
 
     getLegalMoves(state, player)
     {
-        const moves = [];
+        // Collect candidates with move-ordering scores, then sort.
+        // Score weights: moves adjacent to enemy stones are tactically critical
+        // (capture/atari potential), moves adjacent to own stones extend or
+        // defend, and central cells get a small bias. Cells far from any
+        // existing stone score lowest — alpha-beta will try them last and
+        // prune most of them.
+        const candidates = [];
         const opponent = player === STONE_BLACK ? STONE_WHITE : STONE_BLACK;
+        const center = (BOARD_SIZE - 1) / 2;
+
         for (let row = 0; row < BOARD_SIZE; row++)
         {
             for (let col = 0; col < BOARD_SIZE; col++)
             {
                 if (state.board[row][col] !== STONE_EMPTY) continue;
 
-                // Fast path: an empty cell with an empty neighbor AND no enemy
-                // neighbor has a liberty, captures nothing, and can't violate
-                // ko. Skip the full simulation for these — they're always legal.
+                // Scan the 4 orthogonal neighbors for legality info AND
+                // ordering info in one pass.
                 let hasEmptyNeighbor = false;
-                let hasEnemyNeighbor = false;
+                let enemyNeighbors = 0;
+                let ownNeighbors = 0;
                 for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]])
                 {
                     const nr = row + dr, nc = col + dc;
                     if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
                     const v = state.board[nr][nc];
                     if (v === STONE_EMPTY) hasEmptyNeighbor = true;
-                    else if (v === opponent) hasEnemyNeighbor = true;
-                }
-                if (hasEmptyNeighbor && !hasEnemyNeighbor)
-                {
-                    moves.push({row, col});
-                    continue;
+                    else if (v === opponent) enemyNeighbors++;
+                    else if (v === player) ownNeighbors++;
                 }
 
-                // Slow path: full simulation for cells touching enemy stones
-                // (capture/ko possible) or fully surrounded (suicide possible).
-                if (isLegalMoveForState(state.board, row, col, player, state.previousBoardHash))
-                    moves.push({row, col});
+                // Fast path: an empty cell with an empty neighbor AND no enemy
+                // neighbor has a liberty, captures nothing, can't violate ko.
+                // Slow path (full simulation) only when capture/ko/suicide is
+                // possible (enemy neighbors, or fully surrounded).
+                const isLegal = (hasEmptyNeighbor && enemyNeighbors === 0)
+                    ? true
+                    : isLegalMoveForState(state.board, row, col, player, state.previousBoardHash);
+                if (!isLegal) continue;
+
+                // Higher score = tried first by alpha-beta.
+                const distFromCenter = Math.abs(row - center) + Math.abs(col - center);
+                const score = enemyNeighbors * 100 + ownNeighbors * 30 - distFromCenter;
+                candidates.push({row, col, _score: score});
             }
         }
-        return moves;
+        // Sort high-to-low by score, then strip the score field so move
+        // objects stay equality-compatible with TT/killer-move comparisons
+        // (gameAI.js uses JSON.stringify for move equality).
+        candidates.sort((a, b) => b._score - a._score);
+        return candidates.map(c => ({row: c.row, col: c.col}));
     },
 
     applyMove(state, move, player)
