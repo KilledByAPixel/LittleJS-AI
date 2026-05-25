@@ -434,16 +434,126 @@ const PIECE_VALUES = {
     [PIECE_ROOK]: 500, [PIECE_QUEEN]: 900, [PIECE_KING]: 20000,
 };
 
-function evalMaterial(b, color)
+// Piece-square tables — from WHITE's perspective (row 0 = white's back rank).
+// For BLACK pieces, mirror by indexing as table[7 - row][col].
+// Values are small adjustments to base material (typically ±30 cp).
+// Pawn table favors center advancement and discourages staying on back ranks.
+const PST_PAWN = [
+    [  0,  0,  0,  0,  0,  0,  0,  0],
+    [  5, 10, 10,-20,-20, 10, 10,  5],
+    [  5, -5,-10,  0,  0,-10, -5,  5],
+    [  0,  0,  0, 20, 20,  0,  0,  0],
+    [  5,  5, 10, 25, 25, 10,  5,  5],
+    [ 10, 10, 20, 30, 30, 20, 10, 10],
+    [ 50, 50, 50, 50, 50, 50, 50, 50],
+    [  0,  0,  0,  0,  0,  0,  0,  0],
+];
+const PST_KNIGHT = [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+];
+const PST_BISHOP = [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+];
+const PST_ROOK = [
+    [  0,  0,  5, 10, 10,  5,  0,  0],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [  5, 10, 10, 10, 10, 10, 10,  5],
+    [  0,  0,  0,  0,  0,  0,  0,  0],
+];
+const PST_QUEEN = [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [  0,  0,  5,  5,  5,  5,  0, -5],
+    [ -5,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+];
+const PST_KING_MIDGAME = [
+    [ 20, 30, 10,  0,  0, 10, 30, 20],
+    [ 20, 20,  0,  0,  0,  0, 20, 20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+];
+const PST_KING_ENDGAME = [
+    [-50,-30,-30,-30,-30,-30,-30,-50],
+    [-30,-30,  0,  0,  0,  0,-30,-30],
+    [-30,-10, 20, 30, 30, 20,-10,-30],
+    [-30,-10, 30, 40, 40, 30,-10,-30],
+    [-30,-10, 30, 40, 40, 30,-10,-30],
+    [-30,-10, 20, 30, 30, 20,-10,-30],
+    [-30,-20,-10,  0,  0,-10,-20,-30],
+    [-50,-40,-30,-20,-20,-30,-40,-50],
+];
+
+const PST_BY_TYPE_MID = {
+    [PIECE_PAWN]: PST_PAWN, [PIECE_KNIGHT]: PST_KNIGHT, [PIECE_BISHOP]: PST_BISHOP,
+    [PIECE_ROOK]: PST_ROOK, [PIECE_QUEEN]: PST_QUEEN, [PIECE_KING]: PST_KING_MIDGAME,
+};
+const PST_BY_TYPE_END = {
+    [PIECE_PAWN]: PST_PAWN, [PIECE_KNIGHT]: PST_KNIGHT, [PIECE_BISHOP]: PST_BISHOP,
+    [PIECE_ROOK]: PST_ROOK, [PIECE_QUEEN]: PST_QUEEN, [PIECE_KING]: PST_KING_ENDGAME,
+};
+
+function evalMaterialAndPST(b, color)
 {
     let score = 0;
-    const o = opponentColor(color);
+    let totalNonKingMaterial = 0;
+    // First pass: count total material (excluding kings) to interpolate king PST
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = b[r][c];
+            if (p && p.type !== PIECE_KING) totalNonKingMaterial += PIECE_VALUES[p.type];
+        }
+    }
+    // Endgame phase: 0 at game start (~7800), 1 once material drops below ~3000
+    const ENDGAME_THRESHOLD = 3000;
+    const STARTING_MATERIAL = 7800;
+    const endgameWeight = totalNonKingMaterial >= STARTING_MATERIAL ? 0
+        : totalNonKingMaterial <= ENDGAME_THRESHOLD ? 1
+        : 1 - (totalNonKingMaterial - ENDGAME_THRESHOLD) / (STARTING_MATERIAL - ENDGAME_THRESHOLD);
+
     for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
             const p = b[r][c];
             if (!p) continue;
-            if (p.color === color) score += PIECE_VALUES[p.type];
-            else if (p.color === o) score -= PIECE_VALUES[p.type];
+            // From this piece's color perspective, PST is read at (r, c) for white,
+            // (7 - r, c) for black (mirror vertically).
+            const pstRow = p.color === COLOR_WHITE ? r : 7 - r;
+            let pst;
+            if (p.type === PIECE_KING) {
+                const mid = PST_KING_MIDGAME[pstRow][c];
+                const end = PST_KING_ENDGAME[pstRow][c];
+                pst = mid * (1 - endgameWeight) + end * endgameWeight;
+            } else {
+                pst = PST_BY_TYPE_MID[p.type][pstRow][c];
+            }
+            const pieceScore = PIECE_VALUES[p.type] + pst;
+            if (p.color === color) score += pieceScore;
+            else score -= pieceScore;
         }
     }
     return score;
@@ -497,7 +607,7 @@ const chessGame = {
             }
             return 0; // any draw
         }
-        return evalMaterial(state.board, color);
+        return evalMaterialAndPST(state.board, color);
     },
 };
 
