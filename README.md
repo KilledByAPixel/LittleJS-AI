@@ -77,7 +77,6 @@ Polished, complete games that didn't quite make the top cut.
 - [Connect 4](https://killedbyapixel.github.io/LittleJS-AI/games/connect4.html) ♟️
 - [Othello](https://killedbyapixel.github.io/LittleJS-AI/games/othello.html) ♟️
 - [Chess](https://killedbyapixel.github.io/LittleJS-AI/games/chess.html) ♟️
-- [Capture Go](https://killedbyapixel.github.io/LittleJS-AI/games/captureGo.html) ♟️
 - [Orbitswarm](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) 🧩
 - [Snake](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) 👾 👆 🎮
 - [Columns](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) 🧩
@@ -98,6 +97,7 @@ Playable but still need iteration and polish to take them to the next level. Did
 - [Plinko](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) 🎯 👆 🎮 📦
 - [Micro Racer](https://killedbyapixel.github.io/LittleJS-AI/games/microRacer.html) 🏎️ 📦
 - [Spy Hunter](https://killedbyapixel.github.io/LittleJS-AI/games/spyhunter.html) 🏎️
+- [Capture Go](https://killedbyapixel.github.io/LittleJS-AI/games/captureGo.html) ♟️
 
 ### 🧪 Prototypes & Experiments
 

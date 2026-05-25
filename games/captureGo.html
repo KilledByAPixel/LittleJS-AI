@@ -24,7 +24,7 @@ cameraScale = 60;
 
 const BOARD_SIZE = 9;
 const CELL_SIZE  = 1.0;   // world units between intersections
-const STONE_RADIUS = 0.4; // world units
+const STONE_RADIUS = 0.8; // world units
 
 const STONE_EMPTY = 0;
 const STONE_BLACK = 1;
@@ -472,7 +472,7 @@ function drawStone(pos, stoneColor, scale)
     drawCircle(pos, r, baseColor);
 
     // Specular highlight — upper-left, ~30% of diameter, 45% opacity
-    const off = diam * 0.2;
+    const off = r * 0.2;
     const specR = r * 0.3;
     const specColor = stoneColor === STONE_BLACK
         ? rgb(1, 1, 1, 0.45)
