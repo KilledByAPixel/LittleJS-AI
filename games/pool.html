@@ -104,7 +104,9 @@ function drawTable()
     // felt
     drawRect(vec2(), TABLE_SIZE, rgb(.10,.42,.20));
 
-    // diamond markers along the rails (decorative)
+    // diamond markers along the rails (decorative). Long axis points
+    // perpendicular to the rail it sits on — tall on horizontal (long) rails,
+    // wide on vertical (short) rails — for the inlaid-marker look.
     const dx = TABLE_SIZE.x / 8;
     const dy = TABLE_SIZE.y / 4;
     const railY = TABLE_SIZE.y/2 + RAIL_THICK/2;
@@ -112,14 +114,14 @@ function drawTable()
     for (let i = -3; i <= 3; i++)
     {
         if (i === 0) continue;
-        drawCircle(vec2(i*dx,  railY), .22, rgb(.95,.92,.85));
-        drawCircle(vec2(i*dx, -railY), .22, rgb(.95,.92,.85));
+        drawDiamond(vec2(i*dx,  railY), true);
+        drawDiamond(vec2(i*dx, -railY), true);
     }
     // Short rails get 3 diamonds (no side pocket to dodge in the middle, unlike long rails).
     for (let i = -1; i <= 1; i++)
     {
-        drawCircle(vec2( railX, i*dy), .22, rgb(.95,.92,.85));
-        drawCircle(vec2(-railX, i*dy), .22, rgb(.95,.92,.85));
+        drawDiamond(vec2( railX, i*dy), false);
+        drawDiamond(vec2(-railX, i*dy), false);
     }
 
     // head string / foot spot dots
@@ -127,6 +129,21 @@ function drawTable()
     drawLine(vec2(headX, -TABLE_SIZE.y/2), vec2(headX, TABLE_SIZE.y/2), .04, rgb(1,1,1,.10));
     drawCircle(vec2(TABLE_SIZE.x/4, 0), .12, rgb(1,1,1,.25));
     drawCircle(vec2(headX, 0),         .12, rgb(1,1,1,.25));
+}
+
+// Rhombus marker for rail sights. `tall` = true → long axis vertical (used on
+// horizontal/long rails); false → long axis horizontal (used on short rails).
+function drawDiamond(pos, tall)
+{
+    const long = .28, short = .14;
+    const w = tall ? short : long;
+    const h = tall ? long  : short;
+    drawPoly([
+        pos.add(vec2(0,  h)),
+        pos.add(vec2( w, 0)),
+        pos.add(vec2(0, -h)),
+        pos.add(vec2(-w, 0)),
+    ], rgb(.95,.92,.85));
 }
 
 function drawPocket(pos)
@@ -146,14 +163,22 @@ function cueRestDist(power) { return BALL_DIAM*.5 + .05 + power * 3.8; }
 const CUE_CONTACT_DIST = BALL_DIAM*.5;        // tip touches ball surface
 const CUE_FOLLOW_DIST  = BALL_DIAM*.5 - .25;  // tip overshoots into the ball
 
-function drawCueStickAt(ballPos, dir, tipDist)
+// Cue stick rendering is split so the shadow can be drawn during the
+// pre-objects pass (in gameRender) and the body during the post pass (in
+// gameRenderPost). Same pose is used by both — see getCueStickPose.
+function drawCueStickShadow(ballPos, dir, tipDist)
 {
-    // cue sits opposite the aim direction at the given tip distance
+    const back = dir.scale(-1);
+    const tip  = ballPos.add(back.scale(tipDist));
+    const butt = ballPos.add(back.scale(tipDist + 8));
+    drawLine(tip.add(vec2(.12,-.12)), butt.add(vec2(.12,-.12)), .18, rgb(0,0,0,.35));
+}
+
+function drawCueStickBody(ballPos, dir, tipDist)
+{
     const back  = dir.scale(-1);
     const tip   = ballPos.add(back.scale(tipDist));
     const butt  = ballPos.add(back.scale(tipDist + 8));
-    // shadow
-    drawLine(tip.add(vec2(.12,-.12)), butt.add(vec2(.12,-.12)), .18, rgb(0,0,0,.35));
     // shaft (light wood)
     drawLine(tip, butt, .14, rgb(.86,.72,.42));
     // wrap near butt
@@ -166,9 +191,30 @@ function drawCueStickAt(ballPos, dir, tipDist)
     drawCircle(tip, .14, rgb(.30,.18,.55));
 }
 
-function drawCueStick(ballPos, dir, power)
+// Returns the cue stick pose for the current frame, or null if no stick
+// should be drawn. Pure function so both shadow- and body- passes agree.
+function getCueStickPose()
 {
-    drawCueStickAt(ballPos, dir, cueRestDist(power));
+    if (!isPlaying || !cueBall) return null;
+    if (strike)
+    {
+        const tipDist = !strike.hit
+            ? lerp(strike.startDist, CUE_CONTACT_DIST, strike.t)
+            : lerp(CUE_CONTACT_DIST, CUE_FOLLOW_DIST,  strike.followT);
+        return { dir: strike.dir, tipDist };
+    }
+    const showAim = !isTouchDevice || mouseIsDown(0);
+    if (canShoot() && showAim)
+    {
+        const { dir, power } = getAim();
+        return { dir, tipDist: cueRestDist(power) };
+    }
+    return null;
+}
+
+function drawBallShadow(pos)
+{
+    drawCircle(pos.add(vec2(.10,-.12)), BALL_DIAM*1.02, rgb(0,0,0,.35));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -238,11 +284,9 @@ class Ball extends Box2dObject
 
     render()
     {
-        // Shadow stays put — it represents a fixed light source, not the ball's
-        // orientation. Highlight (drawn last) likewise. Everything in between
-        // is rotated by this.angle so spin reads on the number / stripe.
-        drawCircle(this.pos.add(vec2(.10,-.12)), BALL_DIAM*1.02, rgb(0,0,0,.35));
-
+        // Ball shadows are drawn as a pre-pass in gameRender so they never
+        // appear on top of other balls. Highlight (drawn last) stays here
+        // because it sits on the ball body itself.
         if (this.number === 0)
         {
             // cue ball — white body with a radial-gradient highlight in the
@@ -689,25 +733,29 @@ function gameRender()
     // engine objects (also always-on), so the rack is visible too.
     drawTable();
     for (const p of pockets) drawPocket(p.pos);
+
+    // Shadow pre-pass — ball + cue-stick shadows are drawn here so the
+    // engine's object render pass paints balls and the gameRenderPost stick
+    // body land on top of clean shadows. Without this, late-rendered balls
+    // would stamp their shadows over earlier balls.
+    for (const b of balls) drawBallShadow(b.pos);
+    if (cueBall) drawBallShadow(cueBall.pos);
+    const pose = getCueStickPose();
+    if (pose) drawCueStickShadow(cueBall.pos, pose.dir, pose.tipDist);
 }
 
 function gameRenderPost()
 {
     if (!isPlaying) return;
 
-    // strike animation — drawn instead of the aim preview while in progress
-    if (strike && cueBall)
-    {
-        const tipDist = !strike.hit
-            ? lerp(strike.startDist, CUE_CONTACT_DIST, strike.t)        // windup
-            : lerp(CUE_CONTACT_DIST, CUE_FOLLOW_DIST,  strike.followT); // follow-through
-        drawCueStickAt(cueBall.pos, strike.dir, tipDist);
-    }
+    // Cue stick body — shadow already drawn in gameRender's pre-pass, so
+    // this only paints the visible stick on top of the balls.
+    const pose = getCueStickPose();
+    if (pose) drawCueStickBody(cueBall.pos, pose.dir, pose.tipDist);
 
-    // aim preview + cue stick (canShoot is false while a strike is running).
-    // On touch devices, only show this while the finger is down — press to
-    // aim, drag, release to fire. On mouse, the cursor is always somewhere so
-    // we always show the preview.
+    // Aim preview (dotted line, arrow, red sight, power text). canShoot is
+    // false during the strike animation so the preview correctly disappears
+    // mid-swing. On touch, only show while the finger is down.
     const showAim = !isTouchDevice || mouseIsDown(0);
     if (canShoot() && showAim)
     {
@@ -736,9 +784,6 @@ function gameRenderPost()
         // direction guide; doesn't account for bounces or where the cue
         // actually stops.
         drawLine(tip, cueBall.pos.add(dir.scale(80)), .05, rgb(1, 0, 0, .5));
-
-        // cue stick on the opposite side
-        drawCueStick(cueBall.pos, dir, power);
 
         // power readout
         drawTextScreen(`POWER ${(power*100|0)}%`,
