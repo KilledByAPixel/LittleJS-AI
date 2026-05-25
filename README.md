@@ -48,7 +48,7 @@ Mix in helper scripts to add features: `menus.js` (DOM menus), `soundGenerator.j
 
 **Features:** 👆 Touch · 🎮 Gamepad · 📦 Box2D physics
 
-### 🏆 Featured — Top 10 Games
+### 🌟 Featured — Top 10 Games
 
 The most polished prototypes. Playable games with menus, sound, and a complete loop.
 
