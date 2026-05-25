@@ -13,8 +13,13 @@
 <div id="wrap"></div>
 <script src="../dist/littlejs.js?1.18.12"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
+
+// engine settings
+debugWatermark = false;
+showEngineVersion = false;
 
 function assert(cond, msg)
 {
@@ -48,12 +53,15 @@ let playerMissiles = [];
 let explosions = [];
 
 let score = 0;
+let bestScore = 0;
 let waveIndex = 1;
 let missilesToSpawn = 0;
 let spawnTimer = 0;
 let betweenWaves = false;
 let betweenWavesTimer = 0;
 let gameOver = false;
+let isPlaying = false;
+let gameOverHoldTimer = 0; // seconds before the GAME OVER menu surfaces
 
 let sShoot, sBoom, sEnemyHit, sCityHit, sWave;
 
@@ -677,7 +685,7 @@ function gameInit()
   setCameraPos(levelSize.scale(.5));
   setCameraScale(32);
 
-  soundVolume = .28;
+  setSoundVolume(.28);
 
   sShoot    = new SoundGenerator({volume:.7, frequency:520, attack:0, release:.08, shapeCurve:1.4, slide:-.25, randomness:.02});
   sBoom     = new SoundGenerator({volume:1,  frequency:140, attack:0, release:.22, shapeCurve:.7, noise:.25, randomness:.12});
@@ -685,18 +693,194 @@ function gameInit()
   sCityHit  = new SoundGenerator({volume:1,  frequency:80,  attack:0, release:.35, shapeCurve:.6, noise:.35, randomness:.15, slide:-.05});
   sWave     = new SoundGenerator({volume:.5, frequency:420, attack:0, release:.18, shapeCurve:1.2, pitchJump:180, pitchJumpTime:.04});
 
+  try { bestScore = +localStorage.getItem('missilecommand.best') || 0; } catch(e) { bestScore = 0; }
+
+  if (typeof setMenuVisibilityCallback === 'function')
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+  buildMenus();
+
+  // Attract mode: build a layout (cities, mountains, stars) but don't spawn waves.
   newGame();
+  isPlaying = false;
+}
+
+function startGame()
+{
+  newGame();
+  isPlaying = true;
+  getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+  if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
+  if (typeof hideAllMenus === 'function') hideAllMenus();
+  newGame();
+  isPlaying = false;
+  getToolbar('hud')?.hide();
+  if (typeof showMenu === 'function') showMenu('title');
+}
+
+function buildMenus()
+{
+  if (typeof createMenu !== 'function') return;
+
+  const sndSelect   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+  const sndActivate = new Sound([.6,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+  setMenuSounds({
+    select:   () => sndSelect.play(),
+    activate: () => sndActivate.play(),
+  });
+
+  createTitleMenu({
+    title: 'MISSILE COMMAND',
+    subtitle: 'Defend the cities',
+    onPlay: startGame,
+    canReveal: () => !isPlaying,
+    itemsBefore: [
+      {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
+    ],
+    items: [
+      {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
+      {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+    ],
+    onShow: () =>
+    {
+      const m = getMenu('title');
+      if (m) m.getItem('bestLabel')?.setLabel(`BEST ${bestScore}`);
+    },
+  });
+
+  createMenu({
+    id: 'options',
+    title: 'OPTIONS',
+    onHide: popMenu,
+    items: [
+      {type:'slider', id:'volume', label:'VOLUME', value:.28, min:0, max:1,
+        persist:'missilecommand.volume',
+        onChange: v => setSoundVolume(v)},
+      {type:'separator'},
+      {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+      {type:'separator'},
+      {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+    ],
+  });
+
+  createMenu({
+    id: 'about',
+    title: 'HOW TO PLAY',
+    onHide: popMenu,
+    items: [
+      {type:'text', text:
+        'Six cities, three missile bases, ten shots per base.\n\n' +
+        'CLICK or TAP anywhere in the sky to fire from the nearest base. ' +
+        'Lead the falling enemy missiles — your shots take time to arrive.\n\n' +
+        'Surviving cities carry over between waves. Lose them all and it\'s ' +
+        'over. Esc pauses; R restarts.'},
+      {type:'separator'},
+      {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+    ],
+  });
+
+  createMenu({
+    id: 'pause',
+    title: 'PAUSED',
+    initialItemId: 'resume',
+    items: [
+      {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+      {type:'button', id:'restart', label:'RESTART',       onClick: () =>
+      {
+        hideMenu('pause');
+        startGame();
+      }},
+      {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+      {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
+      {
+        showConfirmDialog({
+          message:'Quit to title?',
+          onYes: quitToTitle,
+        });
+      }},
+    ],
+  });
+
+  createMenu({
+    id: 'gameOver',
+    title: 'GAME OVER',
+    dismissable: false,
+    onShow: () =>
+    {
+      const m = getMenu('gameOver');
+      if (m)
+      {
+        m.getItem('finalScore')?.setLabel(`SCORE  ${score}`);
+        m.getItem('bestScore')?.setLabel(`BEST   ${bestScore}`);
+        m.getItem('waveReached')?.setLabel(`WAVE   ${waveIndex}`);
+      }
+    },
+    items: [
+      {type:'label', id:'finalScore',  text:'SCORE  0'},
+      {type:'label', id:'bestScore',   text:'BEST   0'},
+      {type:'label', id:'waveReached', text:'WAVE   0'},
+      {type:'separator'},
+      {type:'button', label:'PLAY AGAIN', onClick: () =>
+      {
+        hideMenu('gameOver');
+        startGame();
+      }},
+      {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+    ],
+  });
+
+  createToolbar({
+    id:'hud',
+    anchor:'top-right',
+    direction:'horizontal',
+    items: [
+      {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+      {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+      {
+        if (isMenuVisible())
+        {
+          clearSubmenuStack();
+          hideAllMenus();
+        }
+        else showMenu('pause');
+      }},
+    ],
+  });
+  getToolbar('hud')?.hide();
 }
 
 function gameUpdate()
 {
-  if (keyWasPressed('KeyR'))
-    return newGame();
-
-  if (mouseWasPressed(0))
+  // Pause hotkey: Esc or gamepad Start. Gated on isPlaying so it doesn't fire
+  // from the title screen.
+  const gameOverShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
+  if (isPlaying && !gameOverShowing &&
+      (keyWasPressed('Escape') || gamepadWasPressed(9)))
   {
-    if (gameOver)
-      return newGame();
+    if (typeof playMenuSound === 'function') playMenuSound('activate');
+    if (typeof showMenu === 'function') showMenu('pause');
+    inputClearKey('Escape');
+    inputClearKey(9, 1, false, true, false);
+    return;
+  }
+
+  // Attract mode: stars + shooting stars keep moving, but no gameplay.
+  if (!isPlaying)
+  {
+    maybeSpawnShootingStar();
+    updateParticles();
+    return;
+  }
+
+  if (isPlaying && !gameOver && keyWasPressed('KeyR'))
+    return startGame();
+
+  if (!gameOver && mouseWasPressed(0))
+  {
     launchPlayerMissile(mousePos);
   }
 
@@ -720,6 +904,13 @@ function gameUpdate()
   if (gameOver)
   {
     updateExplosions();
+    // Brief on-canvas hold (lets the final explosions play out), then surface menu.
+    if (!gameOverShowing)
+    {
+      gameOverHoldTimer -= timeDelta;
+      if (gameOverHoldTimer <= 0 && typeof showMenu === 'function')
+        showMenu('gameOver');
+    }
     return;
   }
 
@@ -776,7 +967,15 @@ function gameUpdate()
   }
 
   if (!anyCitiesAlive())
+  {
     gameOver = true;
+    gameOverHoldTimer = 1.6;
+    if (score > bestScore)
+    {
+      bestScore = score;
+      try { localStorage.setItem('missilecommand.best', bestScore); } catch(e) {}
+    }
+  }
 }
 
 function gameUpdatePost()
@@ -1116,11 +1315,14 @@ function gameRender()
   drawMissiles();
   drawExplosions();
   drawParticles();
-  drawCrosshair();
+  if (isPlaying)
+    drawCrosshair();
 }
 
 function gameRenderPost()
 {
+  if (!isPlaying) return; // title screen — menu owns the display
+
   const pad = 14;
   const topLeft = vec2(pad, pad+14);
 
@@ -1133,10 +1335,7 @@ function gameRenderPost()
   if (betweenWaves && !gameOver)
     drawTextScreen('WAVE CLEARED!', vec2(mainCanvasSize.x/2, 70), 42, hsl(.16,.15,.95), 6, hsl(0,0,0,.7));
 
-  if (gameOver)
-  {
-    drawTextScreen('GAME OVER', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2-20), 80, hsl(.06,1,.65), 10, hsl(0,0,0,.75));
-  }
+  // gameOver menu (DOM) now owns the GAME OVER banner.
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, [], document.getElementById('wrap'));
