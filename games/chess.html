@@ -841,6 +841,7 @@ function setPlaying(p)
 function startGame(mode)
 {
     gameMode = mode;
+    aiThinkTimer = 0;
     initBoard();
     setPlaying(true);
     hideMenu('title');
@@ -937,7 +938,7 @@ async function gameInit()
         initialItemId: 'resume',
         items: [
             {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
-            {type:'button', id:'restart', label:'RESTART',       onClick: () => { initBoard(); hideMenu('pause'); }},
+            {type:'button', id:'restart', label:'RESTART',       onClick: () => { initBoard(); aiThinkTimer = 0; hideMenu('pause'); }},
             {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
             {type:'button',               label:'QUIT TO TITLE', onClick: () =>
             {
@@ -988,7 +989,7 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying})) return;
     if (!isPlaying) return;
 
-    if (keyWasPressed('KeyR')) initBoard();
+    if (keyWasPressed('KeyR')) { initBoard(); aiThinkTimer = 0; }
 
     hoverSquare = worldPosToSquare(mousePos);
 
