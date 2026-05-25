@@ -66,7 +66,7 @@ let promotingMove = null;        // {from, to} stashed while promotion dialog is
 let hoverSquare = null;
 let isPlaying = false;
 let gameMode = 'pvp';            // 'pvp' | 'ai' | 'aivai' — set on startGame
-let difficulty = 'hard';         // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
+let difficulty = 'medium';       // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
 let aiThinkTimer = 0;
 let aiSearching = false;
 let aiProgress = '';
@@ -703,7 +703,7 @@ const chessGame = {
 function strategyForDifficulty(d)
 {
     if (d === 'easy')   return (game, state, opts) => randomAI(game, state);
-    if (d === 'medium') return (game, state, opts) => greedyAI(game, state);
+    if (d === 'medium') return (game, state, opts) => alphaBetaAI(game, state, 3, opts);
     return (game, state, opts) => alphaBetaAI(game, state, 5, opts); // 'hard'
 }
 
@@ -1118,9 +1118,9 @@ function quitToTitle()
 
 async function gameInit()
 {
-    setCanvasFixedSize(vec2(600, 720));
+    setCanvasFixedSize(vec2(550, 720));
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('chess.difficulty') || 'hard';
+    difficulty = localStorage.getItem('chess.difficulty') || 'medium';
     setSoundVolume(.8);
     setMenuVisibilityCallback(v => paused = v);
 
@@ -1164,7 +1164,7 @@ async function gameInit()
             {type:'label', text:'DIFFICULTY'},
             {type:'grid', id:'difficultyGrid', columns:3, cells: [
                 {label:'EASY',   title:'Random moves',              onClick: () => setDifficulty('easy')},
-                {label:'MEDIUM', title:'Greedy 1-ply',              onClick: () => setDifficulty('medium')},
+                {label:'MEDIUM', title:'Alpha-beta search depth 3', onClick: () => setDifficulty('medium')},
                 {label:'HARD',   title:'Alpha-beta search depth 5', onClick: () => setDifficulty('hard')},
             ]},
             {type:'separator'},

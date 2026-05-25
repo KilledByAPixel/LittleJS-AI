@@ -46,7 +46,7 @@ The most polished prototypes — playable games with menus, sound, and a complet
 - [Connect 4](https://killedbyapixel.github.io/LittleJS-AI/games/connect4.html) ♟️
 - [Checkers](https://killedbyapixel.github.io/LittleJS-AI/games/checkers.html) ♟️
 - [Chess](https://killedbyapixel.github.io/LittleJS-AI/games/chess.html) ♟️
-- [Orbitswarm](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) 🚀
+- [Orbitswarm](https://killedbyapixel.github.io/LittleJS-AI/games/orbitswarm.html) 🧩
 - [Snake](https://killedbyapixel.github.io/LittleJS-AI/games/snake.html) 👾 👆 🎮
 - [Columns](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) 🧩
 - [Robotron](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) 🚀 👆

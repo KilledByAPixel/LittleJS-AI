@@ -42,7 +42,7 @@ let blackScore = 2;
 let whiteScore = 2;
 let validMoves = [];
 let gameMode = 'pvp'; // 'pvp' | 'ai' | 'aivai' — set on startGame
-let difficulty = 'hard'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
+let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
 let passCount = 0;
 let moveHistory = [];
 let lastMove = null; // {row, col} for highlighting
@@ -360,7 +360,7 @@ const othelloGame = {
 function strategyForDifficulty(d)
 {
     if (d === 'easy')   return (game, state, opts) => randomAI(game, state);
-    if (d === 'medium') return (game, state, opts) => greedyAI(game, state);
+    if (d === 'medium') return (game, state, opts) => alphaBetaAI(game, state, 4, opts);
     return (game, state, opts) =>
     {
         // Count empty squares — switch to perfect endgame search when ≤10 remain.
@@ -799,7 +799,7 @@ async function gameInit()
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(0, 0);
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('othello.difficulty') || 'hard';
+    difficulty = localStorage.getItem('othello.difficulty') || 'medium';
     setSoundVolume(.8);
 
     // One callback drives `paused` for every menu (including dialogs).
@@ -844,7 +844,7 @@ async function gameInit()
             {type:'label', text:'DIFFICULTY'},
             {type:'grid', id:'difficultyGrid', columns:3, cells: [
                 {label:'EASY',   title:'Random moves',                  onClick: () => setDifficulty('easy')},
-                {label:'MEDIUM', title:'Greedy 1-ply',                  onClick: () => setDifficulty('medium')},
+                {label:'MEDIUM', title:'Alpha-beta search depth 4',     onClick: () => setDifficulty('medium')},
                 {label:'HARD',   title:'Alpha-beta search to depth 4',  onClick: () => setDifficulty('hard')},
             ]},
             {type:'separator'},

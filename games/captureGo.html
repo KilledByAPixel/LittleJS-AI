@@ -57,7 +57,7 @@ let boardHashBeforeMove = null; // scratch used during move processing
 
 let isPlaying = false;
 let gameMode  = 'pvp'; // 'pvp' | 'ai' | 'aivai'
-let difficulty = 'hard'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
+let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
 
 // AI timing
 let aiThinkTimer = 0;
@@ -651,7 +651,7 @@ async function gameInit()
     setCanvasFixedSize(vec2(600, 720));
     cameraPos       = vec2(0, 0);
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('captureGo.difficulty') || 'hard';
+    difficulty = localStorage.getItem('captureGo.difficulty') || 'medium';
     setSoundVolume(0.8);
 
     // One callback drives `paused` for every menu (including dialogs).

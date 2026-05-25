@@ -40,7 +40,7 @@ let currentPlayer = DISC_RED;
 let gameOver = false;
 let winner = null;
 let gameMode = 'pvp'; // 'pvp' | 'ai' | 'aivai' — set on startGame
-let difficulty = 'hard'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
+let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' — loaded from localStorage in gameInit
 let moveHistory = [];
 let winningCells = []; // [{row, col}, ...] for highlighting
 
@@ -380,7 +380,7 @@ const connect4Game = {
 function strategyForDifficulty(d)
 {
     if (d === 'easy')   return (game, state, opts) => randomAI(game, state);
-    if (d === 'medium') return (game, state, opts) => greedyAI(game, state);
+    if (d === 'medium') return (game, state, opts) => alphaBetaAI(game, state, 5, opts);
     return (game, state, opts) => alphaBetaAI(game, state, 9, opts); // 'hard' (depth 9 with ID + TT)
 }
 
@@ -622,7 +622,7 @@ async function gameInit()
     setCanvasFixedSize(vec2(600, 720));
     cameraPos = vec2(0, 0);
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('connect4.difficulty') || 'hard';
+    difficulty = localStorage.getItem('connect4.difficulty') || 'medium';
 
     // One callback drives `paused` for every menu (including dialogs).
     setMenuVisibilityCallback(v => paused = v);
@@ -664,7 +664,7 @@ async function gameInit()
             {type:'label', text:'DIFFICULTY'},
             {type:'grid', id:'difficultyGrid', columns:3, cells: [
                 {label:'EASY',   title:'Random moves',                   onClick: () => setDifficulty('easy')},
-                {label:'MEDIUM', title:'Greedy 1-ply',                   onClick: () => setDifficulty('medium')},
+                {label:'MEDIUM', title:'Alpha-beta search depth 5',      onClick: () => setDifficulty('medium')},
                 {label:'HARD',   title:'Alpha-beta search to depth 7',   onClick: () => setDifficulty('hard')},
             ]},
             {type:'separator'},
