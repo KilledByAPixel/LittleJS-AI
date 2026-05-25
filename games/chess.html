@@ -1271,7 +1271,13 @@ function gameUpdate()
                 }
             }).then(move => {
                 if (myGen !== aiGeneration) { aiSearching = false; aiProgress = ''; return; }
-                if (move) makeMove(move);
+                // Defensive: the move was chosen against the state at search-start;
+                // if state has raced (race the gen check didn't catch), the move's
+                // from-square may no longer hold our piece. Verify before applying.
+                if (move) {
+                    const piece = board[move.from.row]?.[move.from.col];
+                    if (piece && piece.color === currentPlayer) makeMove(move);
+                }
                 aiSearching = false;
                 aiProgress = '';
                 aiThinkTimer = 0;
