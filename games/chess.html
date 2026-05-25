@@ -46,6 +46,10 @@ const PIECE_GLYPHS = { P:'♟', N:'♞', B:'♝', R:'♜', Q:'♛', K:'♚' };
 const LIGHT_SQUARE = hsl(.1, .35, .75);
 const DARK_SQUARE  = hsl(.08, .4, .42);
 
+// Vertical offset for piece glyphs (in world units). Negative = down.
+// Tweak this if pieces look uncentered in their squares.
+const PIECE_Y_OFFSET = -0.1;
+
 // Game state globals
 let board = [];                  // 8x8 array of {type, color} | null. board[0] = rank 1 (white's back rank), board[7] = rank 8.
 let currentPlayer = COLOR_WHITE;
@@ -70,6 +74,7 @@ let difficulty = 'medium';       // 'easy' | 'medium' | 'hard' — loaded from l
 let aiThinkTimer = 0;
 let aiSearching = false;
 let aiProgress = '';
+let aiDisplayProgress = 0; // smoothed 0-100 percent — bumps on real progress events, creeps in between
 let aiGeneration = 0;
 let moveHistory = []; // stack of pre-move states for undo
 const AI_THINK_DELAY = 0.6;
@@ -967,7 +972,7 @@ function drawBoard()
         for (let c = 0; c < BOARD_SIZE; c++) {
             const p = board[r][c];
             if (!p) continue;
-            const pos = getSquareWorldPos(r, c);
+            const pos = getSquareWorldPos(r, c).add(vec2(0, PIECE_Y_OFFSET));
             const glyph = PIECE_GLYPHS[p.type];
             const fillColor = p.color === COLOR_WHITE ? hsl(0, 0, 0.95) : hsl(0, 0, 0.1);
             const outlineColor = p.color === COLOR_WHITE ? hsl(0, 0, 0.1) : hsl(0, 0, 0.95);
@@ -1267,6 +1272,15 @@ function gameUpdate()
     if (keyWasPressed('KeyR')) { initBoard(); aiThinkTimer = 0; }
     if (keyWasPressed('KeyU')) undoMove();
 
+    // Smooth-creep the AI thinking percent so the display moves even when no
+    // new depth-iteration has completed. Real progress events bump it up to the
+    // real percent; this just fills in the gaps. Capped at 95 so it never
+    // falsely shows 100% before the move actually plays.
+    if (aiSearching) {
+        aiDisplayProgress = Math.min(95, aiDisplayProgress + timeDelta * 1.5);
+        aiProgress = `AI Thinking... ${Math.round(aiDisplayProgress)}%`;
+    }
+
     // Show the undo button only when there's a move to take back.
     getToolbar('hud')?.getItem('undo')?.setVisible(moveHistory.length > 0);
 
@@ -1279,11 +1293,13 @@ function gameUpdate()
         aiThinkTimer += timeDelta;
         if (aiThinkTimer >= delay) {
             aiSearching = true;
-            aiProgress = 'AI Thinking...';
+            aiDisplayProgress = 0;
+            aiProgress = 'AI Thinking... 0%';
             const myGen = aiGeneration;
             findBestAIMove({
                 onProgress: (d, n) => {
-                    if (myGen === aiGeneration) aiProgress = `AI Thinking... ${Math.round(d / n * 100)}%`;
+                    if (myGen === aiGeneration)
+                        aiDisplayProgress = Math.max(aiDisplayProgress, Math.round(d / n * 100));
                 }
             }).then(move => {
                 if (myGen !== aiGeneration) { aiSearching = false; aiProgress = ''; return; }
