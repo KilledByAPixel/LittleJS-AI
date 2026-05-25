@@ -115,9 +115,9 @@ function drawTable()
         drawCircle(vec2(i*dx,  railY), .22, rgb(.95,.92,.85));
         drawCircle(vec2(i*dx, -railY), .22, rgb(.95,.92,.85));
     }
+    // Short rails get 3 diamonds (no side pocket to dodge in the middle, unlike long rails).
     for (let i = -1; i <= 1; i++)
     {
-        if (i === 0) continue;
         drawCircle(vec2( railX, i*dy), .22, rgb(.95,.92,.85));
         drawCircle(vec2(-railX, i*dy), .22, rgb(.95,.92,.85));
     }
