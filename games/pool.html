@@ -5,6 +5,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/textureGenerator.js"></script>
 <script src="../dist/box2d.wasm.js?1.18.0"></script>
 <script src="../templates/menus.js"></script>
 <script>
@@ -18,6 +19,7 @@ paused = false;
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
 canvasMaxSize = vec2(2048, 2048);
+tilesPixelated = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // pool (box2d)
@@ -90,6 +92,14 @@ const STRIKE_FOLLOW_S = .08;   // follow-through after contact
 // sounds
 let sfxHit, sfxRail, sfxBreak, sfxPocket, sfxScratch, sfxWin;
 
+// Pre-rendered ball sprites — index = ball number (0 = cue, 1..15 = numbered).
+// The flat body (color + stripe + number) is baked into a tile so the number
+// always renders inside the ball's own pixel bounds, never on top of other
+// balls (the old canvas-2D number drew its disc over whatever was nearby).
+// Shadow + specular are still drawn separately at runtime (the shadow because
+// it lives on the felt, the specular because it shouldn't rotate with the ball).
+let ballTiles = [];
+
 ///////////////////////////////////////////////////////////////////////////////
 // helpers — drawing
 
@@ -109,8 +119,8 @@ function drawTable()
     // wide on vertical (short) rails — for the inlaid-marker look.
     const dx = TABLE_SIZE.x / 8;
     const dy = TABLE_SIZE.y / 4;
-    const railY = TABLE_SIZE.y/2 + RAIL_THICK/2;
-    const railX = TABLE_SIZE.x/2 + RAIL_THICK/2;
+    const railY = TABLE_SIZE.y/2 + RAIL_THICK/2.2;
+    const railX = TABLE_SIZE.x/2 + RAIL_THICK/2.2;
     for (let i = -3; i <= 3; i++)
     {
         if (i === 0) continue;
@@ -217,6 +227,54 @@ function drawBallShadow(pos)
     drawCircle(pos.add(vec2(.10,-.12)), BALL_DIAM*1.02, rgb(0,0,0,.35));
 }
 
+// Paint one ball's flat sprite into a 500×500 tile. Includes everything that
+// should rotate with the ball: color, stripe, number circle, number digit.
+// Excludes shadow + specular (rendered separately at runtime).
+function paintBallTile(ctx, number)
+{
+    const cx = 250, cy = 250, r = 240;
+    const color = ballColor(number).toString();
+
+    // body
+    ctx.fillStyle = number === 0 ? '#ffffff' : color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fill();
+
+    if (number === 0) return;   // cue is plain white, no number
+
+    if (isStriped(number))
+    {
+        // repaint as white base, then a colored band clipped to the circle
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.clip();
+        ctx.fillStyle = color;
+        const bandH = r * .48;   // band half-height, matches the world-space value
+        ctx.fillRect(cx - r, cy - bandH, r*2, bandH*2);
+        ctx.restore();
+    }
+
+    // white number disc
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * .34, 0, Math.PI*2);
+    ctx.fill();
+
+    // number digit
+    ctx.fillStyle = '#000000';
+    ctx.font = `bold ${Math.round(r * .44)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('' + number, cx, cy);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // physics objects
 
@@ -284,63 +342,22 @@ class Ball extends Box2dObject
 
     render()
     {
-        // Ball shadows are drawn as a pre-pass in gameRender so they never
-        // appear on top of other balls. Highlight (drawn last) stays here
-        // because it sits on the ball body itself.
+        // Ball body — pre-rendered tile rotates with the ball, so the number
+        // and stripe are always painted within the ball's own pixel bounds
+        // (no more number circles sitting on top of neighbor balls).
+        drawTile(this.pos, vec2(BALL_DIAM), ballTiles[this.number], WHITE, this.angle);
+
+        // Specular highlights — drawn AFTER the tile, NOT rotated, so they
+        // read as a fixed light source rather than a painted-on detail.
         if (this.number === 0)
         {
-            // cue ball — white body with a radial-gradient highlight in the
-            // upper-left and a soft darker gradient in the lower-right to
-            // suggest a fixed light source from above-left.
-            drawCircle(this.pos, BALL_DIAM, rgb(1,1,1));
-            drawCircleGradient(this.pos.add(vec2(-.2,.2)), BALL_DIAM*.5, rgb(1,1,1,.7),     rgb(1,1,1,0));
-            drawCircleGradient(this.pos.add(vec2(.2,-.2)), BALL_DIAM*.5,  rgb(0,0,0,.3), rgb(0,0,0,0));
-            return;
-        }
-
-        const c = ballColor(this.number);
-
-        if (isStriped(this.number))
-        {
-            // white ball base, then a colored band rotated with the ball,
-            // clipped to the circle so the band edges curve cleanly.
-            drawCircle(this.pos, BALL_DIAM, rgb(1,1,1));
-            drawCanvas2D(this.pos, vec2(BALL_DIAM), this.angle, false, (ctx) =>
-            {
-                ctx.beginPath();
-                ctx.arc(0, 0, .5, 0, Math.PI*2);
-                ctx.clip();
-                ctx.fillStyle = c.toString();
-                ctx.fillRect(-1, -.24, 2, .48);
-            });
+            drawCircleGradient(this.pos.add(vec2(-.2, .2)), BALL_DIAM*.5, rgb(1,1,1,.7), rgb(1,1,1,0));
+            drawCircleGradient(this.pos.add(vec2( .2,-.2)), BALL_DIAM*.5, rgb(0,0,0,.3), rgb(0,0,0,0));
         }
         else
         {
-            // solid color body (circle is rotationally symmetric so no rotate needed here)
-            drawCircle(this.pos, BALL_DIAM, c);
+            drawCircleGradient(this.pos.add(vec2(-.2, .2)), BALL_DIAM*.5, rgb(1,1,1,.6), rgb(1,1,1,0));
         }
-
-        // Number circle + digit, both rotated with the ball — drawn together
-        // in one canvas-2D pass so the digit always sits inside the white disc.
-        drawCanvas2D(this.pos, vec2(BALL_DIAM), this.angle, false, (ctx) =>
-        {
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.arc(0, 0, .17, 0, Math.PI*2);
-            ctx.fill();
-            // drawCanvas2D applies scale(., -size.y) to convert world-y-up to
-            // canvas-y-down. Symmetric shapes don't notice, but glyphs land
-            // upside-down — undo the Y flip locally before drawing the digit.
-            ctx.scale(1, -1);
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 0.22px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(''+this.number, 0, 0);
-        });
-
-        // top-left specular highlight as a soft radial gradient (fixed, not rotated)
-        drawCircleGradient(this.pos.add(vec2(-.2,.2)), BALL_DIAM*.5, rgb(1,1,1,.6), rgb(1,1,1,0));
     }
 }
 
@@ -498,6 +515,15 @@ async function gameInit()
 {
     await box2dInit();
 
+    // Pre-render all 16 ball sprites into the texture atlas. Tile index = ball number.
+    initDrawToTexture();
+    for (let n = 0; n <= 15; n++)
+    {
+        const desc = n === 0 ? 'cue ball (white)'
+            : isStriped(n) ? `striped pool ball ${n}` : `solid pool ball ${n}`;
+        ballTiles[n] = drawToTexture(n, ctx => paintBallTile(ctx, n), desc);
+    }
+
     // canvas fit
     canvasClearColor = rgb(.05,.07,.05);
     setCanvasFixedSize(vec2(1280, 720));
@@ -616,6 +642,20 @@ function gameUpdate()
     // Respawn cue ball after a scratch once everything has stopped
     if (!cueBall && allStopped() && !won)
         spawnCueBall();
+
+    // R restarts the rack
+    if (keyWasPressed('KeyR'))
+    {
+        newGame();
+        return;
+    }
+
+    // Right mouse held = 4x simulation speed. box2d.step(3) advances physics
+    // 3 extra ticks per frame on top of the engine's own step. Rapid-stop
+    // still runs once per frame which is fine — fast-forward is mainly for
+    // skipping the long coast at the end of a turn.
+    if (mouseIsDown(2) && !paused)
+        box2d.step(3);
 
     // Debug: hold D to drag the cue ball to the mouse position. Lets you line
     // it up against pocket mouths to verify the sensor catches it at the right
