@@ -28,7 +28,7 @@ Each game is one self-contained HTML file — no build step, no external assets,
 
 1. Copy a file from [templates/](templates/).
 2. Edit the JavaScript inside the `<script>` tag.
-3. Open the `.html` directly in a browser — no server needed.
+3. Open the `.html` in a web browser.
 
 ### Templates
 
@@ -43,6 +43,8 @@ Each game is one self-contained HTML file — no build step, no external assets,
 Mix in helper scripts to add features: `menus.js` (DOM menus), `soundGenerator.js` (procedural SFX), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
 
 ## 🕹️ Games Made With AI
+
+Playable demos you can fork as starting points for your own games.
 
 **Genre:** 🧩 Puzzle · 👾 Arcade · 🚀 Shooter · 🎯 Aim · ♟️ Board · 🏎️ Racing · 🏃 Platformer · ⚽ Sports · 🗺️ Adventure
 
