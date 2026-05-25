@@ -32,6 +32,7 @@ const POCKET_DIAM  = 1.6;
 const POCKET_INSET = -0.1;              // pocket-center distance inward from felt edge (negative pushes pockets outward toward/past the rail)
 const MAX_HIT      = 12;                // max aim length in world units — stretch this far for full power
 const HIT_IMPULSE  = 5;                 // impulse per unit of aim (max impulse = MAX_HIT * HIT_IMPULSE = 60)
+const BREAK_IMPULSE = 10;               // impulse per unit of aim before the cue has touched any ball (the break shot)
 const MIN_IMPULSE  = 2;                 // floor — clicking at 0% power still gives the cue a soft tap
 const AIM_DEADZONE = BALL_DIAM;         // mouse within this radius of cue ball = 0 power (free direction aiming)
 const WHEEL_STEP   = .08;               // wheel ticks per unit of added power (≈12 ticks across full range)
@@ -77,6 +78,7 @@ let shots = 0;
 let isPlaying = false;
 let won = false;
 let scratchedThisShot = false;
+let breakShot = true;    // true until the cue ball touches any other ball — toggles BREAK_IMPULSE → HIT_IMPULSE
 let aimAngle = 0;        // remembered for cue stick during motion
 let wheelPower = 0;      // wheel-driven power offset added on top of mouse drag (cleared on each shot)
 
@@ -193,6 +195,11 @@ class Ball extends Box2dObject
 
     beginContact(other)
     {
+        // First time the cue ball touches another ball, leave "break mode" so
+        // subsequent shots use the regular HIT_IMPULSE.
+        if (this === cueBall && other instanceof Ball)
+            breakShot = false;
+
         // Pocket sensors are handled by update()/pocketed — no contact sound here.
         if (other instanceof Pocket) return;
 
@@ -391,6 +398,7 @@ function newGame()
     shots = 0;
     won = false;
     scratchedThisShot = false;
+    breakShot = true;
     strike = null;
     wheelPower = 0;
 }
@@ -592,8 +600,18 @@ function gameUpdate()
     // Wheel adjusts power: up = more, down = less. LittleJS sets mouseWheel
     // to sign(deltaY) per frame, so wheel-down is +1, wheel-up is -1 — we
     // subtract so wheel-up increases power.
+    //
+    // Re-clamp wheelPower against the current basePower on every wheel event
+    // so the offset can only sit inside the range that actually contributes
+    // to the visible 0..1 power. Without this, scrolling at the limit
+    // accumulates hidden overflow that you have to undo before the visible
+    // power moves the other way.
     if (canShoot() && mouseWheel)
-        wheelPower = clamp(wheelPower - mouseWheel * WHEEL_STEP, -1, 1);
+    {
+        const rawLen = mousePos.subtract(cueBall.pos).length();
+        const basePower = min(max(0, rawLen - AIM_DEADZONE) / MAX_HIT, 1);
+        wheelPower = clamp(wheelPower - mouseWheel * WHEEL_STEP, -basePower, 1 - basePower);
+    }
 
     // Touch devices fire on release so the player can press, drag to aim,
     // then lift to commit. Mouse keeps the click-to-fire feel.
@@ -629,7 +647,8 @@ function gameUpdate()
                 // tip just reached the ball — apply impulse now. Lerps from
                 // MIN_IMPULSE (0% power tap) to the full max impulse.
                 strike.hit = true;
-                const impulse = lerp(MIN_IMPULSE, MAX_HIT * HIT_IMPULSE, strike.power);
+                const impulseMax = MAX_HIT * (breakShot ? BREAK_IMPULSE : HIT_IMPULSE);
+                const impulse = lerp(MIN_IMPULSE, impulseMax, strike.power);
                 cueBall.applyImpulse(strike.dir.scale(impulse));
                 shots++;
                 scratchedThisShot = false;
