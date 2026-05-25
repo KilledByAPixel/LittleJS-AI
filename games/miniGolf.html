@@ -143,8 +143,8 @@ const holes = [
             // Horizontal wall blocking direct path - extends to left edge
             {type:'box', pos:vec2(-6, 0), size:vec2(22, 1.5), angle:0},
             // Angled bounce walls on the right side (45 degrees, rotated to bounce back)
-            {type:'box', pos:vec2( 14, 6), size:vec2(10, 1.2), angle:-0.785},  // top-right angled
-            {type:'box', pos:vec2( 14,-6), size:vec2(10, 1.2), angle: 0.785},  // bottom-right angled
+            {type:'box', pos:vec2( 14, 6), size:vec2(10, 1.2), angle: 0.785},  // top-right angled (\ shape)
+            {type:'box', pos:vec2( 14,-6), size:vec2(10, 1.2), angle:-0.785},  // bottom-right angled (/ shape)
         ],
     },
     // Hole 8: Snake Path - two vertical walls create S-pattern
@@ -381,24 +381,19 @@ function createWall(pos, size, angle=0)
 
 function drawWoodPlank(pos, size, angle)
 {
-    // drawRect goes through drawTile (no Y mirror) so positive angle = CW
-    // visual. Hole specs use Box2D-native convention (positive = CCW in
-    // Y-up world, which renders as CCW visual). Negate to convert.
-    const a = -angle;
-
     // ground shadow
     const shadowOffset = vec2(.18, -.18);
-    drawRect(pos.add(shadowOffset), size, rgb(0,0,0,.28), a);
+    drawRect(pos.add(shadowOffset), size, rgb(0,0,0,.28), angle);
 
     // base plank
-    drawRect(pos, size, rgb(.43,.30,.14), a);
+    drawRect(pos, size, rgb(.43,.30,.14), angle);
 
     // top highlight stripe (along local +y)
-    const up    = vec2(0,1).rotate(a);
-    const right = vec2(1,0).rotate(a);
-    drawRect(pos.add(up.scale(size.y/2 - .07)), vec2(size.x, .14), rgb(.62,.45,.22), a);
+    const up    = vec2(0,1).rotate(angle);
+    const right = vec2(1,0).rotate(angle);
+    drawRect(pos.add(up.scale(size.y/2 - .07)), vec2(size.x, .14), rgb(.62,.45,.22), angle);
     // bottom dark stripe
-    drawRect(pos.subtract(up.scale(size.y/2 - .04)), vec2(size.x, .08), rgb(.10,.07,.03), a);
+    drawRect(pos.subtract(up.scale(size.y/2 - .04)), vec2(size.x, .08), rgb(.10,.07,.03), angle);
 
     // grain lines along the long axis
     const halfX = right.scale(size.x/2 - .2);
