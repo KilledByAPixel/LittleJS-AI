@@ -12,12 +12,22 @@
 //       getCurrentPlayer(state),         // → player
 //       getOpponent(player),             // → player
 //   };
-//   const move = alphaBetaAI(game, currentState, 4);
+//   const move = await alphaBetaAI(game, currentState, 4);
+//   // or with progress reporting and custom yield interval:
+//   const move = await alphaBetaAI(game, currentState, 4, {
+//       onProgress: (completedDepth, maxDepth) => updateUI(completedDepth, maxDepth),
+//       yieldEveryMs: 16,
+//   });
 //
 // `alphaBetaAI` internally uses iterative deepening, a transposition table,
 // and a killer-move heuristic — the caller just supplies a max depth. The
 // other strategies (randomAI, greedyAI, minimaxAI) are kept as a naive
 // reference; alphaBetaAI is what production game integrations should use.
+//
+// alphaBetaAI is async — it yields to the browser event loop every
+// `yieldEveryMs` (default 16ms = one frame) so the page stays responsive
+// during search. The other strategies (randomAI, greedyAI, minimaxAI) are
+// synchronous since they don't take meaningful time.
 //
 // All strategies return `null` if there are no legal moves — the caller
 // decides whether to pass / end / etc.
@@ -110,11 +120,22 @@ function minimaxValue(game, state, depth, maxPlayer)
 //   3. Killer-move heuristic: two killer slots per ply updated on beta
 //      cutoffs; tried after the TT best-move in move ordering.
 
-function alphaBetaAI(game, state, depth)
+async function alphaBetaAI(game, state, depth, options = {})
 {
     const player = game.getCurrentPlayer(state);
     if (!game.getLegalMoves(state, player).length) return null;
     if (depth < 1) depth = 1; // clamp — depth 0 would skip the search loop entirely
+
+    const yieldEveryMs = options.yieldEveryMs || 16;
+    const onProgress = options.onProgress || null;
+    let lastYieldTime = performance.now();
+    const yielder = async () => {
+        const now = performance.now();
+        if (now - lastYieldTime >= yieldEveryMs) {
+            await new Promise(r => setTimeout(r, 0));
+            lastYieldTime = performance.now();
+        }
+    };
 
     // Transposition table — local to this search invocation.
     const tt = new Map();
@@ -130,9 +151,13 @@ function alphaBetaAI(game, state, depth)
     // the previous iteration's best-move ordering.
     for (let d = 1; d <= depth; d++)
     {
-        const result = alphaBetaSearch(game, state, d, -Infinity, Infinity, player, 0, tt, killers);
+        const result = await alphaBetaSearch(game, state, d, -Infinity, Infinity, player, 0, tt, killers, yielder);
         if (result.move !== null)
             bestMove = result.move;
+        if (onProgress) onProgress(d, depth);
+        // Yield unconditionally between iterations so the progress callback's UI update gets a chance to render.
+        await new Promise(r => setTimeout(r, 0));
+        lastYieldTime = performance.now();
     }
 
     return bestMove;
@@ -140,10 +165,11 @@ function alphaBetaAI(game, state, depth)
 
 // alphaBetaSearch — recursive negamax-style alpha-beta with TT and killers.
 // Returns {score, move}.
-function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, killers)
+async function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, killers, yielder)
 {
     // Capture alpha before any TT adjustment — required for correct flag.
     const alphaOrig = alpha;
+    await yielder();
 
     // Transposition-table lookup. Hash includes board + side to move plus any
     // optional state fields that affect the search subtree (chess castling
@@ -174,7 +200,7 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
         return {score: game.evaluate(state, maxPlayer), move: null};
     if (depth === 0) {
         if (game.getCaptureMoves)
-            return {score: quiescence(game, state, alpha, beta, maxPlayer, 0), move: null};
+            return {score: await quiescence(game, state, alpha, beta, maxPlayer, 0, yielder), move: null};
         return {score: game.evaluate(state, maxPlayer), move: null};
     }
 
@@ -193,8 +219,8 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
     for (const move of moves)
     {
         const next = game.applyMove(state, move, player);
-        const childResult = alphaBetaSearch(
-            game, next, depth - 1, alpha, beta, maxPlayer, ply + 1, tt, killers);
+        const childResult = await alphaBetaSearch(
+            game, next, depth - 1, alpha, beta, maxPlayer, ply + 1, tt, killers, yielder);
         const score = childResult.score;
 
         if (isMax)
@@ -231,8 +257,9 @@ function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, ki
 // Hard-capped at QUIESCENCE_MAX_PLY to prevent pathological infinite chains.
 const QUIESCENCE_MAX_PLY = 8;
 
-function quiescence(game, state, alpha, beta, maxPlayer, qPly)
+async function quiescence(game, state, alpha, beta, maxPlayer, qPly, yielder)
 {
+    await yielder();
     const standPat = game.evaluate(state, maxPlayer);
     const player = game.getCurrentPlayer(state);
     const isMax = player === maxPlayer;
@@ -254,7 +281,7 @@ function quiescence(game, state, alpha, beta, maxPlayer, qPly)
 
     for (const move of captures) {
         const next = game.applyMove(state, move, player);
-        const score = quiescence(game, next, alpha, beta, maxPlayer, qPly + 1);
+        const score = await quiescence(game, next, alpha, beta, maxPlayer, qPly + 1, yielder);
         if (isMax) {
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
