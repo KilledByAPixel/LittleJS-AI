@@ -128,6 +128,10 @@ async function alphaBetaAI(game, state, depth, options = {})
 
     const yieldEveryMs = options.yieldEveryMs || 16;
     const onProgress = options.onProgress || null;
+    // onRootProgress(rootMoveIndex, rootMovesTotal, currentDepth, maxDepth)
+    // fires after each root-move's subtree completes during every iterative-
+    // deepening iteration. Lets the consumer show fine-grained progress.
+    const onRootProgress = options.onRootProgress || null;
     let lastYieldTime = performance.now();
     const yielder = async () => {
         const now = performance.now();
@@ -151,7 +155,12 @@ async function alphaBetaAI(game, state, depth, options = {})
     // the previous iteration's best-move ordering.
     for (let d = 1; d <= depth; d++)
     {
-        const result = await alphaBetaSearch(game, state, d, -Infinity, Infinity, player, 0, tt, killers, yielder);
+        // Curry depth info into the root-progress closure so the consumer
+        // doesn't have to thread it through manually.
+        const rootCb = onRootProgress
+            ? (rootIdx, rootTotal) => onRootProgress(rootIdx, rootTotal, d, depth)
+            : null;
+        const result = await alphaBetaSearch(game, state, d, -Infinity, Infinity, player, 0, tt, killers, yielder, rootCb);
         if (result.move !== null)
             bestMove = result.move;
         if (onProgress) onProgress(d, depth);
@@ -164,8 +173,9 @@ async function alphaBetaAI(game, state, depth, options = {})
 }
 
 // alphaBetaSearch — recursive negamax-style alpha-beta with TT and killers.
-// Returns {score, move}.
-async function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, killers, yielder)
+// Returns {score, move}. `onRootProgress` fires only at ply 0, after each
+// root move's subtree completes.
+async function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, tt, killers, yielder, onRootProgress)
 {
     // Capture alpha before any TT adjustment — required for correct flag.
     const alphaOrig = alpha;
@@ -216,11 +226,12 @@ async function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, 
     let bestScore = isMax ? -Infinity : Infinity;
     let bestMove = moves[0];
 
-    for (const move of moves)
+    for (let i = 0; i < moves.length; i++)
     {
+        const move = moves[i];
         const next = game.applyMove(state, move, player);
         const childResult = await alphaBetaSearch(
-            game, next, depth - 1, alpha, beta, maxPlayer, ply + 1, tt, killers, yielder);
+            game, next, depth - 1, alpha, beta, maxPlayer, ply + 1, tt, killers, yielder, null);
         const score = childResult.score;
 
         if (isMax)
@@ -233,6 +244,11 @@ async function alphaBetaSearch(game, state, depth, alpha, beta, maxPlayer, ply, 
             if (score < bestScore) { bestScore = score; bestMove = move; }
             beta = Math.min(beta, bestScore);
         }
+
+        // Notify the consumer after this root move's subtree completes so they
+        // can show fine-grained progress within the current iteration.
+        if (ply === 0 && onRootProgress)
+            onRootProgress(i + 1, moves.length);
 
         if (beta <= alpha)
         {

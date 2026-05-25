@@ -1300,7 +1300,17 @@ function gameUpdate()
                 onProgress: (d, n) => {
                     if (myGen === aiGeneration)
                         aiDisplayProgress = Math.max(aiDisplayProgress, Math.round(d / n * 100));
-                }
+                },
+                // Fine-grained progress: fires after each root move's subtree
+                // completes within the current iterative-deepening iteration.
+                // We linearly interpolate from (d-1)/maxDepth to d/maxDepth as
+                // root moves are processed — gives smooth movement instead of
+                // jumping in big chunks between depth completions.
+                onRootProgress: (rootIdx, rootTotal, d, maxDepth) => {
+                    if (myGen !== aiGeneration) return;
+                    const fraction = ((d - 1) + rootIdx / rootTotal) / maxDepth;
+                    aiDisplayProgress = Math.max(aiDisplayProgress, Math.round(fraction * 100));
+                },
             }).then(move => {
                 if (myGen !== aiGeneration) { aiSearching = false; aiProgress = ''; return; }
                 // Defensive: the move was chosen against the state at search-start;
