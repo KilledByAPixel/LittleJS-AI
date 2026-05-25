@@ -118,23 +118,24 @@ function drawPocket(pos)
 
 function drawCueStick(ballPos, dir, power)
 {
-    // cue sits opposite the aim direction (pulls back as power grows)
-    const back  = dir.scale(-1);
-    const pull  = .8 + power * 2.2;
-    const tip   = ballPos.add(back.scale(.6 + pull));
-    const butt  = ballPos.add(back.scale(.6 + pull + 8));
+    // cue sits opposite the aim direction. At power 0 the tip rests just
+    // outside the cue ball's surface (ball radius + tiny gap); pulls back
+    // further as power increases.
+    const back    = dir.scale(-1);
+    const tipDist = BALL_DIAM*.5 + .05 + power * 2.5;
+    const tip     = ballPos.add(back.scale(tipDist));
+    const butt    = ballPos.add(back.scale(tipDist + 8));
     // shadow
     drawLine(tip.add(vec2(.12,-.12)), butt.add(vec2(.12,-.12)), .18, rgb(0,0,0,.35));
     // shaft (light wood)
     drawLine(tip, butt, .14, rgb(.86,.72,.42));
     // wrap near butt
-    const wrapA = ballPos.add(back.scale(.6 + pull + 5.5));
-    const wrapB = ballPos.add(back.scale(.6 + pull + 7));
+    const wrapA = ballPos.add(back.scale(tipDist + 5.5));
+    const wrapB = ballPos.add(back.scale(tipDist + 7));
     drawLine(wrapA, wrapB, .18, rgb(.18,.08,.04));
-    // ferrule + tip
-    const ferA = ballPos.add(back.scale(.6 + pull));
-    const ferB = ballPos.add(back.scale(.6 + pull + .25));
-    drawLine(ferA, ferB, .16, rgb(.95,.95,.90));
+    // ferrule + leather tip
+    const ferB = ballPos.add(back.scale(tipDist + .25));
+    drawLine(tip, ferB, .16, rgb(.95,.95,.90));
     drawCircle(tip, .14, rgb(.30,.18,.55));
 }
 
@@ -148,12 +149,13 @@ class Ball extends Box2dObject
         super(pos, vec2(BALL_DIAM), 0, 0, ballColor(number));
         this.number = number;
 
-        // pool ball physics — bouncy off rails, low rolling damping
-        this.addCircle(BALL_DIAM, vec2(), 1, .04, .92);
+        // pool ball physics — bouncy off rails, low rolling damping. Friction
+        // bumped from .04 → .18 so ball-vs-ball / ball-vs-rail contacts actually
+        // transfer angular momentum (visible as spin on the number/stripe).
+        this.addCircle(BALL_DIAM, vec2(), 1, .18, .92);
         this.setLinearDamping(.5);
-        this.setAngularDamping(.5);
+        this.setAngularDamping(.3);    // light so spin lingers a bit after impact
         this.setBullet(true);          // continuous collision so balls don't tunnel through walls at speed
-        this.setFixedRotation(true);   // we render the number upright
     }
 
     beginContact(other)
@@ -194,15 +196,17 @@ class Ball extends Box2dObject
 
     render()
     {
-        // shadow
+        // Shadow stays put — it represents a fixed light source, not the ball's
+        // orientation. Highlight (drawn last) likewise. Everything in between
+        // is rotated by this.angle so spin reads on the number / stripe.
         drawCircle(this.pos.add(vec2(.10,-.12)), BALL_DIAM*1.02, rgb(0,0,0,.35));
 
         if (this.number === 0)
         {
-            // cue ball — plain white with a hint of shading
+            // cue ball — plain white with fixed-light shading (no spin marker)
             drawCircle(this.pos, BALL_DIAM, rgb(1,1,1));
-            drawCircle(this.pos.add(vec2(-.18,.18)), BALL_DIAM*.40, rgb(1,1,1,.85));
-            drawCircle(this.pos.add(vec2(.20,-.20)), BALL_DIAM*.25, rgb(.75,.75,.78,.6));
+            drawCircle(this.pos.add(vec2(-.18,.18)), BALL_DIAM*.40, rgb(1,1,1,.55));
+            drawCircle(this.pos.add(vec2(.20,-.20)), BALL_DIAM*.25, rgb(.75,.75,.78,.5));
             return;
         }
 
@@ -210,10 +214,10 @@ class Ball extends Box2dObject
 
         if (isStriped(this.number))
         {
-            // white ball base, then a colored band painted across the middle
-            // and clipped to the circle so the edges curve cleanly.
+            // white ball base, then a colored band rotated with the ball,
+            // clipped to the circle so the band edges curve cleanly.
             drawCircle(this.pos, BALL_DIAM, rgb(1,1,1));
-            drawCanvas2D(this.pos, vec2(BALL_DIAM), 0, false, (ctx) =>
+            drawCanvas2D(this.pos, vec2(BALL_DIAM), this.angle, false, (ctx) =>
             {
                 ctx.beginPath();
                 ctx.arc(0, 0, .5, 0, Math.PI*2);
@@ -224,16 +228,26 @@ class Ball extends Box2dObject
         }
         else
         {
-            // solid color body
+            // solid color body (circle is rotationally symmetric so no rotate needed here)
             drawCircle(this.pos, BALL_DIAM, c);
         }
 
-        // white circle for the number
-        drawCircle(this.pos, BALL_DIAM*.34, rgb(1,1,1));
-        // number text (slightly raised so it visually centers)
-        drawText(''+this.number, this.pos.add(vec2(0,-.04)), .42, BLACK);
+        // Number circle + digit, both rotated with the ball — drawn together
+        // in one canvas-2D pass so the digit always sits inside the white disc.
+        drawCanvas2D(this.pos, vec2(BALL_DIAM), this.angle, false, (ctx) =>
+        {
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, 0, .17, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 0.22px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(''+this.number, 0, 0);
+        });
 
-        // top-left specular highlight
+        // top-left specular highlight (fixed, not rotated)
         drawCircle(this.pos.add(vec2(-.22,.22)), BALL_DIAM*.18, rgb(1,1,1,.55));
     }
 }
