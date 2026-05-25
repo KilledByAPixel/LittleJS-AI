@@ -7,27 +7,28 @@ This repo is a library of LittleJS AI experiments:
 - starter projects you can fork and remix
 - docs and prompts to improve LittleJS + AI workflows
 
-### Want to make a game without writing code? Try the **[LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker)**
+### Want to make a game without writing code? Try the [LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker)
 
-For advanced users, LittleJS also works great with tools like GitHub copilot, Codex, and Cursor. 
+For advanced users, LittleJS also works great with tools like GitHub Copilot, Codex, and Cursor.
 
 LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LICENSE) for details.
 
 ## 📚 Resources
 
-- [LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) - The main LittleJS repository
-- [Games Folder](games/) - Example games made with LittleJS AI
-- [Templates Folder](templates/) - Starting templates and reusable components
-- [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker) - Use ChatGPT to make games without writing any code
+- [LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) — the main LittleJS repository
+- [Games Folder](games/) — example games made with LittleJS AI
+- [Templates Folder](templates/) — starting templates and reusable components
+- [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker) — use ChatGPT to make games without writing any code
 
 ## 🕹️ Games Made With AI
 
 **Genre:** 🧩 Puzzle · 👾 Arcade · 🚀 Shooter · 🎯 Aim · ♟️ Board · 🏎️ Racing · 🏃 Platformer · ⚽ Sports · 🗺️ Adventure
+
 **Features:** 👆 Touch · 🎮 Gamepad · 📦 Box2D physics
 
-### 🏆 Featured - Top 10 Games
+### 🏆 Featured — Top 10 Games
 
-The most polished prototypes — playable games with menus, sound, and a complete loop.
+The most polished prototypes. Playable games with menus, sound, and a complete loop.
 
 - [Tetris](https://killedbyapixel.github.io/LittleJS-AI/games/tetris.html) 🧩 👆 🎮
 - [Robotron](https://killedbyapixel.github.io/LittleJS-AI/games/robotron.html) 🚀 👆
@@ -42,7 +43,7 @@ The most polished prototypes — playable games with menus, sound, and a complet
 
 ### 🕹️ The Arcade
 
-Playable, complete-feeling games that didn't make the top cut
+Polished, complete games that didn't quite make the top cut.
 
 - [Sokoban](https://killedbyapixel.github.io/LittleJS-AI/games/sokoban.html) 🧩
 - [Minesweeper](https://killedbyapixel.github.io/LittleJS-AI/games/minesweeper.html) 🧩
@@ -71,14 +72,14 @@ Playable but still need iteration and polish to take them to the next level. Did
 - [Plinko](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) 🎯 👆 🎮 📦
 - [Micro Racer](https://killedbyapixel.github.io/LittleJS-AI/games/microRacer.html) 🏎️ 📦
 - [Spy Hunter](https://killedbyapixel.github.io/LittleJS-AI/games/spyhunter.html) 🏎️
-- [Basketball](https://killedbyapixel.github.io/LittleJS-AI/games/basketball.html) ⚽ 📦
 
 ### 🧪 Prototypes & Experiments
 
-Rough early experiments — playable concepts that haven't been curated yet. Expect bugs and missing features.
+Rough early experiments. Expect bugs and missing features.
 
 - [2048](https://killedbyapixel.github.io/LittleJS-AI/games/2048.html) 🧩
 - [Baseball](https://killedbyapixel.github.io/LittleJS-AI/games/baseball.html) ⚽ 📦
+- [Basketball](https://killedbyapixel.github.io/LittleJS-AI/games/basketball.html) ⚽ 📦
 - [Joust](https://killedbyapixel.github.io/LittleJS-AI/games/joust.html) 🏃
 - [Defender](https://killedbyapixel.github.io/LittleJS-AI/games/defender.html) 🚀
 - [Gradius](https://killedbyapixel.github.io/LittleJS-AI/games/gradius.html) 🚀
