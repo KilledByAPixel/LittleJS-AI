@@ -5,6 +5,7 @@
 <script src="../dist/littlejs.js?1.18.12"></script>
 <script src="../templates/soundGenerator.js"></script>
 <script src="../dist/box2d.wasm.js?1.18.0"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -774,6 +775,28 @@ async function gameInit()
     // start at menu
     gameState = 'menu';
     totalStrokes = 0;
+
+    buildToolbar();
+}
+
+// HUD toolbar (fullscreen + back-to-menu). Only visible during play — on the
+// hole-select grid the canvas already shows what it needs.
+function buildToolbar()
+{
+    if (typeof createToolbar !== 'function') return;
+    createToolbar({
+        id:'hud', anchor:'top-right', direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Back to menu', onClick: () =>
+            {
+                clearCourse();
+                gameState = 'menu';
+                getToolbar('hud')?.hide();
+            }},
+        ],
+    });
+    getToolbar('hud')?.hide();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -787,6 +810,7 @@ function gameUpdate()
             gameState = 'play';
             totalStrokes = 0;
             buildHole(i);
+            getToolbar('hud')?.show();
             return;
         }
     }
@@ -820,6 +844,7 @@ function gameUpdate()
                     gameState = 'play';
                     totalStrokes = 0;
                     buildHole(i);
+                    getToolbar('hud')?.show();
                     return;
                 }
             }
@@ -840,6 +865,7 @@ function gameUpdate()
     {
         clearCourse();
         gameState = 'menu';
+        getToolbar('hud')?.hide();
         return;
     }
 
