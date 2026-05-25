@@ -381,7 +381,7 @@ function strategyForDifficulty(d)
 {
     if (d === 'easy')   return (game, state, opts) => randomAI(game, state);
     if (d === 'medium') return (game, state, opts) => alphaBetaAI(game, state, 5, opts);
-    return (game, state, opts) => alphaBetaAI(game, state, 9, opts); // 'hard' (depth 9 with ID + TT)
+    return (game, state, opts) => alphaBetaAI(game, state, 11, opts); // 'hard' (depth 11 — near-perfect for solved game)
 }
 
 function findBestAIMove(opts = {})
@@ -665,7 +665,7 @@ async function gameInit()
             {type:'grid', id:'difficultyGrid', columns:3, cells: [
                 {label:'EASY',   title:'Random moves',                   onClick: () => setDifficulty('easy')},
                 {label:'MEDIUM', title:'Alpha-beta search depth 5',      onClick: () => setDifficulty('medium')},
-                {label:'HARD',   title:'Alpha-beta search to depth 7',   onClick: () => setDifficulty('hard')},
+                {label:'HARD',   title:'Alpha-beta search to depth 11',  onClick: () => setDifficulty('hard')},
             ]},
             {type:'separator'},
             {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min:0, max:1,
