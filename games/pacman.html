@@ -156,6 +156,7 @@ function buildMenus()
         title: 'PAC-MAN',
         subtitle: 'Eat all the dots',
         onPlay: startGame,
+        revealOnClick: false,
         canReveal: () => !isPlaying,
         itemsBefore: [
             {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
@@ -269,6 +270,9 @@ function buildMenus()
         ],
     });
     getToolbar('hud')?.hide();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
 }
 
 // -----------------------------------------------------------------------------

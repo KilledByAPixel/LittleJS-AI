@@ -380,6 +380,7 @@
       title: 'FROGGER',
       subtitle: 'Cross the road and the river',
       onPlay: startGame,
+      revealOnClick: false,
       canReveal: () => !isPlaying,
       itemsBefore: [
         {type:'label', id:'bestLabel', text:`BEST LEVEL ${bestLevel}`},
@@ -461,6 +462,9 @@
       ],
     });
     getToolbar('hud')?.hide();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
   }
 
   function gameUpdate() {

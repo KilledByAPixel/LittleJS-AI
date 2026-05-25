@@ -706,6 +706,7 @@ function buildMenus()
     createTitleMenu({
         title: '',
         onPlay: startGame,
+        revealOnClick: false,
         canReveal: () => titleScreen,
         itemsBefore: [
             {type:'label', id:'hiLabel', text:`HI-SCORE ${hiScore}`},
@@ -791,6 +792,9 @@ function buildMenus()
         ],
     });
     getToolbar('hud')?.hide();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
 }
 
 function initTitleScreen()

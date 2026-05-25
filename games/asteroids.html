@@ -874,6 +874,7 @@ function buildMenus()
         title: 'ASTEROIDS',
         subtitle: 'A LittleJS prototype',
         onPlay: startGame,
+        revealOnClick: false,
         canReveal: () => !isPlaying,
         itemsBefore: [
             {type:'label', id:'bestLabel', text:`BEST ${best}`},
@@ -985,6 +986,9 @@ function buildMenus()
         ],
     });
     getToolbar('hud')?.hide();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
 }
 
 function gameUpdate()

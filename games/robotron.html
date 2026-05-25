@@ -2431,6 +2431,7 @@ function buildMenus()
     createTitleMenu({
         title: '',
         onPlay: startGame,
+        revealOnClick: false,
         canReveal: () => !isPlaying,
         itemsBefore: [
             {type:'label', id:'bestLabel', text:'BEST 0'},
@@ -2551,6 +2552,9 @@ function buildMenus()
         ],
     });
     getToolbar('hud')?.hide();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
 }
 
 // Auto-fit the camera so the arena fills the canvas (with a small margin for the cyan frame)

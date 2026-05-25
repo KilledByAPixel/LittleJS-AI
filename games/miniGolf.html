@@ -49,6 +49,9 @@ let aimDrag = vec2();
 // sounds
 let sfxHit, sfxSink, sfxBounce;
 
+// stable decorative spots for the sand border (generated once at init)
+let sandSpots = [];
+
 // holes (hand-built layouts) - 9 holes total
 const holes = [
     // Hole 1: Gentle Introduction - simple S-curve
@@ -176,28 +179,173 @@ const holes = [
 ///////////////////////////////////////////////////////////////////////////////
 // helpers
 
-function drawRectScreenSpace(pos, size, color)
+// shared drawing helpers — used by both gameplay objects AND title-screen previews
+// (the previews use a camera-shift trick so they call the same world-space code)
+
+function drawCourseGrass()
 {
-    mainContext.fillStyle = color.toString();
-    mainContext.fillRect(pos.x - size.x/2, pos.y - size.y/2, size.x, size.y);
+    // Course is always anchored at world (0,0). Don't use `cameraPos` here —
+    // in the title-screen preview we shift the camera, but the grass/frame
+    // should still draw at the world origin so they map to the cell center.
+    const origin = vec2();
+
+    // sand/dirt area outside the course
+    drawRect(origin, COURSE_SIZE.add(vec2(8)), rgb(.42,.34,.20));
+
+    // scatter pebbles/dirt clumps on the sand for texture
+    for (const s of sandSpots)
+        drawCircle(s.pos, s.size, s.color);
+
+    // dark wood frame just outside the play area
+    drawRect(origin, COURSE_SIZE.add(vec2(1.6)), rgb(.10,.08,.04));
+    drawRect(origin, COURSE_SIZE.add(vec2(1.2)), rgb(.20,.14,.06));
+
+    // grass base
+    drawRect(origin, COURSE_SIZE, rgb(.16,.34,.16));
+
+    // bold alternating mower stripes (vertical bands)
+    const bandW = COURSE_SIZE.x / 10;  // 10 stripes
+    for (let i = 0; i < 10; i++)
+    {
+        const x = -COURSE_SIZE.x/2 + bandW * (i + .5);
+        const dark = i % 2 === 0;
+        drawRect(vec2(x, 0), vec2(bandW, COURSE_SIZE.y),
+            dark ? rgb(.13,.28,.13) : rgb(.20,.40,.20));
+    }
+
+    // subtle horizontal mowing lines on top (very faint)
+    for (let i = -4; i <= 4; i++)
+        drawRect(vec2(0, i * 2), vec2(COURSE_SIZE.x, .08), rgb(.05,.10,.05,.18));
+
+    // soft vignette on the play area
+    drawCanvas2D(origin, COURSE_SIZE, 0, false, (ctx) =>
+    {
+        const g = ctx.createRadialGradient(0, 0, .1, 0, 0, .58);
+        g.addColorStop(0,   'rgba(0,0,0,0)');
+        g.addColorStop(.65, 'rgba(0,0,0,0)');
+        g.addColorStop(1,   'rgba(0,0,0,.35)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-.5, -.5, 1, 1);
+    });
 }
 
-function drawRotatedRectScreenSpace(pos, size, angle, color)
+function drawObstacle(o)
 {
+    if (o.type === 'box')
+        drawWoodPlank(o.pos, o.size, o.angle || 0);
+    else if (o.type === 'circle')
+        drawStonePillar(o.pos, o.diameter);
+    else if (o.type === 'moving')
+        drawHazardBumper(o.pos, o.size, o.angle || 0);
+}
+
+function drawTeeMarker(pos)
+{
+    drawCircle(pos, .5, rgb(1,1,1,.5));
+}
+
+function drawBallBody(pos, diameter=BALL_DIAMETER)
+{
+    // squashed ground shadow
+    drawEllipse(pos.add(vec2(.15,-.18)), vec2(diameter * .95, diameter * .55), rgb(0,0,0,.32));
+
+    // body with radial highlight + tiny specular dot
+    drawCanvas2D(pos, vec2(diameter), 0, false, (ctx) =>
+    {
+        const g = ctx.createRadialGradient(-.18, .18, .04, 0, 0, .5);
+        g.addColorStop(0,   '#ffffff');
+        g.addColorStop(.65, '#e6e6ea');
+        g.addColorStop(1,   '#a8a9b0');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, .5, 0, 6.2832);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.75)';
+        ctx.lineWidth = .05;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.85)';
+        ctx.beginPath();
+        ctx.arc(-.22, .22, .08, 0, 6.2832);
+        ctx.fill();
+    });
+}
+
+function drawHoleAndFlag(pos)
+{
+    // soft outer shadow ring on the grass
+    drawCircle(pos, HOLE_RING_DIAMETER, rgb(0,0,0,.35));
+
+    // recessed cup with radial gradient (lighter rim, pitch black center)
+    drawCanvas2D(pos, vec2(HOLE_DIAMETER), 0, false, (ctx) =>
+    {
+        const g = ctx.createRadialGradient(.06, .06, .04, 0, 0, .5);
+        g.addColorStop(0,   '#1a1a1a');
+        g.addColorStop(.55, '#050505');
+        g.addColorStop(.92, '#222226');
+        g.addColorStop(1,   '#3a3a40');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, .5, 0, 6.2832);
+        ctx.fill();
+    });
+
+    // flag pole + gently waving flag + pole shadow
+    const poleBottom = pos.add(vec2(0, .6));
+    const poleTop    = pos.add(vec2(0, 3.4));
+    drawLine(pos.add(vec2(.1, .55)), pos.add(vec2(2.4, .9)), .14, rgb(0,0,0,.25));
+    drawLine(poleBottom, poleTop, .14, rgb(.92,.92,.88));
+    drawCircle(poleTop, .22, rgb(1,.95,.55));
+
+    const w = Math.sin(time * 3.0) * .25;
+    const flagBase = poleTop.add(vec2(0, -.15));
+    const flagBack = poleTop.add(vec2(0, -1.25));
+    const flagTip  = poleTop.add(vec2(2.0 + w * .3, -.55 + w));
+    drawPoly([flagBase, flagTip, flagBack], rgb(.92,.18,.22));
+    drawLine(flagBase, flagBack, .04, rgb(.55,.08,.10,.8));
+}
+
+// Render a single hole preview into a screen-space cell by temporarily
+// shifting the camera so world (0,0) lands at the cell center, then calling
+// the same world-space draw functions gameplay uses.
+//
+// Implementation notes:
+// - We force the canvas-2D path (glEnable=false) so that mainContext.clip()
+//   actually constrains the drawing to the cell rect. WebGL output goes to a
+//   separate canvas that bypasses 2D clipping.
+// - drawCanvas2D and drawCircle/Ellipse already use canvas-2D directly; only
+//   drawRect/drawLine route through WebGL by default.
+function renderHolePreview(holeSpec, cx, cy, scale)
+{
+    // clip to the cell rect so neighboring cells don't bleed into each other
+    const halfW = (COURSE_SIZE.x/2 + 1.0) * scale;
+    const halfH = (COURSE_SIZE.y/2 + 1.0) * scale;
     mainContext.save();
-    mainContext.translate(pos.x, pos.y);
-    mainContext.rotate(-angle);  // negative because screen Y is flipped
-    mainContext.fillStyle = color.toString();
-    mainContext.fillRect(-size.x/2, -size.y/2, size.x, size.y);
-    mainContext.restore();
-}
-
-function drawCircleScreenSpace(pos, radius, color)
-{
-    mainContext.fillStyle = color.toString();
     mainContext.beginPath();
-    mainContext.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    mainContext.fill();
+    mainContext.rect(cx - halfW, cy - halfH, halfW * 2, halfH * 2);
+    mainContext.clip();
+
+    // shift camera so world origin maps to cell center, force canvas-2D path
+    const savedPos = cameraPos;
+    const savedScale = cameraScale;
+    const savedGl = glEnable;
+    cameraScale = scale;
+    cameraPos = vec2(
+        (mainCanvasSize.x/2 - cx) / scale,
+        (cy - mainCanvasSize.y/2) / scale
+    );
+    glEnable = false;
+
+    drawCourseGrass();
+    for (const o of holeSpec.obstacles)
+        drawObstacle(o);
+    drawTeeMarker(holeSpec.tee);
+    drawBallBody(holeSpec.tee);
+    drawHoleAndFlag(holeSpec.hole);
+
+    glEnable = savedGl;
+    cameraPos = savedPos;
+    cameraScale = savedScale;
+    mainContext.restore();
 }
 
 function addCourseObject(o)
@@ -222,42 +370,156 @@ function clearCourse()
 
 function createWall(pos, size, angle=0)
 {
+    // Boundary walls are represented visually by the wood frame drawn in
+    // drawCourseGrass(), so we suppress per-wall rendering here.
     const w = addCourseObject(new Box2dStaticObject(pos));
-    w.color = rgb(.2,.25,.2);
-    w.outlineColor = rgb(0,0,0,.5);
-    w.lineWidth = .08;
-    // higher restitution so the ball bounces more off walls
     w.addBox(size, vec2(), angle, 0, .25, .9);
+    w.render = ()=>{};
     return w;
+}
+
+function drawWoodPlank(pos, size, angle)
+{
+    // drawRect goes through drawTile (no Y mirror) so positive angle = CW
+    // visual. Hole specs use Box2D-native convention (positive = CCW in
+    // Y-up world, which renders as CCW visual). Negate to convert.
+    const a = -angle;
+
+    // ground shadow
+    const shadowOffset = vec2(.18, -.18);
+    drawRect(pos.add(shadowOffset), size, rgb(0,0,0,.28), a);
+
+    // base plank
+    drawRect(pos, size, rgb(.43,.30,.14), a);
+
+    // top highlight stripe (along local +y)
+    const up    = vec2(0,1).rotate(a);
+    const right = vec2(1,0).rotate(a);
+    drawRect(pos.add(up.scale(size.y/2 - .07)), vec2(size.x, .14), rgb(.62,.45,.22), a);
+    // bottom dark stripe
+    drawRect(pos.subtract(up.scale(size.y/2 - .04)), vec2(size.x, .08), rgb(.10,.07,.03), a);
+
+    // grain lines along the long axis
+    const halfX = right.scale(size.x/2 - .2);
+    for (let i = -1; i <= 1; i++)
+    {
+        const c = pos.add(up.scale(i * size.y * .22));
+        drawLine(c.subtract(halfX), c.add(halfX), .04, rgb(.20,.13,.05,.55));
+    }
+
+    // outline
+    const hx = right.scale(size.x/2), hy = up.scale(size.y/2);
+    const p1 = pos.add(hx).add(hy);
+    const p2 = pos.subtract(hx).add(hy);
+    const p3 = pos.subtract(hx).subtract(hy);
+    const p4 = pos.add(hx).subtract(hy);
+    drawLine(p1, p2, .06, rgb(0,0,0,.7));
+    drawLine(p2, p3, .06, rgb(0,0,0,.7));
+    drawLine(p3, p4, .06, rgb(0,0,0,.7));
+    drawLine(p4, p1, .06, rgb(0,0,0,.7));
+}
+
+function drawStonePillar(pos, diameter)
+{
+    // ground shadow
+    drawCircle(pos.add(vec2(.18, -.22)), diameter * 1.02, rgb(0,0,0,.32));
+
+    // radial-gradient stone body (highlight upper-left, dark lower-right)
+    drawCanvas2D(pos, vec2(diameter), 0, false, (ctx) =>
+    {
+        const g = ctx.createRadialGradient(-.18, .18, .05, 0, 0, .55);
+        g.addColorStop(0,   '#9aa0a8');
+        g.addColorStop(.55, '#5e616a');
+        g.addColorStop(1,   '#2a2c33');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, .5, 0, 6.2832);
+        ctx.fill();
+    });
+
+    // crisp rim
+    drawCircle(pos, diameter,        rgb(0,0,0,0));
+    drawCircle(pos, diameter + .12,  rgb(0,0,0,.55));
+    drawCircle(pos, diameter,        rgb(0,0,0,0));
+}
+
+function drawHazardBumper(pos, size, angle)
+{
+    // ground shadow on the canvas-2D layer too — keeps everything on one
+    // canvas so the WebGL flush never reorders it relative to the chevrons.
+    drawCanvas2D(pos.add(vec2(.18,-.18)), size, angle, false, (ctx) =>
+    {
+        ctx.fillStyle = 'rgba(0,0,0,.32)';
+        ctx.fillRect(-.5, -.5, 1, 1);
+    });
+
+    // base + hazard chevrons + outline in a single canvas-2D pass
+    drawCanvas2D(pos, size, angle, false, (ctx) =>
+    {
+        // solid red base
+        ctx.fillStyle = '#a62e2e';
+        ctx.fillRect(-.5, -.5, 1, 1);
+
+        // clip the chevron pattern to the bumper rect so stripes don't
+        // hang off the right edge
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-.5, -.5, 1, 1);
+        ctx.clip();
+
+        // yellow chevron stripes (start far enough left that they cover the
+        // full bumper after clipping)
+        ctx.fillStyle = 'rgba(255,210,40,.85)';
+        const stripeW = .12;
+        const step = .22;
+        for (let x = -1; x < .5; x += step)
+        {
+            ctx.beginPath();
+            ctx.moveTo(x, -.5);
+            ctx.lineTo(x + stripeW, -.5);
+            ctx.lineTo(x + stripeW + .5, .5);
+            ctx.lineTo(x + .5, .5);
+            ctx.closePath();
+            ctx.fill();
+        }
+        // dark overlay to mute saturation
+        ctx.fillStyle = 'rgba(120,20,20,.45)';
+        ctx.fillRect(-.5, -.5, 1, 1);
+        ctx.restore();
+
+        // outline (after restore so it's not clipped)
+        ctx.strokeStyle = 'rgba(0,0,0,.7)';
+        ctx.lineWidth = .04;
+        ctx.strokeRect(-.5, -.5, 1, 1);
+    });
 }
 
 function createBumper(pos, size, angle=0)
 {
     const b = addCourseObject(new Box2dStaticObject(pos));
-    b.color = rgb(.5,.4,.2);
-    b.outlineColor = rgb(0,0,0,.6);
-    b.lineWidth = .08;
     b.addBox(size, vec2(), angle, 0, .3, .6);
+    b.bumperSize = size;
+    b.bumperAngle = angle;
+    b.render = function() { drawWoodPlank(this.pos, this.bumperSize, this.bumperAngle); };
     return b;
 }
 
 function createPillar(pos, diameter)
 {
     const p = addCourseObject(new Box2dStaticObject(pos));
-    p.color = rgb(.45,.45,.5);
-    p.outlineColor = rgb(0,0,0,.6);
-    p.lineWidth = .08;
     p.addCircle(diameter, vec2(), 0, .3, .4);
+    p.pillarDiameter = diameter;
+    p.render = function() { drawStonePillar(this.pos, this.pillarDiameter); };
     return p;
 }
 
 function createMovingBumper(pos, size, angle, moveAxis, moveRange, moveSpeed)
 {
     const b = addCourseObject(new Box2dStaticObject(pos));
-    b.color = rgb(.7,.3,.3);  // red-ish to indicate it moves
-    b.outlineColor = rgb(0,0,0,.6);
-    b.lineWidth = .08;
     b.addBox(size, vec2(), angle, 0, .3, .6);
+    b.bumperSize = size;
+    b.bumperAngle = angle;
+    b.render = function() { drawHazardBumper(this.pos, this.bumperSize, this.bumperAngle); };
     
     // Store movement info on the object
     movingObstacles.push({
@@ -276,16 +538,45 @@ class GolfBall extends Box2dObject
     constructor(pos)
     {
         super(pos);
-        this.color = WHITE;
-        this.outlineColor = rgb(0,0,0,.7);
-        this.lineWidth = .06;
-
         this.addCircle(BALL_DIAMETER, vec2(), 1, .25, .1);
         // almost no damping so the ball keeps rolling
         this.setLinearDamping(.22);
         this.setAngularDamping(.14);
         this.setBullet(true);
         this.setFixedRotation(true);  // prevent ball from rotating
+        this.trail = [];
+    }
+
+    update()
+    {
+        super.update();
+        // track trail samples, denser when moving fast
+        if (this.getSpeed() > 1)
+        {
+            this.trail.unshift(this.pos.copy());
+            if (this.trail.length > 10) this.trail.length = 10;
+        }
+        else if (this.trail.length)
+            this.trail.pop();  // fade out when stopped
+    }
+
+    render()
+    {
+        // motion trail (drawn first so the ball body covers the newest sample)
+        const speed = this.getSpeed();
+        if (speed > 1)
+        {
+            const intensity = clamp((speed - 1) / 6);
+            for (let i = 0; i < this.trail.length; i++)
+            {
+                const t = i / this.trail.length;
+                const a = (1 - t) * .35 * intensity;
+                const d = BALL_DIAMETER * (1 - t * .55);
+                drawCircle(this.trail[i], d, rgb(1,1,1, a));
+            }
+        }
+
+        drawBallBody(this.pos);
     }
 
     beginContact(other)
@@ -298,11 +589,35 @@ class GolfBall extends Box2dObject
         const speed = this.getSpeed();
         const minSpeed = 2;  // minimum speed to play sound
         const maxSpeed = 30;  // speed for max volume
-        
+
         if (speed > minSpeed)
         {
             const volume = clamp((speed - minSpeed) / (maxSpeed - minSpeed), 0, 1);
             sfxBounce.play(undefined, volume);
+
+            // dust puff in the direction the ball came from
+            const vel = this.getLinearVelocity();
+            const dirAngle = vel.lengthSquared() ? vel.scale(-1).angle() : 0;
+            const intensity = clamp((speed - minSpeed) / (maxSpeed - minSpeed));
+            new ParticleEmitter(
+                this.pos, dirAngle,
+                0,                                          // emit point
+                .08,                                        // emitTime
+                40 + 200 * intensity,                       // emitRate
+                .9,                                         // emitCone
+                undefined,
+                rgb(.95,.95,.95,.8), rgb(.75,.78,.7,.7),    // colorStartA/B
+                rgb(.95,.95,.95,0), rgb(.75,.78,.7,0),      // colorEndA/B
+                .35,                                        // particleTime
+                .18, .55,                                   // sizeStart/End
+                1.6 + 1.2 * intensity,                      // speed
+                .03,                                        // angleSpeed
+                .94, 1, 0,                                  // damping/angleDamping/gravityScale
+                .7,                                         // particleCone
+                .15,                                        // fadeRate
+                .5,                                         // randomness
+                false, false, true                          // collideTiles/additive/randomColorLinear
+            );
         }
     }
 }
@@ -345,18 +660,7 @@ class Hole extends Box2dStaticObject
 
     render()
     {
-        // draw hole ring and center
-        drawCircle(this.pos, HOLE_RING_DIAMETER, rgb(0,0,0,.35));
-        drawCircle(this.pos, HOLE_DIAMETER, rgb(0,0,0,.9));
-
-        // simple flag
-        const poleTop = this.pos.add(vec2(0, 3.2));
-        drawLine(this.pos.add(vec2(0, .8)), poleTop, .12, rgb(.9,.9,.9));
-        drawPoly([
-            poleTop,
-            poleTop.add(vec2(2.1, -.6)),
-            poleTop.add(vec2(0, -1.2)),
-        ], rgb(1,.2,.2));
+        drawHoleAndFlag(this.pos);
     }
 }
 
@@ -392,12 +696,11 @@ function buildHole(index)
     hole = new Hole(h.hole);
     ball = new GolfBall(h.tee);
 
-    // tiny tee marker
+    // tiny tee marker (shares drawTeeMarker with title-screen previews)
     const tee = addCourseObject(new EngineObject(h.tee, vec2(.8,.8)));
-    tee.color = rgb(1,1,1,.5);
     tee.renderOrder = -1;
     tee.update = ()=>{};
-    tee.render = function() { drawCircle(this.pos, .5, this.color); };
+    tee.render = function() { drawTeeMarker(this.pos); };
 }
 
 function canShoot()
@@ -449,6 +752,24 @@ async function gameInit()
         slide:-1.5,
         noise:.01,
     });
+
+    // pre-generate decorative pebbles/dirt patches scattered on the sand border
+    sandSpots = [];
+    const half = COURSE_SIZE.scale(.5);
+    const outerHalf = half.add(vec2(6));
+    const rng = new RandomGenerator(1234);
+    for (let i = 0; i < 70; i++)
+    {
+        // pick a point inside the outer rect that's OUTSIDE the inner course
+        let x, y;
+        do {
+            x = rng.float(-outerHalf.x, outerHalf.x);
+            y = rng.float(-outerHalf.y, outerHalf.y);
+        } while (Math.abs(x) < half.x + .8 && Math.abs(y) < half.y + .8);
+        const size = rng.float(.18, .6);
+        const shade = rng.float(.30, .55);
+        sandSpots.push({pos: vec2(x, y), size, color: rgb(shade*.95, shade*.78, shade*.45, .75)});
+    }
 
     // start at menu
     gameState = 'menu';
@@ -623,14 +944,7 @@ function gameRender()
     if (gameState == 'menu')
         return;  // Don't render game world in menu
 
-    // background grass
-    drawRect(cameraPos, COURSE_SIZE.add(vec2(6)), rgb(.12,.22,.12));
-    drawRect(cameraPos, COURSE_SIZE.add(vec2(1.2)), rgb(.18,.35,.18));
-    drawRect(cameraPos, COURSE_SIZE, rgb(.14,.28,.14));
-
-    // subtle stripes
-    for (let i=-8; i<=8; i++)
-        drawRect(vec2(i*2, 0), vec2(.7, COURSE_SIZE.y), rgb(1,1,1,.03));
+    drawCourseGrass();
 
     // tee -> hole hint line (only when stopped)
     if (canShoot())
@@ -645,96 +959,44 @@ function gameRenderPost()
     {
         // Title
         drawTextScreen('MINI GOLF', vec2(mainCanvasSize.x/2, 50), 72, WHITE, 6, BLACK);
-        
-        // 3x3 grid of hole previews
+
+        // 3x3 grid of hole previews — uses the same world-space drawing functions
+        // as gameplay, by temporarily shifting the camera to each cell.
         const gridSize = 3;
         const cellW = 360;
         const cellH = 200;
         const startX = (mainCanvasSize.x - gridSize * cellW) / 2;
         const startY = 100;
-        const previewScale = 8;  // Scale for drawing preview
-        
+        const previewScale = 8;  // pixels per world unit
+        const courseW = COURSE_SIZE.x * previewScale;
+        const courseH = COURSE_SIZE.y * previewScale;
+
         for (let i = 0; i < 9; i++)
         {
             const col = i % gridSize;
             const row = (i / gridSize) | 0;
             const cx = startX + col * cellW + cellW/2;
             const cy = startY + row * cellH + cellH/2;
-            
-            const h = holes[i];
-            
-            // Draw mini preview of course - use actual course aspect ratio
-            const courseW = COURSE_SIZE.x * previewScale;
-            const courseH = COURSE_SIZE.y * previewScale;
-            
-            // Cell background - use course aspect ratio
+
+            renderHolePreview(holes[i], cx, cy, previewScale);
+
+            // hover outline
             const hovered = mousePosScreen.x > cx - courseW/2 && mousePosScreen.x < cx + courseW/2 &&
-                           mousePosScreen.y > cy - courseH/2 && mousePosScreen.y < cy + courseH/2;
-            const bgColor = hovered ? rgb(.2,.35,.2) : rgb(.12,.22,.12);
-            drawRectScreenSpace(vec2(cx, cy), vec2(courseW + 6, courseH + 6), bgColor);
-            drawRectScreenSpace(vec2(cx, cy), vec2(courseW, courseH), rgb(.14,.28,.14));
-            
-            // Draw gray wall border around the course (outside the green area)
-            const wallThick = WALL_THICKNESS * previewScale;
-            const wallColor = rgb(.4,.4,.45);
-            drawRectScreenSpace(vec2(cx, cy - courseH/2 - wallThick/2), vec2(courseW + wallThick*2, wallThick), wallColor);  // top
-            drawRectScreenSpace(vec2(cx, cy + courseH/2 + wallThick/2), vec2(courseW + wallThick*2, wallThick), wallColor);  // bottom
-            drawRectScreenSpace(vec2(cx - courseW/2 - wallThick/2, cy), vec2(wallThick, courseH), wallColor);  // left
-            drawRectScreenSpace(vec2(cx + courseW/2 + wallThick/2, cy), vec2(wallThick, courseH), wallColor);  // right
-            
-            // Draw white outline when hovered
+                            mousePosScreen.y > cy - courseH/2 && mousePosScreen.y < cy + courseH/2;
             if (hovered)
             {
-                const outlineThick = 5;
-                const outlineW = courseW + wallThick*2 + 4;
-                const outlineH = courseH + wallThick*2 + 4;
-                const hw = outlineW/2, hh = outlineH/2;
-                drawPoly([vec2(-hw,-hh), vec2(hw,-hh), vec2(hw,hh), vec2(-hw,hh)], 
-                    rgb(0,0,0,0), outlineThick, WHITE, vec2(cx, cy), 0, false, true);
+                mainContext.strokeStyle = '#ffffff';
+                mainContext.lineWidth = 4;
+                mainContext.strokeRect(
+                    cx - courseW/2 - 6, cy - courseH/2 - 6,
+                    courseW + 12, courseH + 12);
             }
-            
+
             // Hole number
-            drawTextScreen('Hole ' + (i+1), vec2(cx, cy - courseH/2 - wallThick - 16), 28, WHITE, 3, BLACK);
-            
-            // Draw obstacles as simple shapes
-            for (const o of h.obstacles)
-            {
-                const ox = cx + o.pos.x * previewScale;
-                const oy = cy - o.pos.y * previewScale;  // flip Y
-                
-                if (o.type === 'box')
-                {
-                    const w = o.size.x * previewScale;
-                    const hh = o.size.y * previewScale;
-                    const angle = o.angle || 0;
-                    drawRotatedRectScreenSpace(vec2(ox, oy), vec2(w, hh), angle, rgb(.5,.4,.2));
-                }
-                else if (o.type === 'circle')
-                {
-                    const r = o.diameter * previewScale / 2;
-                    drawCircleScreenSpace(vec2(ox, oy), r, rgb(.45,.45,.5));
-                }
-                else if (o.type === 'moving')
-                {
-                    const w = o.size.x * previewScale;
-                    const hh = o.size.y * previewScale;
-                    const angle = o.angle || 0;
-                    drawRotatedRectScreenSpace(vec2(ox, oy), vec2(w, hh), angle, rgb(.7,.3,.3));
-                }
-            }
-            
-            // Tee position (white circle for ball)
-            const tx = cx + h.tee.x * previewScale;
-            const ty = cy - h.tee.y * previewScale;
-            drawCircleScreenSpace(vec2(tx, ty), 5, WHITE);
-            
-            // Hole position (black circle with ring)
-            const hx = cx + h.hole.x * previewScale;
-            const hy = cy - h.hole.y * previewScale;
-            drawCircleScreenSpace(vec2(hx, hy), 7, rgb(0,0,0,.5));
-            drawCircleScreenSpace(vec2(hx, hy), 5, BLACK);
+            drawTextScreen('Hole ' + (i+1),
+                vec2(cx, cy - courseH/2 - 16), 28, WHITE, 3, BLACK);
         }
-        
+
         return;
     }
 

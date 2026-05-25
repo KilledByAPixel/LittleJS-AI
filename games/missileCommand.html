@@ -737,6 +737,7 @@ function buildMenus()
     title: 'MISSILE COMMAND',
     subtitle: 'Defend the cities',
     onPlay: startGame,
+    revealOnClick: false,
     canReveal: () => !isPlaying,
     itemsBefore: [
       {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
@@ -851,6 +852,9 @@ function buildMenus()
     ],
   });
   getToolbar('hud')?.hide();
+
+  // Show the title menu immediately — no click-to-reveal step.
+  showMenu('title');
 }
 
 function gameUpdate()

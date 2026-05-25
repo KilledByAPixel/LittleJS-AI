@@ -1092,6 +1092,7 @@
           title: 'CENTIPEDE',
           subtitle: 'Shoot the centipede',
           onPlay: startGame,
+          revealOnClick: false,
           canReveal: () => !isPlaying,
           itemsBefore: [
               {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
@@ -1177,6 +1178,9 @@
           ],
       });
       getToolbar('hud')?.hide();
+
+      // Show the title menu immediately — no click-to-reveal step.
+      showMenu('title');
   }
 
   function gameUpdate()
