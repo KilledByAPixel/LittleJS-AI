@@ -88,15 +88,24 @@ let shots = 0;
 let isPlaying = false;
 let won = false;
 let scratchedThisShot = false;
+let inHand = false;      // true after a scratch — cue ball follows the mouse until placed
 let wheelPower = 0;      // wheel-driven power offset added on top of mouse drag (cleared on each shot)
+
+// Best (lowest) shot count to clear the table, persisted across sessions.
+const BEST_KEY = 'pool.bestShots';
+let bestShots = +localStorage.getItem(BEST_KEY) || 0;
+let newBestThisRound = false;
 
 // strike animation — windup (tip travels toward ball) then follow-through.
 // Set when the player clicks; cleared after the swing finishes. While set,
 // canShoot() returns false so no second click can interrupt the swing.
 let strike = null;
-const STRIKE_PULLBACK_S = .10;   // time to pull the cue back from rest before the strike
-const STRIKE_FORWARD_S  = .06;   // time to drive the cue forward into the ball
-const STRIKE_FOLLOW_S   = .08;   // follow-through after contact
+// Strike timing — pullback scales with power so heavy shots have a longer
+// windup (more dramatic). Forward + follow-through stay constant.
+const STRIKE_PULLBACK_MIN_S = .10;  // pullback time at 0% power
+const STRIKE_PULLBACK_MAX_S = .28;  // pullback time at 100% power
+const STRIKE_FORWARD_S      = .06;  // time to drive the cue forward into the ball
+const STRIKE_FOLLOW_S       = .08;  // follow-through after contact
 
 // sounds
 let sfxHit, sfxRail, sfxBreak, sfxPocket, sfxScratch, sfxWin;
@@ -369,8 +378,10 @@ class Ball extends Box2dObject
         {
             if (this === cueBall)
             {
-                // SCRATCH — pause and respawn from the menu (see gameUpdate)
+                // SCRATCH — enter ball-in-hand placement. cue ball respawns
+                // once all balls stop and the player drags it into position.
                 scratchedThisShot = true;
+                inHand = true;
                 sfxScratch.play();
                 this.destroy();
                 cueBall = null;
@@ -384,6 +395,13 @@ class Ball extends Box2dObject
                 if (!balls.length)
                 {
                     won = true;
+                    // record best (lowest) shots if this beats the saved value
+                    if (!bestShots || shots < bestShots)
+                    {
+                        bestShots = shots;
+                        localStorage.setItem(BEST_KEY, bestShots);
+                        newBestThisRound = true;
+                    }
                     sfxWin.play();
                 }
             }
@@ -502,8 +520,20 @@ function newGame()
     shots = 0;
     won = false;
     scratchedThisShot = false;
+    inHand = false;
+    newBestThisRound = false;
     strike = null;
     wheelPower = 0;
+}
+
+// Clamp a world-space position so the cue ball stays inside the felt.
+function clampToFelt(pos)
+{
+    const m = BALL_DIAM*.5;
+    return vec2(
+        clamp(pos.x, -TABLE_SIZE.x/2 + m, TABLE_SIZE.x/2 - m),
+        clamp(pos.y, -TABLE_SIZE.y/2 + m, TABLE_SIZE.y/2 - m),
+    );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -519,7 +549,7 @@ function allStopped()
 
 function canShoot()
 {
-    return isPlaying && !won && cueBall && !strike && allStopped();
+    return isPlaying && !won && cueBall && !strike && !inHand && allStopped();
 }
 
 function getAim()
@@ -689,9 +719,32 @@ function gameUpdate()
     // Esc / Start opens pause
     if (bindPauseKey({when: () => isPlaying})) return;
 
-    // Respawn cue ball after a scratch once everything has stopped
+    // Respawn cue ball after a scratch once everything has stopped. In hand
+    // spawns at the clamped mouse position so the placement starts where the
+    // player is already looking; otherwise default to the head spot.
     if (!cueBall && allStopped() && !won)
-        spawnCueBall();
+    {
+        const spawn = inHand ? clampToFelt(mousePos) : vec2(-TABLE_SIZE.x/4, 0);
+        cueBall = new Ball(spawn, 0);
+    }
+
+    // Ball-in-hand placement — cue ball follows the mouse, click/release commits.
+    // Returns early so no shot can fire on the same frame as the commit.
+    if (inHand && cueBall)
+    {
+        // On touch, only follow while the finger is down (otherwise the ball
+        // would stick at the last touch position).
+        const follow = !isTouchDevice || mouseIsDown(0);
+        if (follow)
+        {
+            cueBall.setTransform(clampToFelt(mousePos), 0);
+            cueBall.setLinearVelocity(vec2());
+            cueBall.setAngularVelocity(0);
+        }
+        const commitInput = isTouchDevice ? mouseWasReleased(0) : mouseWasPressed(0);
+        if (commitInput) inHand = false;
+        return;
+    }
 
     // R restarts the rack
     if (keyWasPressed('KeyR'))
@@ -768,7 +821,8 @@ function gameUpdate()
         }
         else if (strike.pullbackT < 1)
         {
-            strike.pullbackT = min(1, strike.pullbackT + timeDelta / STRIKE_PULLBACK_S);
+            const pullbackDur = lerp(STRIKE_PULLBACK_MIN_S, STRIKE_PULLBACK_MAX_S, strike.power);
+            strike.pullbackT = min(1, strike.pullbackT + timeDelta / pullbackDur);
         }
         else if (!strike.hit)
         {
@@ -887,15 +941,28 @@ function gameRenderPost()
     }
 
     // Fast-forward indicator while right-mouse is held — confirms the speedup
-    // is active and makes the feature discoverable.
+    // is active. Bottom-right so it doesn't collide with SCRATCH at y=80.
     if (mouseIsDown(2))
-        drawTextScreen('5× SPEED', vec2(mainCanvasSize.x/2, 80),
-            36, rgb(1, .9, .4), 4, rgb(0,0,0,.7));
+        drawTextScreen('5× SPEED', vec2(mainCanvasSize.x - 130, mainCanvasSize.y - 40),
+            32, rgb(1, .9, .4), 4, rgb(0,0,0,.7));
+
+    // Ball-in-hand placement hint
+    if (inHand && cueBall)
+    {
+        const tap = isTouchDevice ? 'RELEASE' : 'CLICK';
+        drawTextScreen(`PLACE CUE BALL — ${tap} TO SET`,
+            vec2(mainCanvasSize.x/2, 80),
+            34, rgb(.6,.95,1), 5, rgb(0,0,0,.8));
+    }
 
     // HUD
     drawTextScreen(`SHOTS  ${shots}`,
         vec2(mainCanvasSize.x/4, 36),
         32, WHITE, 4, rgb(0,0,0,.7));
+    if (bestShots)
+        drawTextScreen(`BEST  ${bestShots}`,
+            vec2(mainCanvasSize.x/2, 36),
+            32, rgb(1,.9,.4), 4, rgb(0,0,0,.7));
     drawTextScreen(`REMAINING  ${balls.length}`,
         vec2(mainCanvasSize.x*3/4, 36),
         32, WHITE, 4, rgb(0,0,0,.7));
@@ -908,10 +975,14 @@ function gameRenderPost()
     if (won)
     {
         drawTextScreen('CLEARED THE TABLE!',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 30),
+            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 50),
             72, rgb(1,1,.7), 8, rgb(0,0,0,.85));
-        drawTextScreen(`${shots} shots — open the menu (☰) for a new rack`,
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 36),
+        if (newBestThisRound)
+            drawTextScreen('NEW BEST!',
+                vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 10),
+                44, rgb(1, .8, .3), 6, rgb(0,0,0,.85));
+        drawTextScreen(`${shots} shots — press R to restart`,
+            vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 60),
             28, WHITE, 4, rgb(0,0,0,.8));
     }
 }
