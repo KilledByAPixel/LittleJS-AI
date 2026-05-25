@@ -1277,6 +1277,9 @@ function gameUpdate()
                 if (move) {
                     const piece = board[move.from.row]?.[move.from.col];
                     if (piece && piece.color === currentPlayer) makeMove(move);
+                    else console.warn('AI race: discarded stale move', {
+                        move, currentPlayer, pieceAtFrom: piece, gameMode, gameOver,
+                    });
                 }
                 aiSearching = false;
                 aiProgress = '';
