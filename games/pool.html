@@ -63,6 +63,13 @@ let won = false;
 let scratchedThisShot = false;
 let aimAngle = 0;        // remembered for cue stick during motion
 
+// strike animation — windup (tip travels toward ball) then follow-through.
+// Set when the player clicks; cleared after the swing finishes. While set,
+// canShoot() returns false so no second click can interrupt the swing.
+let strike = null;
+const STRIKE_WINDUP_S = .10;   // time for the tip to reach the ball
+const STRIKE_FOLLOW_S = .08;   // follow-through after contact
+
 // sounds
 let sfxHit, sfxBreak, sfxPocket, sfxScratch, sfxWin;
 
@@ -116,15 +123,19 @@ function drawPocket(pos)
     drawCircle(pos, POCKET_DIAM*0.90, rgb(.08,.04,.02,1));
 }
 
-function drawCueStick(ballPos, dir, power)
+// Aim-time helpers: the cue tip distance from ball center is a function of
+// power (further back for harder shots). Pulled out so the strike animation
+// can interpolate between this distance and "contact."
+function cueRestDist(power) { return BALL_DIAM*.5 + .05 + power * 2.5; }
+const CUE_CONTACT_DIST = BALL_DIAM*.5;        // tip touches ball surface
+const CUE_FOLLOW_DIST  = BALL_DIAM*.5 - .25;  // tip overshoots into the ball
+
+function drawCueStickAt(ballPos, dir, tipDist)
 {
-    // cue sits opposite the aim direction. At power 0 the tip rests just
-    // outside the cue ball's surface (ball radius + tiny gap); pulls back
-    // further as power increases.
-    const back    = dir.scale(-1);
-    const tipDist = BALL_DIAM*.5 + .05 + power * 2.5;
-    const tip     = ballPos.add(back.scale(tipDist));
-    const butt    = ballPos.add(back.scale(tipDist + 8));
+    // cue sits opposite the aim direction at the given tip distance
+    const back  = dir.scale(-1);
+    const tip   = ballPos.add(back.scale(tipDist));
+    const butt  = ballPos.add(back.scale(tipDist + 8));
     // shadow
     drawLine(tip.add(vec2(.12,-.12)), butt.add(vec2(.12,-.12)), .18, rgb(0,0,0,.35));
     // shaft (light wood)
@@ -137,6 +148,11 @@ function drawCueStick(ballPos, dir, power)
     const ferB = ballPos.add(back.scale(tipDist + .25));
     drawLine(tip, ferB, .16, rgb(.95,.95,.90));
     drawCircle(tip, .14, rgb(.30,.18,.55));
+}
+
+function drawCueStick(ballPos, dir, power)
+{
+    drawCueStickAt(ballPos, dir, cueRestDist(power));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -343,6 +359,7 @@ function newGame()
     shots = 0;
     won = false;
     scratchedThisShot = false;
+    strike = null;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -358,7 +375,7 @@ function allStopped()
 
 function canShoot()
 {
-    return isPlaying && !won && cueBall && allStopped();
+    return isPlaying && !won && cueBall && !strike && allStopped();
 }
 
 function getAim()
@@ -508,18 +525,50 @@ function gameUpdate()
     if (!cueBall && allStopped() && !won)
         spawnCueBall();
 
-    // Shooting — impulse scales with the raw aim length (already capped at
-    // MAX_HIT) so the demo's "feel" is preserved: max length 6 * HIT_IMPULSE 8
-    // = max impulse 48, ~6× the previous (power/MAX_HIT) divisor mistake.
+    // Shooting — clicking commits to a swing animation; the impulse fires when
+    // the tip reaches the ball, not on the click frame. Impulse magnitude is
+    // raw aim length * HIT_IMPULSE so the demo's "feel" is preserved: max
+    // length 6 × HIT_IMPULSE 8 = max impulse 48.
     if (canShoot() && mouseWasPressed(0))
     {
         const {dir, power, len} = getAim();
         if (power > .04 && len > .25)
         {
-            cueBall.applyImpulse(dir.scale(len * HIT_IMPULSE));
-            shots++;
-            scratchedThisShot = false;
-            (shots === 1 ? sfxBreak : sfxHit).play(undefined, .8);
+            strike = {
+                dir, power, len,
+                startDist: cueRestDist(power),
+                t: 0,          // 0..1 progress through windup
+                hit: false,    // has the impulse been applied?
+                followT: 0,    // 0..1 progress through follow-through
+            };
+        }
+    }
+
+    // Advance the strike animation each frame
+    if (strike)
+    {
+        if (!cueBall)
+        {
+            // cue ball gone (e.g. quit mid-swing) — bail out
+            strike = null;
+        }
+        else if (!strike.hit)
+        {
+            strike.t = min(1, strike.t + timeDelta / STRIKE_WINDUP_S);
+            if (strike.t >= 1)
+            {
+                // tip just reached the ball — apply impulse now
+                strike.hit = true;
+                cueBall.applyImpulse(strike.dir.scale(strike.len * HIT_IMPULSE));
+                shots++;
+                scratchedThisShot = false;
+                (shots === 1 ? sfxBreak : sfxHit).play(undefined, .8);
+            }
+        }
+        else
+        {
+            strike.followT = min(1, strike.followT + timeDelta / STRIKE_FOLLOW_S);
+            if (strike.followT >= 1) strike = null;
         }
     }
 
@@ -550,7 +599,16 @@ function gameRenderPost()
 {
     if (!isPlaying) return;
 
-    // aim preview + cue stick
+    // strike animation — drawn instead of the aim preview while in progress
+    if (strike && cueBall)
+    {
+        const tipDist = !strike.hit
+            ? lerp(strike.startDist, CUE_CONTACT_DIST, strike.t)        // windup
+            : lerp(CUE_CONTACT_DIST, CUE_FOLLOW_DIST,  strike.followT); // follow-through
+        drawCueStickAt(cueBall.pos, strike.dir, tipDist);
+    }
+
+    // aim preview + cue stick (canShoot is false while a strike is running)
     if (canShoot())
     {
         const {dir, power, len} = getAim();

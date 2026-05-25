@@ -83,6 +83,7 @@ Polished, complete games that didn't quite make the top cut.
 - [Columns](https://killedbyapixel.github.io/LittleJS-AI/games/columns.html) 🧩
 - [Snood](https://killedbyapixel.github.io/LittleJS-AI/games/snood.html) 🎯 👆
 - [Dr. Mario](https://killedbyapixel.github.io/LittleJS-AI/games/drMario.html) 🧩
+- [Pool](https://killedbyapixel.github.io/LittleJS-AI/games/pool.html) 🎯 📦
 
 ### 🚧 Works in Progress
 
@@ -97,7 +98,6 @@ Playable but still need iteration and polish to take them to the next level. Did
 - [Plinko](https://killedbyapixel.github.io/LittleJS-AI/games/plinko.html) 🎯 👆 🎮 📦
 - [Micro Racer](https://killedbyapixel.github.io/LittleJS-AI/games/microRacer.html) 🏎️ 📦
 - [Spy Hunter](https://killedbyapixel.github.io/LittleJS-AI/games/spyhunter.html) 🏎️
-- [Pool](https://killedbyapixel.github.io/LittleJS-AI/games/pool.html) 🎯 📦
 
 ### 🧪 Prototypes & Experiments
 
