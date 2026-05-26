@@ -18,6 +18,9 @@
 
 <title>LittleJS Games</title>
 <link rel="icon" href="logo.png">
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0e14">
 <style>
   :root {
     --bg: #0b0e14;
@@ -1243,6 +1246,25 @@ renderList();
 loadFromHash();
 setupStarfield();
 setupSparkles();
+
+// ===================== Dev console greeting =====================
+// Many visitors here are developers — print a styled note in DevTools with
+// links to the engine + this repo so they can poke around the source.
+console.log(
+  '%c🚂 LittleJS Games',
+  'font-size: 22px; font-weight: bold; color: #ff7eb6; text-shadow: 0 0 8px rgba(255,126,182,.4); padding: 4px 0;'
+);
+console.log(
+  'Tiny HTML5 arcade games built with LittleJS - Fast, lightweight, and open source HTML5 game engine.'
+);
+console.log(
+  '%cEngine:%c https://github.com/KilledByAPixel/LittleJS',
+  'color: #58a6ff; font-weight: bold;', 'color: #e6edf3;'
+);
+console.log(
+  '%cAI Tools:%c https://github.com/KilledByAPixel/LittleJS-AI',
+  'color: #58a6ff; font-weight: bold;', 'color: #e6edf3;'
+);
 </script>
 </body>
 </html>
