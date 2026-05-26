@@ -415,6 +415,7 @@ let handStack   = null;
 let pickupOrigin = null;
 let mouseHoldPos = vec2();
 let won = false;
+let hintsEnabled = true;     // toggled by OPTIONS → HINTS; gates the green legal-drop tint
 let lastClick = { card: null, time: -1 };
 let stateUndo = [];
 let stateRedo = [];
@@ -513,6 +514,9 @@ async function gameInit()
         title: 'OPTIONS',
         onHide: popMenu,
         items: [
+            {type:'checkbox', id:'hints', label:'HINTS', value: true,
+                persist: 'freecell.hints',
+                onChange: v => { hintsEnabled = v; }},
             {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min: 0, max: 1,
                 persist: 'freecell.volume',
                 onChange: v => setSoundVolume(v)},
@@ -553,9 +557,12 @@ async function gameInit()
                     message: 'Abandon this game and start a new one?',
                     onYes: () => newGame(),
                 })},
-            {type:'toggle', id:'mute',   label:'🔊', title:'Mute',              value: false,
-                hideOnTouch: true,
-                onChange: v => setSoundVolume(v ? 0 : (getMenu('options').getItem('volume').getValue() ?? 0.8))},
+            {type:'button', id:'menu',   label:'☰', title:'Menu',              onClick: () =>
+            {
+                // ☰ toggles between gameplay and the pause-menu flow.
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else                  showMenu('pause');
+            }},
             {type:'button', id:'fs',     label:'⛶', title:'Toggle fullscreen',  hideOnTouch: true,
                 onClick: toggleFullscreen},
         ],
@@ -1002,7 +1009,7 @@ function gameRender()
     const hoverSet   = (handStack.isEmpty() && isPlaying && !won)
         ? new Set(pickableTail(stackUnderPoint(mousePos))) : null;
     const dropTops   = new Set();
-    if (!handStack.isEmpty())
+    if (hintsEnabled && !handStack.isEmpty())
     {
         for (const s of cardStacks)
         {
@@ -1026,7 +1033,7 @@ function gameRender()
 
     // Empty legal-drop slots still need a phantom tint because there's
     // no card to draw the overlay on.
-    if (!handStack.isEmpty())
+    if (hintsEnabled && !handStack.isEmpty())
     {
         for (const s of cardStacks)
         {
