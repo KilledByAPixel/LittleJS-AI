@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -24,10 +25,10 @@ cameraScale = 32; // Camera zoom, larger is more zoomed in
 // Use our own monotonic timer (seconds) so the game always runs.
 const nowTime = ()=> performance.now() * 0.001;
 
-// board config
-const boardW = 16;
-const boardH = 16;
-const mineCount = 40;
+// board config (mutable: chosen from title menu)
+let boardW = 16;
+let boardH = 16;
+let mineCount = 40;
 
 // cell size in world units
 const cellSize = 1;
@@ -41,6 +42,7 @@ let revealAll = false;
 let revealedCount = 0;
 let startTime = 0;
 let endTime = 0;
+let isPlaying = false;
 
 // sounds
 let sReveal, sFlag, sUnflag, sBoom, sWin;
@@ -48,9 +50,18 @@ let sReveal, sFlag, sUnflag, sBoom, sWin;
 // helpers
 const inBounds = (x,y)=> x>=0 && y>=0 && x<boardW && y<boardH;
 const idx = (x,y)=> x + y*boardW;
-const boardSize = vec2(boardW*cellSize, boardH*cellSize);
-const boardOrigin = vec2(-boardSize.x/2, -boardSize.y/2);
+let boardSize = vec2(boardW*cellSize, boardH*cellSize);
+let boardOrigin = vec2(-boardSize.x/2, -boardSize.y/2);
 const cellCenter = (x,y)=> boardOrigin.add(vec2((x+.5)*cellSize, (y+.5)*cellSize));
+
+function setDifficulty(w, h, m)
+{
+    boardW = w;
+    boardH = h;
+    mineCount = m;
+    boardSize = vec2(boardW*cellSize, boardH*cellSize);
+    boardOrigin = vec2(-boardSize.x/2, -boardSize.y/2);
+}
 
 function resetGame()
 {
@@ -273,11 +284,63 @@ async function gameInit()
 
     runSelfTests();
     resetGame();
+
+    // pause the engine whenever any menu (including dialogs) is visible
+    setMenuVisibilityCallback(v => paused = v);
+
+    // global UI sounds for menu navigation / activation
+    const sndSelect   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sndActivate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sndSelect.play(),
+        activate: () => sndActivate.play(),
+    });
+
+    const startDifficulty = (w, h, m) =>
+    {
+        setDifficulty(w, h, m);
+        resetGame();
+        isPlaying = true;
+        hideMenu('title');
+    };
+
+    createMenu({
+        id: 'title',
+        title: 'MINESWEEPER',
+        dismissable: false,
+        items: [
+            {type:'button', label:'EASY',   onClick: () => startDifficulty(9, 9, 10)},
+            {type:'button', label:'MEDIUM', onClick: () => startDifficulty(16, 16, 40)},
+            {type:'button', label:'HARD',   onClick: () => startDifficulty(30, 16, 99)},
+            {type:'separator'},
+            {type:'button', label:'ABOUT',  onClick: () => pushMenu('about')},
+        ],
+    });
+
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Classic Minesweeper.\n\n' +
+                'Left click reveals a cell. Right click (or Shift + left click) toggles a flag. ' +
+                'Clicking a revealed number chord-opens its neighbors once its flag count matches. ' +
+                'The very first click is always safe.\n\n' +
+                'Press R during play to restart at the current difficulty.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // open straight to the title menu
+    showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (!isPlaying) return;
+
     // restart
     if (keyWasPressed('KeyR'))
         resetGame();
@@ -322,17 +385,20 @@ function gameUpdate()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    // fit board nicely in view
-    cameraPos = vec2(0, 0);
-    const margin = 120;
-    const scaleX = (mainCanvasSize.x - margin) / boardSize.x;
-    const scaleY = (mainCanvasSize.y - margin) / boardSize.y;
-    cameraScale = max(16, min(scaleX, scaleY));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameRender()
 {
+    // fit board nicely in view (runs every frame, including while paused so
+    // the title-screen backdrop is correctly sized)
+    cameraPos = vec2(0, 0);
+    const margin = 120;
+    const scaleX = (mainCanvasSize.x - margin) / boardSize.x;
+    const scaleY = (mainCanvasSize.y - margin) / boardSize.y;
+    cameraScale = max(16, min(scaleX, scaleY));
+
+
     // background (avoid drawRectGradient for compatibility)
     drawRect(cameraPos, getCameraSize(), hsl(0,0,.12));
 
@@ -341,7 +407,7 @@ function gameRender()
 
     // hover highlight
     const c = pickCellFromMouse();
-    if (c && !gameOver && !gameWon)
+    if (c && isPlaying && !gameOver && !gameWon)
         drawRect(cellCenter(c.x,c.y), vec2(cellSize).scale(.98), hsl(.12,.2,.35,.35));
 
     // draw cells
@@ -404,6 +470,8 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
+    if (!isPlaying) return;
+
     const flagsUsed = flagged.reduce((a,b)=>a+b,0);
     const minesLeft = max(0, mineCount - flagsUsed);
     const now = nowTime();
