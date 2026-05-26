@@ -63,48 +63,142 @@ function isRegular(g) { return g && g.type === 'regular'; }
 ///////////////////////////////////////////////////////////////////////////////
 // Power gem rectangle merge (pure function over grid)
 //
-// Authentic SPF II behavior: a power gem is ANY axis-aligned rectangle of
-// 2x2+ same-color regular gems. Algorithm:
-//   1. Enumerate every rectangle of same-color regulars (>= 2x2).
-//   2. Sort by area (largest first).
-//   3. Greedy-assign non-overlapping rectangles to power-gem ids, reusing
-//      the smallest existing id in the rectangle (so growth keeps id stable
-//      and adjacent PGs merge under one id).
-//   4. Any cell that had a powerGemId but isn't covered by a rectangle now
-//      (e.g. a leftover from a partial diamond-clear) gets reset to -1.
+// Authentic SPF II behavior: a power gem is an axis-aligned rectangle of
+// 2x2+ same-color regular gems. Power gems never spontaneously split — they
+// can only grow (or merge with another PG of the same color when the result
+// is still a rectangle). Algorithm:
+//   1. Existing PG pass: for each existing PG, find the maximum rectangle
+//      that contains all its cells AND is still all same-color regulars.
+//      Greedy extend (left/right/down/up) until no more expansion possible.
+//      This preserves PG shape and grows it as much as possible, absorbing
+//      adjacent same-color cells (including other same-color PGs) along the way.
+//   2. New PG pass: enumerate same-color rectangles of unclaimed cells,
+//      greedy-pick largest first to form new PGs.
+//   3. Cleanup: any cell with a stale powerGemId (e.g. after a diamond carved
+//      a hole) that isn't covered by any rectangle resets to -1 (loose).
 
 function mergePowerGems(grid)
 {
     let changed = false;
+    const claimed = [...Array(BOARD_W)].map(() => Array(BOARD_H).fill(false));
 
+    // Step 1: collect existing PGs by id, in scan order so the lowest-coord
+    // PG is processed first (deterministic).
+    const existingPGs = new Map();
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+    {
+        const g = grid[x][y];
+        if (!isRegular(g) || g.powerGemId < 0) continue;
+        if (!existingPGs.has(g.powerGemId))
+            existingPGs.set(g.powerGemId, { cells: [], color: g.color });
+        existingPGs.get(g.powerGemId).cells.push([x, y]);
+    }
+
+    const sameColorAvailable = (x, y, color) =>
+    {
+        if (!inBounds(x, y) || claimed[x][y]) return false;
+        const c = grid[x][y];
+        return isRegular(c) && c.color === color;
+    };
+
+    for (const [id, pg] of existingPGs)
+    {
+        // Bounding box of un-claimed PG cells. (Cells already claimed by an
+        // earlier PG's growth mean this PG was absorbed; we'll skip it.)
+        let minX = BOARD_W, minY = BOARD_H, maxX = -1, maxY = -1, anyUnclaimed = false;
+        for (const [x, y] of pg.cells)
+        {
+            if (claimed[x][y]) continue;
+            anyUnclaimed = true;
+            minX = min(minX, x); minY = min(minY, y);
+            maxX = max(maxX, x); maxY = max(maxY, y);
+        }
+        if (!anyUnclaimed) continue;
+
+        // Validate the bbox is fully same-color regulars (it might not be if
+        // some cells were carved out externally, e.g. by diamond).
+        let validBbox = true;
+        for (let x = minX; x <= maxX && validBbox; x++)
+        for (let y = minY; y <= maxY; y++)
+            if (!sameColorAvailable(x, y, pg.color)) { validBbox = false; break; }
+
+        if (!validBbox)
+        {
+            // PG is no longer a filled rectangle. Its remaining cells will be
+            // reset to loose in step 3, then step 2 might re-form smaller PGs.
+            continue;
+        }
+
+        // Greedy expand in each cardinal direction until no growth possible.
+        let extended = true;
+        while (extended)
+        {
+            extended = false;
+            // Left
+            if (minX > 0)
+            {
+                let ok = true;
+                for (let y = minY; y <= maxY && ok; y++)
+                    if (!sameColorAvailable(minX - 1, y, pg.color)) { ok = false; break; }
+                if (ok) { minX--; extended = true; continue; }
+            }
+            // Right
+            if (maxX < BOARD_W - 1)
+            {
+                let ok = true;
+                for (let y = minY; y <= maxY && ok; y++)
+                    if (!sameColorAvailable(maxX + 1, y, pg.color)) { ok = false; break; }
+                if (ok) { maxX++; extended = true; continue; }
+            }
+            // Down
+            if (minY > 0)
+            {
+                let ok = true;
+                for (let x = minX; x <= maxX && ok; x++)
+                    if (!sameColorAvailable(x, minY - 1, pg.color)) { ok = false; break; }
+                if (ok) { minY--; extended = true; continue; }
+            }
+            // Up
+            if (maxY < BOARD_H - 1)
+            {
+                let ok = true;
+                for (let x = minX; x <= maxX && ok; x++)
+                    if (!sameColorAvailable(x, maxY + 1, pg.color)) { ok = false; break; }
+                if (ok) { maxY++; extended = true; continue; }
+            }
+        }
+
+        for (let x = minX; x <= maxX; x++)
+        for (let y = minY; y <= maxY; y++)
+        {
+            claimed[x][y] = true;
+            const g = grid[x][y];
+            if (g.powerGemId !== id) { g.powerGemId = id; changed = true; }
+        }
+    }
+
+    // Step 2: enumerate all valid rectangles of unclaimed same-color regulars,
+    // greedy-take largest. Forms new PGs from leftover cells.
     const candidates = [];
     for (let x1 = 0; x1 < BOARD_W; x1++)
     for (let y1 = 0; y1 < BOARD_H; y1++)
     {
+        if (claimed[x1][y1]) continue;
         const seed = grid[x1][y1];
         if (!isRegular(seed)) continue;
         const color = seed.color;
 
         for (let x2 = x1 + 1; x2 < BOARD_W; x2++)
         {
-            // Early-exit: row y1 must be all same-color regulars across x1..x2
-            const probe = grid[x2][y1];
-            if (!isRegular(probe) || probe.color !== color) break;
-
+            if (!sameColorAvailable(x2, y1, color)) break;
             for (let y2 = y1 + 1; y2 < BOARD_H; y2++)
             {
                 let valid = true;
                 for (let x = x1; x <= x2 && valid; x++)
-                {
-                    const c = grid[x][y2];
-                    if (!isRegular(c) || c.color !== color) { valid = false; break; }
-                }
-                if (!valid) break;  // y2 (and higher) rows aren't all same-color; stop extending
-
-                // Cells in the interior (x1..x2 × y1+1..y2-1) already validated by prior y2 iterations.
-                const w = x2 - x1 + 1;
-                const h = y2 - y1 + 1;
-                candidates.push({ x1, y1, x2, y2, area: w * h });
+                    if (!sameColorAvailable(x, y2, color)) { valid = false; break; }
+                if (!valid) break;
+                candidates.push({ x1, y1, x2, y2, area: (x2 - x1 + 1) * (y2 - y1 + 1) });
             }
         }
     }
@@ -116,8 +210,6 @@ function mergePowerGems(grid)
         return a.y1 - b.y1;
     });
 
-    const claimed = [...Array(BOARD_W)].map(() => Array(BOARD_H).fill(false));
-
     for (const r of candidates)
     {
         let anyClaimed = false;
@@ -126,30 +218,19 @@ function mergePowerGems(grid)
             if (claimed[x][y]) { anyClaimed = true; break; }
         if (anyClaimed) continue;
 
-        let chosenId = Infinity;
-        for (let x = r.x1; x <= r.x2; x++)
-        for (let y = r.y1; y <= r.y2; y++)
-        {
-            const g = grid[x][y];
-            if (g.powerGemId >= 0) chosenId = min(chosenId, g.powerGemId);
-        }
-        if (chosenId === Infinity) chosenId = nextPowerGemId();
-
+        const newId = nextPowerGemId();
         for (let x = r.x1; x <= r.x2; x++)
         for (let y = r.y1; y <= r.y2; y++)
         {
             claimed[x][y] = true;
-            const g = grid[x][y];
-            if (g.powerGemId !== chosenId)
-            {
-                g.powerGemId = chosenId;
-                changed = true;
-            }
+            grid[x][y].powerGemId = newId;
+            changed = true;
         }
     }
 
-    // Cells that lost their power-gem membership (e.g. after a diamond removed
-    // part of a power gem) are reset to loose regulars.
+    // Step 3: stale powerGemId cleanup (cells that used to be in a PG but
+    // didn't survive into any rectangle this pass — only happens when an
+    // external clear, like a diamond, carved out part of a PG).
     for (let x = 0; x < BOARD_W; x++)
     for (let y = 0; y < BOARD_H; y++)
     {
@@ -1451,7 +1532,9 @@ class AIController
 
     fallSpeed(board)
     {
-        return this.hardDropping ? 0 : board.fallInterval;
+        // AI uses soft-drop speed (not instant) so the player can see where
+        // the piece is going. Still fast enough to feel snappy.
+        return this.hardDropping ? 0.04 : board.fallInterval;
     }
 }
 
