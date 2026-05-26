@@ -62,6 +62,7 @@ Common pitfalls
 - Do not redefine shortcuts to Math functions.
 - Do not write new audio code, just use SoundGenerator to make sounds.
 - Do not replace \n with new lines for text inside strings.
+- ParticleEmitter `speed` is world-units **per FRAME** (NOT per second — the emitter does NOT multiply by `timeDelta`). At 60fps, `speed = 0.5` is already 30 wu/sec, which is plenty fast for a hit burst. Normal range: `0.1–0.5` for impact sparks, up to `~1` for "explosive". Writing `10–20` (the per-second instinct from other engines) is effectively 600–1200 wu/sec — particles exit the field in one frame. Same per-frame convention applies to `angleSpeed`. Gameplay velocities like `ballSpeed=18` ARE per-second because you scale by `timeDelta` yourself (`pos.add(vel.scale(timeDelta))`) — that's why they look so much larger than particle speeds.
 
 Menu UI (when using templates/menus.js)
 - Start from templates/menuGame.html — wires up title, options (with separators + persisted slider/checkbox/color/input), medals (clickable grid + MenuMedal toasts), about (wrapping text), pause (with initialItemId), confirm/alert dialogs, HUD toolbar, and global navigation/activate sounds.
