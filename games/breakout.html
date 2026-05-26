@@ -238,6 +238,30 @@ function drawPowerLetter(pos, type, scale = 1)
     drawText(text, pos, size, hsl(0, 0, 1), .25, hsl(0, 0, 0), 'center');
 }
 
+// Brightness multiplier on a Color. amount > 1 lightens, < 1 darkens.
+function shade(c, amount)
+{
+    return new Color(
+        clamp(c.r * amount, 0, 1),
+        clamp(c.g * amount, 0, 1),
+        clamp(c.b * amount, 0, 1),
+        c.a,
+    );
+}
+
+// Beveled rectangle: dark outer frame, body fill, thin highlight near the top.
+// Used for bricks and the paddle to give a lit-from-above look.
+function drawBeveled(pos, size, color)
+{
+    drawRect(pos, size, shade(color, .55));
+    drawRect(pos, size.subtract(vec2(.16, .16)), color);
+    drawRect(
+        pos.add(vec2(0, size.y / 2 - .14)),
+        vec2(size.x - .3, .06),
+        shade(color, 1.6),
+    );
+}
+
 function resetPaddle()
 {
     paddleExtra = 0;
@@ -940,16 +964,13 @@ function gameRender()
     {
         if (!b.alive) continue;
 
-        const inset = b.size.subtract(vec2(.08, .08));
         if (b.type === BRICK_GOLD)
         {
-            drawRect(b.pos, b.size.subtract(vec2(.02, .02)), hsl(.13, .85, .55));
-            drawRect(b.pos, inset, hsl(.13, .95, .7));
+            drawBeveled(b.pos, b.size, hsl(.13, .95, .65));
         }
         else if (b.type === BRICK_SILVER)
         {
-            drawRect(b.pos, b.size.subtract(vec2(.02, .02)), hsl(0, 0, .55));
-            drawRect(b.pos, inset, hsl(0, 0, .82));
+            drawBeveled(b.pos, b.size, hsl(0, 0, .8));
             // Fresh silver has a dot to mark "needs another hit".
             // The dot vanishes after the first hit; the brick keeps the same color.
             if (b.hp >= b.maxHp)
@@ -959,12 +980,12 @@ function gameRender()
         {
             const pulse = 1 + .03 * Math.sin(time * 6 + b.pos.x);
             const frame = powerupColor(b.dropType);
-            drawRect(b.pos, b.size.subtract(vec2(.02, .02)).scale(pulse), frame);
-            drawRect(b.pos, inset.scale(pulse), b.color);
+            drawRect(b.pos, b.size.scale(pulse), frame);
+            drawBeveled(b.pos, b.size.subtract(vec2(.18, .18)).scale(pulse), b.color);
             drawPowerLetter(b.pos, b.dropType, pulse);
         }
         else
-            drawRect(b.pos, inset, b.color);
+            drawBeveled(b.pos, b.size, b.color);
     }
 
     // shatter (fading destroyed bricks)
@@ -1004,7 +1025,9 @@ function gameRender()
             1,
         );
     }
-    drawRect(paddlePos, paddleSize, paddleCol);
+    drawBeveled(paddlePos, paddleSize, paddleCol);
+    // accent stripe across the paddle
+    drawRect(paddlePos, vec2(paddleSize.x - .8, .06), shade(paddleCol, 1.35));
 
     // balls
     for (const b of balls)
@@ -1019,7 +1042,14 @@ function gameRender()
             fireballTimer > 0 ? hsl(.07, 1, .6) :
             slowTimer     > 0 ? hsl(.50, .9, .7) :
                                 hsl(.12, .9, .6);
-        drawCircle(b.pos, b.size, ballColor);
+        // dark rim, body, then a small offset highlight for shine
+        drawCircle(b.pos, b.size, shade(ballColor, .55));
+        drawCircle(b.pos, b.size * .8, ballColor);
+        drawCircle(
+            b.pos.add(vec2(-b.size * .18, b.size * .18)),
+            b.size * .35,
+            shade(ballColor, 1.6),
+        );
     }
 
     // floating combo text
