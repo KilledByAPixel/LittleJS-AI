@@ -704,11 +704,14 @@ function aiDirection()
     let dir = vec2();
 
     // repel from enemies; weighted by threat (damage) and falloff^2
+    // also track the closest enemy so we can seek toward it when idle
     const dangerRange = 8;
+    let closestEnemy = null, closestEnemyDist = Infinity;
     for (const e of enemies)
     {
         const away = player.pos.subtract(e.pos);
         const d = away.length();
+        if (d < closestEnemyDist) { closestEnemyDist = d; closestEnemy = e; }
         if (d < dangerRange && d > .01)
         {
             const closeness = (dangerRange - d) / dangerRange;
@@ -726,7 +729,7 @@ function aiDirection()
         const d = toward.length();
         if (d < lureRange && d > .01)
         {
-            const pull = .25 * (lureRange - d) / lureRange;
+            const pull = .35 * (lureRange - d) / lureRange;
             dir = dir.add(toward.normalize(pull));
         }
     }
@@ -742,7 +745,19 @@ function aiDirection()
     if (dyMin < wallBuf) dir = dir.add(vec2(0, (wallBuf - dyMin) / wallBuf));
     if (dyMax < wallBuf) dir = dir.add(vec2(0, -(wallBuf - dyMax) / wallBuf));
 
-    return dir.length() > 0 ? dir.normalize() : vec2();
+    // when no immediate forces apply (early game, post-clear lulls), seek
+    // the nearest enemy so the AI is always moving. Otherwise the player
+    // sits still until something walks within dangerRange, which reads as
+    // "AI is broken".
+    if (dir.length() < .05)
+    {
+        if (closestEnemy)
+            dir = closestEnemy.pos.subtract(player.pos);
+        else
+            dir = vec2(1, 0);  // arbitrary fallback if the world is empty
+    }
+
+    return dir.normalize();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1101,13 +1116,10 @@ function gameRenderPost()
 
     if (playerAI)
     {
-        drawTextScreen('🤖 AI [T]', vec2(20, mainCanvasSize.y - 24),
-                       18, new Color(.6, 1, .6), 3, BLACK, 'left');
-    }
-    else
-    {
-        drawTextScreen('T = AI test', vec2(20, mainCanvasSize.y - 24),
-                       14, new Color(.7, .7, .7), 2, BLACK, 'left');
+        // bottom-center banner that's hard to miss
+        drawTextScreen('🤖 AI TEST MODE',
+                       vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 28),
+                       32, new Color(.5, 1, .5), 4, BLACK);
     }
 }
 
