@@ -382,6 +382,72 @@ function tickCounterGems(grid)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Damage formula
+
+function powerGemDamage(n)
+{
+    if (n < 4) return 0;
+    if (n <= 9)  return 2 * n;
+    if (n <= 16) return 2 * n + Math.floor(0.5 * n);
+    if (n <= 25) return 3 * n;
+    if (n <= 36) return Math.floor(3.5 * n);
+    return 4 * n + 1;  // 37-49, FAQ estimate
+}
+
+function chainBonusFor(wave)
+{
+    if (wave <= 1) return 0;
+    if (wave === 2) return 2;
+    if (wave === 3) return 4;
+    if (wave === 4) return 10;
+    if (wave === 5) return 16;
+    if (wave === 6) return 22;
+    if (wave === 7) return 28;
+    return 34;
+}
+
+// result = {
+//   regularsDestroyed: number (loose, not part of power gems),
+//   crashesDestroyed: number,
+//   powerGemSizes: number[]  // each size of a power gem destroyed this clear
+// }
+// opts = { chainWave, isDiamondInitiated, allClear, characterMultiplier }
+function computeDamage(result, opts)
+{
+    const wave = opts.chainWave;
+    const isDiamond = !!opts.isDiamondInitiated;
+    const allClear = !!opts.allClear;
+    const mult = opts.characterMultiplier || 1.0;
+
+    // Sum power gem damage; simultaneous bonus = +2 per extra power gem
+    let pg = 0;
+    let pgTotalCells = 0;
+    for (const s of result.powerGemSizes) { pg += powerGemDamage(s); pgTotalCells += s; }
+    if (result.powerGemSizes.length > 1)
+        pg += 2 * (result.powerGemSizes.length - 1);
+
+    let total = pg + result.regularsDestroyed + result.crashesDestroyed;
+
+    // Decade bonus: +1 per 10n+1 threshold of (regulars + power gem cells)
+    const decadeBase = result.regularsDestroyed + pgTotalCells;
+    if (decadeBase >= 11) total += Math.floor((decadeBase - 1) / 10);
+
+    // Chain bonus added to wave total
+    total += chainBonusFor(wave);
+
+    // Diamond penalty on first wave only
+    if (wave === 1 && isDiamond) total = Math.floor(total * 0.8);
+
+    // All-clear bonus
+    if (allClear) total += 6;
+
+    // Character multiplier
+    total = Math.floor(total * mult);
+
+    return total;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Placeholder Board
 
 class Board
@@ -691,6 +757,72 @@ function runUnitTests()
         flipped = tickCounterGems(g);
         assert(flipped === false, 'tick: returns false when nothing flipped this round');
         assert(g[0][0].countdown === 1, 'tick: countdown 2→1');
+    }
+
+    // --- Damage formula tests ---
+    {
+        // 2x2 power gem + 1 bomb, wave 1, no diamond, no allClear
+        let d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [4] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 9, '2x2+bomb = 9 (FAQ: ' + d + ')');
+
+        // 3x2 (6) + 1 bomb = 13
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [6] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 13, '3x2+bomb = 13');
+
+        // 4x2 (8) + 1 bomb = 17
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [8] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 17, '4x2+bomb = 17');
+
+        // 5x2 (10) + 1 bomb = 26
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [10] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 26, '5x2+bomb = 26 (got ' + d + ')');
+
+        // 6x2 (12) + 1 bomb = 32 (30 + 1 decade + 1 bomb)
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [12] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 32, '6x2+bomb = 32 (got ' + d + ')');
+
+        // Chain wave 4 bonus = +10
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [4] },
+            { chainWave: 4, characterMultiplier: 1 }
+        );
+        assert(d === 19, '2x2+bomb wave-4 = 9+10 = 19 (got ' + d + ')');
+
+        // Chun-Li 120% multiplier
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [4] },
+            { chainWave: 1, characterMultiplier: 1.2 }
+        );
+        assert(d === 10, 'Chun-Li 2x2+bomb = floor(9*1.2) = 10 (got ' + d + ')');
+
+        // Diamond first wave penalty
+        d = computeDamage(
+            { regularsDestroyed: 5, crashesDestroyed: 0, powerGemSizes: [] },
+            { chainWave: 1, isDiamondInitiated: true, characterMultiplier: 1 }
+        );
+        assert(d === 4, 'Diamond 5 regulars = floor(5*.8) = 4 (got ' + d + ')');
+
+        // All-clear bonus +6
+        d = computeDamage(
+            { regularsDestroyed: 5, crashesDestroyed: 1, powerGemSizes: [] },
+            { chainWave: 1, allClear: true, characterMultiplier: 1 }
+        );
+        assert(d === 12, 'all clear: 5+1+6 = 12 (got ' + d + ')');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
