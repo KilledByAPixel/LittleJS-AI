@@ -64,8 +64,13 @@ let aimDir = vec2(1, 0);       // unit vector — pointing right at startup
 let score = 0;
 let isPlaying = false;
 let gameOverPending = false;
+let currentCombo = 0;          // resets on shoot, increments per pop event
+let floatingTexts = [];        // [{pos, vel, text, color, age, life, size}]
 
-let sound_shoot, sound_pop, sound_click, sound_lose;
+const DANGER_START = .65;      // path-arc ratio at which danger warning kicks in
+const DANGER_FULL  = 1.0;      // path-arc ratio at full panic
+
+let sound_shoot, sound_pop, sound_click, sound_lose, sound_combo;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Spiral path: build a polyline from outer end (arc=0) to inner hole (arc=max).
@@ -156,6 +161,66 @@ function updateChain(dt)
     }
 }
 
+// Glowing additive particle burst — auto-managed by the engine as an EngineObject.
+function spawnPopBurst(pos, color)
+{
+    new ParticleEmitter(
+        pos, 0,                                // pos, angle
+        BALL_R * .4,                           // emitSize
+        .12,                                   // emitTime (short burst)
+        320,                                   // emitRate
+        PI,                                    // emitConeAngle (full circle)
+        undefined,                             // tileInfo (untextured)
+        color,                                 // colorStartA
+        color.lerp(WHITE, .6),                 // colorStartB
+        new Color(color.r, color.g, color.b, 0),// colorEndA
+        new Color(1, 1, 1, 0),                 // colorEndB
+        .55,                                   // particleTime
+        .35, .05,                              // sizeStart, sizeEnd
+        .5,                                     // particleSpeed
+        0,                                     // angleSpeed
+        .88, 1, 0,                             // damping, angleDamping, gravityScale
+        PI, .15, .5,                          // particleConeAngle, fadeRate, randomness
+        false, true,                           // collideTiles, additive
+    );
+}
+
+function spawnFloatingText(pos, text, color, combo)
+{
+    floatingTexts.push({
+        pos:   pos.copy(),
+        vel:   vec2(0, 3.5),
+        text:  text,
+        color: color,
+        age:   0,
+        life:  combo > 1 ? 1.4 : 1.0,
+        size:  combo > 1 ? .9 + Math.min(combo, 5) * .15 : .8,
+    });
+}
+
+function updateFloatingTexts(dt)
+{
+    for (let i = floatingTexts.length - 1; i >= 0; i--)
+    {
+        const t = floatingTexts[i];
+        t.age += dt;
+        t.pos = t.pos.add(t.vel.scale(dt));
+        t.vel = t.vel.scale(.92);
+        if (t.age >= t.life) floatingTexts.splice(i, 1);
+    }
+}
+
+// 0 at safe distance, ramps to 1 as the chain head approaches the hole.
+function dangerOf(arc)
+{
+    return clamp((arc / pathTotalArc - DANGER_START) / (DANGER_FULL - DANGER_START), 0, 1);
+}
+
+function chainDanger()
+{
+    return chain.length === 0 ? 0 : dangerOf(chain[0].arc);
+}
+
 // Find any run of 3+ same-color balls that are all touching (gap <= BALL_D)
 // and pop them. Returns true if anything popped.
 function popMatches()
@@ -173,9 +238,19 @@ function popMatches()
         if (len >= 3)
         {
             const popPos = pathPointAt((chain[i].arc + chain[j].arc) / 2);
+            const popColor = BALL_COLORS[chain[i].colorIdx];
+            for (let k = i; k <= j; k++)
+                spawnPopBurst(pathPointAt(chain[k].arc), BALL_COLORS[chain[k].colorIdx]);
+            currentCombo++;
+            const base   = len * 10 + (len - 3) * 5;
+            const earned = base * currentCombo;
+            score += earned;
+            const txt = currentCombo > 1
+                ? '+' + earned + '  x' + currentCombo
+                : '+' + earned;
+            spawnFloatingText(popPos, txt, popColor, currentCombo);
             chain.splice(i, len);
-            score += len * 10 + (len - 3) * 5;
-            sound_pop.play(popPos);
+            (currentCombo > 1 ? sound_combo : sound_pop).play(popPos, 1, 1 + .12 * (currentCombo - 1));
             popped = true;
             // After splice, the new chain[i] is what was just behind the popped run.
             // It now has a gap to chain[i-1]; catch-up will close it next frames.
@@ -259,6 +334,8 @@ function newGame()
 {
     chain = [];
     shots = [];
+    floatingTexts = [];
+    currentCombo = 0;
     ballsRemaining = BALLS_PER_LEVEL;
     score = 0;
     gameOverPending = false;
@@ -283,6 +360,7 @@ function endGame(won)
         message: 'Score: ' + score,
         onOk: () => {
             setPlaying(false);
+            newGame();          // refresh title backdrop with a new starter chain
             showMenu('title');
         },
     });
@@ -295,6 +373,7 @@ function shootBall()
     sound_shoot.play(origin);
     loadedShotColor = nextShotColor;
     nextShotColor = pickShotColor();
+    currentCombo = 0;     // each new shot resets the combo counter
 }
 
 function swapShot()
@@ -325,6 +404,7 @@ async function gameInit()
 
     sound_shoot = new SoundGenerator({frequency: 520, attack: 0,    release: .12, shapeCurve: 1, slide: -3,  noise: .05, volume: .7});
     sound_pop   = new SoundGenerator({frequency: 380, attack: .01,  release: .25, shapeCurve: 1, slide:  6,  pitchJump: 200, pitchJumpTime: .04, volume: .9});
+    sound_combo = new SoundGenerator({frequency: 520, attack: .005, release: .35, shapeCurve: 1, slide:  10, pitchJump: 360, pitchJumpTime: .05, volume: 1.0});
     sound_click = new SoundGenerator({frequency: 750, attack: 0,    release: .05, shapeCurve: 1, volume: .4});
     sound_lose  = new SoundGenerator({frequency: 180, attack: 0,    release: .8,  shapeCurve: 1, slide: -2,  noise: .1,  volume: .9});
 
@@ -451,6 +531,8 @@ function gameUpdate()
     updateChain(dt);
     popMatches();
 
+    updateFloatingTexts(dt);
+
     // Win / Lose
     if (chain.length === 0 && ballsRemaining === 0) endGame(true);
     else if (chain.length > 0 && chain[0].arc >= pathTotalArc) endGame(false);
@@ -462,72 +544,127 @@ function gameUpdatePost() { }
 // Render
 function drawSpiralGroove()
 {
-    // Faint trough showing the path.
     const c = hsl(.7, .2, .12);
     for (let i = 0; i < path.length - 1; i += 1)
-    {
         drawLine(path[i].pos, path[i + 1].pos, BALL_D + 0.15, c);
-    }
-    // Darker rim at the hole.
     drawCircle(path[path.length - 1].pos, BALL_D * 1.6, hsl(0, 0, 0));
     drawCircle(path[path.length - 1].pos, BALL_D * 1.3, hsl(.7, .3, .05));
+}
+
+function drawHoleWarning()
+{
+    const d = chainDanger();
+    if (d <= 0) return;
+    const pulse = .5 + .5 * Math.sin(time * 7);
+    const holePos = path[path.length - 1].pos;
+    drawCircleGradient(
+        holePos,
+        BALL_D * (3 + 2.5 * pulse * d),
+        new Color(1, .15, 0, .7 * d * (.5 + .5 * pulse)),
+        new Color(1, 0, 0, 0),
+    );
 }
 
 function drawBall(pos, colorIdx, radiusOverride)
 {
     const r = radiusOverride !== undefined ? radiusOverride : BALL_R;
     const base = BALL_COLORS[colorIdx];
-    drawCircle(pos, r * 2,        base);
-    drawCircle(pos, r * 1.85,     base, .08, hsl(0, 0, 0, .35));
-    // Highlight (top-left), semi-transparent white.
+    drawCircle(pos, r * 2,    base);
+    drawCircle(pos, r * 1.85, base, .08, hsl(0, 0, 0, .35));
     drawCircle(pos.add(vec2(-r * .35, r * .35)), r * .8, new Color(1, 1, 1, .35));
+}
+
+function drawChainBall(b)
+{
+    const pos = pathPointAt(b.arc);
+    const d = dangerOf(b.arc);
+    if (d > 0)
+    {
+        const pulse = .5 + .5 * Math.sin(time * 8);
+        drawCircleGradient(
+            pos,
+            BALL_D * (1.8 + .6 * pulse * d),
+            new Color(1, .2, 0, d * (.35 + .25 * pulse)),
+            new Color(1, 0, 0, 0),
+        );
+    }
+    drawBall(pos, b.colorIdx);
 }
 
 function gameRender()
 {
+    // Backdrop visible on title too — spiral, hole warning, chain, shots.
     drawSpiralGroove();
-
-    if (!isPlaying && !gameOverPending) return;
-
-    // Chain
-    for (const b of chain) drawBall(pathPointAt(b.arc), b.colorIdx);
-
-    // Shots
+    drawHoleWarning();
+    for (const b of chain) drawChainBall(b);
     for (const s of shots) drawBall(s.pos, s.colorIdx);
 
-    // Player turret
-    drawCircle(vec2(0, 0), PLAYER_RADIUS * 2 + .25, hsl(0, 0, 0));
-    drawCircle(vec2(0, 0), PLAYER_RADIUS * 2,       hsl(.13, .8, .35));
-    drawCircle(vec2(0, 0), PLAYER_RADIUS * 1.5,     hsl(.13, .9, .5));
-
-    // Barrel
-    const tip = aimDir.scale(PLAYER_RADIUS * 1.6);
-    drawLine(vec2(0, 0), tip, .35, hsl(0, 0, .1));
-    drawLine(vec2(0, 0), tip, .22, hsl(.13, .9, .7));
-
-    // Loaded ball sits at the tip; next ball peeks from the back of the turret.
-    drawBall(tip, loadedShotColor, BALL_R * .9);
-    drawBall(aimDir.scale(-PLAYER_RADIUS * .55), nextShotColor, BALL_R * .55);
-
-    // Faint aim guideline
-    const guideEnd = aimDir.scale(SPIRAL_OUTER_R);
-    const dashes = 18;
-    for (let i = 0; i < dashes; i += 2)
+    // Turret + aim — only meaningful during gameplay.
+    if (isPlaying || gameOverPending)
     {
-        const a = tip.lerp(guideEnd, i / dashes);
-        const b = tip.lerp(guideEnd, (i + 1) / dashes);
-        drawLine(a, b, .05, hsl(0, 0, 1, .15));
+        drawCircle(vec2(0, 0), PLAYER_RADIUS * 2 + .25, hsl(0, 0, 0));
+        drawCircle(vec2(0, 0), PLAYER_RADIUS * 2,       hsl(.13, .8, .35));
+        drawCircle(vec2(0, 0), PLAYER_RADIUS * 1.5,     hsl(.13, .9, .5));
+
+        const tip = aimDir.scale(PLAYER_RADIUS * 1.6);
+        drawLine(vec2(0, 0), tip, .35, hsl(0, 0, .1));
+        drawLine(vec2(0, 0), tip, .22, hsl(.13, .9, .7));
+
+        drawBall(tip, loadedShotColor, BALL_R * .9);
+        drawBall(aimDir.scale(-PLAYER_RADIUS * .55), nextShotColor, BALL_R * .55);
+
+        const guideEnd = aimDir.scale(SPIRAL_OUTER_R);
+        const dashes = 18;
+        for (let i = 0; i < dashes; i += 2)
+        {
+            const a = tip.lerp(guideEnd, i / dashes);
+            const b = tip.lerp(guideEnd, (i + 1) / dashes);
+            drawLine(a, b, .05, hsl(0, 0, 1, .15));
+        }
+    }
+
+    // Floating scores (rendered last so they sit on top of the chain).
+    for (const t of floatingTexts)
+    {
+        const fade = 1 - t.age / t.life;
+        const fg = new Color(t.color.r, t.color.g, t.color.b, fade);
+        const bg = new Color(0, 0, 0, .6 * fade);
+        drawText(t.text, t.pos, t.size, fg, .12, bg);
     }
 }
 
 function gameRenderPost()
 {
+    // Danger vignette is part of the gameplay backdrop, so it tracks the
+    // chain state regardless of whether a menu is up.
+    const d = chainDanger();
+    if (d > 0)
+    {
+        const pulse = .5 + .5 * Math.sin(time * 5);
+        drawEllipseGradient(
+            vec2(mainCanvasSize.x / 2, mainCanvasSize.y / 2),
+            vec2(mainCanvasSize.x * 1.4, mainCanvasSize.y * 1.4),
+            new Color(1, 0, 0, 0),
+            new Color(.65, 0, 0, d * (.4 + .25 * pulse)),
+            0, true, true,
+        );
+    }
+
     if (!isPlaying) return;
-    // HUD: score (top-left), balls remaining (top-center).
+
     drawTextScreen('SCORE  ' + score,
         vec2(20, 30), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');
     drawTextScreen('REMAINING  ' + (ballsRemaining + chain.length),
         vec2(mainCanvasSize.x / 2, 30), 24, hsl(.13, 1, .8), 4, hsl(0, 0, 0));
+
+    if (currentCombo > 1)
+    {
+        const flash = .5 + .5 * Math.sin(time * 18);
+        drawTextScreen('COMBO  x' + currentCombo,
+            vec2(mainCanvasSize.x / 2, 70),
+            32 + 6 * Math.min(currentCombo, 5),
+            hsl(0, 1, .6 + .2 * flash), 5, hsl(0, 0, 0));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
