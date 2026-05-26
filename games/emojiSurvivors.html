@@ -719,16 +719,18 @@ function drawShadows()
 {
     // Lay an ellipse-scaled soft radial under every player + enemy. Uses
     // sprites.shadow (white radial gradient) with a dark tint so we get
-    // a soft-edged shadow rather than a hard ellipse. Cheap — WebGL handles
-    // a thousand quads easily.
-    const shadowTint = new Color(0, 0, 0, .35);
+    // a soft-edged shadow rather than a hard ellipse. Centered at the
+    // sprite's base so it visually anchors under the entity's feet.
+    // Cheap — WebGL handles a thousand quads easily.
+    const shadowTint = new Color(0, 0, 0, .45);
     for (const obj of engineObjects)
     {
         if (obj.destroyed) continue;
         const isShadowed = obj === player || obj instanceof Enemy;
         if (!isShadowed) continue;
-        const pos = obj.pos.subtract(vec2(0, obj.size.y * .35));
-        const size = vec2(obj.size.x * .85, obj.size.y * .3);
+        // shadow center sits at the bottom of the sprite (pos.y - size.y/2)
+        const pos = vec2(obj.pos.x, obj.pos.y - obj.size.y * .45);
+        const size = vec2(obj.size.x * 1.2, obj.size.y * .5);
         drawTile(pos, size, sprites.shadow, shadowTint);
     }
 }
@@ -1677,16 +1679,18 @@ async function gameInit()
 
     // Soft radial gradient circle — white center fading to transparent. Used
     // for shadows (tinted dark) and any "soft glow" effects. Painted in white
-    // so we can color it via the tint argument at draw time.
+    // so we can color it via the tint argument at draw time. Radius shrunk
+    // slightly from 122→114 so the soft alpha edge stays a few pixels inside
+    // the 250px tile and never bleeds into neighboring atlas cells.
     sprites.shadow    = drawToTexture(28, ctx =>
     {
-        const grad = ctx.createRadialGradient(125, 125, 0, 125, 125, 120);
+        const grad = ctx.createRadialGradient(125, 125, 0, 125, 125, 114);
         grad.addColorStop(0,   'rgba(255,255,255,1)');
         grad.addColorStop(.55, 'rgba(255,255,255,.7)');
         grad.addColorStop(1,   'rgba(255,255,255,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(125, 125, 122, 0, Math.PI * 2);
+        ctx.arc(125, 125, 114, 0, Math.PI * 2);
         ctx.fill();
     }, 'a soft white radial gradient circle');
 
@@ -1696,7 +1700,7 @@ async function gameInit()
     {
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(125, 125, 122, 0, Math.PI * 2);
+        ctx.arc(125, 125, 114, 0, Math.PI * 2);
         ctx.fill();
     }, 'a solid white circle');
 
