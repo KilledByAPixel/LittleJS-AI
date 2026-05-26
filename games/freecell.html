@@ -371,6 +371,44 @@ function tailIsValidRun(stack, card)
     return true;
 }
 
+function trySendHome()
+{
+    let progressed = true;
+    while (progressed)
+    {
+        progressed = false;
+
+        // Lowest foundation value across all four foundations.
+        // An empty foundation counts as -1 so any Ace can go.
+        let lowest = 13;
+        for (const s of cardStacks)
+            if (s.type === StackType.Foundation)
+                lowest = min(lowest, s.isEmpty() ? -1 : s.topCard().value);
+
+        for (const s of cardStacks)
+        {
+            if (s.type === StackType.Foundation || s.isEmpty()) continue;
+            const c = s.topCard();
+            if (c.value > lowest + 1) continue;     // safe rule
+
+            for (const f of cardStacks)
+            {
+                if (f.type !== StackType.Foundation) continue;
+                const top = f.topCard();
+                const fits = top
+                    ? (top.suit === c.suit && top.value + 1 === c.value)
+                    : (c.value === 0);
+                if (fits)
+                {
+                    s.moveTopCard(f);
+                    progressed = true;
+                    break;
+                }
+            }
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
@@ -422,8 +460,10 @@ function gameUpdate()
                 target = s;
             }
         }
+        const placed = target !== null;
         handStack.moveManyToStack(target || pickupOrigin);
         pickupOrigin = null;
+        if (placed) trySendHome();
     }
 }
 function gameUpdatePost()
