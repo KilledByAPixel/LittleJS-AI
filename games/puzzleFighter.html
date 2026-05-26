@@ -1076,7 +1076,9 @@ function drawBoardGems(board, boardIndex)
             for (const c of pieceCells(board.active, board.active.x, ghostY, board.active.rot))
             {
                 if (c.y < 0 || c.y >= BOARD_H_VISIBLE) continue;
-                drawRect(cellPos(boardIndex, c.x, c.y), vec2(.9, .9), rgb(1,1,1,.08));
+                const base = c.gem.type === 'diamond' ? rgb(1,1,1) : GEM_COLORS[c.gem.color];
+                const ghost = rgb(base.r * .5, base.g * .5, base.b * .5, .5);
+                drawRect(cellPos(boardIndex, c.x, c.y), vec2(.9, .9), ghost);
             }
         }
         for (const c of pieceCells(board.active))
