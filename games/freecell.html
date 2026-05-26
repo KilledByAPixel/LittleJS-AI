@@ -318,7 +318,42 @@ function stackUnderPoint(worldPoint)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-function gameUpdate() {}
+function gameUpdate()
+{
+    if (!isPlaying || won) return;
+
+    // Pickup
+    if (mouseWasPressed(0) && handStack.isEmpty())
+    {
+        const hit = stackUnderPoint(mousePos);
+        if (hit && hit.card)
+        {
+            // For Task 6 we only pick up the single top card.
+            if (hit.card === hit.stack.topCard())
+            {
+                pickupOrigin = hit.stack;
+                mouseHoldPos = hit.card.pos.subtract(mousePos);
+                hit.stack.moveTopCard(handStack);
+                handStack.type = hit.stack.type;
+            }
+        }
+    }
+
+    // Drag
+    if (!handStack.isEmpty())
+    {
+        const head = mousePos.add(mouseHoldPos);
+        for (let i = 0; i < handStack.cards.length; ++i)
+            handStack.cards[i].pos = head.add(vec2(0, -CARD_PITCH_Y * i));
+    }
+
+    // Release — Task 6: always snap back.
+    if (mouseWasReleased(0) && !handStack.isEmpty())
+    {
+        handStack.moveManyToStack(pickupOrigin);
+        pickupOrigin = null;
+    }
+}
 function gameUpdatePost()
 {
     // Recompute camera scale every frame so the table refits if the canvas
@@ -334,6 +369,9 @@ function gameRender()
     for (const s of cardStacks)
         for (const c of s.cards)
             drawCard(c, c.pos);
+    // Hand cards on top of everything.
+    for (const c of handStack.cards)
+        drawCard(c, c.pos);
 }
 function gameRenderPost() {}
 
