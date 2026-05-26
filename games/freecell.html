@@ -610,6 +610,20 @@ function tailIsValidRun(stack, card)
     return true;
 }
 
+// Cards that would be picked up if the player clicked on `hit` right now.
+// Returns [] if the hit isn't legal to grab. Used by both the hover-tint
+// highlight and the grab-cursor logic.
+function pickableTail(hit)
+{
+    if (!hit || !hit.card) return [];
+    if (hit.stack.type === StackType.Cascade)
+    {
+        if (!tailIsValidRun(hit.stack, hit.card)) return [];
+        return hit.stack.cards.slice(hit.stack.cards.indexOf(hit.card));
+    }
+    return hit.card === hit.stack.topCard() ? [hit.card] : [];
+}
+
 function trySendHome()
 {
     let chain = 0, progressed = true;
@@ -818,6 +832,18 @@ function gameUpdatePost()
     // Recompute camera scale every frame so the table refits if the canvas
     // resizes. setupLayout is cheap — just trig-less arithmetic.
     setupLayout();
+
+    // Cursor feedback: open hand over a pickable card, closed hand while
+    // dragging, default otherwise. setCursor is a LittleJS built-in.
+    let cursor = 'default';
+    if (isPlaying && !won)
+    {
+        if (!handStack.isEmpty())
+            cursor = 'grabbing';
+        else if (pickableTail(stackUnderPoint(mousePos)).length)
+            cursor = 'grab';
+    }
+    setCursor(cursor);
 }
 function gameRender()
 {
@@ -836,20 +862,14 @@ function gameRender()
             if (!c.tweenFrom)
                 drawCard(c, c.pos);
 
-    // Hover highlight (drawn AFTER cards so it sits on top of them).
+    // Hover tint: a light-blue veil over every card that would lift
+    // together if the player clicked right now. Uses the bg tile so the
+    // tint respects the card's rounded silhouette.
     if (handStack.isEmpty() && isPlaying && !won)
     {
-        const hit = stackUnderPoint(mousePos);
-        if (hit && hit.card)
-        {
-            const cp = hit.card.drawnPos();
-            const glow = new Color(1, 1, 0.3, 0.55);
-            const o = 0.25;
-            drawRect(vec2(cp.x, cp.y + CARD_SIZE.y/2 + o), vec2(CARD_SIZE.x + 2*o, 0.2), glow);
-            drawRect(vec2(cp.x, cp.y - CARD_SIZE.y/2 - o), vec2(CARD_SIZE.x + 2*o, 0.2), glow);
-            drawRect(vec2(cp.x - CARD_SIZE.x/2 - o, cp.y), vec2(0.2, CARD_SIZE.y + 2*o), glow);
-            drawRect(vec2(cp.x + CARD_SIZE.x/2 + o, cp.y), vec2(0.2, CARD_SIZE.y + 2*o), glow);
-        }
+        const tint = new Color(0.55, 0.8, 1.0, 0.4);
+        for (const c of pickableTail(stackUnderPoint(mousePos)))
+            drawTile(c.drawnPos(), CARD_SIZE, cardSprites.bg, tint);
     }
 
     // Legal-drop highlight (also on top of cards while dragging).
