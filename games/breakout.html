@@ -122,6 +122,8 @@ let level = 1;   // 1..LEVELS.length
 let wave  = 1;   // increments after clearing level LEVELS.length
 const BALL_BASE_SPEED = 18;
 let state = 'serve'; // serve | lose (otherwise playing)
+let combo = 1;
+let floatTexts = []; // {pos, vel, text, color, life, maxLife}
 
 let stickyTimer = 0;
 let laserTimer = 0;
@@ -359,9 +361,25 @@ function damageBrick(brick)
     }
 
     brick.alive = false;
-    score += BRICK_SCORE[brick.type];
+    const base = BRICK_SCORE[brick.type];
+    const gained = base * combo;
+    score += gained;
     sfxBrick.play();
     spawnPowerupFromBrick(brick);
+
+    if (combo >= 2)
+    {
+        floatTexts.push({
+            pos: brick.pos.copy(),
+            vel: vec2(0, 4),
+            text: `x${combo}`,
+            color: hsl(.12, 1, .7),
+            life: 0,
+            maxLife: .6,
+        });
+    }
+
+    combo++;
     return true;
 }
 
@@ -403,6 +421,7 @@ function resetRunState()
 {
     powerups.length = 0;
     bullets.length = 0;
+    floatTexts.length = 0;
     stickyTimer = 0;
     laserTimer = 0;
     laserCooldown = 0;
@@ -422,6 +441,7 @@ function advanceLevel()
     // Speed scales by wave only; resets to base when wave=1.
     ballSpeed = BALL_BASE_SPEED * Math.pow(1.10, wave - 1);
 
+    combo = 1;
     resetRunState();
     // Keep paddleExtra and lives; new level should feel like progress, not reset.
     buildLevel();
@@ -436,6 +456,7 @@ function resetGame()
     wave  = 1;
     state = 'serve';
     ballSpeed = BALL_BASE_SPEED;
+    combo = 1;
 
     resetPaddle();
     resetRunState();
@@ -511,6 +532,7 @@ function gameUpdate()
     updatePowerups(dt);
     updateBullets(dt);
     updateBalls(dt);
+    updateFloatTexts(dt);
 
     // level clear check (gold doesn't count — only breakable bricks)
     for (const b of bricks)
@@ -519,6 +541,18 @@ function gameUpdate()
 
     sfxWin.play();
     advanceLevel();
+}
+
+function updateFloatTexts(dt)
+{
+    for (let i = floatTexts.length; i--;)
+    {
+        const t = floatTexts[i];
+        t.life += dt;
+        t.pos = t.pos.add(t.vel.scale(dt));
+        if (t.life >= t.maxLife)
+            floatTexts.splice(i, 1);
+    }
 }
 
 function updatePowerups(dt)
@@ -606,6 +640,7 @@ function updateBalls(dt)
                 ball.stuckOffsetX = clamp(ball.pos.x - paddlePos.x, -paddleSize.x / 2 + r, paddleSize.x / 2 - r);
                 ball.vel = vec2(0, 0);
                 ball.pos.y = paddlePos.y + paddleSize.y / 2 + r + .001;
+                combo = 1;
                 sfxBounce.play();
             }
             else
@@ -614,6 +649,7 @@ function updateBalls(dt)
                 const offset = (ball.pos.x - paddlePos.x) / (paddleSize.x / 2);
                 const x = clamp(offset, -1, 1);
                 ball.vel = vec2(x * 1.2, 1).normalize(effectiveSpeed);
+                combo = 1;
                 sfxBounce.play();
             }
         }
@@ -650,6 +686,7 @@ function updateBalls(dt)
     if (!balls.length)
     {
         lives--;
+        combo = 1;
         sfxLose.play();
 
         if (lives <= 0)
@@ -733,6 +770,15 @@ function gameRender()
                                 hsl(.12, .9, .6);
         drawCircle(b.pos, b.size, ballColor);
     }
+
+    // floating combo text
+    for (const t of floatTexts)
+    {
+        const k = 1 - t.life / t.maxLife;
+        const c = t.color.copy();
+        c.a = k;
+        drawText(t.text, t.pos, .9, c, .2, hsl(0, 0, 0, k), 'center');
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -742,6 +788,13 @@ function gameRenderPost()
     drawTextScreen(`Wave ${wave}  Level ${level}/${LEVELS.length}`,
         vec2(mainCanvasSize.x / 2, 16), 24, hsl(0, 0, 1), 4, hsl(0, 0, 0));
     drawTextScreen(`Lives ${lives}`, vec2(mainCanvasSize.x - 16, 16), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'right');
+
+    if (combo >= 2)
+    {
+        drawTextScreen(`x${combo} COMBO`,
+            vec2(mainCanvasSize.x / 2, 48),
+            32, hsl(.12, 1, .7), 4, hsl(0, 0, 0));
+    }
 
     let status = '';
     if (paddleExtra > 0) status += `WIDE +${paddleExtra.toFixed(0)}   `;
