@@ -282,6 +282,42 @@ async function gameInit()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Input helpers
+
+function pointInRect(point, center, size)
+{
+    return abs(point.x - center.x) <= size.x / 2
+        && abs(point.y - center.y) <= size.y / 2;
+}
+
+// Returns { stack, card } for the topmost card under `worldPoint`, or
+// { stack, card: null } if the point is over an empty stack, or null.
+function stackUnderPoint(worldPoint)
+{
+    // Search cascades last-card-first (visually topmost is logically last).
+    for (const s of cardStacks)
+    {
+        if (s.type === StackType.Cascade)
+        {
+            for (let i = s.cards.length - 1; i >= 0; --i)
+                if (pointInRect(worldPoint, s.cards[i].pos, CARD_SIZE))
+                    return { stack: s, card: s.cards[i] };
+        }
+        else
+        {
+            const top = s.topCard();
+            if (top && pointInRect(worldPoint, top.pos, CARD_SIZE))
+                return { stack: s, card: top };
+        }
+    }
+    // No card hit — check empty stack anchors so drops on empty stacks work.
+    for (const s of cardStacks)
+        if (s.isEmpty() && pointInRect(worldPoint, s.pos, CARD_SIZE))
+            return { stack: s, card: null };
+    return null;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 function gameUpdate() {}
 function gameUpdatePost()
 {

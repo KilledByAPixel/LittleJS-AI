@@ -129,7 +129,37 @@ function gameUpdatePost()
 {
     cameraPos = player.pos;
 }
-function gameRender() { }
+// Pick a deterministic per-cell value from a coordinate pair.
+function cellHash(x, y)
+{
+    return (x * 73856093 ^ y * 19349663) >>> 0;
+}
+
+function drawGround()
+{
+    const groundSprites = [sprites.grass1, sprites.grass2, sprites.rock];
+    const cam = cameraPos;
+    const half = getCameraSize().scale(.5);
+    const minX = max(Math.floor(cam.x - half.x), ARENA_MIN_X);
+    const maxX = min(Math.ceil(cam.x + half.x), ARENA_MAX_X);
+    const minY = max(Math.floor(cam.y - half.y), ARENA_MIN_Y);
+    const maxY = min(Math.ceil(cam.y + half.y), ARENA_MAX_Y);
+    for (let y = minY; y <= maxY; ++y)
+    for (let x = minX; x <= maxX; ++x)
+    {
+        const h = cellHash(x, y);
+        // ~1 tile per 9 cells (12% density) — keeps the floor sparse
+        if ((h & 7) !== 0) continue;
+        const which = (h >>> 3) % groundSprites.length;
+        drawTile(vec2(x + .5, y + .5), vec2(.8), groundSprites[which],
+                 WHITE, 0, false, undefined, undefined);
+    }
+}
+
+function gameRender()
+{
+    drawGround();
+}
 function gameRenderPost() { }
 
 ///////////////////////////////////////////////////////////////////////////////
