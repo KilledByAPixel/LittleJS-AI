@@ -166,15 +166,20 @@ let cardSprites;
 function initCardAtlas()
 {
     initDrawToTexture(8);
-    cardSprites = { ranks: [], suits: [], bg: null };
+    cardSprites = { ranks: [], suits: [], bg: null, tint: null };
     for (let i = 0; i < 13; ++i)
         cardSprites.ranks.push(drawToTexture(i,
             paintRankTile(RANK_LABELS[i]), 'rank ' + RANK_LABELS[i]));
     for (let i = 0; i < 4; ++i)
         cardSprites.suits.push(drawToTexture(16 + i,
             paintSuitTile(SUIT_GLYPHS[i]), 'suit ' + SUIT_GLYPHS[i]));
-    cardSprites.bg = drawToTexture(24, paintCardBg,
+    cardSprites.bg   = drawToTexture(24, paintCardBg,
         'card background, rounded white rectangle with thin dark border');
+    // Same rounded silhouette as the bg, but pure white with NO dark
+    // border. Used for color-tint overlays (hover blue, drop-target green)
+    // so the tint doesn't drag the bg's dark edge along with it.
+    cardSprites.tint = drawToTexture(25, paintTintShape,
+        'card-shaped solid-fill mask for hover/drop tint overlays');
 }
 
 function paintRankTile(label)
@@ -216,6 +221,17 @@ function paintCardBg(ctx)
     ctx.fill();
     ctx.fillStyle = '#fff';
     roundedRect(ctx, 8, 8, 234, 234, r - 2);
+    ctx.fill();
+}
+
+function paintTintShape(ctx)
+{
+    // Matches the bg tile's OUTER rounded rect — same silhouette as the
+    // card — but solid white with no border, so when tinted-and-overlaid
+    // it doesn't drag in the bg's dark edge.
+    const r = 14;
+    ctx.fillStyle = '#fff';
+    roundedRect(ctx, 4, 4, 242, 242, r);
     ctx.fill();
 }
 
@@ -982,13 +998,13 @@ function gameRender()
                 drawCard(c, c.pos);
 
     // Hover tint: a light-blue veil over every card that would lift
-    // together if the player clicked right now. Uses the bg tile so the
-    // tint respects each card's rounded silhouette.
+    // together if the player clicked right now. Uses the border-less
+    // tint tile so the bg's dark edge doesn't show through.
     if (handStack.isEmpty() && isPlaying && !won)
     {
         const tint = new Color(0.55, 0.8, 1.0, 0.4);
         for (const c of pickableTail(stackUnderPoint(mousePos)))
-            drawTile(c.drawnPos(), CARD_SIZE, cardSprites.bg, tint);
+            drawTile(c.drawnPos(), CARD_SIZE, cardSprites.tint, tint);
     }
 
     // Legal-drop tint: a green veil on the top card (or empty slot anchor)
@@ -1001,7 +1017,7 @@ function gameRender()
         {
             if (s === pickupOrigin || !isMoveLegal(s)) continue;
             const tp = s.topCard() ? s.topCard().drawnPos() : s.pos;
-            drawTile(tp, CARD_SIZE, cardSprites.bg, tint);
+            drawTile(tp, CARD_SIZE, cardSprites.tint, tint);
         }
     }
 
