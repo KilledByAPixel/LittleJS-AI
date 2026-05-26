@@ -828,10 +828,13 @@ function gameRender()
         if (s.isEmpty() || s.type !== StackType.Cascade)
             drawSlotOutline(s);
 
-    // All stack cards.
+    // Stack cards — non-tweening pass. Tweening cards are deferred to a
+    // later pass so an in-flight auto-send-home flies over everything
+    // instead of being hidden behind cascade cards drawn after it.
     for (const s of cardStacks)
         for (const c of s.cards)
-            drawCard(c, c.drawnPos());
+            if (!c.tweenFrom)
+                drawCard(c, c.pos);
 
     // Hover highlight (drawn AFTER cards so it sits on top of them).
     if (handStack.isEmpty() && isPlaying && !won)
@@ -864,6 +867,13 @@ function gameRender()
             drawRect(vec2(tp.x + CARD_SIZE.x/2 + o, tp.y), vec2(0.2, CARD_SIZE.y + 2*o), ok);
         }
     }
+
+    // Tweening cards (auto-send-home, snap-back) drawn last so the
+    // flight path stays on top of static cards and highlights.
+    for (const s of cardStacks)
+        for (const c of s.cards)
+            if (c.tweenFrom)
+                drawCard(c, c.drawnPos());
 
     // Hand cards on top with a rounded-card shadow (reusing the bg tile
     // tinted black-with-alpha so the silhouette has the same rounded corners).
