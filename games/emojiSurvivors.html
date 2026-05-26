@@ -618,14 +618,13 @@ class OrbitingStarWeapon
         for (const [e, t] of this.hitMap)
             if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
 
+        // damage check only — drawing moved to draw() because update() runs
+        // during gameUpdate (before render). drawTile from update batches GL
+        // vertices that the next frame's enginePreRender then asserts on.
         for (let i = 0; i < this.level; ++i)
         {
             const a = this.angle + i * 2 * PI / this.level;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            // draw the star
-            drawTile(pos, vec2(starSize), sprites.star, WHITE, a + time);
-
-            // damage check
             for (const e of enemies)
             {
                 if (!isOverlapping(pos, vec2(starSize), e.pos, e.size)) continue;
@@ -634,6 +633,18 @@ class OrbitingStarWeapon
                 e.takeDamage(dmg);
                 this.hitMap.set(e, now + 1);
             }
+        }
+    }
+
+    draw()
+    {
+        const radius = 2.5 * player.areaMult;
+        const starSize = .7 * player.areaMult;
+        for (let i = 0; i < this.level; ++i)
+        {
+            const a = this.angle + i * 2 * PI / this.level;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            drawTile(pos, vec2(starSize), sprites.star, WHITE, a + time);
         }
     }
 }
@@ -998,7 +1009,6 @@ class StarStormWeapon
         {
             const a = this.angle + i * 2 * PI / orbits;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(starSize), sprites.star, WHITE, a + time);
             for (const e of enemies)
             {
                 if (!isOverlapping(pos, vec2(starSize), e.pos, e.size)) continue;
@@ -1007,6 +1017,19 @@ class StarStormWeapon
                 e.takeDamage(dmg);
                 this.hitMap.set(e, now + .35);
             }
+        }
+    }
+
+    draw()
+    {
+        const radius = 4 * player.areaMult;
+        const starSize = 1.1 * player.areaMult;
+        const orbits = 7;
+        for (let i = 0; i < orbits; ++i)
+        {
+            const a = this.angle + i * 2 * PI / orbits;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            drawTile(pos, vec2(starSize), sprites.star, WHITE, a + time);
         }
     }
 }
@@ -1078,7 +1101,14 @@ class BlizzardWeapon
                     e.takeDamage(dmg);
             }
         }
-        // visual: ring of small ice cubes drifting around the player
+    }
+
+    draw()
+    {
+        // ring of small ice cubes drifting around the player. Pulled out
+        // of update() because drawing from update batches GL vertices
+        // before the render phase asserts the batch is empty.
+        const auraRadius = 6 * player.areaMult;
         const ringSize = .6 * player.areaMult;
         const cubes = 8;
         for (let i = 0; i < cubes; ++i)
@@ -2031,11 +2061,19 @@ function drawWalls()
     for (const p of positions) drawTile(p, size, sprites.wall);
 }
 
+function drawWeaponVisuals()
+{
+    if (!player || !player.weapons) return;
+    for (const w of player.weapons)
+        if (w.draw) w.draw();
+}
+
 function gameRender()
 {
     drawGround();
     drawWalls();
     drawShadows();
+    drawWeaponVisuals();
     drawChainFlashes();
     drawDamageNumbers();
 }
