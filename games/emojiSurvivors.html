@@ -49,6 +49,19 @@ function paintEmoji(emoji, sizeMul = .85)
     };
 }
 
+// Universal emoji draw helper — all entity rendering goes through here.
+// tint multiplies (won't lighten the emoji's black outline);
+// additive adds (glows through the outline). Pair them for status effects:
+//   red tint + red additive  = burning
+//   blue tint                = frozen / slowed
+//   green tint               = poisoned
+//   gold additive            = elite
+//   white additive flash     = hit feedback
+function drawEmoji(pos, size, sprite, tint, additive, angle = 0)
+{
+    drawTile(pos, size, sprite, tint || WHITE, angle, false, additive);
+}
+
 let player;
 
 class Player extends EngineObject
@@ -96,17 +109,16 @@ class Player extends EngineObject
 
     render()
     {
+        let tint = WHITE, additive = null;
         if (this.hurtTimer > 0)
         {
             this.hurtTimer -= 1 / 60;
-            const flash = this.hurtTimer % .1 < .05;
-            drawTile(this.pos, this.size, sprites.player,
-                     flash ? new Color(1, .3, .3) : WHITE);
+            tint = new Color(1, .55, .55);
+            // pulse the additive on/off every .1s so the player visibly strobes when hit
+            if (this.hurtTimer % .1 < .05)
+                additive = new Color(.5, 0, 0);
         }
-        else
-        {
-            super.render();
-        }
+        drawEmoji(this.pos, this.size, sprites.player, tint, additive);
     }
 }
 
@@ -135,6 +147,23 @@ class Enemy extends EngineObject
         this.setCollision(false, false, false, false);
         enemies.push(this);
         this.hitCooldown = 0;
+        this.hitFlashTimer = 0;
+        this.tint = null;
+        this.additive = null;
+    }
+
+    render()
+    {
+        let tint = this.tint || WHITE;
+        let additive = this.additive;
+        if (this.hitFlashTimer > 0)
+        {
+            this.hitFlashTimer -= 1 / 60;
+            // white additive briefly punches through the outline so a hit
+            // is visible even on a 50-pixel sprite in a swarm of hundreds
+            additive = new Color(.8, .8, .8);
+        }
+        drawEmoji(this.pos, this.size, this.tileInfo, tint, additive);
     }
 
     update()
@@ -193,6 +222,7 @@ class Enemy extends EngineObject
     takeDamage(amount)
     {
         this.hp -= amount;
+        this.hitFlashTimer = .08;
         if (this.hp <= 0) this.destroy();
     }
 }
@@ -420,7 +450,7 @@ class FireballWeapon
 }
 
 const SPAWN_RADIUS = 20;
-const ENEMY_CAP    = 150;
+const ENEMY_CAP    = 800;
 
 const spawner = {
     timer: 0,
@@ -450,8 +480,8 @@ function pickWeightedType(elapsed)
 
 function updateSpawner()
 {
-    // ramp the spawn interval from base down to 0.15s over the first 2 minutes
-    spawner.interval = lerp(min(time / 120, 1), enemySpawnIntervalBase, 0.15);
+    // ramp the spawn interval from base down to 0.08s over the first 90 seconds
+    spawner.interval = lerp(min(time / 90, 1), enemySpawnIntervalBase, 0.08);
 
     spawner.timer -= 1 / 60;
     if (spawner.timer > 0) return;
@@ -459,8 +489,9 @@ function updateSpawner()
 
     if (enemies.length >= ENEMY_CAP) return;
 
-    // burst spawning — more enemies per tick as the run goes on
-    const burst = min(1 + Math.floor(time / 30), 6);
+    // burst spawning — more enemies per tick as the run goes on, up to a
+    // vampire-survivors-scale swarm. ENEMY_CAP gates total density.
+    const burst = min(2 + Math.floor(time / 15), 15);
     for (let n = 0; n < burst; ++n)
     {
         if (enemies.length >= ENEMY_CAP) break;
