@@ -23,13 +23,10 @@ cameraPos = vec2(0, 0);
 cameraScale = 40;
 canvasMaxSize = vec2(2048, 2048);
 
-// On-screen analog gamepad for touch devices. The engine merges this into
-// the same gamepadStick(0) API the rest of the code already reads, so
-// movement just works on phones with no gameplay-side branching.
-touchGamepadEnable = true;
-touchGamepadAnalog = true;
-touchGamepadButtonCount = 0;
-touchGamepadAlpha = .25;
+// Touch input — we use a Frogger-style "tap a screen quadrant to move
+// that direction" scheme instead of the built-in analog touch gamepad.
+// Disabled here; see touchDirection() below.
+touchGamepadEnable = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // EMOJI SURVIVORS
@@ -110,7 +107,7 @@ class Player extends EngineObject
         this.maxHp = playerMaxHp * this.maxHpMult;
         const dir = playerAI
             ? aiDirection()
-            : keyDirection().add(gamepadStick(0));
+            : keyDirection().add(gamepadStick(0)).add(touchDirection());
         const move = dir.length() > 1 ? dir.normalize() : dir;
         this.velocity = move.scale(this.speed / 60);  // velocity is per-frame
 
@@ -1622,6 +1619,24 @@ let playerAI = false;
 let aiTargetPos = null;
 let aiNextRetargetTime = 0;
 let aiSmoothedDir = vec2(1, 0);
+
+// X-quadrant touch direction. The canvas is divided by its two diagonals
+// into 4 triangles (top / right / bottom / left); a press in one triangle
+// moves the player that cardinal direction. Held = sustained motion.
+// Center deadzone prevents drift from a near-center tap.
+function touchDirection()
+{
+    if (!isTouchDevice) return vec2();
+    if (!mouseIsDown(0)) return vec2();
+    const cs = mainCanvasSize;
+    const dx = mousePosScreen.x - cs.x / 2;
+    const dy = mousePosScreen.y - cs.y / 2;
+    if (abs(dx) < 30 && abs(dy) < 30) return vec2();
+    // screen y grows downward; world y grows upward — flip when up/down
+    if (abs(dx) > abs(dy))
+        return dx > 0 ? vec2(1, 0) : vec2(-1, 0);
+    return dy > 0 ? vec2(0, -1) : vec2(0, 1);
+}
 
 const AI_RETARGET_NORMAL    = .55;   // seconds between target picks in normal play
 const AI_RETARGET_EMERGENCY = .2;    // shorter window when something is very close
