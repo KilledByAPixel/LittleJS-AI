@@ -1073,7 +1073,7 @@ function gameRenderPost()
     if (isPlaying && state === 'serve')
     {
         drawTextScreen(`Click or Space to launch`,
-            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 70), 36,
+            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 36,
             hsl(0, 0, 1), 6, hsl(0, 0, 0));
     }
 
@@ -1100,9 +1100,6 @@ function gameRenderPost()
         if (balls.length > 1) status += `BALLS ${balls.length}`;
         if (status)
             drawTextScreen(status, vec2(mainCanvasSize.x / 2, 42), 22, hsl(0, 0, .95), 4, hsl(0, 0, 0));
-
-        drawTextScreen(`W=Wide M=Multi T=Sticky L=Laser F=Fire S=Slow 1UP=Life`,
-            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 18), 18, hsl(0, 0, .8), 4, hsl(0, 0, 0));
 
         if (laserTimer > 0)
             drawTextScreen(`Laser: Click/Space to shoot`, vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 18,
