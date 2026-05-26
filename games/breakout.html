@@ -948,12 +948,11 @@ function gameRender()
         }
         else if (b.type === BRICK_SILVER)
         {
-            const damaged = b.hp < b.maxHp;
-            drawRect(b.pos, b.size.subtract(vec2(.02, .02)), hsl(0, 0, damaged ? .35 : .55));
-            drawRect(b.pos, inset, hsl(0, 0, damaged ? .55 : .82));
+            drawRect(b.pos, b.size.subtract(vec2(.02, .02)), hsl(0, 0, .55));
+            drawRect(b.pos, inset, hsl(0, 0, .82));
             // Fresh silver has a dot to mark "needs another hit".
-            // The dot vanishes after the first hit, signalling "now a normal brick".
-            if (!damaged)
+            // The dot vanishes after the first hit; the brick keeps the same color.
+            if (b.hp >= b.maxHp)
                 drawCircle(b.pos, .32, hsl(0, 0, .15));
         }
         else if (b.special)
