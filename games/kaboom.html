@@ -63,6 +63,7 @@ let bomber;          // {x, vx, dropTimer, laughTimer}
 let bombs;           // [{pos, vel, fuse}]
 let particles;       // [{pos, vel, life, maxLife, color, size}]
 let starField;       // stable star positions for the night sky
+let treeField;       // foreground trees/bushes on the sides of the building
 let windowSeeds;     // stable blink seeds for windows
 let bombsSpawned, bombsCaught, bombsInWave;
 let waveSpawnTimer;  // seconds until next bomb in current wave
@@ -375,6 +376,42 @@ function drawBuilding() {
     drawRect(vec2(0, FLOOR_Y - 0.05), vec2(80, 0.12), hsl(0, 0, .25));
 }
 
+function drawPineTree(x, y, size) {
+    // Trunk
+    const trunkW = size * 0.2;
+    const trunkH = size * 0.7;
+    drawRect(vec2(x, y + trunkH/2), vec2(trunkW, trunkH), hsl(.08, .55, .12));
+
+    // Foliage — 3 stacked triangles tapering up, pine-silhouette style
+    const foliageColor = hsl(.32, .5, .14);
+    for (let i = 0; i < 3; i++) {
+        const fy = y + trunkH * 0.4 + size * (0.4 + i * 0.55);
+        const fw = size * (1.3 - i * 0.3);
+        const fh = size * 0.95;
+        drawPoly([
+            vec2(x - fw/2, fy),
+            vec2(x + fw/2, fy),
+            vec2(x, fy + fh),
+        ], foliageColor);
+    }
+}
+
+function drawBush(x, y, size) {
+    // Overlapping circles — rounded shrub silhouette.
+    const c1 = hsl(.32, .45, .15);
+    const c2 = hsl(.32, .55, .18);
+    drawCircle(vec2(x - size*0.4, y + size*0.5),  size*1.2, c1);
+    drawCircle(vec2(x + size*0.4, y + size*0.5),  size*1.2, c1);
+    drawCircle(vec2(x,             y + size*0.9), size*1.3, c2);
+}
+
+function drawTrees() {
+    for (const t of treeField) {
+        if (t.type === 'pine') drawPineTree(t.x, FLOOR_Y, t.size);
+        else                   drawBush(t.x, FLOOR_Y, t.size);
+    }
+}
+
 function drawBomber() {
     // On the title screen, paused = true so gameUpdate doesn't run and
     // bomber.x is frozen. Drive a slow sinusoidal pace from `timeReal`
@@ -572,12 +609,27 @@ async function gameInit() {
         const layer = i % 3;
         starField.push({
             x0: rand(-STAR_BAND_W/2, STAR_BAND_W/2),
-            y: rand(-2, 13),
+            y: rand(-11, 13),       // fill sky all the way down to the ground line
             size: 0.06 + layer * 0.06 + rand(0, 0.05),
             phase: rand(0, PI * 2),
             layer,
         });
     }
+
+    // ---- foreground silhouettes on the sides of the building ----
+    // Stable positions/sizes so the skyline doesn't change between frames.
+    treeField = [
+        { x: -28,   size: 1.0,  type: 'pine' },
+        { x: -23,   size: 1.4,  type: 'pine' },
+        { x: -19,   size: 0.85, type: 'bush' },
+        { x: -16,   size: 1.15, type: 'pine' },
+        { x: -13.5, size: 0.7,  type: 'bush' },
+        { x: 13.5,  size: 0.8,  type: 'bush' },
+        { x: 16,    size: 1.2,  type: 'pine' },
+        { x: 19,    size: 1.0,  type: 'bush' },
+        { x: 23,    size: 1.5,  type: 'pine' },
+        { x: 28,    size: 0.95, type: 'pine' },
+    ];
     windowSeeds = [];
     for (let i = 0; i < 9 * 7; i++) windowSeeds.push(rand(0, 5));
 
@@ -777,6 +829,7 @@ function gameUpdatePost() {
 function gameRender() {
     drawSkyAndStars();
     drawBuilding();
+    drawTrees();
     drawBomber();
     for (const b of bombs) drawBomb(b);
     drawBuckets();
