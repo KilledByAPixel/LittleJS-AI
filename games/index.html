@@ -29,7 +29,11 @@
     --cat-sports:  #4ade80;   --cat-sports-bg:  rgba(74,222,128,.18);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  /* `height: 100%` on iOS measures the layout viewport (which extends behind
+     the browser URL bar in portrait), pushing fixed elements off-screen at
+     the top. `100dvh` measures the dynamic visible viewport — correct on
+     iOS, falls back to 100% on browsers that don't understand dvh. */
+  html, body { margin: 0; padding: 0; height: 100%; height: 100dvh; overflow: hidden; }
   body {
     background: var(--bg);
     color: var(--text);
