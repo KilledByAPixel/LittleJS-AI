@@ -466,20 +466,21 @@
     100% { transform: rotate(360deg) scale(1); }
   }
 
-  /* Logo idle sparkles — single ✨ that floats up and fades out. */
+  /* Logo idle sparkles — small white square that rotates while floating up. */
   .sparkle {
     position: absolute;
     pointer-events: none;
-    user-select: none;
-    font-size: 14px;
+    background: #fff;
+    border-radius: 1px;
+    box-shadow: 0 0 8px rgba(255, 255, 255, .8),
+                0 0 14px rgba(180, 220, 255, .4);
     z-index: 3;
-    filter: drop-shadow(0 0 4px rgba(255, 255, 255, .6));
-    animation: sparkle-float 1.4s ease-out forwards;
+    animation: sparkle-float 1.3s ease-out forwards;
   }
   @keyframes sparkle-float {
-    0%   { opacity: 0; transform: translateY(0)    scale(.4); }
-    25%  { opacity: 1; transform: translateY(-8px) scale(1);  }
-    100% { opacity: 0; transform: translateY(-42px) scale(.7); }
+    0%   { opacity: 0; transform: translateY(0)    rotate(0)      scale(.3); }
+    18%  { opacity: 1; transform: translateY(-10px) rotate(140deg) scale(1);  }
+    100% { opacity: 0; transform: translateY(-60px) rotate(540deg) scale(.4); }
   }
 </style>
 </head>
@@ -971,30 +972,31 @@ function setupStarfield() {
   const stage = document.getElementById('stage');
   stage.insertBefore(canvas, welcomeEl);
   const ctx = canvas.getContext('2d');
-  const stars = Array.from({ length: 60 }, () => ({
+  const stars = Array.from({ length: 80 }, () => ({
     x: Math.random(),
     y: Math.random(),
-    z: 0.3 + Math.random() * 0.7,        // brightness + size
-    vy: -(0.00005 + Math.random() * 0.00015),  // slow upward drift
+    z: 0.3 + Math.random() * 0.7,         // brightness + size
+    vy: -(0.0002 + Math.random() * 0.0006), // upward drift (perceptible)
   }));
+  // Read the STAGE dimensions, not the canvas — the canvas's own clientWidth
+  // can be 0 before its first layout, which previously left the drawing
+  // buffer at the default 300×150 and squashed stars into the top-left.
   const resize = () => {
-    canvas.width = canvas.clientWidth;
-    canvas.height = canvas.clientHeight;
+    canvas.width = stage.clientWidth;
+    canvas.height = stage.clientHeight;
   };
   resize();
-  new ResizeObserver(resize).observe(canvas);
+  new ResizeObserver(resize).observe(stage);
 
   function frame() {
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    // Skip the per-star step + paint when a game is loaded; stars are hidden
-    // behind the iframe anyway, so no point burning CPU.
     if (currentFile === null) {
       for (const s of stars) {
         s.y += s.vy;
         if (s.y < -0.05) { s.y = 1.05; s.x = Math.random(); }
-        ctx.globalAlpha = s.z * 0.5;
-        const size = Math.max(1, Math.round(s.z * 1.8));
+        ctx.globalAlpha = s.z * 0.55;
+        const size = Math.max(1, Math.round(s.z * 2.4));
         ctx.fillStyle = '#fff';
         ctx.fillRect(s.x * w, s.y * h, size, size);
       }
@@ -1006,24 +1008,31 @@ function setupStarfield() {
 }
 
 function setupSparkles() {
-  // One subtle ✨ near the logo every ~2.5s while the welcome screen is up.
+  // Small white rotating square that rises off the logo. ~1.5/sec while
+  // welcome is up; capped variation in size + a touch of horizontal jitter
+  // so they don't look like a regular grid.
   setInterval(() => {
     if (currentFile !== null) return;
     const logo = document.getElementById('welcome-logo');
     if (!logo) return;
     const logoRect = logo.getBoundingClientRect();
     const welcomeRect = welcomeEl.getBoundingClientRect();
+
     const sparkle = document.createElement('div');
     sparkle.className = 'sparkle';
-    sparkle.textContent = '✨';
-    // Position relative to welcomeEl (account for any scroll offset).
-    const x = logoRect.left - welcomeRect.left + welcomeEl.scrollLeft + Math.random() * logoRect.width;
-    const y = logoRect.top  - welcomeRect.top  + welcomeEl.scrollTop  + Math.random() * logoRect.height;
+    // Spawn anywhere along the bottom edge of the logo so they "lift off".
+    const x = logoRect.left - welcomeRect.left + welcomeEl.scrollLeft
+              + Math.random() * logoRect.width;
+    const y = logoRect.top  - welcomeRect.top  + welcomeEl.scrollTop
+              + logoRect.height * (0.7 + Math.random() * 0.3);
+    const size = 4 + Math.random() * 5;
     sparkle.style.left = x + 'px';
     sparkle.style.top  = y + 'px';
+    sparkle.style.width  = size + 'px';
+    sparkle.style.height = size + 'px';
     welcomeEl.appendChild(sparkle);
     sparkle.addEventListener('animationend', () => sparkle.remove());
-  }, 2500);
+  }, 650);
 }
 
 buildFilterChips();
