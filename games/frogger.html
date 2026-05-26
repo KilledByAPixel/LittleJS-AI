@@ -20,11 +20,9 @@
   debugWatermark = false;
   showEngineVersion = false;
 
-  // Touch gamepad: 8-way digital — perfect for a 4-direction hop game.
-  touchGamepadEnable = true;
-  touchGamepadAnalog = false;
-  touchGamepadButtonCount = 0;
-  touchGamepadAlpha = .35;
+  // Touch: tap one of the four screen triangles (divided by the diagonals) to
+  // hop in that direction. Handled directly in handleInput — no touch gamepad.
+  touchGamepadEnable = false;
 
   // ------------------------------------------------------------
   // Frogger (primitives only)
@@ -244,7 +242,17 @@
     if (gamepadWasPressed(14)) return tryMove(-1,0);
     if (gamepadWasPressed(15)) return tryMove(1, 0);
 
-    // Stick (analog or touch): pick dominant cardinal, but only hop on the
+    // Touch: tap one of the four screen triangles (split by the diagonals).
+    // Top triangle hops up, bottom hops down, left/right hop sideways.
+    if (isTouchDevice && mouseWasPressed(0) && !isMenuVisible()) {
+      const dx = mousePosScreen.x - mainCanvasSize.x * .5;
+      const dy = mousePosScreen.y - mainCanvasSize.y * .5;
+      if (abs(dx) > abs(dy)) return tryMove(sign(dx), 0);
+      if (dy !== 0)          return tryMove(0, sign(-dy)); // screen-y is down-positive; world-y is up
+    }
+
+    // Stick (analog only — touch gamepad is disabled): pick dominant cardinal,
+    // but only hop on the
     // frame the stick crosses INTO that direction. Returning to neutral arms
     // the next hop.
     const stick = gamepadStick(0);
@@ -413,7 +421,8 @@
       items: [
         {type:'text', text:
           'Get five frogs home, one at a time.\n\n' +
-          'HOP with arrow keys, WASD, D-pad, or left stick (one hop per press).\n\n' +
+          'HOP with arrow keys, WASD, D-pad, or left stick. On touch, tap one ' +
+          'of the four screen edges — the direction you tap is the way you hop.\n\n' +
           'Avoid the cars on the road; ride logs across the river — don\'t touch ' +
           'the water. Fill all five home slots and the level repeats faster.\n\n' +
           'Three lives. Esc pauses.'},
