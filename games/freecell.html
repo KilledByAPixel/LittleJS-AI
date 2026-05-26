@@ -21,6 +21,7 @@
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/menus.js"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/textureGenerator.js"></script>
 <script>
 'use strict';
 
@@ -126,37 +127,103 @@ class CardStack
     }
 }
 
-const CARD_FILL   = new Color(1, 1, 1);
-const CARD_BORDER = new Color(0, 0, 0);
-const RED_INK     = new Color(0.85, 0.10, 0.10);
-const BLACK_INK   = new Color(0.05, 0.05, 0.05);
+const RED_INK   = new Color(0.85, 0.10, 0.10);
+const BLACK_INK = new Color(0.05, 0.05, 0.05);
 
 function suitColor(card) { return card.isRed() ? RED_INK : BLACK_INK; }
 
+// Procedural sprite atlas (set by initCardAtlas in gameInit).
+// rank tiles 0..12: A,2..10,J,Q,K painted white-on-transparent for color tinting
+// suit tiles 16..19: ♥ ♠ ♦ ♣ painted white-on-transparent for color tinting
+// bg tile 24: rounded white rect with thin dark border
+let cardSprites;
+
+function initCardAtlas()
+{
+    initDrawToTexture(8);
+    cardSprites = { ranks: [], suits: [], bg: null };
+    for (let i = 0; i < 13; ++i)
+        cardSprites.ranks.push(drawToTexture(i,
+            paintRankTile(RANK_LABELS[i]), 'rank ' + RANK_LABELS[i]));
+    for (let i = 0; i < 4; ++i)
+        cardSprites.suits.push(drawToTexture(16 + i,
+            paintSuitTile(SUIT_GLYPHS[i]), 'suit ' + SUIT_GLYPHS[i]));
+    cardSprites.bg = drawToTexture(24, paintCardBg,
+        'card background, rounded white rectangle with thin dark border');
+}
+
+function paintRankTile(label)
+{
+    return ctx =>
+    {
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // "10" is the only two-char rank — shrink so it fits.
+        const size = label.length > 1 ? 170 : 210;
+        ctx.font = 'bold ' + size + 'px sans-serif';
+        ctx.fillText(label, 125, 130);
+    };
+}
+
+function paintSuitTile(glyph)
+{
+    return ctx =>
+    {
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Force a text-style suit, not a color emoji rendering.
+        ctx.font = '210px "Arial Unicode MS", "DejaVu Sans", sans-serif';
+        ctx.fillText(glyph, 125, 135);
+    };
+}
+
+function paintCardBg(ctx)
+{
+    // Painted at 250×250; stretched to CARD_SIZE (6×8.5) — corners go slightly
+    // oval but at radius 14px the asymmetry is hard to see.
+    const r = 14;
+    ctx.fillStyle = '#0a0a0a';
+    roundedRect(ctx, 0, 0, 250, 250, r);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    roundedRect(ctx, 4, 4, 242, 242, r - 2);
+    ctx.fill();
+}
+
+function roundedRect(ctx, x, y, w, h, r)
+{
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+}
+
 function drawCard(card, pos)
 {
-    // Border (slightly larger dark rect drawn first).
-    drawRect(pos, CARD_SIZE.add(vec2(0.18, 0.18)), CARD_BORDER);
-    drawRect(pos, CARD_SIZE, CARD_FILL);
+    drawTile(pos, CARD_SIZE, cardSprites.bg);
 
-    const color = suitColor(card);
-    const rank  = RANK_LABELS[card.value];
-    const suit  = SUIT_GLYPHS[card.suit];
+    const color    = suitColor(card);
+    const rankTile = cardSprites.ranks[card.value];
+    const suitTile = cardSprites.suits[card.suit];
 
-    // Top-left rank + suit (small).
-    drawText(rank, pos.add(vec2(-CARD_SIZE.x/2 + 0.8, CARD_SIZE.y/2 - 0.9)),
-        1.6, color, 0, undefined, 'left');
-    drawText(suit, pos.add(vec2(-CARD_SIZE.x/2 + 0.8, CARD_SIZE.y/2 - 2.5)),
-        1.4, color, 0, undefined, 'left');
+    const rankSize = vec2(1.8);
+    const suitSize = vec2(1.4);
+
+    // Top-left corner.
+    drawTile(pos.add(vec2(-CARD_SIZE.x/2 + 1.0,  CARD_SIZE.y/2 - 1.0)),  rankSize, rankTile, color);
+    drawTile(pos.add(vec2(-CARD_SIZE.x/2 + 1.0,  CARD_SIZE.y/2 - 2.5)),  suitSize, suitTile, color);
 
     // Big center suit glyph.
-    drawText(suit, pos, 4.2, color);
+    drawTile(pos, vec2(4.2), suitTile, color);
 
-    // Bottom-right rank + suit (small, mirrored placement; no rotation needed).
-    drawText(rank, pos.add(vec2(CARD_SIZE.x/2 - 0.8, -CARD_SIZE.y/2 + 0.9)),
-        1.6, color, 0, undefined, 'right');
-    drawText(suit, pos.add(vec2(CARD_SIZE.x/2 - 0.8, -CARD_SIZE.y/2 + 2.5)),
-        1.4, color, 0, undefined, 'right');
+    // Bottom-right corner, rotated 180° so glyphs read upside-down.
+    drawTile(pos.add(vec2( CARD_SIZE.x/2 - 1.0, -CARD_SIZE.y/2 + 1.0)),  rankSize, rankTile, color, PI);
+    drawTile(pos.add(vec2( CARD_SIZE.x/2 - 1.0, -CARD_SIZE.y/2 + 2.5)),  suitSize, suitTile, color, PI);
 }
 
 function drawSlotOutline(stack)
@@ -266,6 +333,7 @@ function setPlaying(p)
 async function gameInit()
 {
     setupLayout();
+    initCardAtlas();
     newGame();
     // Match the engine's master volume to whatever the options slider starts at,
     // so the very first menu sound plays at the user-visible volume.
