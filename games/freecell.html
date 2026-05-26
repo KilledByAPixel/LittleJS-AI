@@ -317,6 +317,18 @@ function stackUnderPoint(worldPoint)
     return null;
 }
 
+function getMaxMoveCount(target)
+{
+    let freeCells = 0, emptyCascades = 0;
+    for (const s of cardStacks)
+    {
+        if (s === target || !s.isEmpty()) continue;
+        if      (s.type === StackType.FreeCell) ++freeCells;
+        else if (s.type === StackType.Cascade)  ++emptyCascades;
+    }
+    return (1 + freeCells) * (2 ** emptyCascades);
+}
+
 function isMoveLegal(target)
 {
     if (!target || handStack.isEmpty()) return false;
@@ -338,6 +350,7 @@ function isMoveLegal(target)
     }
 
     // target is Cascade
+    if (handStack.cards.length > getMaxMoveCount(target)) return false;
     if (target.isEmpty()) return true;
     const top = target.topCard();
     return (top.suit % 2) !== (bottom.suit % 2) && top.value === bottom.value + 1;
