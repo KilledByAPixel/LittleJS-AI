@@ -129,7 +129,7 @@ class Player extends EngineObject
             tint = new Color(1, .55, .55);
             // pulse the additive on/off every .1s so the player visibly strobes when hit
             if (this.hurtTimer % .1 < .05)
-                additive = new Color(.5, 0, 0);
+                additive = new Color(.5, 0, 0, 0);
         }
         drawEmoji(this.pos, this.size, this.tileInfo, tint, additive);
     }
@@ -150,11 +150,11 @@ const ENEMY_TYPES = [
 // grace period) so early game stays clean.
 const ELITE_TYPES = {
     red:    {hpMult: 1.5, speedMult: 1.5, dmgMult: 1.2, xpMult: 3,
-             sizeMult: 1.15, additive: new Color(.6,  .05, .05)},
+             sizeMult: 1.15, additive: new Color(.6,  .05, .05, 0)},
     gold:   {hpMult: 3.0, speedMult: 1.0, dmgMult: 1.0, xpMult: 5,
-             sizeMult: 1.2,  additive: new Color(.55, .42,  0)},
+             sizeMult: 1.2,  additive: new Color(.55, .42,  0,  0)},
     purple: {hpMult: 2.0, speedMult: 1.0, dmgMult: 1.8, xpMult: 4,
-             sizeMult: 1.2,  additive: new Color(.4,   0,  .55)},
+             sizeMult: 1.2,  additive: new Color(.4,   0,  .55, 0)},
 };
 const ELITE_KEYS = Object.keys(ELITE_TYPES);
 
@@ -261,7 +261,7 @@ class Chest extends EngineObject
         // pulsing gold additive so the chest screams "come collect me"
         const pulse = .5 + .5 * Math.sin(age * 6);
         drawEmoji(this.pos, this.size, sprites.chest, WHITE,
-                  new Color(.4 * pulse, .3 * pulse, 0), this.angle);
+                  new Color(.4 * pulse, .3 * pulse, 0, 0), this.angle);
     }
 }
 
@@ -288,7 +288,7 @@ class Enemy extends EngineObject
         this.bossDef  = bossDef;
         // bosses always glow gold so they read against a swarm of regulars
         if (this.isBoss && !this.eliteAdditive)
-            this.eliteAdditive = new Color(.55, .42, 0);
+            this.eliteAdditive = new Color(.55, .42, 0, 0);
         this.damping = 1;
         this.friction = 1;
         this.gravityScale = 0;
@@ -317,7 +317,7 @@ class Enemy extends EngineObject
             this.hitFlashTimer -= 1 / 60;
             // white additive briefly punches through the outline so a hit
             // is visible even on a 50-pixel sprite in a swarm of hundreds
-            additive = new Color(.8, .8, .8);
+            additive = new Color(.8, .8, .8, 0);
         }
         drawEmoji(this.pos, this.size, this.tileInfo, tint, additive);
     }
@@ -345,7 +345,7 @@ class Enemy extends EngineObject
             if (this.hp <= 0) { this.destroy(); return; }
             this.tint = new Color(1, .55, .35);
             const flicker = Math.sin(time * 28) * .5 + .5;
-            this.additive = new Color(.45 * flicker, .15 * flicker, 0);
+            this.additive = new Color(.45 * flicker, .15 * flicker, 0, 0);
         }
         else if (this.slowTimer > 0)
         {
@@ -935,7 +935,7 @@ class FireZone extends EngineObject
         drawTile(this.pos, vec2(sz), sprites.fireball,
                  new Color(1, .85, .55, .55 * fade),
                  0, false,
-                 new Color(.35, .12, 0, .35 * fade));
+                 new Color(.35, .12, 0, 0));
     }
 }
 
@@ -1175,7 +1175,7 @@ class Bomb extends EngineObject
         // pulse faster as the fuse runs out
         const pulseRate = lerp(clamp(this.fuse / .9, 0, 1), 6, 20);
         const pulse = Math.sin(time * pulseRate) * .5 + .5;
-        this.additive = new Color(.6 * pulse, .1 * pulse, .1 * pulse);
+        this.additive = new Color(.6 * pulse, .1 * pulse, .1 * pulse, 0);
 
         if (this.fuse <= 0)
         {
@@ -1335,7 +1335,7 @@ function updateSpawner()
         reaperSpawned = true;
         spawnBoss(REAPER_DEF);
         // override the default gold boss glow with ominous red
-        if (activeBoss) activeBoss.eliteAdditive = new Color(.65, 0, 0);
+        if (activeBoss) activeBoss.eliteAdditive = new Color(.65, 0, 0, 0);
     }
 
     // ramp the spawn interval from base down to 0.08s over the first 90 seconds
