@@ -44,6 +44,12 @@ canvasClearColor = new Color().setHex('#264d40');   // felt green
 const CARD_SIZE     = vec2(6, 8.5);
 const COL_PITCH_X   = 7;          // horizontal distance between column anchors
 const CARD_PITCH_Y  = 2;          // vertical stagger inside a cascade
+const TOP_MARGIN    = 1;          // empty felt above the top row of stacks
+
+// Pip layout for number cards (2-10).
+const PIP_SIZE      = vec2(1.4);  // size of each pip glyph
+const PIP_SPREAD_X  = 1.5;        // horizontal half-spacing of pip grid
+const PIP_SPREAD_Y  = 1.8;        // vertical half-spacing of pip grid
 
 ///////////////////////////////////////////////////////////////////////////////
 // Card model
@@ -238,8 +244,6 @@ function drawCard(card, pos)
 // glyphs of our 6×8.5 card.
 function drawPips(center, v, suitTile, color)
 {
-    const PIP_SIZE = vec2(1.4);
-    const SX = 1.5, SY = 1.8;
     for (let i = 0; i < v; ++i)
     {
         let px = 0, py = 0;
@@ -262,7 +266,8 @@ function drawPips(center, v, suitTile, color)
             py = (i % 4) / 3 * 2 - 1;
             if (i > 7) { px = 0; py = v === 9 ? 0 : (i - 7 - 1.5) * 1.3; }
         }
-        drawTile(center.add(vec2(px * SX, py * SY)), PIP_SIZE, suitTile, color);
+        drawTile(center.add(vec2(px * PIP_SPREAD_X, py * PIP_SPREAD_Y)),
+            PIP_SIZE, suitTile, color);
     }
 }
 
@@ -294,15 +299,17 @@ function setupLayout()
     layoutTopRowY     = 8;             // arbitrary positive y for the top row
     layoutCascadeTopY = layoutTopRowY - CARD_SIZE.y - 1;  // gap below top row
 
-    // Fit camera to the whole table (top row + 13-card cascade) AND center
-    // cameraPos on the table midpoint, otherwise the board sits low with
-    // a band of empty felt above.
+    // Fit camera to the whole table (top row + 13-card cascade). cameraPos.y
+    // is anchored so the top of the table sits TOP_MARGIN units below the
+    // top edge of the visible area — adjust TOP_MARGIN to slide the board
+    // up or down on screen.
     const topY    = layoutTopRowY + CARD_SIZE.y/2;
     const bottomY = layoutCascadeTopY - CARD_PITCH_Y * 12 - CARD_SIZE.y/2;
     const tableW  = (8 - 1) * COL_PITCH_X + CARD_SIZE.x + 2;            // +padding
-    const tableH  = topY - bottomY + 2;
+    const tableH  = topY - bottomY + TOP_MARGIN + 1;                    // +bottom padding
     cameraScale   = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
-    cameraPos     = vec2(0, (topY + bottomY) / 2);
+    const viewH   = mainCanvasSize.y / cameraScale;
+    cameraPos     = vec2(0, topY + TOP_MARGIN - viewH/2);
 }
 
 function newGame()
