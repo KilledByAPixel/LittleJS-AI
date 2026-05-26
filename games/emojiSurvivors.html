@@ -853,11 +853,11 @@ class PizzaTossWeapon
         for (let i = 0; i < slices; ++i)
         {
             const t = slices === 1 ? .5 : i / (slices - 1);
-            const ang = baseAng + lerp(t, -spread, spread);
+            const ang = baseAng + lerp(-spread, spread, t);
             const dir = vec2().setAngle(ang, 1);
             const proj = new Projectile(player.pos.copy(), dir, speed,
                 dmg, 1.6, sprites.pizza, true);
-            proj.angleVelocity = 10;  // tumble through the air
+            proj.angleVelocity = 5;   // tumble through the air
         }
     }
 }
@@ -1012,7 +1012,7 @@ class SpicyPizzaWeapon
         for (let i = 0; i < slices; ++i)
         {
             const t = i / (slices - 1);
-            const ang = baseAng + lerp(t, -spread, spread);
+            const ang = baseAng + lerp(-spread, spread, t);
             const dir = vec2().setAngle(ang, 1);
             const proj = new Projectile(player.pos.copy(), dir, speed, dmg,
                 1.8, sprites.pizza, true,
@@ -1020,7 +1020,7 @@ class SpicyPizzaWeapon
                     e.burnTimer = 1.5;
                     if (6 > e.burnDps) e.burnDps = 6;
                 });
-            proj.angleVelocity = 14;
+            proj.angleVelocity = 7;
         }
     }
 }
@@ -1214,7 +1214,8 @@ class Bomb extends EngineObject
 
         this.fuse -= 1 / 60;
         // pulse faster as the fuse runs out
-        const pulseRate = lerp(clamp(this.fuse / .9, 0, 1), 6, 20);
+        // pulse faster as the fuse runs out: 6Hz at fresh, 20Hz at boom
+        const pulseRate = lerp(20, 6, clamp(this.fuse / .9, 0, 1));
         const pulse = Math.sin(time * pulseRate) * .5 + .5;
         this.additive = new Color(.6 * pulse, .1 * pulse, .1 * pulse, 0);
 
@@ -1380,7 +1381,8 @@ function updateSpawner()
     }
 
     // ramp the spawn interval from base down to 0.08s over the first 90 seconds
-    spawner.interval = lerp(min(time / 90, 1), enemySpawnIntervalBase, 0.08);
+    // ramp from base (~1.5s) down to .08s over the first 90 seconds
+    spawner.interval = lerp(enemySpawnIntervalBase, 0.08, min(time / 90, 1));
 
     spawner.timer -= 1 / 60;
     if (spawner.timer > 0) return;
