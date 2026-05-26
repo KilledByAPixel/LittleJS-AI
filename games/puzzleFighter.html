@@ -120,6 +120,81 @@ function mergePowerGems(grid)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Piece geometry
+
+const ROT_OFFSETS = [
+    vec2(0,  1),  // 0: b above
+    vec2(1,  0),  // 1: b right
+    vec2(0, -1),  // 2: b below
+    vec2(-1, 0),  // 3: b left
+];
+
+function pieceCells(piece, x, y, rot)
+{
+    x = (x !== undefined) ? x : piece.x;
+    y = (y !== undefined) ? y : piece.y;
+    rot = (rot !== undefined) ? rot : piece.rot;
+    const o = ROT_OFFSETS[rot];
+    return [
+        { x: x, y: y, gem: piece.a },
+        { x: x + o.x, y: y + o.y, gem: piece.b },
+    ];
+}
+
+function pieceCanPlace(grid, piece, x, y, rot)
+{
+    const cells = pieceCells(piece, x, y, rot);
+    for (const c of cells)
+    {
+        if (c.x < 0 || c.x >= BOARD_W) return false;
+        if (c.y < 0) return false;
+        if (c.y < BOARD_H && grid[c.x][c.y]) return false;
+    }
+    return true;
+}
+
+function pieceTryMove(grid, piece, dx, dy)
+{
+    if (pieceCanPlace(grid, piece, piece.x + dx, piece.y + dy, piece.rot))
+    { piece.x += dx; piece.y += dy; return true; }
+    return false;
+}
+
+function pieceTryRotate(grid, piece, dir)
+{
+    const nr = (piece.rot + dir + 4) % 4;
+    const kicks = [vec2(0,0), vec2(-1,0), vec2(1,0), vec2(0,1)];
+    for (const k of kicks)
+    {
+        if (pieceCanPlace(grid, piece, piece.x + k.x, piece.y + k.y, nr))
+        { piece.x += k.x; piece.y += k.y; piece.rot = nr; return true; }
+    }
+    return false;
+}
+
+function lockPieceWithSeparation(grid, piece)
+{
+    const cells = pieceCells(piece);
+    // Sort top-down so we place the lower cell first
+    cells.sort((c1, c2) => c1.y - c2.y);
+
+    const placed = [];
+
+    for (const c of cells)
+    {
+        if (c.y >= BOARD_H) continue;  // overflow → ignored here, caller handles game-over
+
+        // Column drop: find lowest empty cell at this column at or below c.y
+        let landY = c.y;
+        while (landY > 0 && !grid[c.x][landY - 1]) landY--;
+        grid[c.x][landY] = c.gem;
+        placed.push([c.x, landY]);
+    }
+
+    return placed;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Placeholder Board
 
 class Board
@@ -208,6 +283,48 @@ function runUnitTests()
         mergePowerGems(g);
         assert(g[0][2].powerGemId === extId, 'merge: 2x2 extending to 2x3 keeps existing id');
         assert(g[0][0].powerGemId === extId, 'merge: original cells still have same id after extension');
+    }
+
+    // --- Piece tests ---
+    {
+        // Rotation offsets
+        const p = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 3, y: 5, rot: 0 };
+        let cells = pieceCells(p);
+        assert(cells[0].x === 3 && cells[0].y === 5, 'piece: a at (3,5)');
+        assert(cells[1].x === 3 && cells[1].y === 6, 'piece: b above a (rot 0)');
+
+        cells = pieceCells(p, 3, 5, 1);
+        assert(cells[1].x === 4 && cells[1].y === 5, 'piece: b right of a (rot 1)');
+
+        cells = pieceCells(p, 3, 5, 2);
+        assert(cells[1].x === 3 && cells[1].y === 4, 'piece: b below a (rot 2)');
+
+        cells = pieceCells(p, 3, 5, 3);
+        assert(cells[1].x === 2 && cells[1].y === 5, 'piece: b left of a (rot 3)');
+
+        // Move blocked by wall
+        let g = emptyGrid();
+        const p2 = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 0, y: 5, rot: 0 };
+        assert(!pieceTryMove(g, p2, -1, 0), 'piece: cannot move into left wall');
+        assert(pieceTryMove(g, p2, 1, 0), 'piece: can move right');
+
+        // Separation on lock: vertical pair, both land at base
+        g = emptyGrid();
+        const pv = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 2, y: 5, rot: 0 };
+        lockPieceWithSeparation(g, pv);
+        assert(g[2][0] && g[2][0].color === COLOR_R, 'separation: vertical a lands at bottom');
+        assert(g[2][1] && g[2][1].color === COLOR_G, 'separation: vertical b stacks on a');
+
+        // Separation: horizontal pair with one side over a tall column
+        g = emptyGrid();
+        g[3][0] = gemRegular(COLOR_B);
+        g[3][1] = gemRegular(COLOR_B);
+        g[3][2] = gemRegular(COLOR_B);
+        const ph = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 2, y: 5, rot: 1 };
+        // a at col 2, b at col 3
+        lockPieceWithSeparation(g, ph);
+        assert(g[2][0] && g[2][0].color === COLOR_R, 'separation: a falls to bottom of empty col');
+        assert(g[3][3] && g[3][3].color === COLOR_G, 'separation: b lands on top of stacked col');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
