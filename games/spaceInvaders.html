@@ -383,6 +383,7 @@ class Player extends RectObject
     {
         super(pos, vec2(3.2, 1.4), rgb(.2,.9,.95));
         this.renderOrder = 10;
+        this.shotCooldown = 0; // minimum frames between shots even when last bullet died
     }
     update()
     {
@@ -419,14 +420,16 @@ class Player extends RectObject
 
         clampToPlayfield(this.pos, this.size.scale(.5));
 
-        // Shooting — arcade single-bullet rule: only fire if no player bullet is
-        // currently on screen. Keyboard: Space/K or A-button. Mouse: click.
+        // Shooting — arcade single-bullet rule plus a small min-interval so you
+        // can't spam-fire by destroying your bullet immediately against a barrier.
+        if (this.shotCooldown > 0) this.shotCooldown--;
         const wantsShoot = inputMode === 'keyboard'
             ? (keyIsDown('Space') || keyIsDown('KeyK') || gamepadIsDown(0))
             : mouseIsDown(0);
         const hasActiveBullet = bullets.some(b => !b.destroyed && b.fromPlayer);
-        if (wantsShoot && !hasActiveBullet)
+        if (wantsShoot && !hasActiveBullet && this.shotCooldown === 0)
         {
+            this.shotCooldown = 12; // ~0.2s between consecutive shots
             playerShotsFired++;
             const b = new Bullet(this.pos.add(vec2(0, 0.1)), vec2(0, 1.2), true);
             b.shotIndex = playerShotsFired;
@@ -540,12 +543,133 @@ class Bomb extends RectObject
     }
 }
 
-class BarrierBlock extends RectObject
+// Shield: arcade-style pixel-eroded barrier. Owns a 2D grid of "alive" cells;
+// projectile hits carve a small organic splash, the alien formation wipes any
+// cells it touches. Replaces the old per-block BarrierBlock approach.
+class Shield extends EngineObject
 {
-    constructor(pos, size)
+    constructor(centerPos, gridW, gridH, pixelSize, template)
     {
-        super(pos, vec2(size, size), rgb(.95,.25,.25));
+        const totalSize = vec2(gridW * pixelSize, gridH * pixelSize);
+        super(centerPos, totalSize);
+        this.gridW = gridW;
+        this.gridH = gridH;
+        this.pixelSize = pixelSize;
+        this.alive = new Uint8Array(gridW * gridH);
+        this.color = rgb(.95,.25,.25);
         this.renderOrder = 8;
+        this.origin = centerPos.subtract(totalSize.scale(.5)); // world-space bottom-left
+
+        // Stamp the template (visually top-down strings of '#' = alive) into the grid,
+        // upscaling if the grid is larger than the template.
+        const tH = template.length, tW = template[0].length;
+        const sx = gridW / tW, sy = gridH / tH;
+        for (let ty = 0; ty < tH; ty++)
+        {
+            const row = template[ty];
+            for (let tx = 0; tx < tW; tx++)
+            {
+                if (row[tx] !== '#') continue;
+                const gx0 = (tx * sx) | 0, gx1 = ((tx + 1) * sx) | 0;
+                const gyT0 = (ty * sy) | 0, gyT1 = ((ty + 1) * sy) | 0;
+                for (let gyT = gyT0; gyT < gyT1; gyT++)
+                for (let gx = gx0; gx < gx1; gx++)
+                {
+                    const gy = gridH - 1 - gyT; // flip: template top → world bottom
+                    this.alive[gy * gridW + gx] = 1;
+                }
+            }
+        }
+    }
+
+    cellCenter(gx, gy)
+    {
+        return vec2(this.origin.x + (gx + .5) * this.pixelSize,
+                    this.origin.y + (gy + .5) * this.pixelSize);
+    }
+
+    // Find the first alive cell a swept AABB would touch in the direction of motion.
+    sweptFirstHit(sweptCenter, sweptSize, velY)
+    {
+        const px = this.pixelSize;
+        const gx0 = max(0,             Math.floor((sweptCenter.x - sweptSize.x/2 - this.origin.x) / px));
+        const gx1 = min(this.gridW - 1, Math.floor((sweptCenter.x + sweptSize.x/2 - this.origin.x) / px));
+        const gy0 = max(0,             Math.floor((sweptCenter.y - sweptSize.y/2 - this.origin.y) / px));
+        const gy1 = min(this.gridH - 1, Math.floor((sweptCenter.y + sweptSize.y/2 - this.origin.y) / px));
+        if (gx0 > gx1 || gy0 > gy1) return null;
+        if (velY > 0)
+        {
+            for (let gy = gy0; gy <= gy1; gy++)
+            for (let gx = gx0; gx <= gx1; gx++)
+                if (this.alive[gy * this.gridW + gx]) return {gx, gy};
+        }
+        else
+        {
+            for (let gy = gy1; gy >= gy0; gy--)
+            for (let gx = gx0; gx <= gx1; gx++)
+                if (this.alive[gy * this.gridW + gx]) return {gx, gy};
+        }
+        return null;
+    }
+
+    // Carve a roughly elliptical splash around (gx,gy) with random edge nibble.
+    eraseSplash(gx, gy, rx, ry)
+    {
+        const dxMax = Math.ceil(rx), dyMax = Math.ceil(ry);
+        for (let dy = -dyMax; dy <= dyMax; dy++)
+        for (let dx = -dxMax; dx <= dxMax; dx++)
+        {
+            const fx = dx / rx, fy = dy / ry;
+            const d2 = fx*fx + fy*fy;
+            if (d2 > 1) continue;
+            if (d2 > 0.55 && rand() < 0.35) continue; // organic edge
+            const x = gx + dx, y = gy + dy;
+            if (x >= 0 && x < this.gridW && y >= 0 && y < this.gridH)
+                this.alive[y * this.gridW + x] = 0;
+        }
+    }
+
+    // Wipe any alive cells inside an AABB (alien formation overlapping shield).
+    eraseAABB(aabbCenter, aabbSize)
+    {
+        const px = this.pixelSize;
+        const gx0 = max(0,             Math.floor((aabbCenter.x - aabbSize.x/2 - this.origin.x) / px));
+        const gx1 = min(this.gridW - 1, Math.floor((aabbCenter.x + aabbSize.x/2 - this.origin.x) / px));
+        const gy0 = max(0,             Math.floor((aabbCenter.y - aabbSize.y/2 - this.origin.y) / px));
+        const gy1 = min(this.gridH - 1, Math.floor((aabbCenter.y + aabbSize.y/2 - this.origin.y) / px));
+        let any = false;
+        for (let gy = gy0; gy <= gy1; gy++)
+        for (let gx = gx0; gx <= gx1; gx++)
+        {
+            const i = gy * this.gridW + gx;
+            if (this.alive[i]) { this.alive[i] = 0; any = true; }
+        }
+        return any;
+    }
+
+    isEmpty()
+    {
+        for (let i = 0; i < this.alive.length; i++)
+            if (this.alive[i]) return false;
+        return true;
+    }
+
+    render()
+    {
+        const ps = this.pixelSize;
+        const half = ps * .5;
+        const ox = this.origin.x, oy = this.origin.y;
+        const sz = vec2(ps, ps);
+        for (let gy = 0; gy < this.gridH; gy++)
+        {
+            const py = oy + gy * ps + half;
+            const rowStart = gy * this.gridW;
+            for (let gx = 0; gx < this.gridW; gx++)
+            {
+                if (this.alive[rowStart + gx])
+                    drawRect(vec2(ox + gx * ps + half, py), sz, this.color);
+            }
+        }
     }
 }
 
@@ -629,33 +753,20 @@ const SHIELD_TEMPLATE = [
     '####........####',
     '###..........###'
 ];
-const SHIELD_BLOCK = 0.5;
+// Shield grid resolution — 2× the template gives organic pixel erosion without
+// flooding the renderer (32×20 cells × 4 shields = 2560 cells/frame, batched WebGL).
+const SHIELD_GRID_W = 32;
+const SHIELD_GRID_H = 20;
+const SHIELD_PIXEL = 0.25;
 
 function createBarriers()
 {
     const barrierCount = 4;
-    const gap = levelSize.x/(barrierCount+1);
-    const tmplH = SHIELD_TEMPLATE.length;
-    const tmplW = SHIELD_TEMPLATE[0].length;
-
-    for (let i=1; i<=barrierCount; i++)
+    const gap = levelSize.x / (barrierCount + 1);
+    for (let i = 1; i <= barrierCount; i++)
     {
-        const cx = gap*i;
-        const cy = barrierY;
-
-        for (let ty=0; ty<tmplH; ty++)
-        {
-            const row = SHIELD_TEMPLATE[ty];
-            for (let x=0; x<tmplW; x++)
-            {
-                if (row[x] !== '#') continue;
-                // Template row 0 is visual top; world Y is up-positive so flip.
-                const y = tmplH - 1 - ty;
-                const px = cx + (x - (tmplW-1)/2) * SHIELD_BLOCK;
-                const py = cy + (y - (tmplH-1)/2) * SHIELD_BLOCK;
-                barriers.push(new BarrierBlock(vec2(px, py), SHIELD_BLOCK * .95));
-            }
-        }
+        const center = vec2(gap * i, barrierY);
+        barriers.push(new Shield(center, SHIELD_GRID_W, SHIELD_GRID_H, SHIELD_PIXEL, SHIELD_TEMPLATE));
     }
 }
 
@@ -1185,17 +1296,15 @@ function updateInvaders()
     if (minY < playerY + 2.5)
         doGameOver();
 
-    // Check if aliens are touching barriers - destroy any barrier blocks they touch
+    // Aliens marching into a shield wipe any pixels they overlap.
     for (const a of aliens)
     {
         if (a.destroyed) continue;
-        for (const br of barriers)
+        for (const sh of barriers)
         {
-            if (br.destroyed) continue;
-            if (aabbOverlap(a, br))
-            {
-                br.destroy();
-            }
+            if (sh.destroyed) continue;
+            if (!isOverlapping(a.pos, a.size, sh.pos, sh.size)) continue;
+            if (sh.eraseAABB(a.pos, a.size) && sh.isEmpty()) sh.destroy();
         }
     }
 
@@ -1316,26 +1425,32 @@ function updateCollisions()
 
         if (b.destroyed) continue;
 
-        // vs barriers — swept AABB so a fast bullet hits the FIRST block in its
-        // path this frame instead of skipping past blocks into a hole behind them.
+        // vs shields — swept hit against each shield's pixel grid; pick the cell
+        // closest to bullet's previous position (lowest worldY for upward bullet).
         const sweptCenter = b.pos.subtract(b.vel.scale(.5));
         const sweptSize = vec2(b.size.x + abs(b.vel.x), b.size.y + abs(b.vel.y));
-        let firstHit = null;
-        for (const br of barriers)
+        let bestShield = null, bestHit = null;
+        let bestY = b.vel.y > 0 ? Infinity : -Infinity;
+        for (const sh of barriers)
         {
-            if (br.destroyed) continue;
-            if (!isOverlapping(sweptCenter, sweptSize, br.pos, br.size)) continue;
-            // The bullet hits the block closest to its previous position.
-            // Upward bullet (vel.y > 0): lowest y; downward: highest y.
-            if (!firstHit ||
-                (b.vel.y > 0 ? br.pos.y < firstHit.pos.y : br.pos.y > firstHit.pos.y))
-                firstHit = br;
+            if (sh.destroyed) continue;
+            if (!isOverlapping(sweptCenter, sweptSize, sh.pos, sh.size)) continue;
+            const hit = sh.sweptFirstHit(sweptCenter, sweptSize, b.vel.y);
+            if (!hit) continue;
+            const worldY = sh.origin.y + (hit.gy + .5) * sh.pixelSize;
+            if (b.vel.y > 0 ? worldY < bestY : worldY > bestY)
+            {
+                bestY = worldY;
+                bestShield = sh;
+                bestHit = hit;
+            }
         }
-        if (firstHit)
+        if (bestShield)
         {
             b.destroy();
-            firstHit.destroy();
-            sfxHit.play(firstHit.pos);
+            bestShield.eraseSplash(bestHit.gx, bestHit.gy, 2, 3);
+            sfxHit.play(bestShield.cellCenter(bestHit.gx, bestHit.gy));
+            if (bestShield.isEmpty()) bestShield.destroy();
         }
     }
 
@@ -1352,15 +1467,30 @@ function updateCollisions()
             continue;
         }
 
-        // vs barriers
-        for (const br of barriers)
+        // vs shields — swept hit; bomb travels down so pick the highest worldY cell
+        const sweptCenter = bomb.pos.subtract(bomb.vel.scale(.5));
+        const sweptSize = vec2(bomb.size.x + abs(bomb.vel.x), bomb.size.y + abs(bomb.vel.y));
+        let bestShield = null, bestHit = null, bestY = -Infinity;
+        for (const sh of barriers)
         {
-            if (br.destroyed) continue;
-            if (!aabbOverlap(bomb, br)) continue;
+            if (sh.destroyed) continue;
+            if (!isOverlapping(sweptCenter, sweptSize, sh.pos, sh.size)) continue;
+            const hit = sh.sweptFirstHit(sweptCenter, sweptSize, bomb.vel.y);
+            if (!hit) continue;
+            const worldY = sh.origin.y + (hit.gy + .5) * sh.pixelSize;
+            if (worldY > bestY)
+            {
+                bestY = worldY;
+                bestShield = sh;
+                bestHit = hit;
+            }
+        }
+        if (bestShield)
+        {
             bomb.destroy();
-            br.destroy();
-            sfxHit.play(br.pos);
-            break;
+            bestShield.eraseSplash(bestHit.gx, bestHit.gy, 2.5, 3.5);
+            sfxHit.play(bestShield.cellCenter(bestHit.gx, bestHit.gy));
+            if (bestShield.isEmpty()) bestShield.destroy();
         }
     }
 }
