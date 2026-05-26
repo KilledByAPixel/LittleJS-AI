@@ -1034,7 +1034,7 @@
   ///////////////////////////////////////////////////////////////////////////////
   // Engine callbacks
 
-  function gameInit()
+  async function gameInit()
   {
       debugShowErrors();
 
@@ -1046,9 +1046,11 @@
       setTilesPixelated(false);
 
       // build the procedural sprite atlas, then try to swap in centipede.png
-      // if one is sitting next to this file (silent 404 if missing)
+      // if one is sitting next to this file (silent 404 if missing).
+      // Awaiting the swap means the engine never renders the procedural
+      // pixels — the PNG is uploaded before the first frame.
       buildSpriteAtlas();
-      useAtlasImage('centipede.png');
+      await useAtlasImage('centipede.png');
 
       try { bestScore = +localStorage.getItem('centipede.best') || 0; } catch(e) { bestScore = 0; }
 
