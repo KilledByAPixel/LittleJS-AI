@@ -487,6 +487,48 @@ function dropCounterGems(grid, count, pattern, startCountdown)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Defense subtraction
+
+// Returns {
+//   remainingIncoming,  // counter gems that still drop on the defender
+//   flipback,           // counter gems sent back to original attacker (full strength)
+//   newOutgoing,        // remaining outgoing damage (after defense used) added to opponent's queue
+//   defendedRatio       // ratio of incoming canceled (0..1)
+// }
+function applyDefense(incoming, outgoing)
+{
+    if (outgoing <= 0)
+        return { remainingIncoming: incoming, flipback: 0, newOutgoing: 0, defendedRatio: 0 };
+
+    if (incoming <= 0)
+        return { remainingIncoming: 0, flipback: 0, newOutgoing: outgoing, defendedRatio: 0 };
+
+    const defenseValue = Math.floor(outgoing / 2);
+    if (defenseValue >= incoming)
+    {
+        const consumed = incoming;
+        const flipback = defenseValue - incoming;
+        const remainingOutgoingShare = outgoing - 2 * consumed;
+        const passThrough = Math.max(0, remainingOutgoingShare);
+        return {
+            remainingIncoming: 0,
+            flipback,
+            newOutgoing: passThrough,
+            defendedRatio: 1
+        };
+    }
+    else
+    {
+        return {
+            remainingIncoming: incoming - defenseValue,
+            flipback: 0,
+            newOutgoing: 0,
+            defendedRatio: defenseValue / incoming
+        };
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Placeholder Board
 
 class Board
@@ -904,6 +946,36 @@ function runUnitTests()
         for (let y = 0; y < BOARD_H; y++) g[0][y] = gemRegular(COLOR_B);  // col 0 full
         const placed = dropCounterGems(g, 6, kenPattern, 5);
         assert(placed === 5, 'drop: 6 gems but col 0 full → 5 placed (1 discarded)');
+    }
+
+    // --- Defense tests ---
+    {
+        // No incoming → outgoing passes through
+        let r = applyDefense(0, 10);
+        assert(r.newOutgoing === 10 && r.remainingIncoming === 0 && r.flipback === 0, 'defense: no incoming, outgoing 10 passes');
+
+        // No outgoing → incoming unchanged
+        r = applyDefense(20, 0);
+        assert(r.remainingIncoming === 20 && r.flipback === 0, 'defense: no outgoing, full incoming');
+
+        // Partial defense: 10 incoming, 6 outgoing (defense=3) → incoming 7 remains, no flipback
+        r = applyDefense(10, 6);
+        assert(r.remainingIncoming === 7, 'defense: partial subtract (10-3=7), got ' + r.remainingIncoming);
+        assert(r.newOutgoing === 0, 'defense: no leftover outgoing in partial');
+        assert(r.flipback === 0, 'defense: no flipback in partial');
+
+        // Full cancel: 5 incoming, 20 outgoing (defense=10) → fully canceled, 5 flipback, 10 newOutgoing
+        r = applyDefense(5, 20);
+        assert(r.remainingIncoming === 0, 'defense: full cancel sets incoming 0');
+        assert(r.flipback === 5, 'defense: excess defense flipback (5), got ' + r.flipback);
+        assert(r.newOutgoing === 10, 'defense: remaining outgoing 10 (20 - 2*5), got ' + r.newOutgoing);
+
+        // ≥50% threshold flag
+        r = applyDefense(10, 10);  // defense=5, exactly 50%
+        assert(r.defendedRatio >= 0.5, 'defense: 50% threshold flagged (got ' + r.defendedRatio + ')');
+
+        r = applyDefense(10, 8);  // defense=4, 40%
+        assert(r.defendedRatio < 0.5, 'defense: <50% not flagged (got ' + r.defendedRatio + ')');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
