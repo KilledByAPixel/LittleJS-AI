@@ -90,6 +90,9 @@ class Player extends EngineObject
         this.level = 1;
         this.pendingLevelUps = 0;
         this.passives = [];
+        // mystery-pickup temp buff timers
+        this.damageBoostTimer = 0;
+        this.invulnTimer = 0;
         // multipliers populated by recomputeMultipliers() — passives mutate these
         this.dmgMult        = 1;
         this.cooldownMult   = 1;
@@ -105,6 +108,14 @@ class Player extends EngineObject
     {
         this.speed = playerSpeed * this.moveSpeedMult;
         this.maxHp = playerMaxHp * this.maxHpMult;
+        // tick down mystery-pickup buff timers
+        if (this.damageBoostTimer > 0)
+        {
+            this.damageBoostTimer -= 1 / 60;
+            if (this.damageBoostTimer <= 0) recomputeMultipliers();
+        }
+        if (this.invulnTimer > 0) this.invulnTimer -= 1 / 60;
+        if (timeSlowTimer > 0) timeSlowTimer -= 1 / 60;
         const dir = playerAI
             ? aiDirection()
             : keyDirection().add(gamepadStick(0)).add(touchDirection());
@@ -372,6 +383,14 @@ class Enemy extends EngineObject
             moveScale = 0;
             this.tint = new Color(.45, .75, 1);
         }
+        else if (timeSlowTimer > 0)
+        {
+            // Mystery-pickup global time slow — applied to every enemy at
+            // once. Visualized with a pale blue tint to make the effect
+            // obvious without overriding more-specific status effects.
+            moveScale = .3;
+            this.tint = new Color(.7, .85, 1);
+        }
         else if (this.burnTimer > 0)
         {
             this.burnTimer -= 1 / 60;
@@ -418,8 +437,9 @@ class Enemy extends EngineObject
         // tick contact cooldown
         if (this.hitCooldown > 0) this.hitCooldown -= 1 / 60;
 
-        // contact damage to player
+        // contact damage to player — fully blocked while ✨ invuln is active
         if (this.hitCooldown <= 0 &&
+            player.invulnTimer <= 0 &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.dmg;
@@ -452,6 +472,9 @@ class Enemy extends EngineObject
         if (this.hp <= 0)  // only drop on death, not despawn
         {
             killCount++;
+            comboCount++;
+            comboTimer = COMBO_WINDOW;
+            if (comboCount > comboPeak) comboPeak = comboCount;
             // split into smaller enemies if the type or boss def defines a split
             const splitInto = this.type.splitInto ||
                               (this.bossDef && this.bossDef.splitInto);
@@ -496,9 +519,11 @@ class Enemy extends EngineObject
             else
             {
                 const roll = rand();
-                if (roll < .03)
+                if (roll < .005)
+                    new Pickup(this.pos.copy(), sprites.clover, 'mystery', 0);
+                else if (roll < .035)
                     new Pickup(this.pos.copy(), sprites.coin, 'coin', 1);
-                else if (roll < .13)
+                else if (roll < .135)
                     new Pickup(this.pos.copy(), sprites.heart, 'heart', 20);
                 else
                     new Pickup(this.pos.copy(), sprites.gem, 'gem', this.xpDrop);
@@ -687,6 +712,63 @@ class StarTossWeapon
 
 function xpToNext(level) { return xpToNextBase + level * level * 2; }
 
+// Temporary buff state — driven by the 🍀 mystery pickup. Each timer
+// ticks down in Player.update; the effects are checked at use-sites.
+let timeSlowTimer = 0;   // enemies move at 30% while > 0
+
+function applyRandomBuff(pos)
+{
+    if (!player) return;
+    const buffs = [
+        () => {
+            player.damageBoostTimer = 8;
+            recomputeMultipliers();     // bakes the 2× into dmgMult
+            toastBuff('💪', '2× DAMAGE', '8 seconds');
+        },
+        () => {
+            const heal = player.maxHp - player.hp;
+            player.hp = player.maxHp;
+            toastBuff('❤️', 'FULL HEAL', '+' + Math.ceil(heal) + ' HP');
+        },
+        () => {
+            timeSlowTimer = 5;
+            toastBuff('⏳', 'TIME SLOW', 'enemies at 30% for 5s');
+        },
+        () => {
+            player.invulnTimer = 4;
+            toastBuff('✨', 'INVINCIBLE', '4 seconds');
+        },
+        () => {
+            // pull every gem on screen toward the player
+            let count = 0;
+            for (const obj of engineObjects)
+            {
+                if (obj instanceof Pickup && obj.kind === 'gem' && !obj.destroyed)
+                {
+                    obj.magnetting = true;
+                    ++count;
+                }
+            }
+            toastBuff('🧲', 'GEM VACUUM', count + ' gems incoming');
+        },
+        () => {
+            for (let i = 0; i < 20; ++i)
+            {
+                const off = vec2().setAngle(rand(2 * PI), rand(.5, 2));
+                new Pickup((pos || player.pos).add(off),
+                           sprites.coin, 'coin', 5);
+            }
+            toastBuff('💰', 'COIN RAIN', '+100💰');
+        },
+    ];
+    buffs[randInt(buffs.length)]();
+}
+function toastBuff(icon, title, text)
+{
+    if (typeof showMenuToast === 'function')
+        showMenuToast({icon, title, text, duration: 2.5, position: 'top-left'});
+}
+
 class Pickup extends EngineObject
 {
     constructor(pos, sprite, kind, value)
@@ -714,6 +796,13 @@ class Pickup extends EngineObject
         if (this.kind === 'gem')        additive = new Color(.1 * pulse, pulse, pulse, 0);
         else if (this.kind === 'heart') additive = new Color(pulse, .15 * pulse, .25 * pulse, 0);
         else if (this.kind === 'coin')  additive = new Color(pulse, pulse * .8, .1 * pulse, 0);
+        else if (this.kind === 'mystery')
+        {
+            // rainbow-shift hue so the rare drop screams "GRAB ME"
+            const h = (time * .35 + this.sparklePhase * .2) % 1;
+            const big = .55 + .45 * sin(t * 1.5);
+            additive = new Color(big * (1 - h), big * h, big * .8, 0);
+        }
         drawEmoji(this.pos, this.size, this.tileInfo, WHITE, additive);
     }
 
@@ -759,6 +848,11 @@ class Pickup extends EngineObject
                 coinsRun += this.value;
                 coins += this.value;
                 playPickupSound(sounds.coin, this.pos);
+            }
+            else if (this.kind === 'mystery')
+            {
+                applyRandomBuff(this.pos);
+                if (sounds.chest && sounds.chest.play) sounds.chest.play(this.pos);
             }
             this.destroy();
         }
@@ -946,8 +1040,10 @@ function drawChainFlashes()
         const f = chainFlashes[i];
         const remaining = f.t - time;
         if (remaining <= 0) { chainFlashes.splice(i, 1); continue; }
-        const alpha = remaining / .15;
-        drawLine(f.a, f.b, .15, new Color(1, 1, .4, alpha));
+        const lifetime = f.lifetime || .15;
+        const alpha = remaining / lifetime;
+        const c = f.color || new Color(1, 1, .4, 1);
+        drawLine(f.a, f.b, .15, new Color(c.r, c.g, c.b, alpha));
     }
 }
 class FireballWeapon
@@ -1073,74 +1169,42 @@ class BombWeapon
     }
 }
 
-class FirePatchWeapon
+// Water Splash — soft crowd control. Hits `level` random nearby enemies
+// each cooldown tick, dealing light damage and applying a slow status.
+// Replaces the old 🔥 Fire Patch (which visually overlapped Fireball and
+// was the only weapon using burn DOT besides nothing — slow status was
+// dead code before this swap).
+class WaterSplashWeapon
 {
-    constructor() { this.level = 1; this.name = 'Fire Patch'; this.cooldown = 0; }
+    constructor() { this.level = 1; this.name = 'Water Splash'; this.cooldown = 0; }
     levelUp() { this.level = min(this.level + 1, 5); }
-    damagePerSec() { return 2 + this.level * 1.5; }
-    radius()       { return 1.6 + this.level * .25; }
-    duration()     { return 2.8 + this.level * .3; }
+    damage() { return 2 + this.level; }
 
     update()
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 2.4 / player.cooldownMult;
-        new FireZone(player.pos.copy(),
-                     this.radius() * player.areaMult,
-                     this.damagePerSec() * player.dmgMult,
-                     this.duration());
-    }
-}
+        this.cooldown = 1.1 / player.cooldownMult;
 
-class FireZone extends EngineObject
-{
-    constructor(pos, radius, dps, lifetime)
-    {
-        super(pos, vec2(radius * 2), sprites.fireball);
-        this.radius = radius;
-        this.dps = dps;
-        this.lifetime = lifetime;
-        this.maxLifetime = lifetime;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
-        this.velocity = vec2();
-    }
-
-    update()
-    {
-        super.update();
-        this.lifetime -= 1 / 60;
-        if (this.lifetime <= 0) { this.destroy(); return; }
-
-        // burn every enemy in radius — re-stamp the timer so they keep burning
-        // while in the zone, but the burn persists ~.8s after leaving
-        for (const e of enemies)
+        const range = 9 * player.areaMult;
+        const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
+        const dmg = this.damage() * player.dmgMult;
+        const blue = new Color(.35, .65, 1, 1);
+        for (let i = 0; i < this.level && candidates.length > 0; ++i)
         {
-            if (e.pos.distance(this.pos) < this.radius)
-            {
-                e.burnTimer = .8;
-                if (this.dps > e.burnDps) e.burnDps = this.dps;
-            }
+            const idx = randInt(candidates.length);
+            const target = candidates[idx];
+            candidates.splice(idx, 1);
+            target.takeDamage(dmg);
+            target.slowTimer = 2.0;
+            // visual splash line via chainFlashes (color-tinted blue)
+            chainFlashes.push({
+                a: player.pos.copy(),
+                b: target.pos.copy(),
+                t: time + .18,
+                color: blue,
+            });
         }
-        // ensure this draws behind entities (zones are floor decals)
-        this.renderOrder = -this.pos.y - 1000;
-    }
-
-    render()
-    {
-        // translucent flickering fire glow
-        const t = this.lifetime / this.maxLifetime;
-        const pulse = 1 + Math.sin(time * 8) * .08;
-        const sz = this.radius * 2 * pulse;
-        const fade = clamp(t * 3, 0, 1);   // fade out in the last third
-        drawTile(this.pos, vec2(sz), sprites.fireball,
-                 new Color(1, .85, .55, .55 * fade),
-                 0, false,
-                 new Color(.35, .12, 0, 0));
     }
 }
 
@@ -1470,6 +1534,8 @@ function recomputeMultipliers()
     player.cooldownMult  *= 1 + powerUps.cooldown * .05;
     player.magnetMult    *= 1 + powerUps.magnet   * .20;
     player.xpGainMult    *= 1 + powerUps.growth   * .08;
+    // mystery-pickup temporary damage boost (decays in Player.update)
+    if (player.damageBoostTimer > 0) player.dmgMult *= 2;
     // grant the player any new max HP from a fresh Heart pickup
     const newMaxHp = playerMaxHp * player.maxHpMult;
     if (newMaxHp > prevMaxHp) player.hp += (newMaxHp - prevMaxHp);
@@ -1604,6 +1670,13 @@ let gameOver = false;
 let gameOverFrameCount = 0;
 let isPlaying = false;  // false on title / hero-select; true during a run
 
+// Combo counter — kills within COMBO_WINDOW seconds of the previous kill
+// stack up. Pure dopamine — doesn't change gameplay, just feedback.
+let comboCount = 0;
+let comboTimer = 0;
+let comboPeak = 0;      // best combo this run
+const COMBO_WINDOW = 1.5;
+
 // Sound effects bag — populated in gameInit so the user-gesture audio gate
 // has fired by the time anything calls .play().
 const sounds = {};
@@ -1704,13 +1777,17 @@ function startRun(hero)
     for (const obj of engineObjects.slice())
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
-            obj instanceof Pickup || obj instanceof Bomb || obj instanceof FireZone ||
+            obj instanceof Pickup || obj instanceof Bomb ||
             obj instanceof Chest || obj instanceof StarToss)
             obj.destroy();
     }
     chainFlashes.length = 0;
     damageNumbers.length = 0;
     aiSmoothedDir = vec2(1, 0);
+    comboCount = 0;
+    comboTimer = 0;
+    comboPeak = 0;
+    timeSlowTimer = 0;
     spawner.timer = 0;
     spawner.interval = 1.5;
     elapsedTime = 0;
@@ -1918,6 +1995,10 @@ async function gameInit()
         ctx.arc(125, 125, 114, 0, Math.PI * 2);
         ctx.fill();
     }, 'a solid white circle');
+
+    // Mystery present + Water Splash sprites
+    sprites.clover    = drawToTexture(30, paintEmoji('🍀'), 'a green four-leaf clover');
+    sprites.water     = drawToTexture(31, paintEmoji('💧'), 'a blue water droplet');
 
     // ground / decor 32-35 — trees scattered across the arena, mountains line the edges
     sprites.tree1     = drawToTexture(32, paintEmoji('🌳'), 'a deciduous tree');
@@ -2176,7 +2257,7 @@ async function gameInit()
 
 // All available weapons by name. Names match the constructor classes below.
 const ALL_WEAPONS = ['Fireball', 'OrbitingStar', 'ChainLightning',
-                     'PizzaToss', 'IceCube', 'Bomb', 'FirePatch', 'StarToss'];
+                     'PizzaToss', 'IceCube', 'Bomb', 'WaterSplash', 'StarToss'];
 
 function makeWeaponByName(name)
 {
@@ -2186,7 +2267,7 @@ function makeWeaponByName(name)
     if (name === 'PizzaToss')      return new PizzaTossWeapon();
     if (name === 'IceCube')        return new IceCubeWeapon();
     if (name === 'Bomb')           return new BombWeapon();
-    if (name === 'FirePatch')      return new FirePatchWeapon();
+    if (name === 'WaterSplash')    return new WaterSplashWeapon();
     if (name === 'StarToss')       return new StarTossWeapon();
     return null;
 }
@@ -2199,7 +2280,7 @@ function emojiForWeapon(name)
     if (name === 'PizzaToss')      return '🍕';
     if (name === 'IceCube')        return '🧊';
     if (name === 'Bomb')           return '💣';
-    if (name === 'FirePatch')      return '🔥';
+    if (name === 'WaterSplash')    return '💧';
     if (name === 'StarToss')       return '⭐';
     return '?';
 }
@@ -2331,13 +2412,17 @@ function goToTitle()
     for (const obj of engineObjects.slice())
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
-            obj instanceof Pickup || obj instanceof Bomb || obj instanceof FireZone ||
+            obj instanceof Pickup || obj instanceof Bomb ||
             obj instanceof Chest || obj instanceof StarToss)
             obj.destroy();
     }
     chainFlashes.length = 0;
     damageNumbers.length = 0;
     aiSmoothedDir = vec2(1, 0);
+    comboCount = 0;
+    comboTimer = 0;
+    comboPeak = 0;
+    timeSlowTimer = 0;
     bossesSpawned.clear();
     activeBoss = null;
     reaperSpawned = false;
@@ -2418,6 +2503,11 @@ function gameUpdate()
         return;
 
     elapsedTime += 1 / 60;
+    if (comboTimer > 0)
+    {
+        comboTimer -= 1 / 60;
+        if (comboTimer <= 0) comboCount = 0;
+    }
     if (player.pendingLevelUps > 0)
     {
         if (playerAI)
@@ -2553,6 +2643,27 @@ function drawBossHpBar()
                    vec2(x, y - 14), 22, new Color(1, .9, .7), 3, BLACK);
 }
 
+function drawComboCounter()
+{
+    if (comboCount < 5) return;
+    const cs = mainCanvasSize;
+    // Three escalating tiers — text gets bigger, color shifts hot
+    const tier = comboCount >= 100 ? 2 : comboCount >= 25 ? 1 : 0;
+    const size = [28, 42, 58][tier];
+    const color = tier === 0 ? new Color(1, 1, .6)
+                : tier === 1 ? new Color(1, .55, .2)
+                              : new Color(1, .2, .35);
+    // Subtle scale pulse on each kill so the count visibly snaps
+    const lifeFrac = comboTimer / COMBO_WINDOW;
+    const pop = 1 + (lifeFrac > .9 ? (lifeFrac - .9) * 4 : 0);
+    drawTextScreen(comboCount + 'x', vec2(cs.x / 2, cs.y * .25),
+                   size * pop, color, 4, BLACK);
+    if (tier > 0)
+        drawTextScreen('COMBO!',
+                       vec2(cs.x / 2, cs.y * .25 + size * pop + 4),
+                       size * .42, color, 3, BLACK);
+}
+
 function drawHUD()
 {
     const cs = mainCanvasSize;
@@ -2613,6 +2724,7 @@ function gameRenderPost()
     else          gameOverFrameCount = 0;
 
     drawHUD();
+    drawComboCounter();
 
     if (playerAI)
     {
