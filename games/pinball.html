@@ -265,6 +265,12 @@ function buildWorld()
     slingshots.push(new Slingshot(vec2(-6.25, 5.5), vec2(4.0, 0.6), 0.686, vec2(0.633, 0.774)));
     slingshots.push(new Slingshot(vec2(6.25, 5.5), vec2(4.0, 0.6), -0.686, vec2(-0.633, 0.774)));
 
+    // Mid-height wedges: deflect balls coming down the side walls back toward center.
+    // Left wedge "\" - upper-left end touches the wall, lower-right end juts into the playfield.
+    // Right wedge "/" mirrors it so the playfield reads symmetric.
+    addWall(vec2(-8.2, 10.5), vec2(4.0, 0.5),  0.5, RAIL_COLOR);
+    addWall(vec2( 8.2, 10.5), vec2(4.0, 0.5), -0.5, RAIL_COLOR);
+
     // Bumpers (upper triangle, symmetric about x=0)
     bumpers.push(new Bumper(vec2(-3, 14), 1.0));
     bumpers.push(new Bumper(vec2(3, 14), 1.0));
@@ -355,10 +361,10 @@ function gameUpdate()
         return;
     }
 
-    const leftPressed = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ');
-    const rightPressed = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash');
-    const leftActive = keyIsDown('ArrowLeft') || keyIsDown('KeyA') || keyIsDown('KeyZ');
-    const rightActive = keyIsDown('ArrowRight') || keyIsDown('KeyD') || keyIsDown('Slash');
+    const leftPressed = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ') || mouseWasPressed(0);
+    const rightPressed = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash') || mouseWasPressed(2);
+    const leftActive = keyIsDown('ArrowLeft') || keyIsDown('KeyA') || keyIsDown('KeyZ') || mouseIsDown(0);
+    const rightActive = keyIsDown('ArrowRight') || keyIsDown('KeyD') || keyIsDown('Slash') || mouseIsDown(2);
     if (leftPressed) sfxFlipper && sfxFlipper.play(leftFlipper.pos, 0.5);
     if (rightPressed) sfxFlipper && sfxFlipper.play(rightFlipper.pos, 0.5);
     leftFlipper.setMotor(leftActive);
@@ -429,7 +435,7 @@ function gameRenderPost()
         drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 60), 22, WHITE, 3, BLACK);
     }
 
-    drawTextScreen('A/D or Arrows: Flippers', vec2(mainCanvasSize.x/2, mainCanvasSize.y - 30), 16, hsl(0, 0, 0.7), 2, BLACK);
+    drawTextScreen('Mouse / A/D / Arrows: Flippers', vec2(mainCanvasSize.x/2, mainCanvasSize.y - 30), 16, hsl(0, 0, 0.7), 2, BLACK);
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
