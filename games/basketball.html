@@ -1,234 +1,714 @@
 <!DOCTYPE html><head>
-<title>LittleJS - Hoop Toss (Box2D)</title>
+<title>LittleJS - Pop-a-Shot</title>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+#littlejs-menus {
+    --menu-bg:           rgba(8, 16, 36, 0.94);
+    --menu-fg:           #fff;
+    --menu-accent:       #ff8a1c;
+    --menu-font:         system-ui, sans-serif;
+    --menu-border-width: 3px;
+    --menu-radius:       14px;
+}
+</style>
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
+<script src="../templates/menus.js"></script>
 <script src="../templates/soundGenerator.js"></script>
-<script src="../dist/box2d.wasm.js?1.18.0"></script>
 <script>
 'use strict';
 
-// engine settings, do not remove
+// engine settings
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
+canvasMaxSize = vec2(2048, 2048);
 
-// game settings
-cameraScale = 32;
-cameraPos = vec2(0, 2);
-gravity = vec2(0, -45);
+// world settings
+gravity = vec2(0, -42);
+cameraPos = vec2(0, 1);
+cameraScale = 44;
 
 //------------------------------------------------------------------------------
-// Hoop Toss (Box2D)
+// constants
 
-const levelHalfSize = vec2(14, 10);
-const spawnPos = vec2(-11, -6);
-const hoopPos = vec2(9.5, 3.5);
+const SPAWN_POS    = vec2(-8.5, -3);
+const HOOP_BASE_X  = 7.5;
+const HOOP_Y       = 2.5;
+const RIM_HALF_W   = 0.85;        // distance from rim center to each peg center
+const RIM_PEG_R    = 0.13;
+const BOARD_OFFSET = vec2(1.05, 0.65); // backboard offset from rim center (right & up)
+const BOARD_SIZE   = vec2(0.3, 1.6);
+const FLOOR_Y      = -5.6;
+const LEVEL_LEFT   = -11;
+const LEVEL_RIGHT  = 11;
+const LEVEL_TOP    = 8;
 
-let balls = [];
-let score = 0;
-let aiming = false;
-let throwCooldown = 0;
+const BALL_RADIUS  = 0.55;
 
-const grabRadius = 1.0;          // must click near spawn to start aiming
-const throwCooldownTime = 0.35;  // small delay between throws
+const TIME_LIMIT       = 60;
+const CHARGE_TIME      = 0.85;    // seconds to fill power meter
+const RACK_DELAY       = 0.18;    // delay before next ball is racked
+const SCORE_BASE       = 2;
+const SCORE_SWISH      = 3;
+const STREAK_FOR_FIRE  = 3;
+const BEST_KEY         = 'basketball.best';
 
+const COLOR_BG       = new Color().setHex('#101a30');
+const COLOR_FLOOR    = hsl(.08, .55, .32);
+const COLOR_LINE     = hsl(0, 0, .9, .8);
+const COLOR_BOARD    = hsl(0, 0, .95);
+const COLOR_BOARD_T  = hsl(.02, .9, .55);   // backboard target square
+const COLOR_RIM      = hsl(.02, .9, .55);
+const COLOR_NET      = hsl(0, 0, .85, .65);
+const COLOR_BALL     = hsl(.07, .85, .55);
+const COLOR_BALL_DK  = hsl(.06, .8, .22);
+const COLOR_RETICLE  = hsl(.15, .9, .65, .85);
+
+//------------------------------------------------------------------------------
 // sounds
-const sThrow = new SoundGenerator({frequency: 280, slide: -1.5, release: .12, volume: .6, randomness: .08});
-const sScore = new SoundGenerator({frequency: 740, pitchJump: 1200, pitchJumpTime: .03, release: .25, volume: .75, randomness: .02});
 
-function clampVecLength(v, maxLen)
+const sThrow   = new SoundGenerator({frequency: 240, slide: -2,   release: .12, volume: .55, randomness: .12});
+const sSwish   = new SoundGenerator({frequency: 880, pitchJump: 1400, pitchJumpTime: .04, release: .28, volume: .7});
+const sScore   = new SoundGenerator({frequency: 620, pitchJump: 900,  pitchJumpTime: .04, release: .22, volume: .6});
+const sClank   = new SoundGenerator({frequency: 180, slide: -3,   release: .09, volume: .45, randomness: .2, noise: .3});
+const sBuzzer  = new SoundGenerator({frequency: 130, release: .9,  volume: .7, noise: .15, shapeCurve: .4});
+const sFire    = new SoundGenerator({frequency: 300, pitchJump: 1600, pitchJumpTime: .15, release: .4, volume: .6});
+
+//------------------------------------------------------------------------------
+// state
+
+let gamePhase    = 'title';   // 'title' | 'playing' | 'gameover'
+let score        = 0;
+let bestScore    = 0;
+let timeLeft     = TIME_LIMIT;
+let streak       = 0;
+let onFire       = false;
+let balls        = [];
+let aiming       = false;
+let chargeT      = 0;
+let rackTimer    = 0;
+let hoopOffsetX  = 0;
+
+//------------------------------------------------------------------------------
+// hoop / scoring geometry
+
+function getHoopCenter() { return vec2(HOOP_BASE_X + hoopOffsetX, HOOP_Y); }
+function getLeftPeg()    { const h = getHoopCenter(); return vec2(h.x - RIM_HALF_W, h.y); }
+function getRightPeg()   { const h = getHoopCenter(); return vec2(h.x + RIM_HALF_W, h.y); }
+function getBoardPos()   { const h = getHoopCenter(); return vec2(h.x + BOARD_OFFSET.x, h.y + BOARD_OFFSET.y); }
+
+//------------------------------------------------------------------------------
+// ballistic launch: solve for initial velocity that lands at aimPos with
+// arc peak proportional to power. aimPos = mouse world position.
+
+function computeLaunchVelocity(aimPos, power)
 {
-    const l = v.length();
-    return l > maxLen ? v.scale(maxLen / l) : v;
+    const dx = aimPos.x - SPAWN_POS.x;
+    const baseH = max(SPAWN_POS.y, aimPos.y);
+    const arcH = 1.5 + power * 4.5;
+    const yPeak = baseH + arcH;
+    const g = abs(gravity.y);
+    const t1 = Math.sqrt(2 * max(0.01, yPeak - SPAWN_POS.y) / g);
+    const t2 = Math.sqrt(2 * max(0.01, yPeak - aimPos.y) / g);
+    const T = t1 + t2;
+    const vx = dx / T;
+    const vy = g * t1;
+    return vec2(vx, vy);
 }
 
-class Ball extends Box2dObject
+function shootBall(aimPos, power)
 {
-    constructor(pos)
+    const v = computeLaunchVelocity(aimPos, power);
+    balls.push(new Ball(SPAWN_POS, v));
+    sThrow.play();
+}
+
+//------------------------------------------------------------------------------
+// ball
+
+class Ball
+{
+    constructor(pos, vel)
     {
-        super(pos, vec2(), 0, 0, hsl(.1, .9, .55));
-        this.diameter = .9;
-        this.addCircle(this.diameter, vec2(), 0, /*density*/1, /*friction*/.25, /*restitution*/.55);
-        this.setBullet(true);
+        this.pos  = pos.copy();
+        this.vel  = vel.copy();
+        this.rot  = 0;
+        this.spin = -vel.x * .35;
+        this.touchedRimOrBoard = false;
         this.scored = false;
+        this.life = 0;
+        this.dead = false;
     }
 
     update()
     {
-        // cleanup if it falls out of the world
-        if (this.pos.y < -40 || Math.abs(this.pos.x) > 60)
-            this.destroy();
-    }
-}
+        this.life += timeDelta;
+        const prevY = this.pos.y;
 
-class HoopSensor extends Box2dStaticObject
-{
-    constructor(pos)
-    {
-        super(pos, vec2(), 0, 0, hsl(.13, 1, .55));
-        this.isHoopSensor = true;
-        // thin sensor just below rim height (counts only when ball is falling)
-        this.addBox(vec2(2.0, .35), vec2(), 0, 0, 0, 0, /*isSensor*/true);
-        this.lineColor = hsl(.13, 1, .25);
-        this.lineWidth = .08;
-    }
+        // integrate
+        this.vel = this.vel.add(gravity.scale(timeDelta));
+        this.pos = this.pos.add(this.vel.scale(timeDelta));
+        this.rot += this.spin * timeDelta;
 
-    beginContact(other)
-    {
-        if (!(other instanceof Ball))
-            return;
-        if (other.scored)
-            return;
-
-        // only count if moving downward (a decent "through the hoop" heuristic)
-        if (other.getLinearVelocity().y < 0)
+        // floor
+        if (this.pos.y - BALL_RADIUS < FLOOR_Y)
         {
-            other.scored = true;
-            score++;
-            sScore.play();
+            this.pos.y = FLOOR_Y + BALL_RADIUS;
+            this.vel.y = -this.vel.y * .55;
+            this.vel.x *= .82;
+            this.spin = -this.vel.x * .35;
+            if (abs(this.vel.y) < 1) this.vel.y = 0;
         }
+
+        // side walls
+        if (this.pos.x - BALL_RADIUS < LEVEL_LEFT)
+        {
+            this.pos.x = LEVEL_LEFT + BALL_RADIUS;
+            this.vel.x = -this.vel.x * .6;
+        }
+        if (this.pos.x + BALL_RADIUS > LEVEL_RIGHT)
+        {
+            this.pos.x = LEVEL_RIGHT - BALL_RADIUS;
+            this.vel.x = -this.vel.x * .6;
+        }
+
+        // backboard (front face = left side)
+        const board = getBoardPos();
+        if (isOverlapping(this.pos, vec2(BALL_RADIUS*2), board, BOARD_SIZE))
+        {
+            const boardLeftX = board.x - BOARD_SIZE.x/2;
+            // resolve only if the ball came from the front (left of board)
+            if (this.vel.x > 0 && this.pos.x < board.x)
+            {
+                this.pos.x = boardLeftX - BALL_RADIUS;
+                this.vel.x = -this.vel.x * .5;
+                this.touchedRimOrBoard = true;
+                sClank.play();
+            }
+            else
+            {
+                // squeeze out top/bottom if ball clipped a corner
+                const above = this.pos.y > board.y;
+                this.pos.y = board.y + (above ? 1 : -1) * (BOARD_SIZE.y/2 + BALL_RADIUS);
+                this.vel.y = -this.vel.y * .4;
+            }
+        }
+
+        // rim pegs (circle bumpers) — split velocity into normal/tangent so
+        // tangential motion isn't over-damped; without this the ball can rest
+        // on top of a peg instead of bouncing off.
+        for (const peg of [getLeftPeg(), getRightPeg()])
+        {
+            const delta = this.pos.subtract(peg);
+            const dist = delta.length();
+            const sumR = BALL_RADIUS + RIM_PEG_R;
+            if (dist < sumR && dist > 0.0001)
+            {
+                const n = delta.scale(1/dist);
+                this.pos = peg.add(n.scale(sumR + .002));
+                const vn = this.vel.dot(n);
+                if (vn < 0)
+                {
+                    const tangent = vec2(-n.y, n.x);
+                    const vt = this.vel.dot(tangent);
+                    const restitution = 0.72;
+                    const friction    = 0.94;
+                    this.vel = n.scale(-vn * restitution).add(tangent.scale(vt * friction));
+                    this.touchedRimOrBoard = true;
+                    sClank.play();
+                }
+            }
+        }
+
+        // score sensor: ball crossed downward through sensorY between the pegs
+        if (!this.scored && this.vel.y < 0)
+        {
+            const h = getHoopCenter();
+            const sensorY = h.y - 0.2;
+            const inX = abs(this.pos.x - h.x) < (RIM_HALF_W - RIM_PEG_R - 0.05);
+            const crossedDown = prevY > sensorY && this.pos.y <= sensorY;
+            if (crossedDown && inX)
+            {
+                this.scored = true;
+                onBallScored(this);
+            }
+        }
+
+        // cleanup: well off-screen, very stale, or come to rest
+        const atRest = this.pos.y < FLOOR_Y + BALL_RADIUS + .05 && abs(this.vel.x) < .4 && abs(this.vel.y) < .4;
+        if (this.life > 6 || atRest || this.pos.y < FLOOR_Y - 4 || this.pos.x < LEVEL_LEFT - 4 || this.pos.x > LEVEL_RIGHT + 4)
+            this.dead = true;
     }
 
     render()
     {
-        // invisible (comment this out if you want to see the sensor)
+        drawCircle(this.pos, BALL_RADIUS * 2, COLOR_BALL, .07, COLOR_BALL_DK);
+        // seam line for spin readability
+        const r = BALL_RADIUS * .9;
+        const c = Math.cos(this.rot) * r, s = Math.sin(this.rot) * r;
+        drawLine(this.pos.add(vec2(c, s)),   this.pos.add(vec2(-c, -s)),   .07, COLOR_BALL_DK);
+        drawLine(this.pos.add(vec2(-s, c)),  this.pos.add(vec2(s, -c)),    .05, COLOR_BALL_DK);
     }
 }
+
+//------------------------------------------------------------------------------
+// scoring
+
+function onBallScored(ball)
+{
+    const swish = !ball.touchedRimOrBoard;
+    let points = swish ? SCORE_SWISH : SCORE_BASE;
+    if (onFire) points += 1;
+    score += points;
+
+    streak++;
+    if (!onFire && streak >= STREAK_FOR_FIRE)
+    {
+        onFire = true;
+        sFire.play();
+        showMenuToast({icon:'🔥', title:'ON FIRE', text:'+1 per shot until you miss', duration: 2, position:'top-left'});
+    }
+
+    if (swish) sSwish.play();
+    else sScore.play();
+}
+
+function registerMissIfNoMakeWithin(ball)
+{
+    // called when a ball dies without scoring -> resets streak
+    if (!ball.scored && gamePhase === 'playing')
+    {
+        if (streak > 0 || onFire)
+        {
+            streak = 0;
+            onFire = false;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// game flow
+
+function startGame()
+{
+    gamePhase = 'playing';
+    score = 0;
+    timeLeft = TIME_LIMIT;
+    streak = 0;
+    onFire = false;
+    balls.length = 0;
+    aiming = false;
+    chargeT = 0;
+    rackTimer = 0;
+    hoopOffsetX = 0;
+}
+
+function endGame()
+{
+    gamePhase = 'gameover';
+    aiming = false;
+    chargeT = 0;
+    sBuzzer.play();
+    if (score > bestScore)
+    {
+        bestScore = score;
+        localStorage.setItem(BEST_KEY, String(bestScore));
+    }
+    // surface game-over menu (refresh its labels first)
+    const m = getMenu('gameover');
+    m.getItem('finalScore').setLabel(`SCORE: ${score}`);
+    m.getItem('bestScore').setLabel(`BEST:  ${bestScore}`);
+    showMenu('gameover');
+}
+
+//------------------------------------------------------------------------------
+// hoop motion
+
+function updateHoopMotion()
+{
+    if (gamePhase !== 'playing') { hoopOffsetX = 0; return; }
+    const elapsed = TIME_LIMIT - timeLeft;
+    // Continuous ramp: slow gentle drift at the start, fast wide sweeps by the end.
+    const t = clamp(elapsed / TIME_LIMIT, 0, 1);
+    const amp  = 1.2 + t * 1.8;   // 1.2 → 3.0
+    const freq = 0.7 + t * 1.2;   // 0.7 → 1.9
+    hoopOffsetX = Math.sin(elapsed * freq) * amp;
+}
+
+//------------------------------------------------------------------------------
+// init
 
 async function gameInit()
 {
-    await box2dInit();
+    canvasClearColor = COLOR_BG;
+    setSoundVolume(.7);
+    setMenuVisibilityCallback(v => paused = v);
 
-    canvasClearColor = hsl(0, 0, .92);
+    bestScore = parseInt(localStorage.getItem(BEST_KEY) || '0') | 0;
 
-    // boundaries
-    {
-        const floor = new Box2dStaticObject(vec2(0, -9.2), vec2(), 0, 0, GRAY);
-        floor.addBox(vec2(60, 1.6), vec2(), 0, 0, .6, .05);
+    const sound_select   = new Sound([.4,,720,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sound_activate = new Sound([.6,,90,.01,,.05,1,2.5,40,,,,,,,,,.5]);
+    setMenuSounds({
+        select:   () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
 
-        const leftWall = new Box2dStaticObject(vec2(-levelHalfSize.x-1, 0), vec2(), 0, 0, GRAY);
-        leftWall.addBox(vec2(2, 60), vec2(), 0, 0, .3, .05);
+    // ----- title menu -----
+    createTitleMenu({
+        id: 'title',
+        title: 'POP-A-SHOT',
+        subtitle: '60 seconds. Make it count.',
+        playLabel: 'PLAY',
+        canReveal: () => gamePhase !== 'playing',
+        itemsBefore: [
+            {type:'label', id:'bestLabel', text:`Best: ${bestScore}`},
+        ],
+        onShow: () =>
+        {
+            const m = getMenu('title');
+            m.getItem('bestLabel').setLabel(`Best: ${bestScore}`);
+        },
+        onPlay: () => startGame(),
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
 
-        const rightWall = new Box2dStaticObject(vec2(levelHalfSize.x+1, 0), vec2(), 0, 0, GRAY);
-        rightWall.addBox(vec2(2, 60), vec2(), 0, 0, .3, .05);
+    // ----- options menu -----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value: .7, min:0, max:1,
+                persist:'basketball.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'button', label:'RESET BEST', onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Reset best score?',
+                    onYes: () =>
+                    {
+                        bestScore = 0;
+                        localStorage.setItem(BEST_KEY, '0');
+                    },
+                });
+            }},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
 
-        // little "launch pad"
-        const pad = new Box2dStaticObject(spawnPos.add(vec2(1.2, -1.2)), vec2(), 0, 0, hsl(0,0,.7));
-        pad.addBox(vec2(6, .5), vec2(), .08, 0, .9, .1);
-    }
+    // ----- about -----
+    createMenu({
+        id: 'about',
+        title: 'HOW TO PLAY',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Aim with the mouse. Click and HOLD to charge power, '+
+                'release to shoot. Stronger power = higher arc.\n\n'+
+                'Make = 2 pts. Swish = 3 pts. 3 in a row lights you up — +1 per shot until you miss.\n\n'+
+                'The hoop never stops moving — it just gets faster as the clock runs down.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
 
-    // hoop + backboard
-    {
-        // backboard
-        const board = new Box2dStaticObject(hoopPos.add(vec2(2.0, 1.5)), vec2(), 0, 0, hsl(.58,.2,.35));
-        board.addBox(vec2(.45, 5.0), vec2(), 0, 0, .3, .05);
+    // ----- pause menu -----
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',  onClick: () => hideMenu('pause')},
+            {type:'button',              label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button',              label:'QUIT',    onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: () =>
+                    {
+                        clearSubmenuStack();
+                        hideAllMenus();
+                        gamePhase = 'title';
+                        balls.length = 0;
+                        showMenu('title');
+                    },
+                });
+            }},
+        ],
+    });
 
-        // rim pegs (open hoop)
-        const rimY = hoopPos.y + .5;
-        const leftPeg  = new Box2dStaticObject(vec2(hoopPos.x - 1.1, rimY), vec2(), 0, 0, hsl(.04, .8, .55));
-        leftPeg.addBox(vec2(.25, .75), vec2(), 0, 0, .2, .05);
+    // ----- game-over menu -----
+    createMenu({
+        id: 'gameover',
+        title: 'TIME!',
+        dismissable: false,
+        items: [
+            {type:'label',  id:'finalScore', text:'SCORE: 0'},
+            {type:'label',  id:'bestScore',  text:'BEST:  0'},
+            {type:'separator'},
+            {type:'button', label:'PLAY AGAIN', onClick: () =>
+            {
+                hideMenu('gameover');
+                startGame();
+            }},
+            {type:'button', label:'TITLE', onClick: () =>
+            {
+                hideMenu('gameover');
+                gamePhase = 'title';
+                balls.length = 0;
+                showMenu('title');
+            }},
+        ],
+    });
 
-        const rightPeg = new Box2dStaticObject(vec2(hoopPos.x + 1.1, rimY), vec2(), 0, 0, hsl(.04, .8, .55));
-        rightPeg.addBox(vec2(.25, .75), vec2(), 0, 0, .2, .05);
-
-        // small arm connecting to backboard
-        const arm = new Box2dStaticObject(vec2(hoopPos.x + 1.6, rimY), vec2(), 0, 0, hsl(.04, .8, .55));
-        arm.addBox(vec2(1.2, .2), vec2(), 0, 0, .2, .05);
-
-        // score sensor
-        new HoopSensor(hoopPos);
-    }
+    // ----- HUD toolbar (only during gameplay) -----
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
 }
+
+//------------------------------------------------------------------------------
+// update
 
 function gameUpdate()
 {
-    // cooldown between throws
-    throwCooldown = max(0, throwCooldown - timeDelta);
+    // HUD visibility tracks "playing"
+    const hud = getToolbar('hud');
+    if (hud) (gamePhase === 'playing') ? hud.show() : hud.hide();
 
-    // start aiming only if you grab the spawn dot
-    if (!aiming && throwCooldown <= 0 && mouseWasPressed(0))
+    updateHoopMotion();
+
+    // tick balls (always — so the title screen demo / leftovers still settle)
+    for (const b of balls) b.update();
+    for (const b of balls) if (b.dead) registerMissIfNoMakeWithin(b);
+    balls = balls.filter(b => !b.dead);
+
+    if (gamePhase === 'playing')
     {
-        if (mousePos.subtract(spawnPos).length() <= grabRadius)
+        // pause hotkey
+        if (bindPauseKey({when: () => gamePhase === 'playing'})) return;
+
+        // timer
+        timeLeft = max(0, timeLeft - timeDelta);
+        if (timeLeft <= 0) { endGame(); return; }
+
+        // rack delay between shots
+        rackTimer = max(0, rackTimer - timeDelta);
+        const canShoot = rackTimer <= 0;
+
+        // aim / charge / release
+        if (canShoot && !aiming && mouseWasPressed(0))
+        {
             aiming = true;
+            chargeT = 0;
+        }
+        if (aiming && mouseIsDown(0))
+        {
+            chargeT = min(chargeT + timeDelta, CHARGE_TIME);
+        }
+        if (aiming && mouseWasReleased(0))
+        {
+            const power = clamp(chargeT / CHARGE_TIME, 0, 1);
+            shootBall(mousePos, power);
+            aiming = false;
+            chargeT = 0;
+            rackTimer = RACK_DELAY;
+        }
     }
-
-    // release to throw
-    if (aiming && mouseWasReleased(0))
+    else
     {
-        throwCooldown = throwCooldownTime;
         aiming = false;
-
-        // aim in direction of the line, with strength based on line length
-        const maxDrag = 8;
-        const aimRaw = mousePos.subtract(spawnPos);
-        const aimLenRaw = aimRaw.length();
-        const aimLen = Math.min(aimLenRaw, maxDrag);
-        const dir = aimLenRaw > 0 ? aimRaw.scale(1 / aimLenRaw) : vec2();
-
-        // max launch speed (tune this)
-        const maxSpeed = 65;
-        const speed = (aimLen / maxDrag) * maxSpeed;
-        const throwVel = dir.scale(speed);
-
-        const b = new Ball(spawnPos);
-        b.setLinearVelocity(throwVel);
-        balls.push(b);
-        sThrow.play();
+        chargeT = 0;
     }
-
-    // reset
-    if (keyWasPressed('KeyR'))
-    {
-        score = 0;
-        balls.forEach(b=>b.destroy());
-        balls.length = 0;
-    }
-
-    // prune destroyed
-    balls = balls.filter(b=>!b.destroyed);
 }
 
 function gameUpdatePost() {}
 
+//------------------------------------------------------------------------------
+// render
+
+function drawCourt()
+{
+    // wood floor
+    drawRect(vec2(0, FLOOR_Y - 1.5), vec2(LEVEL_RIGHT*2 + 4, 3), COLOR_FLOOR);
+    // floor planks (subtle horizontal stripes)
+    for (let i = -3; i <= 3; i++)
+    {
+        const y = FLOOR_Y - 0.3 - i * 0.45;
+        if (y < FLOOR_Y - 3) continue;
+        drawLine(vec2(LEVEL_LEFT-2, y), vec2(LEVEL_RIGHT+2, y), .03, hsl(.08, .55, .25, .5));
+    }
+    // free-throw stripe under spawn
+    drawLine(vec2(SPAWN_POS.x - 1.5, FLOOR_Y + .02), vec2(SPAWN_POS.x + 1.5, FLOOR_Y + .02), .15, COLOR_LINE);
+
+    // back wall (subtle horizon band)
+    drawRect(vec2(0, LEVEL_TOP - 1.5), vec2(LEVEL_RIGHT*2 + 4, 3), hsl(.62, .25, .12, .6));
+}
+
+function drawHoopAssembly()
+{
+    const h = getHoopCenter();
+    const board = getBoardPos();
+
+    // pole holding the board up (behind the board)
+    drawRect(vec2(board.x + BOARD_SIZE.x/2 + 0.12, (board.y + LEVEL_TOP) / 2),
+             vec2(0.2, LEVEL_TOP - board.y), hsl(0, 0, .22));
+
+    // backboard slab (side view)
+    drawRect(board, BOARD_SIZE, COLOR_BOARD);
+    // red trim band along the front face (visual hint of the target)
+    drawRect(vec2(board.x - BOARD_SIZE.x/2 + 0.03, board.y), vec2(0.06, BOARD_SIZE.y - 0.1), COLOR_BOARD_T);
+
+    // rim (drawn as a thin bar with two peg-end caps)
+    const leftPeg  = getLeftPeg();
+    const rightPeg = getRightPeg();
+    drawRect(vec2(h.x, h.y), vec2(RIM_HALF_W * 2, .1), COLOR_RIM);
+    drawCircle(leftPeg,  RIM_PEG_R * 2, COLOR_RIM, .03, hsl(.02, .9, .25));
+    drawCircle(rightPeg, RIM_PEG_R * 2, COLOR_RIM, .03, hsl(.02, .9, .25));
+
+    // net (4 vertical strands tapering inward)
+    const netTop = h.y - .04;
+    const netH   = 0.85;
+    const strands = 5;
+    for (let i = 0; i < strands; i++)
+    {
+        const f = i / (strands - 1);
+        const xTop = h.x - RIM_HALF_W + f * RIM_HALF_W * 2;
+        const xBot = h.x - (RIM_HALF_W - 0.25) + f * (RIM_HALF_W - 0.25) * 2;
+        drawLine(vec2(xTop, netTop), vec2(xBot, netTop - netH), .04, COLOR_NET);
+    }
+    // net horizontal rings
+    for (let r = 1; r <= 2; r++)
+    {
+        const t = r / 3;
+        const y = netTop - netH * t;
+        const w = RIM_HALF_W * 2 * (1 - 0.3 * t);
+        drawLine(vec2(h.x - w/2, y), vec2(h.x + w/2, y), .03, COLOR_NET);
+    }
+}
+
+function drawRackedBall()
+{
+    // ball waiting to be thrown
+    drawCircle(SPAWN_POS, BALL_RADIUS * 2, COLOR_BALL, .07, COLOR_BALL_DK);
+    drawLine(SPAWN_POS.add(vec2(-BALL_RADIUS*.85, 0)), SPAWN_POS.add(vec2(BALL_RADIUS*.85, 0)), .07, COLOR_BALL_DK);
+    drawLine(SPAWN_POS.add(vec2(0, -BALL_RADIUS*.85)), SPAWN_POS.add(vec2(0, BALL_RADIUS*.85)), .05, COLOR_BALL_DK);
+    // a small platform under it
+    drawRect(SPAWN_POS.add(vec2(0, -BALL_RADIUS - .35)), vec2(2.2, .4), hsl(0, 0, .25));
+}
+
+function drawAimReticleAndArc()
+{
+    if (gamePhase !== 'playing') return;
+    if (!aiming) return;
+
+    const power = clamp(chargeT / CHARGE_TIME, 0, 1);
+    const v = computeLaunchVelocity(mousePos, power);
+
+    // dotted arc preview
+    const N = 22;
+    for (let i = 1; i <= N; i++)
+    {
+        const t = i * 0.06;
+        const x = SPAWN_POS.x + v.x * t;
+        const y = SPAWN_POS.y + v.y * t + 0.5 * gravity.y * t * t;
+        if (y < FLOOR_Y - 1) break;
+        const alpha = 1 - i / (N + 4);
+        drawCircle(vec2(x, y), .14, hsl(.12, .9, .65, alpha * .55));
+    }
+
+    // reticle at mouse
+    const pulse = .9 + .25 * Math.sin(time * 10);
+    drawCircle(mousePos, pulse, hsl(0,0,0,0), .07, COLOR_RETICLE);
+    drawCircle(mousePos, .18, COLOR_RETICLE);
+}
+
 function gameRender()
 {
-    // world frame
-    drawRect(cameraPos, vec2(levelHalfSize.x*2+6, levelHalfSize.y*2+6), hsl(0,0,.96));
+    drawCourt();
+    drawHoopAssembly();
 
-    // spawn marker
-    const hover = mousePos.subtract(spawnPos).length() <= grabRadius;
-    drawCircle(spawnPos, .35, hsl(.55, .6, .5), .08, hsl(.55, .6, .2));
-    if (!aiming)
-        drawCircle(spawnPos, hover ? .9 : .75, hsl(.55, .2, hover ? .75 : .92), .06, hsl(.55, .2, .25));
+    // racked (waiting) ball — always shown when one is loaded (incl. while aiming)
+    if (gamePhase !== 'playing' || rackTimer <= 0)
+        drawRackedBall();
 
-    // aiming line
-    if (aiming)
-    {
-        const maxDrag = 8;
-        const aimRaw = mousePos.subtract(spawnPos);
-        const aimLenRaw = aimRaw.length();
-        const aimLen = Math.min(aimLenRaw, maxDrag);
-        const dir = aimLenRaw > 0 ? aimRaw.scale(1 / aimLenRaw) : vec2();
-        const end = spawnPos.add(dir.scale(aimLen));
+    drawAimReticleAndArc();
 
-        drawLine(spawnPos, end, .12, hsl(.58, .7, .35));
-        drawCircle(end, .25, hsl(.58, .7, .6), .07, hsl(.58, .7, .2));
-    }
+    for (const b of balls) b.render();
+}
+
+//------------------------------------------------------------------------------
+// HUD
+
+function drawPowerMeter()
+{
+    if (gamePhase !== 'playing' || !aiming) return;
+
+    const c = mainCanvasSize;
+    const barW = 28, barH = 220;
+    const cx = c.x - 60, cy = c.y / 2;
+    // bg
+    drawRect(vec2(cx, cy), vec2(barW, barH), hsl(0,0,0,.55), 0, false, true);
+    // fill
+    const p = clamp(chargeT / CHARGE_TIME, 0, 1);
+    const fillH = (barH - 6) * p;
+    const fillColor = hsl(.16 - p * .16, .95, .55);
+    drawRect(vec2(cx, cy + (barH - 6)/2 - fillH/2), vec2(barW - 6, fillH), fillColor, 0, false, true);
+    // top cap (max marker)
+    drawRect(vec2(cx, cy - barH/2 - 8), vec2(barW + 8, 3), hsl(.02, .9, .6), 0, false, true);
+
+    drawTextScreen('PWR', vec2(cx, cy + barH/2 + 22), 16, hsl(0,0,1), 2, hsl(0,0,0));
 }
 
 function gameRenderPost()
 {
-    const center = mainCanvasSize.scale(.5);
+    const c = mainCanvasSize;
 
-    // centered UI
-    drawTextScreen(`Score: ${score}`, vec2(center.x, 40), 56, hsl(0,0,.1), 3, hsl(0,0,1));
+    if (gamePhase === 'playing')
+    {
+        // score (top center)
+        drawTextScreen(`${score}`, vec2(c.x/2, 56), 60, hsl(0,0,1), 4, hsl(0,0,0));
 
-    const help = 'Click and drag FROM the spawn dot to aim, release to throw\nR = reset';
-    drawTextScreen(help, vec2(center.x, 95), 26, hsl(0,0,.15), 2, hsl(0,0,1));
+        // time (top right area, but offset from HUD toolbar)
+        const tStr = Math.ceil(timeLeft).toString().padStart(2, '0');
+        const tColor = timeLeft < 10 ? hsl(.02, .9, .65) : hsl(.13, .9, .65);
+        drawTextScreen(`0:${tStr}`, vec2(c.x/2, 100), 28, tColor, 3, hsl(0,0,0));
+
+        // streak (top left)
+        if (streak > 0)
+        {
+            const label = onFire ? `🔥 ${streak}` : `× ${streak}`;
+            const col = onFire ? hsl(.05, 1, .65) : hsl(0,0,.95);
+            drawTextScreen(label, vec2(80, 56), 32, col, 3, hsl(0,0,0));
+        }
+
+        drawPowerMeter();
+    }
+    else if (gamePhase === 'title')
+    {
+        // big title overlay drawn beneath the menu — actually the menu covers
+        // it, so we just paint a soft prompt while reveal is pending.
+    }
 }
 
+//------------------------------------------------------------------------------
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
 
-</script>
-</body>
+</script></body></html>
