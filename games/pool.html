@@ -202,7 +202,8 @@ function drawSinkingBall(s)
 // Cue tip distance from ball center at each animation keyframe.
 // While aiming the stick stays at REST (independent of power). The strike
 // animates REST → pullback (scaled by power) → CONTACT → FOLLOW.
-const CUE_REST_DIST    = BALL_DIAM*.5 + .15;  // fixed rest position while aiming
+const CUE_REST_DIST    = BALL_DIAM*.5 + .15;  // rest position while aiming at zero power
+const REST_PULL_SCALE  = .6;                  // subtle pre-shot drift back, scaled by current power
 const CUE_PULL_SCALE   = 4;                   // extra pullback during the strike, scaled by power
 const CUE_CONTACT_DIST = BALL_DIAM*.5;        // tip touches ball surface
 const CUE_FOLLOW_DIST  = BALL_DIAM*.5 - .25;  // tip overshoots into the ball
@@ -246,9 +247,13 @@ function drawCueStickBody(ballPos, dir, tipDist)
 // Returns the cue stick pose for the current frame, or null if no stick
 // should be drawn. Pure function so both shadow- and body- passes agree.
 //
-// Aiming: stick sits at CUE_REST_DIST (independent of power — power changes
-// the impulse, not the visible rest position).
-// Strike: animates REST → pullback (scaled by power) → CONTACT → FOLLOW.
+// Aiming: stick sits at CUE_REST_DIST + a small power-scaled drift back as a
+// pre-shot visual cue (more power → stick already a touch further back).
+// Strike: animates REST → pullback (scaled by power) → CONTACT → FOLLOW, with
+// the pullback lerp starting from the same drifted rest position so there's
+// no snap when the swing begins.
+const cueRestDist = (power) => CUE_REST_DIST + power * REST_PULL_SCALE;
+
 function getCueStickPose()
 {
     if (!isPlaying || !cueBall) return null;
@@ -256,7 +261,7 @@ function getCueStickPose()
     {
         let tipDist;
         if (strike.pullbackT < 1)
-            tipDist = lerp(CUE_REST_DIST,      strike.pullbackDist, strike.pullbackT);
+            tipDist = lerp(cueRestDist(strike.power), strike.pullbackDist, strike.pullbackT);
         else if (!strike.hit)
             tipDist = lerp(strike.pullbackDist, CUE_CONTACT_DIST,   strike.strikeT);
         else
@@ -266,8 +271,8 @@ function getCueStickPose()
     const showAim = !isTouchDevice || mouseIsDown(0);
     if (canShoot() && showAim)
     {
-        const { dir } = getAim();
-        return { dir, tipDist: CUE_REST_DIST };
+        const { dir, power } = getAim();
+        return { dir, tipDist: cueRestDist(power) };
     }
     return null;
 }
@@ -1000,15 +1005,6 @@ function gameRender()
 
     const pose = getCueStickPose();
     if (pose) drawCueStickShadow(cueBall.pos, pose.dir, pose.tipDist);
-
-    // Ball-in-hand preview ghost — drawn in the pre-pass so shadow/outline
-    // land in the same layer as the real balls do.
-    if (inHand)
-    {
-        const previewPos = clampToFelt(mousePos);
-        const valid = isValidPlacement(previewPos);
-        drawCueBallPreview(previewPos, valid);
-    }
 }
 
 function gameRenderPost()
@@ -1064,15 +1060,27 @@ function gameRenderPost()
         drawTextScreen('5× SPEED', vec2(mainCanvasSize.x - 130, mainCanvasSize.y - 40),
             32, rgb(1, .9, .4), 4, rgb(0,0,0,.7));
 
-    // Ball-in-hand placement hint — placed below SCRATCH (which lives at y=80
-    // during the same window, since scratchedThisShot stays true through
-    // placement) so the two don't pile on top of each other.
+    // Ball-in-hand: while the other balls are still rolling you can't place
+    // yet — show a wait hint. Once everything stops, prompt to place. The
+    // ghost preview is drawn here too so it sits on top of every real ball.
     if (inHand)
     {
-        const tap = isTouchDevice ? 'RELEASE' : 'CLICK';
-        drawTextScreen(`PLACE CUE BALL — ${tap} TO SET`,
-            vec2(mainCanvasSize.x/2, 140),
-            32, rgb(.6,.95,1), 5, rgb(0,0,0,.8));
+        if (allStopped())
+        {
+            const previewPos = clampToFelt(mousePos);
+            const valid = isValidPlacement(previewPos);
+            drawCueBallPreview(previewPos, valid);
+
+            drawTextScreen('PLACE CUE BALL',
+                vec2(mainCanvasSize.x/2, 140),
+                32, rgb(.6,.95,1), 5, rgb(0,0,0,.8));
+        }
+        else
+        {
+            drawTextScreen('SCRATCH — WAIT FOR BALLS TO STOP',
+                vec2(mainCanvasSize.x/2, 140),
+                32, rgb(1,.55,.3), 5, rgb(0,0,0,.8));
+        }
     }
 
     // HUD
