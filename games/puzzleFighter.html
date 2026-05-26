@@ -465,6 +465,44 @@ function runUnitTests()
         assert(g[1][0] && g[1][0].color === COLOR_B, 'gravity: B singleton stays at floor');
         assert(g[1][1] && g[1][1].color === COLOR_R, 'gravity: power gem bottom row at y=1 (supported by B)');
         assert(g[1][3] === null && g[2][3] === null, 'gravity: power gem vacated original cells');
+
+        // Return value: true when something moved, false on stable grid
+        g = emptyGrid();
+        g[3][5] = gemRegular(COLOR_R);
+        assert(applyGravity(g) === true, 'gravity: returns true when something fell');
+        assert(applyGravity(g) === false, 'gravity: returns false on stable grid');
+
+        // Lockstep: PG above singleton above empty — both fall, PG rests on singleton
+        g = emptyGrid();
+        g[3][3] = gemRegular(COLOR_Y);            // singleton
+        g[3][5] = gemRegular(COLOR_R); g[4][5] = gemRegular(COLOR_R);   // PG bottom row
+        g[3][6] = gemRegular(COLOR_R); g[4][6] = gemRegular(COLOR_R);   // PG top row
+        mergePowerGems(g);
+        applyGravity(g);
+        assert(g[3][0] && g[3][0].color === COLOR_Y, 'gravity: lockstep — singleton lands at y=0');
+        assert(g[3][1] && g[3][1].color === COLOR_R, 'gravity: lockstep — PG col 3 bottom at y=1 (on singleton)');
+        assert(g[4][1] && g[4][1].color === COLOR_R, 'gravity: lockstep — PG col 4 also at y=1 (rigid)');
+        assert(g[4][0] === null, 'gravity: lockstep — col 4 y=0 stays empty under rigid PG');
+
+        // Power gem partially on floor → stays put
+        g = emptyGrid();
+        g[0][0] = gemRegular(COLOR_B); g[1][0] = gemRegular(COLOR_B);
+        g[0][1] = gemRegular(COLOR_B); g[1][1] = gemRegular(COLOR_B);
+        mergePowerGems(g);
+        assert(applyGravity(g) === false, 'gravity: PG on floor returns false (no movement)');
+        assert(g[0][0] && g[1][0] && g[0][1] && g[1][1], 'gravity: PG on floor stays put');
+
+        // Uneven support: col 5 supported, col 4 empty under PG — PG rests at y=1
+        g = emptyGrid();
+        g[5][0] = gemRegular(COLOR_B);
+        g[4][3] = gemRegular(COLOR_R); g[5][3] = gemRegular(COLOR_R);
+        g[4][4] = gemRegular(COLOR_R); g[5][4] = gemRegular(COLOR_R);
+        mergePowerGems(g);
+        applyGravity(g);
+        assert(g[5][0] && g[5][0].color === COLOR_B, 'gravity: uneven — B support stays at floor');
+        assert(g[5][1] && g[5][1].color === COLOR_R, 'gravity: uneven — PG col 5 at y=1');
+        assert(g[4][1] && g[4][1].color === COLOR_R, 'gravity: uneven — PG col 4 also at y=1 (rigid)');
+        assert(g[4][0] === null, 'gravity: uneven — col 4 y=0 stays empty under PG');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
