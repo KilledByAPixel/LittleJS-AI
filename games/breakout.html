@@ -288,11 +288,67 @@ function launchBall()
     balls[0].vel = vec2(Math.cos(angle), Math.sin(angle)).normalize(ballSpeed);
 }
 
+// Level 5 (Gauntlet) is regenerated each visit so it feels fresh.
+// Constraints to keep it beatable and not too gold-heavy:
+//  - vertical gold runs are capped at 2 (no tall sealing columns)
+//  - horizontal gold runs are capped at 4 (no full-row walls)
+//  - cell mix biased toward normal bricks and gaps
+function generateGauntletLayout()
+{
+    const ROWS = 7, COLS = 18;
+    const grid = [];
+    for (let r = 0; r < ROWS; ++r)
+    {
+        const row = [];
+        for (let c = 0; c < COLS; ++c)
+        {
+            const roll = rand();
+            if      (roll < .55) row.push('n');
+            else if (roll < .72) row.push('s');
+            else if (roll < .85) row.push('g');
+            else                 row.push('.');
+        }
+        grid.push(row);
+    }
+
+    // Break up vertical gold columns
+    for (let c = 0; c < COLS; ++c)
+    {
+        let run = 0;
+        for (let r = 0; r < ROWS; ++r)
+        {
+            if (grid[r][c] === 'g')
+            {
+                if (++run > 2) { grid[r][c] = rand() < .5 ? '.' : 'n'; run = 0; }
+            }
+            else run = 0;
+        }
+    }
+
+    // Break up horizontal gold runs
+    for (let r = 0; r < ROWS; ++r)
+    {
+        let run = 0;
+        for (let c = 0; c < COLS; ++c)
+        {
+            if (grid[r][c] === 'g')
+            {
+                if (++run > 4) { grid[r][c] = rand() < .5 ? '.' : 'n'; run = 0; }
+            }
+            else run = 0;
+        }
+    }
+
+    return grid.map(row => row.join(''));
+}
+
 function buildLevel()
 {
     bricks.length = 0;
 
-    const layout = LEVELS[(level - 1) % LEVELS.length];
+    const layout = level === LEVELS.length
+        ? generateGauntletLayout()
+        : LEVELS[(level - 1) % LEVELS.length];
     const rows = layout.length;
     const brickSize = vec2(2, 1);
 
