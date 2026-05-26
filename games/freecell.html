@@ -409,23 +409,34 @@ async function gameInit()
 {
     setupLayout();
     initCardAtlas();
-    newGame();
 
-    // Restore the player's in-progress game from the previous session if
-    // localStorage has a snapshot. Won games are skipped — give them a
-    // fresh deal instead.
+    // Read any in-progress saved game BEFORE newGame() — newGame calls
+    // saveState() at the end which overwrites localStorage with the
+    // fresh-deal snapshot, so we'd otherwise lose the previous session.
+    let savedSnap = null;
     try
     {
         const raw = localStorage['freecell.saveState'];
-        if (raw)
-        {
-            const snap = JSON.parse(raw);
-            loadState(snap);   // also sets `won` based on foundation count
-            if (won) newGame();
-            else { stateUndo = [snap]; stateRedo = []; }
-        }
+        if (raw) savedSnap = JSON.parse(raw);
     }
     catch (e) { /* localStorage blocked or corrupt JSON — non-fatal */ }
+
+    newGame();
+
+    if (savedSnap)
+    {
+        loadState(savedSnap);   // also recomputes the `won` flag
+        if (won)
+            newGame();          // saved game was already finished — deal fresh
+        else
+        {
+            // Restore in-memory state AND re-write localStorage (newGame
+            // just clobbered it with the fresh-deal snapshot).
+            stateUndo = [];
+            stateRedo = [];
+            saveState();
+        }
+    }
 
     // Match the engine's master volume to whatever the options slider starts at,
     // so the very first menu sound plays at the user-visible volume.
