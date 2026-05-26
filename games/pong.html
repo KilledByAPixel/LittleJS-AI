@@ -333,10 +333,6 @@
 
       // hints
       const lines = [];
-      lines.push('Left: Mouse or W/S');
-      lines.push(aiRight ? 'Right: AI (press T to toggle)' : 'Right: ↑/↓ (press T for AI)');
-      lines.push('Click or Space: Serve');
-      lines.push('R: Reset');
 
       // status message
       if (gameOver)
@@ -345,11 +341,6 @@
           lines.unshift(winner);
           lines.unshift('');
           lines.unshift('Game Over');
-      }
-      else if (waitingForServe)
-      {
-          lines.unshift('');
-          lines.unshift('Press Space to Serve');
       }
 
       const x = mainCanvasSize.x/2;

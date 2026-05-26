@@ -440,8 +440,6 @@ function gameRenderPost()
         const msg = hasLaunchedEver ? 'Hold SPACE or click lane to relaunch' : 'Hold SPACE or click the lane to launch';
         drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y - 60), 22, WHITE, 3, BLACK);
     }
-
-    drawTextScreen('Mouse / A/D / Arrows: Flippers', vec2(mainCanvasSize.x/2, mainCanvasSize.y - 30), 16, hsl(0, 0, 0.7), 2, BLACK);
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);

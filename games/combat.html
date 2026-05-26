@@ -41,7 +41,7 @@ const ACCEL         = 0.06;   // reduced ~3x
 const MAX_SPEED     = 0.30;   // reduced ~3x
 const FRICTION      = 0.86;
 
-const RESPAWN_DELAY = 60;
+const RESPAWN_DELAY = 36;     // brief invuln/flicker after a knockback
 
 let walls = [];
 let bullets = [];
@@ -151,6 +151,40 @@ function hasLineOfSight(a, b)
     return true;
 }
 
+// Pick a respawn spot for a knocked-out tank: inside the arena, not overlapping
+// walls, as far as possible from the killer (with a bonus for line-of-sight blocked).
+function findSafeRespawnPos(killerPos)
+{
+    const margin = TANK_RADIUS + 1;
+    const hx = ARENA_SIZE.x/2 - margin;
+    const hy = ARENA_SIZE.y/2 - margin;
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 40; i++)
+    {
+        const c = vec2(rand(-hx, hx), rand(-hy, hy));
+
+        let blocked = false;
+        for (const w of walls)
+        {
+            const r = TANK_RADIUS + 0.4;
+            if (abs(c.x - w.pos.x) < w.size.x/2 + r &&
+                abs(c.y - w.pos.y) < w.size.y/2 + r)
+            { blocked = true; break; }
+        }
+        if (blocked) continue;
+
+        const dist = c.distance(killerPos);
+        if (dist < ARENA_SIZE.x * 0.35) continue;
+
+        const losBlocked = !hasLineOfSight(c, killerPos);
+        const score = dist + (losBlocked ? 25 : 0);
+        if (score > bestScore) { bestScore = score; best = c; }
+    }
+    return best || vec2(-killerPos.x, -killerPos.y);
+}
+
 class Tank
 {
     constructor(index, pos, ang, color, keys)
@@ -184,13 +218,26 @@ class Tank
     {
         if (this.respawn > 0) return;
         this.respawn = RESPAWN_DELAY;
+
+        initSounds();
+        sHit.play();
+
+        // Only the killed tank gets knocked to a new safe spot. The killer stays put.
+        const killerPos = byIndex >= 0 ? tanks[byIndex].pos : vec2();
+        this.pos = findSafeRespawnPos(killerPos);
+        this.vel = vec2();
+        // Face away from the killer with a little jitter so they get a moment to recover
         if (byIndex >= 0)
         {
+            const away = this.pos.subtract(killerPos);
+            this.ang = away.angle() + rand(-.4, .4);
             scores[byIndex] += 1;
-            resetRound(byIndex);
         }
         else
-            resetRound(-1);
+        {
+            this.ang = rand(0, PI*2);
+        }
+        this.cooldown = 0;
     }
 
     updateHuman()
@@ -269,10 +316,60 @@ class Tank
         if (this.respawn > 0 && (this.respawn%6)<3)
             return;
 
-        drawRect(this.pos, TANK_BODY, this.color, this.ang);
-        const barrelPos = this.pos.add(this.forward.scale(TANK_BODY.y*.55));
-        drawRect(barrelPos, TANK_BARREL, this.color, this.ang);
-        drawRect(this.pos, TANK_BODY.add(vec2(.15,.15)), rgb(0,0,0,.35), this.ang);
+        // Body frame: local +Y is forward (because forward = vec2(sin(ang), cos(ang))
+        // matches drawRect's local +Y after a clockwise rotation by `ang`). Anything
+        // we want to extend along the barrel/forward direction goes in size.y.
+        const ang = this.ang;
+        const fwd = this.forward;
+        const right = vec2(fwd.y, -fwd.x);
+
+        const halfLen = 1.05;
+        const halfWid = 0.75;
+        const treadW  = 0.42;
+        const turretR = 0.55;
+        const barrelLen = 1.4;
+        const barrelWid = 0.28;
+
+        const hullCol  = this.color;
+        const hullDark = this.color.lerp(rgb(0,0,0), .55);
+        const treadCol  = rgb(.42, .42, .42);   // bright enough to read on the dark arena
+        const treadDark = rgb(.18, .18, .18);
+
+        // soft drop shadow
+        drawRect(this.pos.add(vec2(.18, -.18)), vec2(halfWid*2 + .55, halfLen*2 + .55), rgb(0,0,0,.3), ang);
+
+        // tread base strips, running along forward, one on each side
+        const treadOff = halfWid - treadW/2 + 0.18;
+        const treadLen = halfLen*2 + 0.15;
+        drawRect(this.pos.add(right.scale( treadOff)), vec2(treadW, treadLen), treadCol, ang);
+        drawRect(this.pos.add(right.scale(-treadOff)), vec2(treadW, treadLen), treadCol, ang);
+
+        // animated tread slats — short bars across each tread that march opposite to motion
+        const speedSign = sign(this.vel.dot(fwd));
+        const phase = ((time * speedSign * 6) % 1 + 1) % 1;
+        const segs = 6;
+        for (let i = 0; i < segs; i++)
+        {
+            const t = ((i + phase) / segs) - 0.5;
+            const yOff = t * treadLen;
+            drawRect(this.pos.add(right.scale( treadOff)).add(fwd.scale(yOff)), vec2(treadW * 0.95, 0.11), treadDark, ang);
+            drawRect(this.pos.add(right.scale(-treadOff)).add(fwd.scale(yOff)), vec2(treadW * 0.95, 0.11), treadDark, ang);
+        }
+
+        // hull (colored chassis) with a darker outline
+        const hullW = halfWid * 1.55;
+        const hullL = halfLen * 1.8;
+        drawRect(this.pos, vec2(hullW + 0.14, hullL + 0.14), hullDark, ang);
+        drawRect(this.pos, vec2(hullW, hullL), hullCol, ang);
+
+        // turret (circle on top — rotation doesn't matter)
+        drawCircle(this.pos, turretR * 2 + 0.1, hullDark);
+        drawCircle(this.pos, turretR * 2, hullCol);
+
+        // barrel extending forward from the turret — long axis in size.y
+        const barrelPos = this.pos.add(fwd.scale(turretR + barrelLen * 0.5 - 0.05));
+        drawRect(barrelPos, vec2(barrelWid + 0.1, barrelLen + 0.1), hullDark, ang);
+        drawRect(barrelPos, vec2(barrelWid, barrelLen), hullCol, ang);
     }
 }
 
@@ -449,12 +546,6 @@ function gameRender()
 function gameRenderPost()
 {
     drawTextScreen(`COMBAT-ish  |  Red ${scores[0]} - ${scores[1]} Blue`, vec2(mainCanvasSize.x/2, 18), 28, hsl(0,0,1), 3, hsl(0,0,0));
-
-    const controls =
-        `P1: WASD + Space     P2: AI (Blue)
-` +
-        `T: toggle AI (${aiEnabled?'ON':'OFF'})   R: reset   P: pause`;
-    drawTextScreen(controls, vec2(mainCanvasSize.x/2, mainCanvasSize.y-36), 18, hsl(0,0,.92), 3, hsl(0,0,0));
 
     if (pausedLocal)
         drawTextScreen('PAUSED', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 70, hsl(0,0,1), 6, hsl(0,0,0));
