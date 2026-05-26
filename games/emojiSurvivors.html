@@ -169,6 +169,7 @@ class Enemy extends EngineObject
         if (i >= 0) enemies.splice(i, 1);
         if (this.hp <= 0)  // only drop on death, not despawn
         {
+            killCount++;
             const value = this.xpDrop;
             new Pickup(this.pos.copy(), sprites.gem, 'gem', value);
         }
@@ -357,6 +358,9 @@ function updateSpawner()
 
 let magnetRadius = 3;
 
+let elapsedTime = 0;
+let killCount = 0;
+
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
@@ -403,6 +407,7 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    elapsedTime += 1 / 60;
     updateSpawner();
     for (const w of player.weapons) w.update();
 }
@@ -441,7 +446,49 @@ function gameRender()
 {
     drawGround();
 }
-function gameRenderPost() { }
+function formatTime(s)
+{
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function drawHUD()
+{
+    const cs = mainCanvasSize;
+    const pad = 20;
+
+    // HP bar — top-left
+    const hpW = 240, hpH = 28;
+    const hpX = pad + hpW / 2, hpY = pad + hpH / 2;
+    drawRect(vec2(hpX, hpY), vec2(hpW, hpH), new Color(0,0,0,.6), 0, false, true);
+    const hpFrac = max(0, player.hp / player.maxHp);
+    drawRect(vec2(hpX - hpW/2 + hpW*hpFrac/2, hpY), vec2(hpW * hpFrac, hpH),
+             new Color(.85, .15, .2), 0, false, true);
+    drawTextScreen('❤ ' + max(0, Math.ceil(player.hp)) + ' / ' + player.maxHp,
+                   vec2(hpX, hpY + 2), 18, WHITE, 3, BLACK);
+
+    // XP bar — top-center
+    const xpW = cs.x * .4, xpH = 16;
+    const xpX = cs.x / 2, xpY = pad + xpH / 2;
+    drawRect(vec2(xpX, xpY), vec2(xpW, xpH), new Color(0,0,0,.6), 0, false, true);
+    const xpFrac = player.xp / xpToNext(player.level);
+    drawRect(vec2(xpX - xpW/2 + xpW*xpFrac/2, xpY), vec2(xpW * xpFrac, xpH),
+             new Color(.2, .7, 1), 0, false, true);
+    drawTextScreen('Lv ' + player.level, vec2(xpX, xpY + xpH + 14),
+                   18, WHITE, 3, BLACK);
+
+    // Timer & kills — top-right
+    drawTextScreen('⏱ ' + formatTime(elapsedTime),
+                   vec2(cs.x - pad, pad + 14), 22, WHITE, 3, BLACK, 'right');
+    drawTextScreen('💀 ' + killCount,
+                   vec2(cs.x - pad, pad + 44), 22, WHITE, 3, BLACK, 'right');
+}
+
+function gameRenderPost()
+{
+    drawHUD();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
