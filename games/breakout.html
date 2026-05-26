@@ -44,7 +44,7 @@ let paddleExtra = 0; // extra width from W powerup
 
 let balls = [];      // {pos, vel, size, stuck, stuckOffsetX}
 let bullets = [];    // {pos, vel, size}
-let bricks = [];     // {pos, size, color, alive, special, dropType}
+let bricks = [];     // {pos, size, color, alive, special, dropType, type, hp, maxHp}
 let powerups = [];   // {pos, vel, size, type}
 
 let ballSpeed;
@@ -240,7 +240,10 @@ function spawnPowerupFromBrick(brick)
 function damageBrick(brick)
 {
     if (brick.type === BRICK_GOLD)
+    {
+        sfxBounce.play();
         return false;
+    }
 
     brick.hp--;
     if (brick.hp > 0)
