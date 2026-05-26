@@ -311,6 +311,43 @@ async function gameInit()
         title: 'FREECELL',
         onPlay: playFromTitle,
         canReveal: () => !isPlaying,
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- options menu -----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value: 0.8, min: 0, max: 1,
+                persist: 'freecell.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ----- about menu -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:
+                'Freecell — a single-deck solitaire. Build the four foundations ' +
+                'up from Ace to King by suit. Stack tableau columns down by ' +
+                'alternating color. Use the four free cells as temporary parking.\n\n' +
+                'Drag cards with the mouse. Double-click a top card to send it to a ' +
+                'foundation. Z = undo, Y = redo. Press Esc to pause.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
     });
 
     // ----- pause menu -----
