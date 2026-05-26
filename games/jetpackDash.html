@@ -33,7 +33,9 @@ paused = false;
 
 // engine defaults
 gravity = vec2(0, -0.001);     // tiny negative so groundObject sign tests work if needed later
-cameraPos = vec2(0, 6);
+// match the in-game camera offset (player at world x=0 sits at the left third) so the
+// title-screen preview lines up with how the level looks the moment PLAY is pressed
+cameraPos = vec2(8, 6);
 cameraScale = 48;
 canvasMaxSize = vec2(2048, 2048);
 canvasClearColor = new Color().setHex('#1a1a2a');
@@ -188,6 +190,8 @@ function returnToTitle()
     setPlaying(false);
     engineObjectsDestroy();
     player = undefined;
+    // reset camera to the start-of-level preview view
+    cameraPos = vec2(-playerStartScreenX, ceilingY / 2);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -979,12 +983,10 @@ async function gameInit()
         ],
     });
 
-    // Wait for first user interaction (click / touch / Space / Enter / A /
-    // Start) before showing the title menu. Mirrors the pinball pattern:
-    // the canvas shows a "CLICK TO PLAY" prompt while !isPlaying and no
-    // menu is up; the listener re-arms after Esc/B dismisses the title.
-    // The () => !isPlaying gate keeps clicks during gameplay from
-    // accidentally re-revealing the title menu.
+    // Show the title menu immediately so the player lands on it instead of
+    // a "CLICK TO PLAY" prompt. attachClickToReveal stays as a safety net so
+    // the menu re-opens if the player dismisses it with Esc / B.
+    showMenu('title');
     attachClickToReveal('title', () => !isPlaying);
 
     // ----- tweakables panel (press ~ to toggle) -----
@@ -1071,8 +1073,6 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    if (!isPlaying) return;
-
     const camX = cameraPos.x;
     // stripes are anchored to even-integer world positions so they scroll
     // smoothly past the camera instead of snapping per-frame.
@@ -1087,19 +1087,19 @@ function gameRender()
     drawRect(vec2(camX, ceilingY + 0.5), vec2(60, 1), hsl(.08, .3, .15));
     for (let x = base - 30; x <= base + 30; x += 2)
         drawRect(vec2(x + 0.5, ceilingY + 0.15), vec2(1, 0.15), hsl(.13, .9, .5));
+
+    // pre-play preview — static player at the start position so the title
+    // menu sits on top of a glimpse of the level instead of an empty void.
+    // Engine is paused while the menu is up, so this stays put.
+    if (!isPlaying)
+        drawTile(vec2(0, ceilingY / 2), vec2(1.4, 1.6), tile(TILE_PLAYER));
 }
 
 function gameRenderPost()
 {
-    // "Menu System Demo" header — title-screen banner only. Hide once
-    // the player is actually playing.
-    if (!isPlaying)
-        drawTextScreen('JETPACK DASH', vec2(mainCanvasSize.x/2, 150),
-            32, hsl(0, 0, 1), 4, hsl(0, 0, 0));
-
     // Pre-play / post-quit prompt — only when not playing AND no menu
-    // is up. Pulses opacity so it reads as "do something". Adapts to
-    // touch devices via isTouchDevice.
+    // is up (i.e. the player dismissed the title with Esc). Pulses opacity
+    // so it reads as "do something". Adapts to touch devices via isTouchDevice.
     if (!isPlaying && !isMenuVisible())
     {
         const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
