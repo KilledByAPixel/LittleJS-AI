@@ -25,6 +25,7 @@ gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
 cameraScale = 32;
 canvasMaxSize = vec2(2048, 2048);
+tilesPixelated = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Config
@@ -51,6 +52,10 @@ const PLAYER_RADIUS    = 1.0;        // visual size of the center turret
 
 const BALLS_PER_LEVEL  = 60;
 
+// Spiral tile spans this many world units along each side. Balls live inside
+// SPIRAL_OUTER_R (~14) so 32 gives a small margin for the dark border stroke.
+const ARENA_SIZE       = 32;
+
 ///////////////////////////////////////////////////////////////////////////////
 // State
 let path = [];                 // [{pos, arc}], arc grows as we move from outer to inner
@@ -73,6 +78,10 @@ const DANGER_FULL  = 1.0;      // path-arc ratio at full panic
 
 let sound_shoot, sound_pop, sound_click, sound_lose, sound_combo;
 
+// Pre-rendered sprites (built once at gameInit) so per-frame rendering is just
+// a handful of textured quads instead of 2400+ overlapping drawLine quads.
+let tile_spiral, tile_ball, tile_glow;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Spiral path: build a polyline from outer end (arc=0) to inner hole (arc=max).
 function buildPath()
@@ -93,6 +102,105 @@ function buildPath()
         prev = pos;
     }
     pathTotalArc = arc;
+}
+
+// Bake the spiral background + a reusable ball sprite + a soft glow into
+// the texture atlas. Called once at gameInit after buildPath so the spiral
+// stroke can follow the exact same polyline the chain rides on.
+function buildTextures()
+{
+    initDrawToTexture(4);            // 4x4 atlas → 500x500 px per tile
+
+    const TS = 500;
+    const px = TS / ARENA_SIZE;      // pixels per world unit inside the tile
+
+    // ---- Tile 0: spiral groove. One smooth canvas-2D path beats 2400
+    //              overlapping drawLine quads at tight curves. ----
+    tile_spiral = drawToTexture(0, (ctx) =>
+    {
+        ctx.lineCap  = 'round';
+        ctx.lineJoin = 'round';
+
+        // Build the path once, reuse for the outer + inner stroke passes.
+        ctx.beginPath();
+        for (let i = 0; i < path.length; i++)
+        {
+            const p = path[i].pos;
+            const x = TS/2 + p.x * px;
+            const y = TS/2 - p.y * px;        // flip Y: world Y-up → canvas Y-down
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+
+        // Dark outer rim (slightly wider than the groove).
+        ctx.strokeStyle = '#160826';
+        ctx.lineWidth   = (BALL_D + .45) * px;
+        ctx.stroke();
+
+        // Inner groove a touch lighter so the rim reads as a recessed track.
+        ctx.strokeStyle = '#2a1647';
+        ctx.lineWidth   = (BALL_D + .05) * px;
+        ctx.stroke();
+
+        // Hole at the inner end of the spiral — radial gradient → matte black.
+        const holePos = path[path.length - 1].pos;
+        const hx = TS/2 + holePos.x * px;
+        const hy = TS/2 - holePos.y * px;
+        const holeR = BALL_D * 1.8 * px;
+        const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, holeR);
+        grad.addColorStop(0,  '#000');
+        grad.addColorStop(.6, '#08031a');
+        grad.addColorStop(1,  'rgba(8,3,26,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(hx, hy, holeR, 0, 2*PI);
+        ctx.fill();
+    }, 'spiral groove background');
+
+    // ---- Tile 1: shaded ball sphere. Drawn white-to-dark so a multiplicative
+    //              tint produces a "marble" of any color (white tint → no
+    //              change, red tint → red sphere with dark edges, etc.). ----
+    tile_ball = drawToTexture(1, (ctx) =>
+    {
+        const cx = TS/2, cy = TS/2, r = TS/2 - 4;
+
+        // Dark outline ring so balls read clearly against the groove.
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2*PI); ctx.fill();
+
+        // Sphere body — off-center radial gradient gives the volumetric look.
+        const grad = ctx.createRadialGradient(cx - r*.4, cy - r*.4, 0, cx, cy, r);
+        grad.addColorStop(0,   'rgba(255,255,255,1)');
+        grad.addColorStop(.35, 'rgba(230,230,230,1)');
+        grad.addColorStop(.75, 'rgba(110,110,110,1)');
+        grad.addColorStop(1,   'rgba(28,28,28,1)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(cx, cy, r - 6, 0, 2*PI); ctx.fill();
+
+        // Bright pinpoint highlight — added in WHITE so additive blend keeps
+        // it bright regardless of tint. Drawing into the texture as opaque
+        // white means it overrides the tint at this spot, producing the
+        // characteristic glossy speck on the upper-left of every ball.
+        const hi = ctx.createRadialGradient(cx - r*.45, cy - r*.45, 0,
+                                            cx - r*.45, cy - r*.45, r*.32);
+        hi.addColorStop(0, 'rgba(255,255,255,.9)');
+        hi.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hi;
+        ctx.beginPath(); ctx.arc(cx - r*.45, cy - r*.45, r*.32, 0, 2*PI); ctx.fill();
+    }, 'ball sphere');
+
+    // ---- Tile 2: soft white glow. Drawn additively for danger auras and
+    //              the hole warning pulse. Alpha-0 additive color keeps the
+    //              halo from doubling up its own alpha. ----
+    tile_glow = drawToTexture(2, (ctx) =>
+    {
+        const cx = TS/2, cy = TS/2, r = TS/2;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0,  'rgba(255,255,255,1)');
+        grad.addColorStop(.4, 'rgba(255,255,255,.55)');
+        grad.addColorStop(1,  'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, TS, TS);
+    }, 'soft glow');
 }
 
 // Position at a given arc length (0 = outer spawn, pathTotalArc = inner hole).
@@ -394,6 +502,7 @@ async function gameInit()
     canvasClearColor = new Color().setHex('#0a0418');
 
     buildPath();
+    buildTextures();
     newGame();
 
     setSoundVolume(.6);
@@ -545,11 +654,9 @@ function gameUpdatePost() { }
 // Render
 function drawSpiralGroove()
 {
-    const c = hsl(.7, .2, .12);
-    for (let i = 0; i < path.length - 1; i += 1)
-        drawLine(path[i].pos, path[i + 1].pos, BALL_D + 0.15, c);
-    drawCircle(path[path.length - 1].pos, BALL_D * 1.6, hsl(0, 0, 0));
-    drawCircle(path[path.length - 1].pos, BALL_D * 1.3, hsl(.7, .3, .05));
+    // One textured quad replaces 2400 stitched line-quads — no more curve
+    // distortion at tight inner turns.
+    drawTile(vec2(0, 0), vec2(ARENA_SIZE), tile_spiral);
 }
 
 function drawHoleWarning()
@@ -557,22 +664,20 @@ function drawHoleWarning()
     const d = chainDanger();
     if (d <= 0) return;
     const pulse = .5 + .5 * Math.sin(time * 7);
-    const holePos = path[path.length - 1].pos;
-    drawCircleGradient(
-        holePos,
-        BALL_D * (3 + 2.5 * pulse * d),
-        new Color(1, .15, 0, .7 * d * (.5 + .5 * pulse)),
-        new Color(1, 0, 0, 0),
+    const intensity = d * (.6 + .4 * pulse);
+    drawTile(
+        path[path.length - 1].pos,
+        vec2(BALL_D * (6 + 4 * pulse * d)),
+        tile_glow,
+        CLEAR_BLACK, 0, false,                       // multiplicative pass invisible
+        new Color(intensity, intensity * .12, 0, 0), // additive red (alpha 0 — additive only)
     );
 }
 
 function drawBall(pos, colorIdx, radiusOverride)
 {
     const r = radiusOverride !== undefined ? radiusOverride : BALL_R;
-    const base = BALL_COLORS[colorIdx];
-    drawCircle(pos, r * 2,    base);
-    drawCircle(pos, r * 1.85, base, .08, hsl(0, 0, 0, .35));
-    drawCircle(pos.add(vec2(-r * .35, r * .35)), r * .8, new Color(1, 1, 1, .35));
+    drawTile(pos, vec2(r * 2), tile_ball, BALL_COLORS[colorIdx]);
 }
 
 function drawChainBall(b)
@@ -582,11 +687,13 @@ function drawChainBall(b)
     if (d > 0)
     {
         const pulse = .5 + .5 * Math.sin(time * 8);
-        drawCircleGradient(
+        const intensity = d * (.5 + .35 * pulse);
+        drawTile(
             pos,
-            BALL_D * (1.8 + .6 * pulse * d),
-            new Color(1, .2, 0, d * (.35 + .25 * pulse)),
-            new Color(1, 0, 0, 0),
+            vec2(BALL_D * (2.6 + .8 * pulse * d)),
+            tile_glow,
+            CLEAR_BLACK, 0, false,
+            new Color(intensity, intensity * .15, 0, 0),
         );
     }
     drawBall(pos, b.colorIdx);
