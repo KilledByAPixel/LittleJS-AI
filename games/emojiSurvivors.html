@@ -1636,7 +1636,11 @@ async function gameInit()
         id: 'heroSelect',
         title: 'PICK YOUR HERO',
         dismissable: true,
-        onHide: popMenu,
+        // Only surface the title menu again if the user dismissed via BACK/Esc.
+        // If a hero pick is in flight, startRun() set isPlaying=true and is
+        // about to hideAllMenus() — re-showing title here would clobber the
+        // run before it starts.
+        onHide: () => { if (!isPlaying) popMenu(); },
         items: HEROES.map(h => ({
             type: 'button',
             label: h.emoji + '  ' + h.name + ' — ' + h.blurb,
