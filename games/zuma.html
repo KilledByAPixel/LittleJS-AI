@@ -176,16 +176,9 @@ function buildTextures()
         ctx.fillStyle = grad;
         ctx.beginPath(); ctx.arc(cx, cy, r - 6, 0, 2*PI); ctx.fill();
 
-        // Bright pinpoint highlight — added in WHITE so additive blend keeps
-        // it bright regardless of tint. Drawing into the texture as opaque
-        // white means it overrides the tint at this spot, producing the
-        // characteristic glossy speck on the upper-left of every ball.
-        const hi = ctx.createRadialGradient(cx - r*.45, cy - r*.45, 0,
-                                            cx - r*.45, cy - r*.45, r*.32);
-        hi.addColorStop(0, 'rgba(255,255,255,.9)');
-        hi.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = hi;
-        ctx.beginPath(); ctx.arc(cx - r*.45, cy - r*.45, r*.32, 0, 2*PI); ctx.fill();
+        // No baked-in highlight: the multiplicative tint would recolor it
+        // (red ball ⇒ red speck). The true white specular is added at draw
+        // time via a separate additive pass using tile_glow — see drawBall.
     }, 'ball sphere');
 
     // ---- Tile 2: soft white glow. Drawn additively for danger auras and
@@ -677,7 +670,16 @@ function drawHoleWarning()
 function drawBall(pos, colorIdx, radiusOverride)
 {
     const r = radiusOverride !== undefined ? radiusOverride : BALL_R;
+    // Tinted shaded sphere — multiplicative pass.
     drawTile(pos, vec2(r * 2), tile_ball, BALL_COLORS[colorIdx]);
+    // Specular effect
+    drawTile(
+        pos.add(vec2(-r * .3, r * .3)),
+        vec2(r * .9),
+        tile_glow,
+        WHITE, 0, false,
+        new Color(.9, .9, .9, 0),
+    );
 }
 
 function drawChainBall(b)
