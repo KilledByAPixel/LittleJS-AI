@@ -261,6 +261,61 @@
   .row .tiles::-webkit-scrollbar { height: 8px; }
   .row .tiles::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+  /* Tiles wrapper — hosts scroll fade overlays + arrow buttons */
+  .tiles-wrap { position: relative; }
+  .tiles-wrap::before,
+  .tiles-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 12px;     /* clear the horizontal scrollbar */
+    width: 48px;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .tiles-wrap::before {
+    left: 0;
+    background: linear-gradient(to right, var(--bg) 0%, transparent 100%);
+  }
+  .tiles-wrap::after {
+    right: 0;
+    background: linear-gradient(to left, var(--bg) 0%, transparent 100%);
+  }
+  .tiles-wrap[data-at-start="false"]::before { opacity: 1; }
+  .tiles-wrap[data-at-end="false"]::after  { opacity: 1; }
+
+  .scroll-arrow {
+    position: absolute;
+    top: calc(50% - 6px); /* visually centered, ignoring scrollbar at bottom */
+    transform: translateY(-50%);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(20, 26, 38, .92);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 22px;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    z-index: 2;
+    transition: opacity .15s, background .15s, border-color .15s, transform .15s;
+  }
+  .tiles-wrap:hover .scroll-arrow:not([hidden]) { opacity: 1; }
+  .scroll-arrow:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    transform: translateY(-50%) scale(1.08);
+  }
+  .scroll-arrow.left  { left: 6px; }
+  .scroll-arrow.right { right: 6px; }
+  .scroll-arrow[hidden] { display: none; }
+
   .tile {
     flex: 0 0 auto;
     background: linear-gradient(135deg, var(--panel) 0%, var(--panel-2) 100%);
@@ -570,11 +625,51 @@ function buildRow(label, games, isTop) {
   const h2 = document.createElement('h2');
   h2.textContent = label;
   row.appendChild(h2);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tiles-wrap';
   const tiles = document.createElement('div');
   tiles.className = 'tiles' + (isTop ? ' top' : '');
   for (const g of games) tiles.appendChild(makeTile(g));
-  row.appendChild(tiles);
+  wrap.appendChild(tiles);
+
+  const leftBtn = document.createElement('button');
+  leftBtn.className = 'scroll-arrow left';
+  leftBtn.setAttribute('aria-label', 'Scroll left');
+  leftBtn.innerHTML = '&#8249;';
+  leftBtn.addEventListener('click', () => {
+    tiles.scrollBy({ left: -tiles.clientWidth * 0.85, behavior: 'smooth' });
+  });
+
+  const rightBtn = document.createElement('button');
+  rightBtn.className = 'scroll-arrow right';
+  rightBtn.setAttribute('aria-label', 'Scroll right');
+  rightBtn.innerHTML = '&#8250;';
+  rightBtn.addEventListener('click', () => {
+    tiles.scrollBy({ left: tiles.clientWidth * 0.85, behavior: 'smooth' });
+  });
+
+  wrap.appendChild(leftBtn);
+  wrap.appendChild(rightBtn);
+  row.appendChild(wrap);
+
+  tiles.addEventListener('scroll', () => updateArrows(wrap));
+  // Set initial arrow + fade visibility after layout settles.
+  requestAnimationFrame(() => updateArrows(wrap));
   return row;
+}
+
+function updateArrows(wrap) {
+  const tiles = wrap.querySelector('.tiles');
+  const leftBtn = wrap.querySelector('.scroll-arrow.left');
+  const rightBtn = wrap.querySelector('.scroll-arrow.right');
+  if (!tiles || !leftBtn || !rightBtn) return;
+  const atStart = tiles.scrollLeft <= 1;
+  const atEnd = tiles.scrollLeft + tiles.clientWidth >= tiles.scrollWidth - 1;
+  wrap.dataset.atStart = atStart;
+  wrap.dataset.atEnd = atEnd;
+  leftBtn.hidden = atStart;
+  rightBtn.hidden = atEnd;
 }
 
 // ===================== Stage state =====================
@@ -624,6 +719,9 @@ function loadFromHash() {
 sidebarLogoWrap.addEventListener('click', showWelcome);
 searchEl.addEventListener('input', renderList);
 window.addEventListener('hashchange', loadFromHash);
+window.addEventListener('resize', () => {
+  for (const wrap of welcomeEl.querySelectorAll('.tiles-wrap')) updateArrows(wrap);
+});
 reloadBtn.addEventListener('click', () => {
   if (currentFile) frameEl.src = currentFile + '?t=' + Date.now();
 });
