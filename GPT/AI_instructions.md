@@ -57,4 +57,3 @@ Notes
 - Drawing functions are in world space by default with a screenSpace parameter
 - Use keyDirection() for directional keyboard input (returns a vec2; handles arrows + WASD automatically). Reserve keyIsDown() for non-directional keys like jump, run, action.
 - reference.md documents the main parts of LittleJS API.
-- tutorial.md explains how to make a basic breakout style game.
