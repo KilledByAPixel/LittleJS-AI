@@ -248,23 +248,60 @@ function drawSpriteBitmapScreen(centerScreenX, centerScreenY, bitmap, pixelSize,
     }
 }
 
-function createExplosion(pos, color, count = 10)
+// One drifting/fading pixel from a sprite-shaped explosion.
+class SpritePixel extends EngineObject
 {
-    // Simple particle explosion using LittleJS ParticleEmitter
-    new ParticleEmitter(
-        pos, 0,                     // pos, angle
-        vec2(0.3),                  // emitSize
-        .1, count * 10,             // emitTime, emitRate
-        PI*2,                       // emitConeAngle
-        undefined,                  // tileInfo
-        color, color,               // colorStartA, colorStartB
-        color.scale(1,0), color.scale(1,0), // colorEndA, colorEndB
-        .4, .35, .08,               // particleTime, sizeStart, sizeEnd
-        .25, 0,                     // speed (reduced), angleSpeed
-        .92, 1,                     // damping, angleDamping
-        0,                          // gravityScale
-        PI, .1, 1                   // cone, fadeRate, randomness
-    );
+    constructor(pos, vel, color, life, pixelSize)
+    {
+        super(pos, vec2(pixelSize, pixelSize));
+        this.vel = vel;
+        this.baseColor = color;
+        this.life = life;
+        this.maxLife = life;
+        this.renderOrder = 30;
+    }
+    update()
+    {
+        this.pos = this.pos.add(this.vel);
+        this.vel = this.vel.scale(.94); // damping so the cloud settles
+        if (--this.life <= 0) this.destroy();
+    }
+    render()
+    {
+        const a = this.life / this.maxLife;
+        const c = this.baseColor;
+        drawRect(this.pos, this.size, rgb(c.r, c.g, c.b, (c.a ?? 1) * a));
+    }
+}
+
+// Destroy effect: each lit pixel of the sprite becomes a particle that drifts
+// outward from the sprite center and fades. The shape is briefly recognizable
+// before it disperses. spreadScale tunes how energetic the blast is.
+function spawnSpriteExplosion(centerPos, bitmap, pixelSize, color, spreadScale = 1)
+{
+    const rows = bitmap.length;
+    const cols = bitmap[0].length;
+    const startX = centerPos.x - (cols - 1) * pixelSize * .5;
+    const startY = centerPos.y + (rows - 1) * pixelSize * .5;
+    for (let y = 0; y < rows; y++)
+    {
+        const row = bitmap[y];
+        for (let x = 0; x < cols; x++)
+        {
+            if (row[x] === '.') continue;
+            const px = vec2(startX + x * pixelSize, startY - y * pixelSize);
+            const dir = px.subtract(centerPos);
+            const dlen = dir.length();
+            const baseSpeed = (.07 + rand(0, .08)) * spreadScale;
+            // Outward velocity from sprite center; jittered, with random fallback for center pixels
+            const outward = dlen > 0.01
+                ? dir.scale(baseSpeed / dlen)
+                : vec2(rand(-baseSpeed, baseSpeed), rand(-baseSpeed, baseSpeed));
+            const jitter = vec2(rand(-.04, .04), rand(-.04, .04)).scale(spreadScale);
+            const life = 35 + randInt(0, 25); // ~0.6-1.0s
+            new SpritePixel(px, outward.add(jitter), color, life, pixelSize);
+        }
+    }
 }
 
 function goToTitleScreen()
@@ -463,30 +500,21 @@ class Alien extends RectObject
         super(pos, vec2(2.3, 1.6), base);
         this.row = row;
         this.renderOrder = 5;
-        this.flash = 0;
         this.animOffset = randIntInclusive(0, 15); // stagger animation per alien
         this.originalPos = pos.copy(); // store spawn position for reset
     }
     // Arcade-style per-row scoring: squid 30, crab 20, octopus 10
     get pointValue() { return this.row === 0 ? 30 : this.row <= 2 ? 20 : 10; }
-    render()
+    get currentBitmap()
     {
         const frame = ((invaderAnimTick + this.animOffset) >> 3) & 1;
-        let bitmap;
-        if (this.row === 0)
-            bitmap = frame === 0 ? SPRITE_SQUID_A : SPRITE_SQUID_B;
-        else if (this.row === 1 || this.row === 2)
-            bitmap = frame === 0 ? SPRITE_CRAB_A : SPRITE_CRAB_B;
-        else
-            bitmap = frame === 0 ? SPRITE_OCTOPUS_A : SPRITE_OCTOPUS_B;
-
-        drawSpriteBitmap(this.pos, bitmap, SPRITE_PIXEL, this.color);
-
-        if (this.flash)
-        {
-            drawRect(this.pos, this.size.add(vec2(.2,.2)), rgb(1,1,1,.55));
-            this.flash--;
-        }
+        if (this.row === 0) return frame === 0 ? SPRITE_SQUID_A : SPRITE_SQUID_B;
+        if (this.row <= 2)  return frame === 0 ? SPRITE_CRAB_A  : SPRITE_CRAB_B;
+        return frame === 0 ? SPRITE_OCTOPUS_A : SPRITE_OCTOPUS_B;
+    }
+    render()
+    {
+        drawSpriteBitmap(this.pos, this.currentBitmap, SPRITE_PIXEL, this.color);
     }
 }
 
@@ -1027,7 +1055,7 @@ function gameUpdate()
     if (keyIsDown('KeyX') && aliens.length > 0 && frame % 5 === 0)
     {
         const a = aliens[0];
-        createExplosion(a.pos, a.color);
+        spawnSpriteExplosion(a.pos, a.currentBitmap, SPRITE_PIXEL, a.color);
         score += a.pointValue;
         a.destroy();
         hiScore = max(hiScore, score);
@@ -1404,7 +1432,7 @@ function updateCollisions()
             score += ufoPointsFor(b.shotIndex);
             hiScore = max(hiScore, score);
             checkBonusLife();
-            createExplosion(ufo.pos, rgb(.95,.25,.25), 20); // more particles for UFO
+            spawnSpriteExplosion(ufo.pos, SPRITE_UFO, SPRITE_PIXEL, rgb(.95,.25,.25), 1.4);
             ufo.destroy();
             sfxExplode.play(ufo.pos);
             continue;
@@ -1417,8 +1445,7 @@ function updateCollisions()
             if (!aabbOverlap(b, a)) continue;
 
             b.destroy();
-            a.flash = 6;
-            createExplosion(a.pos, a.color);
+            spawnSpriteExplosion(a.pos, a.currentBitmap, SPRITE_PIXEL, a.color);
             score += a.pointValue;
             a.destroy();
             hiScore = max(hiScore, score);
@@ -1502,7 +1529,7 @@ function updateCollisions()
 function loseLife()
 {
     lives--;
-    createExplosion(player.pos, rgb(.2,.9,.95), 20);
+    spawnSpriteExplosion(player.pos, SPRITE_PLAYER, SPRITE_PIXEL, rgb(.2,.9,.95), 1.3);
     sfxLoseLife.play(player.pos);
 
     if (lives <= 0)
@@ -1558,7 +1585,7 @@ function doGameOver()
     if (gameOver) return;
     gameOver = true;
     gameOverTimer = 120; // 2 second delay before can click
-    createExplosion(player.pos, rgb(.2,.9,.95), 25);
+    spawnSpriteExplosion(player.pos, SPRITE_PLAYER, SPRITE_PIXEL, rgb(.2,.9,.95), 1.6);
     sfxExplode.play(player.pos);
 }
 
