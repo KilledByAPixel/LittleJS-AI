@@ -1,579 +1,774 @@
 <!DOCTYPE html><head>
-<title>LittleJS Kaboom</title>
-<meta charset=utf-8>
-</head><body>
+<title>Kaboom!</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+#littlejs-menus {
+    --menu-bg:           rgba(10, 8, 24, 0.92);
+    --menu-fg:           #fff;
+    --menu-accent:       #ffd23a;
+    --menu-font:         'Courier New', monospace;
+    --menu-border-width: 4px;
+    --menu-radius:       10px;
+}
+#littlejs-menus .ljs-menu-panel[data-menu-id="title"] .ljs-menu-title {
+    color: #ff4444;
+    text-shadow: 0 0 14px #ff4444aa, 0 0 4px #000;
+    letter-spacing: 0.18em;
+}
+</style>
+</head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
+<script src="../templates/menus.js"></script>
 <script src="../templates/soundGenerator.js"></script>
 <script>
 'use strict';
 
-// engine settings
-debugWatermark = false; // Hide debug watermark in corner
-showEngineVersion = false; // Hide engine version console display
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 38;
+canvasMaxSize = vec2(2048, 2048);
 
 ///////////////////////////////////////////////////////////////////////////////
-// Kaboom! (Atari-style) - LittleJS prototype (no assets, primitives only)
+// Kaboom! — classic Activision paddle-catcher style.
+// Mad Bomber paces the rooftop dropping bombs. Sweep stacked buckets to catch
+// every bomb. Miss one and the bottom bucket explodes (and so do the rest of
+// the wave). Run out of buckets — game over.
 
-const FIXED_SIZE = vec2(960, 720);        // 4:3-ish retro canvas
-const PLAY_W = 900;
-const PLAY_H = 650;
+// World layout (world units; cameraScale=38 → ~50 wide x ~28 tall at 1920x1080)
+const FIELD_LEFT   = -13;
+const FIELD_RIGHT  =  13;
+const ROOF_Y          =  8;     // bomber's feet (low enough that his head fits on screen)
+const FLOOR_Y         = -11.5;  // ground line (where misses explode)
+const BUCKET_BOTTOM_Y = -11;    // y of the BOTTOM bucket center (sits on ground)
+const BUCKET_GAP      =  1.1;   // vertical gap between stacked buckets
+const BOMBER_RANGE    =  9.5;   // bomber wander range — kept ≤ bucket max reach
+const BOMB_R          =  0.45;  // bomb radius (collision)
 
-const TOP_Y    =  PLAY_H/2 - 70;
-const FLOOR_Y  = -PLAY_H/2 + 50;
-const BUCKET_Y =  FLOOR_Y + 20;
+// Difficulty curve
+const bombsPerWave   = w => 10 + (w - 1) * 5;
+const bombFallSpeed  = w => 7 + (w - 1) * 1.4;           // world units / sec
+const bombInterval   = w => max(0.18, 0.85 - (w - 1) * 0.07);
+const bomberSpeed    = w => 4 + (w - 1) * 0.9;
+const bomberFlipProb = w => 0.005 + (w - 1) * 0.002;     // chance/frame of reversing
+const bucketHalfW    = w => max(1.2, 2.8 - (w - 1) * 0.15);
 
-// Building (Kaboom-style backdrop)
-const BUILDING_W = 720;
-const BUILDING_BOTTOM = FLOOR_Y - 6;
-const BUILDING_TOP = TOP_Y - 42;          // roof line (bomber stands on this)
-const BUILDING_Y = (BUILDING_TOP + BUILDING_BOTTOM) / 2;
-const BUILDING_H = (BUILDING_TOP - BUILDING_BOTTOM);
+// State
+let score, highScore, wave, lives, bucketsAwarded;
+let bucketX, bucketTargetX;
+let bomber;          // {x, vx, dropTimer, laughTimer}
+let bombs;           // [{pos, vel, fuse}]
+let particles;       // [{pos, vel, life, maxLife, color, size}]
+let starField;       // stable star positions for the night sky
+let windowSeeds;     // stable blink seeds for windows
+let bombsSpawned, bombsCaught, bombsInWave;
+let waveSpawnTimer;  // seconds until next bomb in current wave
+let waveStartDelay;  // seconds before first bomb of wave
+let waveClearTimer;  // seconds remaining until next wave starts (0 = not waiting)
+let missFreezeTimer; // brief pause after a miss
+let isPlaying, gameOverShown;
+let shakeFrames, shakeAmount;
+let waveBannerText, waveBannerTimer;
 
-const BOMB_RADIUS = 14;                  // collision radius-ish
+// Sounds
+let sfxCatch, sfxMiss, sfxFuse, sfxClear, sfxBucketUp, sfxStep;
 
-// juggling physics
-const BOMB_GRAVITY = -.20;               // downward accel per frame
-const BOUNCE_UP_MIN = 8;                 // ensure bounce feels snappy
-const BOUNCE_FACTOR = .88;               // preserve vertical speed on bounce
-const BOUNCE_SIDE_KICK = 9;              // how much x is influenced by where you hit
-const BUCKET_VEL_KICK = .8;              // how much x is influenced by moving bucket
+///////////////////////////////////////////////////////////////////////////////
+// HELPERS
 
-let score, highScore, level, lives, caughtThisLife;
-let bucketX, bucketW, bucketH;
-let bucketVX = 0, bucketPrevX = 0;
-let clownX, clownTargetX, clownDir, clownDropFlash;
-let spawnTimer, missFreeze, gameOver;
-let bombs = [];
-let particles = [];
+function startShake(frames, amount) { shakeFrames = frames; shakeAmount = amount; }
 
-let shakeFrames = 0;
-let shakeAmount = 0;
-
-let sfxBounce, sfxMiss, sfxLevelUp, sfxGameOver, sfxSafeThud;
-
-// --- helpers ---------------------------------------------------------------
-
-const clampf = (v, a, b)=> v < a ? a : v > b ? b : v;
-const randRange = (a,b)=> rand(a,b);
-
-function setBucketSizeForLives()
-{
-    // emulate Kaboom's shrinking buckets after misses
-    bucketW = lives >= 3 ? 180 : lives == 2 ? 135 : 100;
-    bucketH = 34;
-}
-
-function startShake(frames, amount)
-{
-    shakeFrames = frames|0;
-    shakeAmount = amount;
-}
-
-function spawnParticles(pos, count, baseSpeed, lifeMin, lifeMax)
-{
-    for (let i=0; i<count; ++i)
-    {
-        const a = randRange(0, PI*2);
-        const s = baseSpeed * randRange(.4, 1.1);
+// color = [h, s, l] — stored as components so we can re-emit each frame with
+// fading alpha (hsl(...) returns a Color object that doesn't keep its inputs).
+function spawnParticles(pos, count, speed, color, life=1, gravityScale=1) {
+    for (let i = 0; i < count; i++) {
+        const a = rand(0, PI * 2);
+        const s = speed * rand(0.4, 1.2);
         particles.push({
             pos: pos.copy(),
-            vel: vec2(Math.cos(a)*s, Math.sin(a)*s),
-            life: randRange(lifeMin, lifeMax)|0,
-            size: randRange(6, 16),
+            vel: vec2(Math.cos(a) * s, Math.sin(a) * s),
+            life, maxLife: life, h: color[0], s: color[1], l: color[2], gravityScale,
+            size: rand(0.15, 0.4),
         });
     }
 }
 
-function resetRound(clearBombs=true)
-{
-    // NOTE: clearBombs is intentional, but if called during the bombs loop we must break out
-    // (fixed below in gameUpdate) to avoid iterating past the new length.
-    missFreeze = 35;
-    clownDropFlash = 0;
-    if (clearBombs) bombs.length = 0;
-    startShake(14, 10);
-}
+// Stack is anchored at BUCKET_BOTTOM_Y so when a bucket is lost the catching
+// bucket moves DOWN — the bottom of the stack sits on the ground regardless of
+// how many lives remain. i=0 is the bottom; i=lives-1 is the catching bucket.
+function bucketCenterY(i) { return BUCKET_BOTTOM_Y + i * BUCKET_GAP; }
+function bucketTopY()     { return BUCKET_BOTTOM_Y + (lives - 1) * BUCKET_GAP; }
 
-function startGame()
-{
+///////////////////////////////////////////////////////////////////////////////
+// GAME FLOW
+
+function startGame() {
     score = 0;
-    level = 1;
     lives = 3;
-    caughtThisLife = 0;
+    bucketsAwarded = 0;
     bucketX = 0;
-    bucketPrevX = bucketX;
-    bucketVX = 0;
-    setBucketSizeForLives();
-
-    clownX = 0;
-    clownTargetX = 0;
-    clownDir = 1;
-    spawnTimer = 40;
-    missFreeze = 30;
-    gameOver = false;
-
-    bombs.length = 0;
-    particles.length = 0;
-    shakeFrames = 0;
-    shakeAmount = 0;
+    bucketTargetX = 0;
+    bombs = [];
+    particles = [];
+    bomber = { x: -BOMBER_RANGE * 0.5, vx: bomberSpeed(1), dropTimer: 0, laughTimer: 0 };
+    isPlaying = true;
+    gameOverShown = false;
+    waveBannerText = '';
+    waveBannerTimer = 0;
+    startWave(1);
 }
 
-function endGame()
-{
-    gameOver = true;
-    bombs.length = 0;
-    missFreeze = 0;
-    startShake(24, 14);
-    sfxGameOver?.play(undefined, .9);
-    if (score > highScore)
-    {
+function startWave(w) {
+    wave = w;
+    bombsSpawned = 0;
+    bombsCaught = 0;
+    bombsInWave = bombsPerWave(w);
+    waveSpawnTimer = 0;
+    waveStartDelay = 1.2;
+    waveClearTimer = 0;
+    bomber.vx = (bomber.vx >= 0 ? 1 : -1) * bomberSpeed(w);
+    waveBannerText = `WAVE ${w}`;
+    waveBannerTimer = 2.0;
+}
+
+function spawnBomb() {
+    bombs.push({
+        pos: vec2(bomber.x, ROOF_Y - 0.5),
+        vel: vec2(0, -bombFallSpeed(wave)),
+        fuse: rand(0, PI * 2),
+    });
+    bomber.dropTimer = 0.18;
+    sfxFuse?.play(undefined, 0.35, 0.9 + wave * 0.04, 0.1);
+    bombsSpawned++;
+}
+
+function catchBomb(b) {
+    bombsCaught++;
+    const points = wave;
+    score += points;
+    sfxCatch?.play(undefined, 0.45, 1 + min(0.6, bombsCaught * 0.006), 0.15);
+    spawnParticles(b.pos, 5, 2.5, [.13, 1, .7], 0.4, 0.2);
+
+    // Classic Kaboom: get a bucket back every 1000 points.
+    const earned = Math.floor(score / 1000);
+    if (earned > bucketsAwarded && lives < 3) {
+        bucketsAwarded = earned;
+        lives++;
+        sfxBucketUp?.play(undefined, 0.6);
+        showMenuToast({
+            icon: '🪣', title: 'BUCKET BONUS!',
+            text: '+1 bucket', duration: 2200, position: 'top-right',
+        });
+    } else if (earned > bucketsAwarded) {
+        bucketsAwarded = earned;
+    }
+}
+
+function missBomb(missedBomb) {
+    lives--;
+    startShake(28, 0.7);
+    sfxMiss?.play(undefined, 0.95);
+    missFreezeTimer = 0.9;
+
+    // Big ground explosion at the miss point.
+    const groundPos = vec2(missedBomb.pos.x, FLOOR_Y + 0.2);
+    spawnParticles(groundPos, 40, 9, [.04, 1, .55], 1.0, 0.3);
+    spawnParticles(groundPos, 25, 5, [.11, 1, .7], 1.2, 0.2);
+    spawnParticles(groundPos, 18, 3, [0, 0, .9], 0.7, 0.1);
+
+    // Detonate every other in-flight bomb harmlessly (classic mechanic).
+    for (const b of bombs) {
+        if (b !== missedBomb) {
+            spawnParticles(b.pos, 10, 4, [.05, 1, .55], 0.6, 0.3);
+            spawnParticles(b.pos, 6, 2, [.13, 1, .7], 0.5, 0.2);
+        }
+    }
+    bombs = [];
+
+    if (lives <= 0) {
+        isPlaying = false;
+        // Defer the game-over dialog until the explosion settles so the
+        // player sees the shake before the modal eats the screen.
+        gameOverShown = false;
+    }
+}
+
+function checkWaveClear() {
+    if (waveClearTimer > 0) return;
+    if (bombsSpawned >= bombsInWave && bombs.length === 0) {
+        const bonus = wave * 50 + bombsCaught * wave * 2;
+        score += bonus;
+        sfxClear?.play(undefined, 0.7);
+        waveBannerText = `WAVE ${wave} CLEAR  +${bonus}`;
+        waveBannerTimer = 2.0;
+        waveClearTimer = 2.0;
+    }
+}
+
+function showGameOver() {
+    gameOverShown = true;
+    if (score > highScore) {
         highScore = score;
         localStorage.setItem('kaboomHigh', String(highScore));
     }
+    const summary = getMenu('gameover').getItem('summary');
+    summary.setLabel(`SCORE  ${score}\nBEST  ${highScore}\nWAVE  ${wave}`);
+    showMenu('gameover');
 }
 
-function spawnBomb()
-{
-    const fallSpeed = 5 + level * .65;        // pixels/frame
-    const side = randRange(-1.2, 1.2);
-    bombs.push({
-        pos: vec2(clownX, TOP_Y - 20),
-        vel: vec2(side, -fallSpeed),
-        r: BOMB_RADIUS,
-        bounces: 0,          // juggle count
-    });
-    clownDropFlash = 10;
+///////////////////////////////////////////////////////////////////////////////
+// UPDATE
+
+function updateBomber(dt) {
+    if (waveClearTimer > 0) return;       // bomber takes a breather between waves
+    if (waveStartDelay > 0) return;
+
+    // Pace back and forth with random flips. Speed scales with wave.
+    bomber.x += bomber.vx * dt;
+    if (bomber.x > BOMBER_RANGE)  { bomber.x = BOMBER_RANGE;  bomber.vx = -Math.abs(bomber.vx); }
+    if (bomber.x < -BOMBER_RANGE) { bomber.x = -BOMBER_RANGE; bomber.vx =  Math.abs(bomber.vx); }
+    if (rand() < bomberFlipProb(wave)) bomber.vx = -bomber.vx;
+
+    if (bomber.dropTimer > 0)  bomber.dropTimer  -= dt;
+    if (bomber.laughTimer > 0) bomber.laughTimer -= dt;
 }
 
-function updateClown()
-{
-    const maxX = PLAY_W/2 - 80;
-    if (!clownTargetX || Math.abs(clownTargetX - clownX) < 8)
-        clownTargetX = randRange(-maxX, maxX);
-
-    const speed = 3 + level * .25;
-    const dx = clownTargetX - clownX;
-    clownDir = dx >= 0 ? 1 : -1;
-    clownX += clampf(dx, -speed, speed);
-}
-
-function updateBucket()
-{
-    const maxX = PLAY_W/2 - bucketW/2 - 18;
-
-    bucketPrevX = bucketX;
-
-    // Desktop: ALWAYS follow mouse (no click/hold required)
-    if (!isTouchDevice)
-    {
-        bucketX = lerp(bucketX, clampf(mousePos.x, -maxX, maxX), .35);
-    }
+function updateBucket(dt) {
+    const maxX = FIELD_RIGHT - bucketHalfW(wave) - 0.3;
+    const kx = keyDirection().x;
+    if (kx !== 0)
+        bucketTargetX = clamp(bucketTargetX + kx * 28 * dt, -maxX, maxX);
     else
-    {
-        // Touch: follow finger while pressed
-        if (mouseIsDown(0))
-            bucketX = lerp(bucketX, clampf(mousePos.x, -maxX, maxX), .35);
-        else
-        {
-            // keyboard fallback (useful on some devices/emulators)
-            const left  = keyIsDown('ArrowLeft') || keyIsDown('KeyA');
-            const right = keyIsDown('ArrowRight') || keyIsDown('KeyD');
-            const speed = 10;
-            if (left)  bucketX -= speed;
-            if (right) bucketX += speed;
-            bucketX = clampf(bucketX, -maxX, maxX);
+        bucketTargetX = clamp(mousePos.x, -maxX, maxX);
+    // Direct assignment — paddle games live on instant response.
+    bucketX = bucketTargetX;
+}
+
+function updateBombs(dt) {
+    if (missFreezeTimer > 0) return;
+    if (waveClearTimer > 0) return;
+
+    // Spawn cadence
+    if (waveStartDelay > 0) {
+        waveStartDelay -= dt;
+    } else if (bombsSpawned < bombsInWave) {
+        waveSpawnTimer -= dt;
+        if (waveSpawnTimer <= 0) {
+            spawnBomb();
+            waveSpawnTimer = bombInterval(wave) * rand(0.75, 1.25);
         }
     }
 
-    bucketVX = bucketX - bucketPrevX;
-}
+    const halfW = bucketHalfW(wave);
+    const catchY = bucketTopY();
+    const bucketHalfH = 0.5;
 
-function maybeLevelUp()
-{
-    const newLevel = 1 + (score / 600 |0);
-    if (newLevel > level)
-    {
-        level = newLevel;
-        sfxLevelUp?.play(undefined, .45);
-        startShake(10, 6);
-    }
-}
-
-function bounceBomb(b)
-{
-    b.bounces++;
-
-    // score: first bounce is like a catch, extra bounces ramp up
-    const base = 10 * level;
-    const bonus = b.bounces > 1 ? (5 * (b.bounces - 1) * level) : 0;
-    score += base + bonus;
-
-    // a little visual reward
-    spawnParticles(b.pos, b.bounces == 1 ? 10 : 16, b.bounces == 1 ? 4.5 : 5.6, 16, 28);
-
-    // bleep rises with bounce count
-    const pitch = 1 + Math.min(1.2, b.bounces * .08) + level * .02;
-    sfxBounce?.play(undefined, .55, pitch, .25);
-
-    maybeLevelUp();
-}
-
-function missBomb(b)
-{
-    lives--;
-    sfxMiss?.play(undefined, .7);
-    spawnParticles(vec2(b.pos.x, FLOOR_Y), 22, 6.5, 18, 34);
-    startShake(18, 12);
-
-    if (lives <= 0)
-        return endGame();
-
-    setBucketSizeForLives();
-    resetRound(true);
-}
-
-function safeGroundHit(b)
-{
-    // If it has bounced at least once, it won't hurt you when it hits the ground.
-    // It just "pops" harmlessly.
-    sfxSafeThud?.play(undefined, .35, 1.0, .15);
-    spawnParticles(vec2(b.pos.x, FLOOR_Y), 14, 4.2, 14, 24);
-}
-
-function bombBucketBounceResponse(b, bucket)
-{
-    // Defensive: if something cleared the bombs array mid-frame, ignore.
-    if (!b || !b.pos || !b.vel)
-        return;
-
-    // reposition just above bucket rim
-    const top = bucket.y + bucket.h/2;
-    b.pos.y = top + b.r + 1;
-
-    // vertical bounce
-    const vy = Math.abs(b.vel.y);
-    b.vel.y = Math.max(BOUNCE_UP_MIN, vy * BOUNCE_FACTOR);
-
-    // horizontal kick based on where you hit + bucket movement
-    const rel = clampf((b.pos.x - bucket.x) / (bucket.w/2), -1, 1);
-    b.vel.x += rel * BOUNCE_SIDE_KICK + bucketVX * BUCKET_VEL_KICK;
-
-    // cap sideways speed
-    b.vel.x = clampf(b.vel.x, -18, 18);
-}
-
-// --- minimal self-tests ----------------------------------------------------
-
-function runSelfTests()
-{
-    // These are lightweight sanity checks to catch "undefined vel" style crashes.
-    const t = {pos: vec2(1,2), vel: vec2(3,4), r: 1, bounces: 0};
-    console.assert(t.vel && typeof t.vel.x == 'number' && typeof t.vel.y == 'number', 'TEST: bomb vel should exist');
-    console.assert(t.pos && typeof t.pos.x == 'number' && typeof t.pos.y == 'number', 'TEST: bomb pos should exist');
-
-    const bucket = {x:0, y:0, w:100, h:20};
-    bombBucketBounceResponse(t, bucket);
-    console.assert(typeof t.vel.x == 'number' && typeof t.vel.y == 'number', 'TEST: bounce response keeps vel numeric');
-}
-
-// --- LittleJS callbacks ----------------------------------------------------
-
-function gameInit()
-{
-    // keep startup minimal and deterministic
-    setShowSplashScreen(false);
-    setCanvasFixedSize(FIXED_SIZE);
-    setCanvasPixelated(true);
-    setFontDefault('monospace');
-
-    setCameraScale(1);
-    setCameraPos(vec2());
-
-    highScore = +(localStorage.getItem('kaboomHigh') || 0);
-
-    // sound effects (simple bleeps like the original era)
-    sfxBounce   = new SoundGenerator({frequency: 820, release: .04, volume: .85, shapeCurve: .8});
-    sfxMiss     = new SoundGenerator({frequency: 110, release: .18, volume: 1, noise: .15, shapeCurve: 0});
-    sfxSafeThud = new SoundGenerator({frequency: 160, release: .10, volume: .6, noise: .12, shapeCurve: .4});
-    sfxLevelUp  = new SoundGenerator({frequency: 500, release: .12, volume: .7, slide: 2.5});
-    sfxGameOver = new SoundGenerator({frequency: 160, release: .35, volume: .9, slide: -1.8, noise: .05});
-
-    runSelfTests();
-    startGame();
-}
-
-function gameUpdate()
-{
-    // restart
-    if (gameOver)
-    {
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
-            startGame();
-        return;
-    }
-
-    // brief freeze after misses
-    if (missFreeze > 0)
-    {
-        missFreeze--;
-        updateBucket(); // allow small adjustments even while frozen
-        return;
-    }
-
-    updateBucket();
-    updateClown();
-
-    // spawn bombs faster as level rises
-    if (--spawnTimer <= 0)
-    {
-        spawnBomb();
-        const base = 55 - level * 4;
-        spawnTimer = (clampf(base, 10, 60) + randRange(0, 20)) |0;
-    }
-
-    const maxX = PLAY_W/2 - 20;
-
-    // update bombs
-    const bucket = {x: bucketX, y: BUCKET_Y, w: bucketW, h: bucketH};
-    let roundResetThisFrame = false;
-
-    for (let i=bombs.length; i--;)
-    {
+    for (let i = bombs.length; i--;) {
         const b = bombs[i];
+        b.pos.y += b.vel.y * dt;
+        b.fuse += dt * 12;
 
-        // Guard against mid-loop clears (missBomb/resetRound can clear bombs).
-        if (!b || !b.pos || !b.vel)
-        {
+        // Catch test: only the TOP (highest) bucket catches. Lower buckets
+        // are visual lives only — classic Kaboom rules.
+        const dx = Math.abs(b.pos.x - bucketX);
+        const dy = b.pos.y - catchY;
+        if (dx < halfW + BOMB_R && Math.abs(dy) < bucketHalfH + BOMB_R && b.vel.y < 0) {
+            catchBomb(b);
             bombs.splice(i, 1);
             continue;
         }
 
-        // integrate
-        b.vel.y += BOMB_GRAVITY;
-        b.pos.x += b.vel.x;
-        b.pos.y += b.vel.y;
-
-        // soft wall bounce to keep juggling in play
-        if (b.pos.x < -maxX)
-        {
-            b.pos.x = -maxX;
-            b.vel.x = Math.abs(b.vel.x) * .8;
+        // Floor hit = miss.
+        if (b.pos.y < FLOOR_Y) {
+            missBomb(b);
+            return;     // bombs was wiped inside missBomb
         }
-        if (b.pos.x > maxX)
-        {
-            b.pos.x = maxX;
-            b.vel.x = -Math.abs(b.vel.x) * .8;
-        }
-
-        // bucket collision: only bounce when moving downward
-        const dx = Math.abs(b.pos.x - bucket.x);
-        const dy = Math.abs(b.pos.y - bucket.y);
-        const overlap = dx < bucket.w/2 + b.r*.6 && dy < bucket.h/2 + b.r*.9;
-        if (overlap && b.vel.y < 0 && b.pos.y > bucket.y - bucket.h/2)
-        {
-            bombBucketBounceResponse(b, bucket);
-            bounceBomb(b);
-            continue;
-        }
-
-        // ground hit
-        if (b.pos.y < FLOOR_Y - 10)
-        {
-            bombs.splice(i, 1);
-            if (b.bounces >= 1)
-            {
-                safeGroundHit(b);
-            }
-            else
-            {
-                missBomb(b);
-                roundResetThisFrame = true;
-                break; // IMPORTANT: missBomb/resetRound may clear bombs; stop iterating this frame.
-            }
-            continue;
-        }
-
-        // cleanup if it somehow flies too high
-        if (b.pos.y > PLAY_H/2 + 260)
-            bombs.splice(i, 1);
     }
+}
 
-    // If we lost a life, the round was reset (and bombs possibly cleared). End update safely.
-    if (roundResetThisFrame || gameOver)
-        return;
-
-    // particles
-    for (let i=particles.length; i--;)
-    {
+function updateParticles(dt) {
+    for (let i = particles.length; i--;) {
         const p = particles[i];
-        p.pos.x += p.vel.x;
-        p.pos.y += p.vel.y;
-        p.vel.y -= .25;     // gravity (down)
-        p.vel.x *= .96;
-        p.vel.y *= .96;
-        if (--p.life <= 0)
-            particles.splice(i, 1);
-    }
-}
-
-function gameUpdatePost()
-{
-    // camera shake
-    let cam = vec2();
-    if (shakeFrames > 0)
-    {
-        shakeFrames--;
-        const t = (shakeFrames / 20);
-        const a = shakeAmount * (t < 0 ? 0 : t);
-        cam = vec2(randRange(-a, a), randRange(-a, a));
-    }
-    setCameraPos(cam);
-}
-
-function gameRender()
-{
-    // sky
-    drawRect(vec2(), vec2(PLAY_W, PLAY_H), hsl(.58, .25, .12));
-
-    // ground line
-    drawRect(vec2(0, FLOOR_Y - 12), vec2(PLAY_W, 6), hsl(0,0,.18));
-
-    // building body
-    const buildingPos = vec2(0, BUILDING_Y);
-    const buildingSize = vec2(BUILDING_W, BUILDING_H);
-    drawRect(buildingPos, buildingSize, hsl(0,0,.15));
-
-    // building edge shading
-    drawRect(buildingPos.add(vec2(-BUILDING_W/2 + 10, 0)), vec2(18, BUILDING_H), hsl(0,0,.12));
-    drawRect(buildingPos.add(vec2( BUILDING_W/2 - 10, 0)), vec2(18, BUILDING_H), hsl(0,0,.18));
-
-    // roof ledge / parapet
-    drawRect(vec2(0, BUILDING_TOP + 8), vec2(BUILDING_W + 30, 20), hsl(0,0,.20));
-    drawRect(vec2(0, BUILDING_TOP), vec2(BUILDING_W + 40, 6), hsl(0,0,.26));
-
-    // windows grid
-    const cols = 9;
-    const rows = 7;
-    const padX = 54;
-    const padY = 60;
-    const winW = 46;
-    const winH = 34;
-
-    const left = -BUILDING_W/2 + padX;
-    const top = BUILDING_TOP - padY;
-
-    for (let r=0; r<rows; ++r)
-    for (let c=0; c<cols; ++c)
-    {
-        const x = left + c * ((BUILDING_W - padX*2) / (cols-1));
-        const y = top - r * ((BUILDING_H - padY*2) / (rows-1));
-
-        // pseudo-random but stable per window
-        const seed = (r*97 + c*131) % 17;
-        const blink = ((time*1.4 + seed) |0) % 5;
-        const lit = blink == 0 || blink == 1;
-
-        // frame
-        drawRect(vec2(x, y), vec2(winW+8, winH+8), hsl(0,0,.10));
-        // glass
-        drawRect(vec2(x, y), vec2(winW, winH), lit ? hsl(.14, .7, .55) : hsl(.58, .18, .08));
-
-        // crossbars
-        drawRect(vec2(x, y), vec2(4, winH), hsl(0,0,.08));
-        drawRect(vec2(x, y), vec2(winW, 4), hsl(0,0,.08));
-    }
-
-    // clown (bomber) on roof
-    // align his feet to the roof line by anchoring his body a bit above BUILDING_TOP
-    const manBaseY = BUILDING_TOP + 46;
-    const headY = manBaseY + 18;
-    const bodyY = manBaseY - 16;
-
-    // body
-    drawRect(vec2(clownX, bodyY), vec2(44, 52), hsl(.08, .7, .55));
-    // head
-    drawCircle(vec2(clownX, headY), 34, hsl(.1, .35, .85), 3, hsl(0,0,0));
-    // eyes
-    drawCircle(vec2(clownX - 8, headY + 3), 6, hsl(0,0,.1));
-    drawCircle(vec2(clownX + 8, headY + 3), 6, hsl(0,0,.1));
-    // smile
-    drawLine(vec2(clownX - 10, headY - 7), vec2(clownX + 10, headY - 7), 3, hsl(0,0,.1));
-
-    // arm / drop flash
-    if (clownDropFlash > 0) clownDropFlash--;
-    const armY = manBaseY - 2;
-    const armDir = clownDir;
-    drawLine(vec2(clownX, armY), vec2(clownX + armDir*32, armY - 14), 5, hsl(.05,.8,.55));
-    if (clownDropFlash)
-        drawCircle(vec2(clownX + armDir*32, armY - 14), 10, hsl(.15,.9,.6));
-
-    // bombs
-    for (const b of bombs)
-    {
-        if (!b || !b.pos) continue;
-
-        // blue after first bounce
-        const c = b.bounces ? hsl(.62, .75, .58) : hsl(.02, .85, .55);
-        drawCircle(b.pos, b.r*2, c, 2, hsl(0,0,0));
-        drawRect(b.pos.add(vec2(0, b.r+4)), vec2(10, 8), hsl(0,0,.1)); // fuse cap
-
-        // tiny bounce counter dot
-        if (b.bounces > 1)
-            drawCircle(b.pos.add(vec2(0, b.r+18)), 6, hsl(.62,.9,.7));
-    }
-
-    // bucket (player) with simple rim & handles
-    const bucketPos = vec2(bucketX, BUCKET_Y);
-    const bucketSize = vec2(bucketW, bucketH);
-
-    drawRect(bucketPos, bucketSize, hsl(.55,.6,.55), 0, false);
-    drawRect(bucketPos.add(vec2(0, bucketH/2 - 6)), vec2(bucketW+10, 10), hsl(.55,.7,.65), 0, false); // rim
-    drawLine(bucketPos.add(vec2(-bucketW/2, 0)), bucketPos.add(vec2(-bucketW/2 - 12, 6)), 3, hsl(.55,.7,.65));
-    drawLine(bucketPos.add(vec2( bucketW/2, 0)), bucketPos.add(vec2( bucketW/2 + 12, 6)), 3, hsl(.55,.7,.65));
-
-    // particles
-    for (const p of particles)
-        drawCircle(p.pos, p.size, hsl(.12, .85, .6, clampf(p.life/34, 0, 1)));
-
-    // lives indicator (3 little buckets)
-    for (let i=0; i<3; ++i)
-    {
-        const x = -PLAY_W/2 + 70 + i*36;
-        const y = PLAY_H/2 - 48;
-        const c2 = i < lives ? hsl(.55,.6,.6) : hsl(0,0,.2);
-        drawRect(vec2(x, y), vec2(26, 16), c2, 0, false, true); // screenSpace = true
-        drawRect(vec2(x, y+7), vec2(30, 6), c2, 0, false, true);
-    }
-}
-
-function gameRenderPost()
-{
-    // HUD
-    drawTextScreen(`SCORE  ${score}`, vec2(20, 26), 28, hsl(0,0,1), 3, hsl(0,0,0), 'left');
-    drawTextScreen(`LEVEL  ${level}`, vec2(20, 56), 22, hsl(0,0,1), 3, hsl(0,0,0), 'left');
-    drawTextScreen(`HI  ${highScore}`, vec2(mainCanvasSize.x-20, 26), 24, hsl(0,0,1), 3, hsl(0,0,0), 'right');
-
-    // instructions / game over
-    if (gameOver)
-    {
-        drawTextScreen('GAME OVER', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20),
-            72, hsl(.02,.85,.6), 6, hsl(0,0,0));
-        drawTextScreen('Click or press Space to restart', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 40),
-            28, hsl(0,0,1), 4, hsl(0,0,0));
-    }
-    else if (time < 3) // short intro hint
-    {
-        drawTextScreen('Juggle: bounce bombs on the bucket for extra points!',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y - 54),
-            22, hsl(0,0,1), 3, hsl(0,0,0));
-        drawTextScreen('Move: Mouse/Touch or Arrow Keys / A-D',
-            vec2(mainCanvasSize.x/2, mainCanvasSize.y - 28),
-            20, hsl(0,0,1), 3, hsl(0,0,0));
+        p.pos.x += p.vel.x * dt;
+        p.pos.y += p.vel.y * dt;
+        p.vel.y -= 18 * dt * p.gravityScale;
+        p.vel.x *= 0.96;
+        p.vel.y *= 0.99;
+        p.life -= dt;
+        if (p.life <= 0) particles.splice(i, 1);
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Startup LittleJS Engine
-engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+// RENDER
 
-</script>
+function drawSkyAndStars() {
+    drawRect(vec2(0, 0), vec2(120, 60), hsl(.66, .35, .08));
+    // timeReal keeps advancing through pause/title; `time` doesn't.
+    // Three layers drift at different speeds for parallax depth.
+    const layerSpeed = [0.25, 0.55, 1.1];
+    const layerBright = [0.5, 0.75, 1.0];
+    const W = 70;
+    for (const s of starField) {
+        const drift = timeReal * layerSpeed[s.layer];
+        const x = ((s.x0 - drift) % W + W * 1.5) % W - W/2;
+        const tw = 0.5 + 0.5 * Math.sin(timeReal * 2 + s.phase);
+        const b = layerBright[s.layer];
+        drawRect(vec2(x, s.y), vec2(s.size, s.size),
+                 hsl(0, 0, b * (0.6 + 0.4 * tw), 0.5 + 0.5 * tw));
+    }
+}
+
+function drawBuilding() {
+    const bw = 22;
+    const bx = 0;
+    const buildingTop = ROOF_Y - 0.2;
+    const buildingBot = FLOOR_Y;
+    const buildingMid = (buildingTop + buildingBot) / 2;
+    const buildingH = buildingTop - buildingBot;
+
+    // Body
+    drawRect(vec2(bx, buildingMid), vec2(bw, buildingH), hsl(0, 0, .13));
+    // Vertical edge shading
+    drawRect(vec2(bx - bw/2 + 0.3, buildingMid), vec2(0.6, buildingH), hsl(0, 0, .09));
+    drawRect(vec2(bx + bw/2 - 0.3, buildingMid), vec2(0.6, buildingH), hsl(0, 0, .17));
+    // Roof ledge / parapet
+    drawRect(vec2(bx, buildingTop + 0.15), vec2(bw + 0.6, 0.5), hsl(0, 0, .22));
+    drawRect(vec2(bx, buildingTop + 0.4), vec2(bw + 1.0, 0.2), hsl(0, 0, .28));
+
+    // Windows
+    const cols = 9, rows = 7;
+    const padX = 1.5, padY = 1.5;
+    const left = bx - bw/2 + padX;
+    const top  = buildingTop - padY;
+    const colStep = (bw - padX * 2) / (cols - 1);
+    const rowStep = (buildingH - padY * 2 - 1) / (rows - 1);
+    const winW = 1.3, winH = 0.85;
+
+    for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+        const x = left + c * colStep;
+        const y = top - r * rowStep;
+        const seed = windowSeeds[r * cols + c];
+        const phase = (timeReal * 0.35 + seed) % 5;
+        const lit = phase < 2;
+        // Frame
+        drawRect(vec2(x, y), vec2(winW + 0.18, winH + 0.18), hsl(0, 0, .07));
+        // Glass
+        drawRect(vec2(x, y), vec2(winW, winH), lit ? hsl(.13, .85, .58) : hsl(.62, .25, .1));
+        // Crossbars
+        drawRect(vec2(x, y), vec2(0.08, winH), hsl(0, 0, .06));
+        drawRect(vec2(x, y), vec2(winW, 0.08), hsl(0, 0, .06));
+    }
+
+    // Ground — extends well below the visible area so any aspect ratio
+    // shows pavement instead of sky under the building.
+    drawRect(vec2(0, FLOOR_Y - 6), vec2(80, 12), hsl(.08, .2, .12));
+    drawRect(vec2(0, FLOOR_Y - 0.05), vec2(80, 0.12), hsl(0, 0, .25));
+}
+
+function drawBomber() {
+    // On the title screen, paused = true so gameUpdate doesn't run and
+    // bomber.x is frozen. Drive a slow sinusoidal pace from `timeReal`
+    // (advances through pause) so the attract-mode backdrop stays alive.
+    const onTitle = !isPlaying && lives > 0;
+    const titlePhase = timeReal * 0.45;
+    const x = onTitle ? Math.sin(titlePhase) * BOMBER_RANGE * 0.65 : bomber.x;
+    const y = ROOF_Y;
+    const moving = isPlaying && waveClearTimer <= 0 && waveStartDelay <= 0;
+    const facing = onTitle
+        ? (Math.cos(titlePhase) >= 0 ? 1 : -1)
+        : (bomber.vx >= 0 ? 1 : -1);
+    const walkPhase = (onTitle ? timeReal : time) * 6 * (moving || onTitle ? 1 : 0);
+    const stepBob = Math.abs(Math.sin(walkPhase)) * 0.08;
+
+    // Legs (striped red/white pants)
+    const legY = y + 0.55 + stepBob;
+    drawRect(vec2(x - 0.32, legY), vec2(0.45, 1.1), hsl(0, .8, .5));
+    drawRect(vec2(x + 0.32, legY), vec2(0.45, 1.1), hsl(0, .8, .5));
+    for (let i = 0; i < 4; i++) {
+        const sy = legY + 0.4 - i * 0.3;
+        drawRect(vec2(x - 0.32, sy), vec2(0.45, 0.08), hsl(0, 0, .95));
+        drawRect(vec2(x + 0.32, sy), vec2(0.45, 0.08), hsl(0, 0, .95));
+    }
+    // Feet
+    drawRect(vec2(x - 0.32, legY - 0.6), vec2(0.55, 0.18), hsl(0, 0, .08));
+    drawRect(vec2(x + 0.32, legY - 0.6), vec2(0.55, 0.18), hsl(0, 0, .08));
+
+    // Body (yellow shirt)
+    const bodyY = y + 1.7 + stepBob * 0.3;
+    drawRect(vec2(x, bodyY), vec2(1.5, 1.2), hsl(.14, .85, .55));
+    drawRect(vec2(x, bodyY + 0.55), vec2(1.7, 0.2), hsl(.14, .9, .65));     // shoulder line
+    // Belt
+    drawRect(vec2(x, bodyY - 0.6), vec2(1.55, 0.18), hsl(0, 0, .12));
+    drawRect(vec2(x, bodyY - 0.6), vec2(0.3, 0.18), hsl(.13, .9, .65));      // buckle
+
+    // Arms — one extended forward when dropping
+    const armY = bodyY;
+    const armReach = bomber.dropTimer > 0 ? 1.1 : 0.6;
+    const armDip = bomber.dropTimer > 0 ? -0.3 : 0;
+    drawLine(vec2(x, armY + 0.1),
+             vec2(x + facing * armReach, armY - 0.2 + armDip),
+             0.22, hsl(.08, .5, .8));
+    drawLine(vec2(x, armY + 0.1),
+             vec2(x - facing * 0.5, armY + 0.2),
+             0.22, hsl(.08, .5, .8));
+
+    // Head (yellow with mustache + wicked grin)
+    const headY = y + 3.1 + stepBob * 0.4;
+    drawCircle(vec2(x, headY), 1.3, hsl(.11, .75, .68), 0.06, hsl(0, 0, .05));
+    // Hair (black tuft + side whisps)
+    drawRect(vec2(x, headY + 0.65), vec2(1.3, 0.4), hsl(0, 0, .05));
+    drawRect(vec2(x - 0.5, headY + 0.78), vec2(0.5, 0.25), hsl(0, 0, .05));
+    drawRect(vec2(x + 0.5, headY + 0.78), vec2(0.5, 0.25), hsl(0, 0, .05));
+    // Eyebrows — angry slant
+    drawLine(vec2(x - 0.55, headY + 0.3),
+             vec2(x - 0.15, headY + 0.15), 0.1, hsl(0, 0, .05));
+    drawLine(vec2(x + 0.55, headY + 0.3),
+             vec2(x + 0.15, headY + 0.15), 0.1, hsl(0, 0, .05));
+    // Eyes
+    drawCircle(vec2(x - 0.35, headY + 0.05), 0.18, hsl(0, 0, 1));
+    drawCircle(vec2(x + 0.35, headY + 0.05), 0.18, hsl(0, 0, 1));
+    drawCircle(vec2(x - 0.35 + facing * 0.05, headY + 0.05), 0.09, hsl(0, 0, .05));
+    drawCircle(vec2(x + 0.35 + facing * 0.05, headY + 0.05), 0.09, hsl(0, 0, .05));
+    // Mustache
+    drawRect(vec2(x, headY - 0.25), vec2(0.9, 0.12), hsl(0, 0, .05));
+    drawLine(vec2(x - 0.45, headY - 0.25),
+             vec2(x - 0.6, headY - 0.15), 0.08, hsl(0, 0, .05));
+    drawLine(vec2(x + 0.45, headY - 0.25),
+             vec2(x + 0.6, headY - 0.15), 0.08, hsl(0, 0, .05));
+    // Evil grin — widens on drop
+    const grin = 0.35 + (bomber.dropTimer > 0 ? 0.25 : 0);
+    drawRect(vec2(x, headY - 0.55), vec2(grin * 2, 0.18), hsl(0, 0, .05));
+    drawRect(vec2(x - grin * 0.5, headY - 0.55), vec2(0.08, 0.18), hsl(0, 0, .95));
+    drawRect(vec2(x + grin * 0.5, headY - 0.55), vec2(0.08, 0.18), hsl(0, 0, .95));
+}
+
+function drawBomb(b) {
+    // Bomb body
+    drawCircle(b.pos, BOMB_R * 2, hsl(0, 0, .08), 0.05, hsl(0, 0, .3));
+    // Highlight
+    drawCircle(b.pos.add(vec2(-BOMB_R * 0.3, BOMB_R * 0.3)), BOMB_R * 0.4, hsl(0, 0, .3));
+    // Fuse stick
+    drawLine(b.pos.add(vec2(0, BOMB_R)),
+             b.pos.add(vec2(0.08, BOMB_R + 0.4)), 0.07, hsl(.08, .4, .4));
+    // Spark
+    const sparkSize = 0.18 + 0.08 * Math.sin(b.fuse);
+    drawCircle(b.pos.add(vec2(0.08, BOMB_R + 0.42)), sparkSize, hsl(.12, 1, .75));
+    drawCircle(b.pos.add(vec2(0.08, BOMB_R + 0.42)), sparkSize * 0.5, hsl(0, 0, 1));
+}
+
+function drawBuckets() {
+    if (lives <= 0) return;
+    const halfW = bucketHalfW(wave);
+    const h = 1.0;
+
+    for (let i = 0; i < lives; i++) {
+        const cy = bucketCenterY(i);
+        const isTop = i === lives - 1;     // highest bucket catches
+        // Trapezoidal body (rect + triangular sides via lines)
+        drawRect(vec2(bucketX, cy), vec2(halfW * 2 * 0.85, h), hsl(.55, .55, .55));
+        drawRect(vec2(bucketX, cy - 0.1), vec2(halfW * 2 * 0.75, h - 0.2), hsl(.55, .5, .42));
+        // Inner highlight (only on top bucket — visually says "this catches")
+        if (isTop) {
+            drawRect(vec2(bucketX, cy + h * 0.35), vec2(halfW * 2 * 0.7, 0.12), hsl(.55, .7, .8));
+        }
+        // Rim
+        drawRect(vec2(bucketX, cy + h/2), vec2(halfW * 2 + 0.2, 0.2), hsl(.55, .65, .72));
+        drawRect(vec2(bucketX, cy + h/2 + 0.05), vec2(halfW * 2 + 0.3, 0.08), hsl(.55, .75, .88));
+        // Handles
+        drawLine(vec2(bucketX - halfW, cy + 0.1),
+                 vec2(bucketX - halfW - 0.35, cy - 0.25), 0.1, hsl(.55, .65, .75));
+        drawLine(vec2(bucketX + halfW, cy + 0.1),
+                 vec2(bucketX + halfW + 0.35, cy - 0.25), 0.1, hsl(.55, .65, .75));
+    }
+}
+
+function drawParticles() {
+    for (const p of particles) {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        drawRect(p.pos, vec2(p.size, p.size), hsl(p.h, p.s, p.l, a));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LITTLEJS CALLBACKS
+
+async function gameInit() {
+    canvasClearColor = new Color().setHex('#06061a');
+    setSoundVolume(0.6);
+
+    setMenuVisibilityCallback(v => paused = v);
+
+    // ---- sounds ----
+    sfxCatch    = new SoundGenerator({ frequency: 700, release: 0.05, volume: 0.5, shapeCurve: 0.6 });
+    sfxFuse     = new SoundGenerator({ frequency: 200, release: 0.04, volume: 0.35, noise: 0.4, shapeCurve: 0.1 });
+    sfxMiss     = new SoundGenerator({ frequency: 90, release: 0.4, volume: 1, noise: 0.5, slide: -0.5, shapeCurve: 0 });
+    sfxClear    = new SoundGenerator({ frequency: 440, release: 0.25, volume: 0.7, slide: 4, shapeCurve: 0.5 });
+    sfxBucketUp = new SoundGenerator({ frequency: 660, release: 0.2, volume: 0.7, slide: 3, shapeCurve: 0.7 });
+
+    const ui_select   = new Sound([.4,,820,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const ui_activate = new Sound([.5,,180,.01,,.04,1,2.5,40,,,,,,,,,.6]);
+    setMenuSounds({
+        select: () => ui_select.play(),
+        activate: () => ui_activate.play(),
+    });
+
+    // ---- stable backdrop seeds ----
+    // Three parallax layers; near layer drifts fastest. Wrap-around width
+    // chosen larger than any reasonable visible width so stars are always
+    // present off-screen and slide in continuously.
+    starField = [];
+    const STAR_BAND_W = 70;       // wrap-around extent for drift
+    for (let i = 0; i < 150; i++) {
+        const layer = i % 3;
+        starField.push({
+            x0: rand(-STAR_BAND_W/2, STAR_BAND_W/2),
+            y: rand(-2, 13),
+            size: 0.06 + layer * 0.06 + rand(0, 0.05),
+            phase: rand(0, PI * 2),
+            layer,
+        });
+    }
+    windowSeeds = [];
+    for (let i = 0; i < 9 * 7; i++) windowSeeds.push(rand(0, 5));
+
+    highScore = +(localStorage.getItem('kaboomHigh') || 0);
+
+    // ---- menus ----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            { type: 'slider', id: 'volume', label: 'VOLUME', value: 0.6, min: 0, max: 1,
+              persist: 'kaboom.volume', onChange: v => setSoundVolume(v) },
+            { type: 'separator' },
+            { type: 'button', label: 'FULLSCREEN', onClick: toggleFullscreen },
+            { type: 'separator' },
+            { type: 'button', label: 'BACK', onClick: () => hideMenu('options') },
+        ],
+    });
+
+    createMenu({
+        id: 'about',
+        title: 'HOW TO PLAY',
+        onHide: popMenu,
+        items: [
+            { type: 'text', text:
+                'The Mad Bomber drops bombs from the rooftop.\n\n' +
+                'Sweep your buckets to catch every one. Missing a bomb explodes ' +
+                'your bottom bucket and detonates the rest of the wave.\n\n' +
+                'Catch every bomb in a wave for a bonus. Every 1000 points, ' +
+                'you earn a bucket back (max 3).\n\n' +
+                'MOVE: mouse, touch, or arrow keys.' },
+            { type: 'separator' },
+            { type: 'button', label: 'BACK', onClick: () => hideMenu('about') },
+        ],
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            { type: 'button', id: 'resume', label: 'RESUME', onClick: () => hideMenu('pause') },
+            { type: 'button', label: 'OPTIONS', onClick: () => pushMenu('options') },
+            { type: 'button', label: 'HOW TO PLAY', onClick: () => pushMenu('about') },
+            { type: 'separator' },
+            { type: 'button', label: 'QUIT TO TITLE', onClick: () => {
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: () => {
+                        clearSubmenuStack();
+                        hideAllMenus();
+                        isPlaying = false;
+                        gameOverShown = false;
+                        // Reset visuals so title attract loop is clean.
+                        bombs = []; particles = [];
+                        lives = 3;
+                        showMenu('title');
+                    },
+                });
+            }},
+        ],
+    });
+
+    createTitleMenu({
+        id: 'title',
+        title: 'KABOOM!',
+        subtitle: 'Catch the Mad Bomber’s bombs',
+        revealOnClick: false,
+        onPlay: () => { startGame(); },
+        canReveal: () => !isPlaying,
+        itemsBefore: [
+            { type: 'label', id: 'bestLabel', text: `BEST: ${highScore}`,
+              onUpdate: el => { el.textContent = `BEST: ${highScore}`; } },
+        ],
+        items: [
+            { type: 'button', label: 'OPTIONS', onClick: () => pushMenu('options') },
+            { type: 'button', label: 'HOW TO PLAY', onClick: () => pushMenu('about') },
+        ],
+    });
+
+    // Game over — non-dismissable so the player can't strand themselves on a
+    // black canvas by hitting Esc. The summary label is rewritten by
+    // showGameOver() each time.
+    createMenu({
+        id: 'gameover',
+        title: 'GAME OVER',
+        dismissable: false,
+        initialItemId: 'again',
+        items: [
+            { type: 'text', id: 'summary', text: '' },
+            { type: 'separator' },
+            { type: 'button', id: 'again', label: 'PLAY AGAIN', onClick: () => {
+                hideMenu('gameover');
+                startGame();
+            }},
+            { type: 'button', label: 'TITLE', onClick: () => {
+                hideMenu('gameover');
+                lives = 3; bombs = []; particles = [];
+                showMenu('title');
+            }},
+        ],
+    });
+
+    // ---- HUD toolbar ----
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            { type: 'button', label: '⛶', title: 'Fullscreen', hideOnTouch: true, onClick: toggleFullscreen },
+            { type: 'button', label: '☰', title: 'Menu', onClick: () => {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
+
+    // ---- initial state ----
+    // Build a starting world so the title screen has a moving backdrop.
+    bombs = []; particles = [];
+    lives = 3; wave = 1; bucketX = 0; bucketTargetX = 0;
+    bomber = { x: -BOMBER_RANGE * 0.5, vx: bomberSpeed(1), dropTimer: 0, laughTimer: 0 };
+    bucketsAwarded = 0;
+    isPlaying = false;
+    gameOverShown = false;
+    waveSpawnTimer = 0; waveStartDelay = 0; waveClearTimer = 0; missFreezeTimer = 0;
+    bombsSpawned = bombsCaught = bombsInWave = 0;
+    shakeFrames = 0; shakeAmount = 0;
+
+    showMenu('title');
+}
+
+function gameUpdate() {
+    if (bindPauseKey({ when: () => isPlaying && lives > 0 })) return;
+
+    const dt = 1/60;     // LittleJS fixed-step
+    if (waveBannerTimer > 0) waveBannerTimer -= dt;
+
+    if (!isPlaying) {
+        // Game over modal surfacing — wait until shake settles.
+        if (lives <= 0 && !gameOverShown && shakeFrames <= 0 && particles.length < 5) {
+            showGameOver();
+        }
+        // Still tick particles/bomber for visual life on title/attract.
+        if (!gameOverShown) {
+            updateParticles(dt);
+            // Mild bomber pacing on title for attract flavor.
+            if (!lives || lives > 0) {
+                bomber.x += bomber.vx * dt * 0.6;
+                if (bomber.x > BOMBER_RANGE)  { bomber.x = BOMBER_RANGE;  bomber.vx = -Math.abs(bomber.vx); }
+                if (bomber.x < -BOMBER_RANGE) { bomber.x = -BOMBER_RANGE; bomber.vx =  Math.abs(bomber.vx); }
+            }
+        }
+        return;
+    }
+
+    if (missFreezeTimer > 0) {
+        missFreezeTimer -= dt;
+        updateBucket(dt);
+        updateParticles(dt);
+        return;
+    }
+
+    if (waveClearTimer > 0) {
+        waveClearTimer -= dt;
+        if (waveClearTimer <= 0) startWave(wave + 1);
+        updateBucket(dt);
+        updateBomber(dt);
+        updateParticles(dt);
+        return;
+    }
+
+    updateBucket(dt);
+    updateBomber(dt);
+    updateBombs(dt);
+    updateParticles(dt);
+    checkWaveClear();
+}
+
+function gameUpdatePost() {
+    // Auto-fit camera so the play area shows on any aspect ratio (portrait
+    // phones, ultrawide, etc.). Field uses ~26w x ~28h of world units
+    // (taller side fits bomber's head + sky margin).
+    cameraScale = Math.min(mainCanvasSize.x / 26, mainCanvasSize.y / 28);
+
+    let cam = vec2(0, 0);
+    if (shakeFrames > 0) {
+        shakeFrames--;
+        const t = shakeFrames / 28;
+        const a = shakeAmount * t;
+        cam = vec2(rand(-a, a), rand(-a, a));
+    }
+    setCameraPos(cam);
+}
+
+function gameRender() {
+    drawSkyAndStars();
+    drawBuilding();
+    drawBomber();
+    for (const b of bombs) drawBomb(b);
+    drawBuckets();
+    drawParticles();
+}
+
+function gameRenderPost() {
+    // HUD only when actually playing.
+    if (!isPlaying) return;
+
+    const cx = mainCanvasSize.x / 2;
+    drawTextScreen(`SCORE  ${score}`,
+        vec2(24, 36), 32, hsl(0, 0, 1), 5, hsl(0, 0, 0), 'left');
+    drawTextScreen(`BEST  ${highScore}`,
+        vec2(24, 72), 20, hsl(0, 0, .8), 4, hsl(0, 0, 0), 'left');
+
+    drawTextScreen(`WAVE ${wave}`,
+        vec2(cx, 36), 28, hsl(.13, 1, .7), 5, hsl(0, 0, 0), 'center');
+    if (bombsInWave > 0) {
+        drawTextScreen(`${bombsCaught} / ${bombsInWave}`,
+            vec2(cx, 68), 20, hsl(0, 0, .9), 4, hsl(0, 0, 0), 'center');
+    }
+
+    // Cinematic wave banner (replaces the corner toasts that fought the HUD)
+    if (waveBannerTimer > 0) {
+        const t = waveBannerTimer;
+        // Fade in over the first 0.2s, fade out over the last 0.5s.
+        const fadeIn  = clamp((2.0 - t) / 0.2, 0, 1);
+        const fadeOut = clamp(t / 0.5, 0, 1);
+        const a = fadeIn * fadeOut;
+        const grow = 1 + 0.15 * (1 - fadeIn);    // small pop-in
+        const size = 80 * grow;
+        drawTextScreen(waveBannerText,
+            vec2(cx, mainCanvasSize.y / 2 - 40),
+            size, hsl(.04, .9, .6, a), 8, hsl(0, 0, 0, a * 0.9), 'center');
+    }
+}
+
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>
