@@ -1247,12 +1247,47 @@ function renderTitleScreen()
     const shipBob = Math.sin(t * 2) * 5;
     const shipPx = 12; // pixel size — sprite is 13x8 → 156x96 image
     drawSpriteBitmapScreen(shipX, shipY + shipBob, SPRITE_PLAYER, shipPx, rgb(.2,.9,.95));
-    // Engine glow under the base
-    const glowAlpha = 0.5 + Math.sin(t * 8) * 0.3;
-    ctx.fillStyle = `rgba(100,200,255,${glowAlpha})`;
-    const glowY = Math.round(shipY + shipBob + 4 * shipPx + 2);
-    ctx.fillRect(Math.round(shipX - 4 * shipPx), glowY, shipPx * 2, shipPx);
-    ctx.fillRect(Math.round(shipX + 2 * shipPx), glowY, shipPx * 2, shipPx);
+
+    // Engine exhaust: soft ambient halo under the ship, then a tapered flame
+    // from each nozzle with hot white core → blue → yellow → orange → transparent.
+    const flameTop = shipY + shipBob + 4 * shipPx;
+    const flameH = shipPx * 4;
+    const flameW = shipPx * 2;
+
+    // Ambient halo
+    const haloR = shipPx * 5;
+    const haloY = flameTop + flameH * .3;
+    const halo = ctx.createRadialGradient(shipX, haloY, 0, shipX, haloY, haloR);
+    halo.addColorStop(0, 'rgba(120,190,255,0.30)');
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(shipX, haloY, haloR, 0, PI * 2);
+    ctx.fill();
+
+    const drawFlame = (cx, seed) =>
+    {
+        const flicker = 1 + Math.sin(t * 14 + seed) * .12 + Math.sin(t * 23 + seed * 2) * .06;
+        const w = flameW * flicker;
+        const tipW = w * .22;
+        const tipSway = Math.sin(t * 8 + seed * 1.7) * w * .15;
+        const grad = ctx.createLinearGradient(0, flameTop, 0, flameTop + flameH);
+        grad.addColorStop(0,    'rgba(255,255,255,0.95)');
+        grad.addColorStop(0.18, 'rgba(180,225,255,0.85)');
+        grad.addColorStop(0.40, 'rgba(255,210,100,0.78)');
+        grad.addColorStop(0.70, 'rgba(255,90,40,0.50)');
+        grad.addColorStop(1,    'rgba(120,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(cx - w/2, flameTop);
+        ctx.lineTo(cx + w/2, flameTop);
+        ctx.lineTo(cx + tipSway + tipW/2, flameTop + flameH);
+        ctx.lineTo(cx + tipSway - tipW/2, flameTop + flameH);
+        ctx.closePath();
+        ctx.fill();
+    };
+    drawFlame(shipX - shipPx * 3, 1.0);
+    drawFlame(shipX + shipPx * 3, 2.5);
     
     // Title text with glow
     const titleY = 90;
