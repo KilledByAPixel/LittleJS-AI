@@ -551,7 +551,7 @@ class Pickup extends EngineObject
     constructor(pos, sprite, kind, value)
     {
         super(pos, vec2(.6), sprite);
-        this.kind  = kind;   // 'gem' or 'heart'
+        this.kind  = kind;   // 'gem', 'heart', or 'coin'
         this.value = value;
         this.damping = .98;
         this.friction = 1;
@@ -559,6 +559,21 @@ class Pickup extends EngineObject
         this.angle = 0;
         this.setCollision(false, false, false, false);
         this.magnetting = false;
+        // per-instance phase so a pile of dropped gems doesn't sparkle in sync
+        this.sparklePhase = rand(2 * PI);
+    }
+
+    render()
+    {
+        // sparkle additive per pickup kind — gives "this is good to grab"
+        // visual readability. Tinted pulse via sin so each gem twinkles.
+        const t = time * 5 + this.sparklePhase;
+        const pulse = .25 + .25 * sin(t);
+        let additive = null;
+        if (this.kind === 'gem')        additive = new Color(.1 * pulse, pulse, pulse, 0);
+        else if (this.kind === 'heart') additive = new Color(pulse, .15 * pulse, .25 * pulse, 0);
+        else if (this.kind === 'coin')  additive = new Color(pulse, pulse * .8, .1 * pulse, 0);
+        drawEmoji(this.pos, this.size, this.tileInfo, WHITE, additive);
     }
 
     update()
@@ -717,18 +732,22 @@ function drawDamageNumbers()
 // after the floor so they sit under everything else.
 function drawShadows()
 {
-    // Lay an ellipse-scaled soft radial under every player + enemy. Uses
-    // sprites.shadow (white radial gradient) with a dark tint so we get
-    // a soft-edged shadow rather than a hard ellipse. Centered at the
-    // sprite's base so it visually anchors under the entity's feet.
-    // Cheap — WebGL handles a thousand quads easily.
+    // Lay an ellipse-scaled soft radial under every ground-level entity.
+    // Includes player, enemies, pickups, bombs, and chests so the world
+    // reads as having a consistent floor. Skips projectiles (in the air)
+    // and fire zones (already a ground decal). Cheap — WebGL handles a
+    // thousand quads easily.
     const shadowTint = new Color(0, 0, 0, .45);
     for (const obj of engineObjects)
     {
         if (obj.destroyed) continue;
-        const isShadowed = obj === player || obj instanceof Enemy;
+        const isShadowed = obj === player ||
+            obj instanceof Enemy ||
+            obj instanceof Pickup ||
+            obj instanceof Bomb ||
+            obj instanceof Chest;
         if (!isShadowed) continue;
-        // shadow center sits at the bottom of the sprite (pos.y - size.y/2)
+        // shadow center sits at the bottom of the sprite
         const pos = vec2(obj.pos.x, obj.pos.y - obj.size.y * .45);
         const size = vec2(obj.size.x * 1.2, obj.size.y * .5);
         drawTile(pos, size, sprites.shadow, shadowTint);
