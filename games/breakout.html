@@ -474,7 +474,6 @@ function resetRunState()
     bullets.length = 0;
     floatTexts.length = 0;
     shatter.length = 0;
-    screenShake = 0;
     paddleFlash = 0;
     stickyTimer = 0;
     laserTimer = 0;
@@ -511,6 +510,7 @@ function resetGame()
     state = 'serve';
     ballSpeed = BALL_BASE_SPEED;
     combo = 1;
+    screenShake = 0;
 
     resetPaddle();
     resetRunState();
