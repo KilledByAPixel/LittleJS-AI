@@ -1166,13 +1166,25 @@ function runUnitTests()
     // --- resolveBoard integration tests ---
     {
         // 2x2 red power gem + red crash adjacent → wave 1, expected damage 9
+        // Add a blue spectator at (5,0) to prevent all-clear bonus
         let g = emptyGrid();
         g[0][0] = gemRegular(COLOR_R); g[1][0] = gemRegular(COLOR_R);
         g[0][1] = gemRegular(COLOR_R); g[1][1] = gemRegular(COLOR_R);
         g[2][0] = gemCrash(COLOR_R);
+        g[5][0] = gemRegular(COLOR_B);  // spectator, prevents all-clear
         let res = resolveBoard(g, { characterMultiplier: 1.0 });
         assert(res.totalDamage === 9, 'resolve: 2x2 PG + crash = 9 (got ' + res.totalDamage + ')');
         assert(res.waves === 1, 'resolve: single wave');
+        assert(res.allClear === false, 'resolve: spectator prevents all-clear');
+
+        // Same setup WITHOUT spectator should trigger all-clear bonus
+        g = emptyGrid();
+        g[0][0] = gemRegular(COLOR_R); g[1][0] = gemRegular(COLOR_R);
+        g[0][1] = gemRegular(COLOR_R); g[1][1] = gemRegular(COLOR_R);
+        g[2][0] = gemCrash(COLOR_R);
+        res = resolveBoard(g, { characterMultiplier: 1.0 });
+        assert(res.allClear === true, 'resolve: empty after clear = all clear');
+        assert(res.totalDamage === 15, 'resolve: 2x2 PG + crash + all-clear bonus = 9+6 = 15');
 
         // Pattern check
         assert(PATTERN_KEN[0].every(c => c === COLOR_R), 'patterns: Ken row 0 all R');
