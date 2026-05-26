@@ -82,6 +82,12 @@ class Player extends EngineObject
         // arena clamp
         this.pos.x = clamp(this.pos.x, ARENA_MIN_X + .6, ARENA_MAX_X - .6);
         this.pos.y = clamp(this.pos.y, ARENA_MIN_Y + .6, ARENA_MAX_Y - .6);
+
+        if (this.hp <= 0 && !gameOver)
+        {
+            gameOver = true;
+            showGameOverMenu();
+        }
     }
 
     render()
@@ -458,6 +464,7 @@ let magnetRadius = 3;
 
 let elapsedTime = 0;
 let killCount = 0;
+let gameOver = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
@@ -595,6 +602,51 @@ function showLevelUpMenu()
     showMenu('levelup');
 }
 
+function restartGame()
+{
+    // tear down everything
+    for (const e of enemies.slice()) e.destroy();
+    enemies.length = 0;
+
+    // destroy all loose engine objects (projectiles, pickups, player)
+    for (const obj of engineObjects.slice())
+    {
+        if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
+            obj instanceof Pickup)
+            obj.destroy();
+    }
+
+    chainFlashes.length = 0;
+    spawner.timer = 0;
+    spawner.interval = 1.5;
+    elapsedTime = 0;
+    killCount = 0;
+    gameOver = false;
+
+    player = new Player();
+    player.weapons = [new FireballWeapon()];
+
+    const m = getMenu('gameover');
+    if (m) { hideMenu('gameover'); m.destroy(); }
+}
+
+function showGameOverMenu()
+{
+    const existing = getMenu('gameover');
+    if (existing) existing.destroy();
+    createMenu({
+        id: 'gameover',
+        title: 'YOU DIED',
+        subtitle: '⏱ ' + formatTime(elapsedTime) + '   💀 ' + killCount +
+                  '   Lv ' + player.level,
+        dismissable: false,
+        items: [
+            {type: 'button', label: 'RESTART', onClick: restartGame},
+        ],
+    });
+    showMenu('gameover');
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
@@ -684,6 +736,7 @@ function drawHUD()
 
 function gameRenderPost()
 {
+    if (gameOver && keyWasPressed('KeyR')) restartGame();
     drawHUD();
 }
 
