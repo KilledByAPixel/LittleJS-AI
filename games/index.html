@@ -256,7 +256,6 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding: 12px 4px 14px;     /* top padding gives hover-lift room */
-    scroll-snap-type: x proximity;
   }
   .row .tiles::-webkit-scrollbar { height: 8px; }
   .row .tiles::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -304,7 +303,6 @@
     padding: 14px;
     cursor: pointer;
     transition: transform .15s, border-color .15s, box-shadow .15s;
-    scroll-snap-align: start;
     display: flex;
     flex-direction: column;
   }
@@ -637,8 +635,10 @@ function buildRow(label, games, isTop) {
   row.appendChild(wrap);
 
   const update = () => {
-    const atStart = tiles.scrollLeft <= 1;
-    const atEnd = tiles.scrollLeft + tiles.clientWidth >= tiles.scrollWidth - 1;
+    // Bigger tolerance than 1px in case the browser parks scrollLeft at the
+    // padding offset (e.g. fractional pixels, snap residue, restoration).
+    const atStart = tiles.scrollLeft <= 5;
+    const atEnd = tiles.scrollLeft + tiles.clientWidth >= tiles.scrollWidth - 5;
     leftBtn.hidden = atStart;
     rightBtn.hidden = atEnd;
   };
@@ -651,9 +651,19 @@ function buildRow(label, games, isTop) {
 
 // ===================== Stage state =====================
 
-function showWelcome() {
+// Navigate the iframe without polluting the browser's session history.
+// Setting iframe.src adds an entry the user has to back out of (the symptom:
+// browser back navigates the iframe to about:blank instead of returning to
+// the library). location.replace() does the same load, no history entry.
+function loadIframe(url) {
+  if (frameEl.contentWindow) frameEl.contentWindow.location.replace(url);
+  else frameEl.src = url;
+}
+
+function showWelcome(pushHistory = true) {
+  const wasGame = currentFile !== null;
   currentFile = null;
-  frameEl.src = 'about:blank';
+  loadIframe('about:blank');
   frameEl.style.display = 'none';
   welcomeEl.style.display = 'block';
   welcomeEl.scrollTop = 0;
@@ -661,17 +671,24 @@ function showWelcome() {
   fullscreenBtn.classList.add('disabled');
   openBtn.classList.add('disabled');
   openBtn.removeAttribute('href');
-  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  // Push a history entry only on user-driven game→library transitions,
+  // so the browser back button can return to the previously played game.
+  const clean = location.pathname + location.search;
+  if (location.hash) {
+    if (pushHistory && wasGame) history.pushState(null, '', clean);
+    else history.replaceState(null, '', clean);
+  }
   for (const c of listEl.querySelectorAll('.card')) c.classList.remove('selected');
   buildWelcome(); // refresh continue button in case last-game changed
 }
 
-function selectGame(file) {
+function selectGame(file, pushHistory = true) {
   const g = gameByFile[file];
   if (!g) return;
+  const wasLibrary = currentFile === null;
   currentFile = file;
   // Cache-bust so edits to a game show up without manual reload.
-  frameEl.src = file + '?t=' + Date.now();
+  loadIframe(file + '?t=' + Date.now());
   frameEl.style.display = 'block';
   welcomeEl.style.display = 'none';
   reloadBtn.classList.remove('disabled');
@@ -679,8 +696,13 @@ function selectGame(file) {
   openBtn.classList.remove('disabled');
   openBtn.href = file;
   localStorage.setItem(LAST_GAME_KEY, file);
-  if (location.hash !== '#' + file) {
-    history.replaceState(null, '', '#' + file);
+  const newHash = '#' + file.replace(/\.html$/, '');
+  if (location.hash !== newHash) {
+    // Push only on the first library→game step so back returns to library.
+    // Between games (game→game) replace, so back doesn't have to walk
+    // through every game the user tried.
+    if (pushHistory && wasLibrary) history.pushState(null, '', newHash);
+    else history.replaceState(null, '', newHash);
   }
   for (const c of listEl.querySelectorAll('.card')) {
     c.classList.toggle('selected', c.dataset.file === file);
@@ -688,9 +710,13 @@ function selectGame(file) {
 }
 
 function loadFromHash() {
-  const file = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (file && gameByFile[file]) selectGame(file);
-  else showWelcome();
+  // Called on initial load and on hashchange (back/forward). Don't push more
+  // history entries in response to navigation the browser already performed.
+  const raw = decodeURIComponent(location.hash.replace(/^#/, ''));
+  // Accept either #mario or #mario.html so old bookmarks still work.
+  const file = raw && (gameByFile[raw] ? raw : gameByFile[raw + '.html'] ? raw + '.html' : null);
+  if (file) selectGame(file, false);
+  else showWelcome(false);
 }
 
 // ===================== Wire-up =====================
@@ -699,7 +725,7 @@ sidebarLogoWrap.addEventListener('click', showWelcome);
 searchEl.addEventListener('input', renderList);
 window.addEventListener('hashchange', loadFromHash);
 reloadBtn.addEventListener('click', () => {
-  if (currentFile) frameEl.src = currentFile + '?t=' + Date.now();
+  if (currentFile) loadIframe(currentFile + '?t=' + Date.now());
 });
 fullscreenBtn.addEventListener('click', () => {
   if (currentFile && frameEl.requestFullscreen) frameEl.requestFullscreen();

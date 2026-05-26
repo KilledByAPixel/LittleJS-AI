@@ -275,6 +275,92 @@ function applyGravity(grid)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Crash detonation
+
+function detectCrashClears(grid)
+{
+    const toClear = new Set();
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const keyOf = (x, y) => x + ',' + y;
+
+    // Find every crash gem that touches a same-color regular or same-color crash
+    const triggers = [];
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+    {
+        const g = grid[x][y];
+        if (!g || g.type !== 'crash') continue;
+        for (const [dx, dy] of dirs)
+        {
+            const nx = x + dx, ny = y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = grid[nx][ny];
+            if (!ng) continue;
+            if ((ng.type === 'regular' || ng.type === 'crash') && ng.color === g.color)
+            { triggers.push([x, y]); break; }
+        }
+    }
+
+    if (triggers.length === 0) return [];
+
+    // Flood-fill same-color connected {regular + crash} from each trigger
+    const cascadeStack = triggers.slice();
+    const seenColors = new Set();   // 'x,y' marked already
+    while (cascadeStack.length)
+    {
+        const [x, y] = cascadeStack.pop();
+        const key = keyOf(x, y);
+        if (seenColors.has(key)) continue;
+        const g = grid[x][y];
+        if (!g) continue;
+        if (g.type !== 'regular' && g.type !== 'crash') continue;
+        seenColors.add(key);
+        toClear.add(key);
+
+        // Power gem: include all its cells
+        if (g.type === 'regular' && g.powerGemId >= 0)
+        {
+            for (let xx = 0; xx < BOARD_W; xx++)
+            for (let yy = 0; yy < BOARD_H; yy++)
+            {
+                const gg = grid[xx][yy];
+                if (gg && gg.type === 'regular' && gg.powerGemId === g.powerGemId)
+                {
+                    toClear.add(keyOf(xx, yy));
+                    cascadeStack.push([xx, yy]);  // re-flood from each power-gem cell
+                }
+            }
+        }
+
+        for (const [dx, dy] of dirs)
+        {
+            const nx = x + dx, ny = y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = grid[nx][ny];
+            if (!ng) continue;
+            if ((ng.type === 'regular' || ng.type === 'crash') && ng.color === g.color)
+                cascadeStack.push([nx, ny]);
+        }
+    }
+
+    // Counter gems adjacent to any cleared cell also clear
+    const finalSet = new Set(toClear);
+    for (const key of toClear)
+    {
+        const [sx, sy] = key.split(',').map(v => +v);
+        for (const [dx, dy] of dirs)
+        {
+            const nx = sx + dx, ny = sy + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = grid[nx][ny];
+            if (ng && ng.type === 'counter') finalSet.add(keyOf(nx, ny));
+        }
+    }
+
+    return [...finalSet].map(k => k.split(',').map(v => +v));
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Placeholder Board
 
 class Board
@@ -503,6 +589,56 @@ function runUnitTests()
         assert(g[5][1] && g[5][1].color === COLOR_R, 'gravity: uneven — PG col 5 at y=1');
         assert(g[4][1] && g[4][1].color === COLOR_R, 'gravity: uneven — PG col 4 also at y=1 (rigid)');
         assert(g[4][0] === null, 'gravity: uneven — col 4 y=0 stays empty under PG');
+    }
+
+    // --- Crash detonation tests ---
+    {
+        // Single crash next to nothing: no clears
+        let g = emptyGrid();
+        g[2][0] = gemCrash(COLOR_R);
+        assert(detectCrashClears(g).length === 0, 'crash: lone bomb no detonation');
+
+        // Crash next to same-color regular → both clear
+        g = emptyGrid();
+        g[2][0] = gemCrash(COLOR_R);
+        g[3][0] = gemRegular(COLOR_R);
+        let cleared = detectCrashClears(g);
+        assert(cleared.length === 2, 'crash: bomb+regular both clear (2 cells)');
+
+        // Crash next to off-color: no clear
+        g = emptyGrid();
+        g[2][0] = gemCrash(COLOR_R);
+        g[3][0] = gemRegular(COLOR_B);
+        assert(detectCrashClears(g).length === 0, 'crash: off-color no detonation');
+
+        // Chain of same-color regulars all clear
+        g = emptyGrid();
+        g[0][0] = gemCrash(COLOR_G);
+        g[1][0] = gemRegular(COLOR_G); g[2][0] = gemRegular(COLOR_G); g[3][0] = gemRegular(COLOR_G);
+        cleared = detectCrashClears(g);
+        assert(cleared.length === 4, 'crash: linear chain 4 cells clear');
+
+        // Adjacent counter gem also destroyed
+        g = emptyGrid();
+        g[0][0] = gemCrash(COLOR_Y); g[1][0] = gemRegular(COLOR_Y);
+        g[2][0] = gemCounter(COLOR_B, 3);  // off-color counter, but adjacent → cleared
+        cleared = detectCrashClears(g);
+        assert(cleared.length === 3, 'crash: adjacent counter also cleared');
+
+        // Counter with active countdown does NOT trigger detonation by like color
+        g = emptyGrid();
+        g[0][0] = gemCrash(COLOR_R);
+        g[1][0] = gemCounter(COLOR_R, 4);
+        assert(detectCrashClears(g).length === 0, 'crash: active counter does not trigger detonation');
+
+        // Power gem with one cell touched: entire power gem clears
+        g = emptyGrid();
+        g[0][0] = gemRegular(COLOR_B); g[1][0] = gemRegular(COLOR_B);
+        g[0][1] = gemRegular(COLOR_B); g[1][1] = gemRegular(COLOR_B);
+        mergePowerGems(g);
+        g[2][0] = gemCrash(COLOR_B);
+        cleared = detectCrashClears(g);
+        assert(cleared.length === 5, 'crash: touching a power gem cell clears all 4 + bomb');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
