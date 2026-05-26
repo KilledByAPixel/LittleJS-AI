@@ -991,19 +991,17 @@ function gameRender()
             drawTile(c.drawnPos(), CARD_SIZE, cardSprites.bg, tint);
     }
 
-    // Legal-drop highlight (also on top of cards while dragging).
+    // Legal-drop tint: a green veil on the top card (or empty slot anchor)
+    // of every stack that would accept the current hand. Mirrors the blue
+    // hover tint — color-coded: blue = "grab", green = "drop".
     if (!handStack.isEmpty())
     {
-        const ok = new Color(0.3, 1.0, 0.4, 0.6);
+        const tint = new Color(0.3, 1.0, 0.4, 0.4);
         for (const s of cardStacks)
         {
             if (s === pickupOrigin || !isMoveLegal(s)) continue;
             const tp = s.topCard() ? s.topCard().drawnPos() : s.pos;
-            const o = 0.25;
-            drawRect(vec2(tp.x, tp.y + CARD_SIZE.y/2 + o), vec2(CARD_SIZE.x + 2*o, 0.2), ok);
-            drawRect(vec2(tp.x, tp.y - CARD_SIZE.y/2 - o), vec2(CARD_SIZE.x + 2*o, 0.2), ok);
-            drawRect(vec2(tp.x - CARD_SIZE.x/2 - o, tp.y), vec2(0.2, CARD_SIZE.y + 2*o), ok);
-            drawRect(vec2(tp.x + CARD_SIZE.x/2 + o, tp.y), vec2(0.2, CARD_SIZE.y + 2*o), ok);
+            drawTile(tp, CARD_SIZE, cardSprites.bg, tint);
         }
     }
 
