@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LittleJS Games</title>
 <link rel="icon" href="logo.png">
 <style>
@@ -436,6 +437,60 @@
     50%      { transform: translateY(-8px); }
   }
 
+  /* ===================== Mobile drawer chrome (hidden on desktop) ===================== */
+  #hamburger {
+    display: none;             /* shown only via mobile media query */
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    background: rgba(20, 26, 38, .5);
+    border: 1px solid rgba(255, 255, 255, .15);
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: background .15s, border-color .15s, opacity .15s;
+  }
+  #hamburger:hover,
+  #hamburger:active { background: rgba(20, 26, 38, .92); border-color: var(--accent); }
+  /* Auto-hide states: .faded after a few seconds of no interaction,
+     .hidden while the drawer is open (button would otherwise sit on top). */
+  #hamburger { transition: opacity .45s, transform .25s, background .15s, border-color .15s; }
+  #hamburger.faded { opacity: .25; }
+  #hamburger.hidden { opacity: 0; pointer-events: none; transform: translateX(-30px); }
+
+  /* 2×2 grid icon — clearly "library / apps", and doesn't collide with the
+     hamburger pattern many games use for their own pause menus. */
+  #hamburger .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 3px;
+    width: 20px;
+    height: 20px;
+  }
+  #hamburger .grid span {
+    background: var(--text);
+    border-radius: 2px;
+  }
+  #backdrop {
+    display: none;             /* shown only via mobile media query */
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .55);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s;
+  }
+  #backdrop.show { opacity: 1; pointer-events: auto; }
+
   /* ===================== Polish: stagger + wiggle + dice + sparkle ===================== */
 
   /* Tile entrance — staggered fade+rise. --i is set per-tile in makeTile,
@@ -482,9 +537,64 @@
     18%  { opacity: 1; transform: translateY(-10px) rotate(140deg) scale(1);  }
     100% { opacity: 0; transform: translateY(-60px) rotate(540deg) scale(.4); }
   }
+
+  /* ===================== Mobile / narrow viewport ===================== */
+  @media (max-width: 720px) {
+    /* Sidebar becomes an overlay drawer — hidden offscreen by default,
+       slid in by the hamburger button. */
+    #sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 320px;
+      max-width: 85vw;
+      flex: none;
+      z-index: 60;
+      transform: translateX(-100%);
+      transition: transform .25s ease-out;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, .5);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    #backdrop  { display: block; }
+
+    /* Stage takes the whole width once the sidebar is fixed-positioned. */
+    #stage { width: 100%; }
+
+    /* Welcome screen tweaks — extra top padding so the hamburger doesn't
+       overlap the logo, smaller side padding for more content width. */
+    #welcome { padding: 60px 16px 40px; }
+    #welcome-hero { margin-bottom: 24px; }
+    #welcome-tagline { font-size: 13px; }
+
+    /* Bigger touch targets + readable text inside the drawer. */
+    #sidebar-header { padding: 14px 14px 12px; }
+    #search { padding: 11px 12px; font-size: 15px; }
+    .chip-filter { padding: 7px 13px; font-size: 13px; border-radius: 14px; }
+    .card { padding: 12px 14px; }
+    .card .title { font-size: 16px; }
+    .card .title .emoji { font-size: 22px; flex-basis: 28px; }
+    .card .desc { font-size: 13.5px; }
+    .chip { padding: 2px 8px; font-size: 11.5px; }
+    #sidebar-footer .btn { padding: 11px 10px; font-size: 13px; }
+
+    /* Welcome tiles — slightly bigger text so they're readable on phones. */
+    .tile .name { font-size: 15px; }
+    .tile .desc { font-size: 12.5px; }
+    .tiles.top .tile { width: 200px; min-height: 130px; }
+    .row:not(.row-top) .tile { width: 160px; min-height: 96px; }
+    .row h2 { font-size: 14px; }
+
+    /* Quick-action buttons big enough to tap comfortably. */
+    .quick-btn { padding: 14px 22px; font-size: 15px; }
+  }
 </style>
 </head>
 <body>
+
+<button id="hamburger" aria-label="Toggle library menu">
+  <span class="grid"><span></span><span></span><span></span><span></span></span>
+</button>
+<div id="backdrop"></div>
 
 <aside id="sidebar">
   <div id="sidebar-header">
@@ -937,6 +1047,37 @@ reloadBtn.addEventListener('click', () => {
 fullscreenBtn.addEventListener('click', () => {
   if (currentFile && frameEl.requestFullscreen) frameEl.requestFullscreen();
 });
+
+// ===================== Mobile drawer toggle =====================
+const sidebarEl = document.getElementById('sidebar');
+const hamburgerBtn = document.getElementById('hamburger');
+const backdropEl = document.getElementById('backdrop');
+
+function setDrawer(open) {
+  sidebarEl.classList.toggle('open', open);
+  backdropEl.classList.toggle('show', open);
+  // Hide the toggle button while the drawer covers its position.
+  hamburgerBtn.classList.toggle('hidden', open);
+  refreshFade();
+}
+// Fade the hamburger to 25% after 3s of no interaction so it stops obscuring
+// game UI underneath. Any pointer interaction with it resets the timer.
+let fadeTimer;
+function refreshFade() {
+  clearTimeout(fadeTimer);
+  hamburgerBtn.classList.remove('faded');
+  if (sidebarEl.classList.contains('open')) return;
+  fadeTimer = setTimeout(() => hamburgerBtn.classList.add('faded'), 3000);
+}
+hamburgerBtn.addEventListener('pointerdown', refreshFade);
+hamburgerBtn.addEventListener('pointerenter', refreshFade);
+hamburgerBtn.addEventListener('click', () => setDrawer(!sidebarEl.classList.contains('open')));
+backdropEl.addEventListener('click', () => setDrawer(false));
+// Tapping anything that switches view (a sidebar game card, the home logo)
+// should also close the drawer so the user lands cleanly on their pick.
+listEl.addEventListener('click', e => { if (e.target.closest('.card')) setDrawer(false); });
+sidebarLogoWrap.addEventListener('click', () => setDrawer(false));
+refreshFade(); // start the initial fade timer
 
 document.addEventListener('keydown', e => {
   if (document.activeElement === searchEl && e.key !== 'Escape') return;
