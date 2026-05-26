@@ -38,9 +38,8 @@ const BRICK_SCORE = [100, 200, 0]; // indexed by type
 // Grid is 18 wide (2-unit bricks across a 38-unit field with 1-unit walls).
 // Up to 8 rows fit comfortably (top brick row at y=19, bottom at y=12).
 const LEVELS = [
-    // 1: Wall (8 rows of normal bricks)
+    // 1: Wall (7 rows of normal bricks)
     [
-        'nnnnnnnnnnnnnnnnnn',
         'nnnnnnnnnnnnnnnnnn',
         'nnnnnnnnnnnnnnnnnn',
         'nnnnnnnnnnnnnnnnnn',
@@ -49,9 +48,8 @@ const LEVELS = [
         'nnnnnnnnnnnnnnnnnn',
         'nnnnnnnnnnnnnnnnnn',
     ],
-    // 2: Pyramid (widest at top, narrowing)
+    // 2: Pyramid (narrows to a point)
     [
-        'nnnnnnnnnnnnnnnnnn',
         '.nnnnnnnnnnnnnnnn.',
         '..nnnnnnnnnnnnnn..',
         '...nnnnnnnnnnnn...',
@@ -67,7 +65,6 @@ const LEVELS = [
         'g.nnnnnnnnnnnnnn.g',
         'g.nnnnnnnnnnnnnn.g',
         'g.nnnnnnnnnnnnnn.g',
-        'g.nnnnnnnnnnnnnn.g',
         'gggggggggggggggggg',
         '..................',
     ],
@@ -80,7 +77,6 @@ const LEVELS = [
         'nsnsnsnsnsnsnsnsns',
         'snsnsnsnsnsnsnsnsn',
         'nsnsnsnsnsnsnsnsns',
-        'snsnsnsnsnsnsnsnsn',
     ],
     // 5: Gauntlet (maze of mixed bricks)
     [
@@ -88,7 +84,6 @@ const LEVELS = [
         'gg..snnnnnnnns....',
         '....snnnnnnnns..gg',
         'ssssnnnnnnnnnnssss',
-        'snnnnnggggggnnnnnn',
         'snnnnnnnnnnnnnnnns',
         'ssss..nnnnnn..ssss',
         '....gg........gg..',
