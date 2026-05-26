@@ -629,9 +629,6 @@ function gameRenderPost()
     drawTextScreen(line1, vec2(cx, 40), 28, hsl(0,0,1), 4, hsl(0,0,0));
     drawTextScreen(line2, vec2(cx, 76), 22, hsl(0,0,1), 4, hsl(0,0,0));
 
-    const help = 'SPACE / Click: Swing     ENTER: Pitch     R: Reset';
-    drawTextScreen(help, vec2(cx, mainCanvasSize.y - 26), 18, hsl(0,0,1,.85), 3, hsl(0,0,0));
-
     if (resultTimer.active() && lastResultText)
     {
         const t = clamp(resultTimer.getPercent(), 0, 1);
