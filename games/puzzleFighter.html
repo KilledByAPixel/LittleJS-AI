@@ -195,6 +195,86 @@ function lockPieceWithSeparation(grid, piece)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Rigid gravity (power gems fall as units)
+
+function buildGravityComponents(grid)
+{
+    const compIndex = [...Array(BOARD_W)].map(()=> Array(BOARD_H).fill(-1));
+    const comps = [];
+    const idMap = new Map();
+
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+    {
+        const g = grid[x][y];
+        if (!g) continue;
+
+        let key;
+        if (g.type === 'regular' && g.powerGemId >= 0) key = 'p' + g.powerGemId;
+        else key = 's' + x + ',' + y;
+
+        let cid = idMap.get(key);
+        if (cid === undefined)
+        {
+            cid = comps.length;
+            idMap.set(key, cid);
+            comps.push({ id: cid, cells: [] });
+        }
+        comps[cid].cells.push([x, y]);
+        compIndex[x][y] = cid;
+    }
+
+    return { comps, compIndex };
+}
+
+function applyGravity(grid)
+{
+    let movedAny = false;
+
+    while (true)
+    {
+        const { comps, compIndex } = buildGravityComponents(grid);
+        const willFall = new Array(comps.length).fill(false);
+
+        let changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (const comp of comps)
+            {
+                if (willFall[comp.id]) continue;
+                let ok = true;
+                for (const [x, y] of comp.cells)
+                {
+                    if (y === 0) { ok = false; break; }
+                    const belowId = compIndex[x][y - 1];
+                    if (belowId === -1) continue;            // empty below
+                    if (belowId === comp.id) continue;       // self
+                    if (willFall[belowId]) continue;         // below also falling
+                    ok = false; break;
+                }
+                if (ok) { willFall[comp.id] = true; changed = true; }
+            }
+        }
+
+        let any = false;
+        for (const f of willFall) if (f) { any = true; break; }
+        if (!any) return movedAny;
+
+        // Collect cells to move, then apply
+        const moves = [];
+        for (const comp of comps)
+        {
+            if (!willFall[comp.id]) continue;
+            for (const [x, y] of comp.cells) moves.push({ x, y, gem: grid[x][y] });
+        }
+        for (const m of moves) grid[m.x][m.y] = null;
+        for (const m of moves) grid[m.x][m.y - 1] = m.gem;
+        movedAny = true;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Placeholder Board
 
 class Board
@@ -355,6 +435,36 @@ function runUnitTests()
         lockPieceWithSeparation(g, p2c);
         assert(g[2][0] && g[2][0].color === COLOR_G, 'separation: rot 2 b lands at y=0');
         assert(g[2][1] && g[2][1].color === COLOR_R, 'separation: rot 2 a lands at y=1 (above b)');
+    }
+
+    // --- Gravity tests ---
+    {
+        // Single gem floats → falls to floor
+        let g = emptyGrid();
+        g[2][5] = gemRegular(COLOR_R);
+        applyGravity(g);
+        assert(g[2][0] && g[2][5] === null, 'gravity: single gem falls to floor');
+
+        // Power gem (2x2) falls as a unit
+        g = emptyGrid();
+        g[1][3] = gemRegular(COLOR_R); g[2][3] = gemRegular(COLOR_R);
+        g[1][4] = gemRegular(COLOR_R); g[2][4] = gemRegular(COLOR_R);
+        mergePowerGems(g);
+        applyGravity(g);
+        assert(g[1][0] && g[2][0] && g[1][1] && g[2][1], 'gravity: 2x2 power gem lands at floor');
+        assert(g[1][3] === null, 'gravity: cells above are vacated');
+
+        // Stacked: B singleton at col 1 floor; 2x2 power gem above; col 2 of PG free above
+        // PG must keep both cells at same y; col 1 supported by B → bottom row of PG at y=1
+        g = emptyGrid();
+        g[1][0] = gemRegular(COLOR_B);
+        g[1][3] = gemRegular(COLOR_R); g[2][3] = gemRegular(COLOR_R);
+        g[1][4] = gemRegular(COLOR_R); g[2][4] = gemRegular(COLOR_R);
+        mergePowerGems(g);
+        applyGravity(g);
+        assert(g[1][0] && g[1][0].color === COLOR_B, 'gravity: B singleton stays at floor');
+        assert(g[1][1] && g[1][1].color === COLOR_R, 'gravity: power gem bottom row at y=1 (supported by B)');
+        assert(g[1][3] === null && g[2][3] === null, 'gravity: power gem vacated original cells');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
