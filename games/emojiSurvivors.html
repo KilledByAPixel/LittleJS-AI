@@ -878,7 +878,7 @@ class PizzaTossWeapon
             const dir = vec2().setAngle(ang, 1);
             const proj = new Projectile(player.pos.copy(), dir, speed,
                 dmg, 1.6, sprites.pizza, true);
-            proj.angleVelocity = 5;   // tumble through the air
+            proj.angleVelocity = pizzaSpinRate;
         }
     }
 }
@@ -1041,7 +1041,7 @@ class SpicyPizzaWeapon
                     e.burnTimer = 1.5;
                     if (6 > e.burnDps) e.burnDps = 6;
                 });
-            proj.angleVelocity = 7;
+            proj.angleVelocity = pizzaSpinRate * 1.4;
         }
     }
 }
@@ -1440,6 +1440,7 @@ let playerMaxHp = 100;
 let enemySpawnIntervalBase = 1.5;
 let xpToNextBase = 5;
 let fireballDamage = 2;
+let pizzaSpinRate = 5;        // rad/sec tumble for PizzaToss + SpicyPizza slices
 
 let elapsedTime = 0;
 let killCount = 0;
@@ -1837,6 +1838,7 @@ async function gameInit()
     tweak('fireballDamage',           {min: 1,   max: 10});
     tweak('magnetRadius',             {min: 1,   max: 10});
     tweak('runDuration',              {min: 60,  max: 1800});
+    tweak('pizzaSpinRate',            {min: 0,   max: 20});
 
     showMenu('title');
 }
