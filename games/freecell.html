@@ -39,12 +39,159 @@ canvasMaxSize = vec2(2048, 2048);
 canvasClearColor = new Color().setHex('#264d40');   // felt green
 
 ///////////////////////////////////////////////////////////////////////////////
+// Layout (world units, Y-up)
+const CARD_SIZE     = vec2(6, 8.5);
+const COL_PITCH_X   = 7;          // horizontal distance between column anchors
+const CARD_PITCH_Y  = 2;          // vertical stagger inside a cascade
+
+///////////////////////////////////////////////////////////////////////////////
+// Card model
+//
+// suit: 0=♥ (red), 1=♠ (black), 2=♦ (red), 3=♣ (black)   — `suit % 2 === 0` is red
+// value: 0..12 (Ace..King)
+
+const StackType = { Cascade: 0, FreeCell: 1, Foundation: 2 };
+
+const SUIT_GLYPHS = ['♥','♠','♦','♣'];
+const RANK_LABELS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+
+class Card
+{
+    constructor(value, suit)
+    {
+        this.value = value;
+        this.suit  = suit;
+        this.pos   = vec2();        // world center; set when placed in a stack
+        this.tweenFrom     = null;  // null = no active tween
+        this.tweenTimer    = new Timer();
+        this.tweenDuration = 0.2;
+    }
+    isRed() { return this.suit % 2 === 0; }
+}
+
+class CardStack
+{
+    constructor(anchorPos, type = StackType.Cascade)
+    {
+        this.pos   = anchorPos.copy();
+        this.type  = type;
+        this.cards = [];
+    }
+    topCard()    { return this.cards.length ? this.cards[this.cards.length - 1] : null; }
+    bottomCard() { return this.cards.length ? this.cards[0] : null; }
+    isEmpty()    { return !this.cards.length; }
+
+    cardOffset(index)
+    {
+        // Cascades stagger downward (Y-up world: lower y = lower on screen).
+        // Top row stacks keep cards centered on the anchor.
+        if (this.type !== StackType.Cascade) return vec2();
+        return vec2(0, -CARD_PITCH_Y * index);
+    }
+    relayout()
+    {
+        for (let i = 0; i < this.cards.length; ++i)
+            this.cards[i].pos = this.pos.add(this.cardOffset(i));
+    }
+    putCardOnTop(card)
+    {
+        this.cards.push(card);
+        card.pos = this.pos.add(this.cardOffset(this.cards.length - 1));
+    }
+    moveTopCard(target)
+    {
+        if (this.isEmpty()) return;
+        target.putCardOnTop(this.cards.pop());
+    }
+    moveManyToStack(target, startCard)
+    {
+        const startIndex = startCard ? this.cards.indexOf(startCard) : 0;
+        if (startIndex < 0) return;
+        const moving = this.cards.splice(startIndex);
+        for (const c of moving) target.putCardOnTop(c);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Board layout — recomputed in gameInit (and again on canvas size change).
+let layoutTopRowY     = 8;       // anchor y for the top row (free cells / foundations)
+let layoutColLeftX    = -24.5;   // anchor x for column 0
+let layoutCascadeTopY = -2;      // anchor y for the topmost card of every cascade
+
+function setupLayout()
+{
+    // Total width: 8 columns at COL_PITCH_X apart, centered on x=0.
+    // We just need consistent anchors; cameraScale fits the board to the canvas.
+    layoutColLeftX    = -((8 - 1) * COL_PITCH_X) / 2;
+    layoutTopRowY     = 8;             // arbitrary positive y for the top row
+    layoutCascadeTopY = layoutTopRowY - CARD_SIZE.y - 1;  // gap below top row
+
+    // Fit the camera so the whole table (top row + 13-card cascade) is visible.
+    const tableW = (8 - 1) * COL_PITCH_X + CARD_SIZE.x + 2;            // +padding
+    const tableH = (layoutTopRowY + CARD_SIZE.y/2)
+                 - (layoutCascadeTopY - CARD_PITCH_Y * 12 - CARD_SIZE.y/2) + 2;
+    cameraScale = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
+}
+
+function newGame()
+{
+    cardStacks = [];
+    won = false;
+
+    // Top row: 4 free cells (left), 4 foundations (right).
+    for (let i = 0; i < 8; ++i)
+    {
+        const x = layoutColLeftX + i * COL_PITCH_X;
+        const type = i < 4 ? StackType.FreeCell : StackType.Foundation;
+        cardStacks.push(new CardStack(vec2(x, layoutTopRowY), type));
+    }
+    // Bottom: 8 cascades.
+    for (let i = 0; i < 8; ++i)
+    {
+        const x = layoutColLeftX + i * COL_PITCH_X;
+        cardStacks.push(new CardStack(vec2(x, layoutCascadeTopY), StackType.Cascade));
+    }
+
+    // Build and shuffle a 52-card deck.
+    const deck = [];
+    for (let suit = 0; suit < 4; ++suit)
+        for (let value = 0; value < 13; ++value)
+            deck.push(new Card(value, suit));
+    // Fisher-Yates with LittleJS rand
+    for (let i = deck.length - 1; i > 0; --i)
+    {
+        const j = randInt(0, i + 1);
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    // Deal into cascades: 7,7,7,7,6,6,6,6
+    const cascades = cardStacks.slice(8);   // 8 cascade stacks
+    let idx = 0;
+    for (let col = 0; col < 8; ++col)
+        for (let row = 0, n = (col < 4 ? 7 : 6); row < n; ++row)
+            cascades[col].putCardOnTop(deck[idx++]);
+
+    handStack    = new CardStack(vec2(0, 0), StackType.Cascade);  // off-screen until pickup
+    pickupOrigin = null;
+    stateUndo    = [];
+    stateRedo    = [];
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // FREECELL
 
 // HUD toolbar is only meaningful during gameplay. Tracked separately
 // because "in a menu" doesn't tell us whether the game has started yet
 // (title screen is also a menu, but the HUD shouldn't be available there).
 let isPlaying = false;
+let cardStacks  = [];
+let handStack   = null;
+let pickupOrigin = null;
+let mouseHoldPos = vec2();
+let won = false;
+let stateUndo = [];
+let stateRedo = [];
+
 function setPlaying(p)
 {
     isPlaying = p;
@@ -54,6 +201,11 @@ function setPlaying(p)
 
 async function gameInit()
 {
+    setupLayout();
+    newGame();
+    console.log('cardStacks length:', cardStacks.length,
+                '— total cards:', cardStacks.reduce((n, s) => n + s.cards.length, 0));
+
     // Match the engine's master volume to whatever the options slider starts at,
     // so the very first menu sound plays at the user-visible volume.
     setSoundVolume(.8);
@@ -83,7 +235,12 @@ async function gameInit()
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate() {}
-function gameUpdatePost() {}
+function gameUpdatePost()
+{
+    // Recompute camera scale every frame so the table refits if the canvas
+    // resizes. setupLayout is cheap — just trig-less arithmetic.
+    setupLayout();
+}
 function gameRender() {}
 function gameRenderPost() {}
 
