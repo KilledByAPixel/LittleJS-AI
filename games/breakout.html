@@ -122,7 +122,7 @@ let level = 1;   // 1..LEVELS.length
 let wave  = 1;   // increments after clearing level LEVELS.length
 const BALL_BASE_SPEED = 18;
 let state = 'serve'; // serve | lose (otherwise playing)
-let combo = 1;
+let combo = 0; // count of consecutive brick breaks; reset to 0 on paddle/lost
 let floatTexts = []; // {pos, vel, text, color, life, maxLife}
 
 let shatter = [];        // {pos, size, color, life, maxLife}
@@ -436,6 +436,9 @@ function damageBrick(brick)
         true,                            // additive
     );
 
+    // Combo: pre-increment so combo represents the *count* of consecutive
+    // breaks. First break = x1 (no banner, no float text). Second = x2, etc.
+    combo++;
     const base = BRICK_SCORE[brick.type];
     const gained = base * combo;
     score += gained;
@@ -454,7 +457,6 @@ function damageBrick(brick)
         });
     }
 
-    combo++;
     return true;
 }
 
@@ -518,7 +520,7 @@ function advanceLevel()
     // Speed scales by wave only; resets to base when wave=1.
     ballSpeed = BALL_BASE_SPEED * Math.pow(1.10, wave - 1);
 
-    combo = 1;
+    combo = 0;
     resetRunState();
     // Keep paddleExtra and lives; new level should feel like progress, not reset.
     buildLevel();
@@ -533,7 +535,7 @@ function resetGame()
     wave  = 1;
     state = 'serve';
     ballSpeed = BALL_BASE_SPEED;
-    combo = 1;
+    combo = 0;
     screenShake = 0;
 
     resetPaddle();
@@ -828,6 +830,9 @@ function updateBalls(dt)
         {
             ball.pos.x = clamp(paddlePos.x + ball.stuckOffsetX, ball.size / 2, levelSize.x - ball.size / 2);
             ball.pos.y = paddlePos.y + paddleSize.y / 2 + ball.size / 2 + .001;
+            // Clear trail so it doesn't sit frozen mid-air while the ball
+            // rides the paddle.
+            ball.trail.length = 0;
             continue;
         }
 
@@ -857,7 +862,7 @@ function updateBalls(dt)
                 ball.stuckOffsetX = clamp(ball.pos.x - paddlePos.x, -paddleSize.x / 2 + r, paddleSize.x / 2 - r);
                 ball.vel = vec2(0, 0);
                 ball.pos.y = paddlePos.y + paddleSize.y / 2 + r + .001;
-                combo = 1;
+                combo = 0;
                 paddleFlash = 1;
                 sfxBounce.play();
             }
@@ -867,7 +872,7 @@ function updateBalls(dt)
                 const offset = (ball.pos.x - paddlePos.x) / (paddleSize.x / 2);
                 const x = clamp(offset, -1, 1);
                 ball.vel = vec2(x * 1.2, 1).normalize(effectiveSpeed);
-                combo = 1;
+                combo = 0;
                 paddleFlash = 1;
                 sfxBounce.play();
             }
@@ -905,7 +910,7 @@ function updateBalls(dt)
     if (!balls.length)
     {
         lives--;
-        combo = 1;
+        combo = 0;
         sfxLose.play();
         addShake(.15);
 
