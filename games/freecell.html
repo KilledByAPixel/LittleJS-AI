@@ -80,12 +80,21 @@ class Card
         this.tweenFrom = fromPos.copy();
         this.tweenTimer.set(this.tweenDuration);
     }
+    // True only while the tween is actively interpolating. Goes false the
+    // frame the timer elapses — the deferred sweep in gameUpdatePost
+    // clears tweenFrom shortly after.
+    isTweening()
+    {
+        return this.tweenFrom !== null && this.tweenTimer.active();
+    }
+    // Pure getter — no side effects. Caller can invoke this multiple times
+    // per frame (hover tint, legal-drop highlight, tweening pass) without
+    // accidentally cancelling the tween for everyone else.
     drawnPos()
     {
         if (!this.tweenFrom) return this.pos;
-        const p = this.tweenTimer.getPercent();   // 0 → 1 over tweenDuration
-        if (p >= 1) { this.tweenFrom = null; return this.pos; }
-        return this.tweenFrom.lerp(this.pos, smoothStep(p));
+        if (this.tweenTimer.elapsed()) return this.pos;
+        return this.tweenFrom.lerp(this.pos, smoothStep(this.tweenTimer.getPercent()));
     }
 }
 
@@ -835,6 +844,15 @@ function gameUpdatePost()
     // resizes. setupLayout is cheap — just trig-less arithmetic.
     setupLayout();
 
+    // Release tweenFrom on cards whose tween has finished. Done as a
+    // dedicated sweep (rather than as a side effect inside drawnPos) so
+    // hover-tint / legal-drop-highlight calls don't accidentally cancel
+    // the tween before the tweening render pass gets a chance to draw it.
+    for (const s of cardStacks)
+        for (const c of s.cards)
+            if (c.tweenFrom && c.tweenTimer.elapsed())
+                c.tweenFrom = null;
+
     // Cursor feedback: open hand over a pickable card, closed hand while
     // dragging, default otherwise. setCursor is a LittleJS built-in.
     let cursor = 'default';
@@ -861,7 +879,7 @@ function gameRender()
     // instead of being hidden behind cascade cards drawn after it.
     for (const s of cardStacks)
         for (const c of s.cards)
-            if (!c.tweenFrom)
+            if (!c.isTweening())
                 drawCard(c, c.pos);
 
     // Hover tint: a light-blue veil over every card that would lift
@@ -894,7 +912,7 @@ function gameRender()
     // flight path stays on top of static cards and highlights.
     for (const s of cardStacks)
         for (const c of s.cards)
-            if (c.tweenFrom)
+            if (c.isTweening())
                 drawCard(c, c.drawnPos());
 
     // Hand cards on top with a rounded-card shadow (reusing the bg tile
