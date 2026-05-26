@@ -1149,13 +1149,19 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' && cards.length) {
     e.preventDefault();
     const idx = cards.findIndex(c => c.classList.contains('selected'));
-    const next = cards[Math.min(cards.length - 1, idx + 1)] || cards[0];
+    const newIdx = Math.min(cards.length - 1, idx + 1);
+    // Skip if already at the last card — otherwise selectGame would re-launch
+    // the same file and look like a reload.
+    if (newIdx === idx) return;
+    const next = cards[newIdx];
     selectGame(next.dataset.file);
     next.scrollIntoView({ block:'nearest' });
   } else if (e.key === 'ArrowUp' && cards.length) {
     e.preventDefault();
     const idx = cards.findIndex(c => c.classList.contains('selected'));
-    const prev = cards[Math.max(0, idx - 1)] || cards[0];
+    const newIdx = Math.max(0, idx - 1);
+    if (newIdx === idx) return;
+    const prev = cards[newIdx];
     selectGame(prev.dataset.file);
     prev.scrollIntoView({ block:'nearest' });
   } else if (e.key === '/' && document.activeElement !== searchEl) {
