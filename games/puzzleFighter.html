@@ -32,7 +32,7 @@ const GEM_COLORS = [
 ];
 
 // Board world-space layout
-const BOARD_GAP = 8;
+const BOARD_GAP = 5;
 const BOARD_X_P1 = -BOARD_GAP/2 - BOARD_W;
 const BOARD_X_P2 = BOARD_GAP/2;
 const BOARD_Y = -BOARD_H_VISIBLE / 2;
@@ -815,6 +815,139 @@ function resolveBoard(grid, opts)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Chain animation — same chain logic as resolveBoard, but operates on a clone
+// of the grid and records each wave's cleared cells (with their gem type/color)
+// so the real grid can animate one wave at a time.
+
+function previewChain(grid, opts)
+{
+    const sim = cloneGrid(grid);
+    const characterMultiplier = (opts && opts.characterMultiplier) || 1.0;
+    let diamondOnFirstWave = !!(opts && opts.isDiamondInitiated);
+    let totalDamage = 0;
+    const waves = [];
+
+    while (true)
+    {
+        mergePowerGems(sim);
+        const clears = detectCrashClears(sim);
+        if (clears.length === 0)
+        {
+            const moved = applyGravity(sim);
+            if (!moved) break;
+            continue;
+        }
+
+        const cellSnapshots = clears.map(([x, y]) =>
+        {
+            const g = sim[x][y];
+            return { x, y, type: g.type, color: g.type === 'diamond' ? -1 : g.color };
+        });
+
+        let regularsDestroyed = 0;
+        let crashesDestroyed = 0;
+        const seenPowerGems = new Map();
+        for (const [x, y] of clears)
+        {
+            const g = sim[x][y];
+            if (!g || g.type === 'counter') continue;
+            if (g.type === 'crash') crashesDestroyed++;
+            else if (g.type === 'regular')
+            {
+                if (g.powerGemId >= 0)
+                {
+                    const cur = seenPowerGems.get(g.powerGemId) || 0;
+                    seenPowerGems.set(g.powerGemId, cur + 1);
+                }
+                else regularsDestroyed++;
+            }
+        }
+        const powerGemSizes = [...seenPowerGems.values()];
+        const waveNum = waves.length + 1;
+        const dmg = computeDamage(
+            { regularsDestroyed, crashesDestroyed, powerGemSizes },
+            { chainWave: waveNum, isDiamondInitiated: diamondOnFirstWave, characterMultiplier, allClear: false }
+        );
+        diamondOnFirstWave = false;
+        totalDamage += dmg;
+
+        waves.push({ cells: cellSnapshots, damage: dmg });
+
+        clearCells(sim, clears);
+        applyGravity(sim);
+    }
+
+    let empty = true;
+    for (let x = 0; x < BOARD_W && empty; x++)
+    for (let y = 0; y < BOARD_H && empty; y++)
+        if (sim[x][y]) empty = false;
+    if (empty && waves.length > 0) totalDamage += 6;
+
+    return { totalDamage, waves, allClear: empty && waves.length > 0 };
+}
+
+function startChainWave(board, waveIdx)
+{
+    const a = board.chainAnim;
+    a.waveIndex = waveIdx;
+    // Refresh PG connectors so the user sees the rectangle shape before the burst.
+    mergePowerGems(board.grid);
+    const wave = a.waves[waveIdx];
+    for (const cell of wave.cells)
+    {
+        const rowDelay = (BOARD_H_VISIBLE - cell.y) * 0.015;
+        spawnClearParticles(board.index, cell, rowDelay);
+    }
+    a.phase = 'showing';
+    a.timer = 0.14;
+}
+
+function tickChainAnimation(board)
+{
+    const a = board.chainAnim;
+    if (!a) return;
+    a.timer -= timeDelta;
+    if (a.timer > 0) return;
+
+    if (a.phase === 'init')
+    {
+        startChainWave(board, 0);
+        return;
+    }
+    if (a.phase === 'showing')
+    {
+        const wave = a.waves[a.waveIndex];
+        const positions = wave.cells.map(c => [c.x, c.y]);
+        clearCells(board.grid, positions);
+        applyGravity(board.grid);
+        if (a.waveIndex > 0) sCrash?.play();
+        else sClear?.play();
+        a.phase = 'gap';
+        a.timer = 0.10;
+        return;
+    }
+    if (a.phase === 'gap')
+    {
+        const next = a.waveIndex + 1;
+        if (next >= a.waves.length)
+        {
+            const onLock = a.onLock;
+            const totalDamage = a.totalDamage;
+            const allClear = a.allClear;
+            const waveCount = a.waves.length;
+            board.chainAnim = null;
+            mergePowerGems(board.grid);
+            tickCounterGems(board.grid);
+            if (allClear) sAllClear?.play();
+            if (onLock) onLock(board, { totalDamage, waves: waveCount, allClear });
+            return;
+        }
+        startChainWave(board, next);
+        return;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Deterministic PRNG (mulberry32) for shared piece sequence
 
 function makeRng(seed)
@@ -860,6 +993,8 @@ class GameMatch
     constructor(p1Char, p2Char, seed)
     {
         this.boards = [new Board(p1Char), new Board(p2Char)];
+        this.boards[0].index = 0;
+        this.boards[1].index = 1;
         this.sequence = makePieceSequence(seed, 2000);
         this.seqIndex = [0, 0];
         this.elapsed = 0;
@@ -915,8 +1050,9 @@ class GameMatch
         for (let i = 0; i < 2; i++)
         {
             const b = this.boards[i];
-            const c = controllers[i];
+            if (b.chainAnim) { tickChainAnimation(b); continue; }
             if (!b.active) continue;
+            const c = controllers[i];
             c.update(b);
             boardTick(b, c, (board, res) => this.onLock(i, res));
         }
@@ -943,6 +1079,8 @@ class Board
         this.incomingQueue = 0;
         this.pendingDiamondInitiator = false;
         this.nextOutgoingCountdown = 5;
+        this.chainAnim = null;
+        this.index = 0;
     }
 
     spawnNext(piece)
@@ -1172,6 +1310,67 @@ function drawSimpleGem(ctx, gem, cx, cy, sz)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Particle bursts on gem clears
+
+const particles = [];
+
+function spawnClearParticles(boardIdx, cell, delay = 0)
+{
+    if (boardIdx === undefined || boardIdx < 0) return;
+    const pos = cellPos(boardIdx, cell.x, cell.y);
+    const color = cell.type === 'diamond' ? rgb(1,1,1) : GEM_COLORS[cell.color];
+
+    const count = 9;
+    for (let i = 0; i < count; i++)
+    {
+        const angle = (i / count) * Math.PI * 2 + rand(-.2, .2);
+        const speed = .04 + rand(0, .04);
+        particles.push({
+            pos: pos.copy(),
+            vel: vec2(Math.cos(angle) * speed, Math.sin(angle) * speed),
+            color,
+            age: -delay,
+            duration: .35,
+        });
+    }
+    particles.push({
+        pos: pos.copy(),
+        vel: vec2(),
+        color: rgb(1,1,1),
+        age: -delay,
+        duration: .18,
+        isFlash: true,
+    });
+}
+
+function updateParticles()
+{
+    for (let i = particles.length - 1; i >= 0; i--)
+    {
+        const p = particles[i];
+        p.age += timeDelta;
+        if (p.age < 0) continue;
+        if (p.age >= p.duration) { particles.splice(i, 1); continue; }
+        p.pos = p.pos.add(p.vel);
+        p.vel = p.vel.scale(.92);
+    }
+}
+
+function renderParticles()
+{
+    for (const p of particles)
+    {
+        if (p.age < 0) continue;
+        const t = p.age / p.duration;
+        const alpha = 1 - t;
+        const base = p.isFlash ? .35 : .14;
+        const size = p.isFlash ? base * (1 - t * .4) : base * (1 + t * .5);
+        const c = p.color;
+        drawCircle(p.pos, size, rgb(c.r, c.g, c.b, alpha));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Piece generation (placeholder random; replaced by shared sequence in Task 14)
 
 function makeRandomPiece()
@@ -1259,8 +1458,9 @@ function boardTick(board, controller, onLock)
                 lockPieceWithSeparation(board.grid, board.active);
                 board.active = null;
                 controller.hardDropping = false;
+                sLock?.play();
 
-                // Diamond resolution: find the diamond on the board, clear matching color
+                // Diamond pre-clear: instant, with particle burst on each cleared cell.
                 if (isDiamondPiece)
                 {
                     let diamondPos = null;
@@ -1272,25 +1472,49 @@ function boardTick(board, controller, onLock)
                     {
                         const dr = resolveDiamond(board.grid, diamondPos[0], diamondPos[1]);
                         if (dr.cleared.length > 0)
+                        {
+                            for (const [cx, cy] of dr.cleared)
+                            {
+                                const g = board.grid[cx][cy];
+                                spawnClearParticles(board.index, { x: cx, y: cy, type: g.type, color: g.color });
+                            }
                             clearCells(board.grid, dr.cleared);
-                        applyGravity(board.grid);
+                            applyGravity(board.grid);
+                        }
                     }
                 }
 
-                const res = resolveBoard(board.grid, {
+                // Preview the chain on a clone so we can animate each wave separately.
+                const chainData = previewChain(board.grid, {
                     isDiamondInitiated: isDiamondPiece,
                     characterMultiplier: board.character.multiplier
                 });
-                board.score += res.totalDamage;
-                board.chain = res.waves;
+                board.score += chainData.totalDamage;
+                board.chain = chainData.waves.length;
 
-                tickCounterGems(board.grid);
-                sLock?.play();
-                if (res.allClear) sAllClear?.play();
-                else if (res.waves > 1) sCrash?.play();
-                else if (res.totalDamage > 0) sClear?.play();
-                if (board.gameOver) sGameOver?.play();
-                if (onLock) onLock(board, res);
+                if (chainData.waves.length === 0)
+                {
+                    // No chain — finalize immediately.
+                    tickCounterGems(board.grid);
+                    if (board.gameOver) sGameOver?.play();
+                    if (onLock) onLock(board, {
+                        totalDamage: chainData.totalDamage,
+                        waves: 0,
+                        allClear: chainData.allClear,
+                    });
+                    return;
+                }
+
+                // Start chain animation; onLock fires when it completes.
+                board.chainAnim = {
+                    waves: chainData.waves,
+                    totalDamage: chainData.totalDamage,
+                    allClear: chainData.allClear,
+                    waveIndex: -1,
+                    timer: 0.08,
+                    phase: 'init',
+                    onLock,
+                };
                 return;
             }
         }
@@ -2325,6 +2549,7 @@ function gameUpdate()
         currentMatch.update(controllers);
         checkRoundOver();
     }
+    updateParticles();
 }
 function gameUpdatePost() { cameraPos = vec2(0, 0); }
 function gameRender()
@@ -2334,6 +2559,7 @@ function gameRender()
     drawBoardFrame(1);
     if (p1Board) drawBoardGems(p1Board, 0);
     if (p2Board) drawBoardGems(p2Board, 1);
+    renderParticles();
 }
 function gameRenderPost()
 {
@@ -2344,7 +2570,7 @@ function gameRenderPost()
 
         // Mirrored arcade layout: P1 on left-of-center, P2 on right-of-center.
         // Rows top-to-bottom: NEXT preview, character portrait + name, score/chain/incoming.
-        const colOffset = 70;
+        const colOffset = 48;
         const Y_NEXT_LABEL    = 160;
         const Y_NEXT_GEM_TOP  = 185;
         const Y_NEXT_GEM_BOT  = 210;
@@ -2372,11 +2598,11 @@ function gameRenderPost()
             }
 
             // Fighter name (middle)
-            drawTextScreen(b.character.name, vec2(px, Y_NAME), 32, b.character.color, 6, hsl(0,0,0));
+            drawTextScreen(b.character.name, vec2(px, Y_NAME), 24, b.character.color, 5, hsl(0,0,0));
 
             // Score + chain (bottom)
-            drawTextScreen('SCORE ' + b.score, vec2(px, Y_SCORE), 16, hsl(.16,1,.8), 3, hsl(0,0,0));
-            drawTextScreen('CHAIN ' + b.chain, vec2(px, Y_CHAIN), 14, hsl(.55,1,.8), 3, hsl(0,0,0));
+            drawTextScreen('' + b.score, vec2(px, Y_SCORE), 18, hsl(.16,1,.8), 3, hsl(0,0,0));
+            drawTextScreen('x' + b.chain, vec2(px, Y_CHAIN), 14, hsl(.55,1,.8), 3, hsl(0,0,0));
 
             // Incoming warning (only when there's pressure)
             const inc = b.incomingQueue;
@@ -2386,8 +2612,8 @@ function gameRenderPost()
                 let col = rgb(1, 1, .3);
                 if (inc > 30) { label = 'DANGER';  col = rgb(1, .3, .3); }
                 else if (inc > 10) { label = 'WARNING'; col = rgb(1, .6, .2); }
-                drawTextScreen(label, vec2(px, Y_INC_LABEL), 18, col, 4, hsl(0,0,0));
-                drawTextScreen('INCOMING ' + inc, vec2(px, Y_INC_COUNT), 14, hsl(0,0,1), 3, hsl(0,0,0));
+                drawTextScreen(label, vec2(px, Y_INC_LABEL), 16, col, 4, hsl(0,0,0));
+                drawTextScreen('' + inc, vec2(px, Y_INC_COUNT), 20, hsl(0,0,1), 3, hsl(0,0,0));
             }
         }
     }
