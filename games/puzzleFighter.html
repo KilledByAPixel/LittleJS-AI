@@ -1995,9 +1995,9 @@ function setupMenus()
         dismissable: true,
         onHide: popMenu,
         items: [
-            { type:'button', label:'EASY',   onClick: () => { chosenDifficulty = 'easy';   hideMenu('difficulty'); pushMenu('p1select'); } },
-            { type:'button', label:'NORMAL', onClick: () => { chosenDifficulty = 'normal'; hideMenu('difficulty'); pushMenu('p1select'); } },
-            { type:'button', label:'HARD',   onClick: () => { chosenDifficulty = 'hard';   hideMenu('difficulty'); pushMenu('p1select'); } },
+            { type:'button', label:'EASY',   onClick: () => { chosenDifficulty = 'easy';   pushMenu('p1select'); } },
+            { type:'button', label:'NORMAL', onClick: () => { chosenDifficulty = 'normal'; pushMenu('p1select'); } },
+            { type:'button', label:'HARD',   onClick: () => { chosenDifficulty = 'hard';   pushMenu('p1select'); } },
         ],
     });
 
@@ -2009,7 +2009,6 @@ function setupMenus()
         onHide: popMenu,
         items: buildCharacterItems(char => {
             chosenP1Char = char;
-            hideMenu('p1select');
             if (chosenMode === 'pvp') pushMenu('p2select');
             else
             {
@@ -2027,7 +2026,6 @@ function setupMenus()
         onHide: popMenu,
         items: buildCharacterItems(char => {
             chosenP2Char = char;
-            hideMenu('p2select');
             startMatchFromSelection();
         }),
     });
@@ -2150,6 +2148,11 @@ function gameUpdate()
 {
     if (matchState === 'playing' && currentMatch)
     {
+        if (keyWasPressed('KeyR'))
+        {
+            startMatchFromSelection();
+            return;
+        }
         if (bindPauseKey({ when: () => matchState === 'playing' })) return;
         currentMatch.update(controllers);
         checkRoundOver();
@@ -2171,18 +2174,44 @@ function gameRenderPost()
         const ctx = mainContext;
         const cx = mainCanvasSize.x / 2;
 
+        // Mirrored arcade layout: P1 on left-of-center, P2 on right-of-center.
+        // Rows top-to-bottom: NEXT preview, character portrait + name, score/chain/incoming.
+        const colOffset = 70;
+        const Y_NEXT_LABEL    = 160;
+        const Y_NEXT_GEM_TOP  = 185;
+        const Y_NEXT_GEM_BOT  = 210;
+        const Y_PORTRAIT      = 290;
+        const Y_NAME          = 335;
+        const Y_SCORE         = 375;
+        const Y_CHAIN         = 400;
+        const Y_INC_LABEL     = 450;
+        const Y_INC_COUNT     = 475;
+
         for (let i = 0; i < 2; i++)
         {
             const b = currentMatch.boards[i];
-            const px = i === 0 ? cx - 260 : cx + 260;
-            const py = 80;
+            const px = i === 0 ? cx - colOffset : cx + colOffset;
 
-            drawPortrait(b.character, vec2(px, py), 60, ctx);
-            drawTextScreen(b.character.name, vec2(px, py + 50), 22, hsl(0,0,1), 4, hsl(0,0,0));
+            // NEXT preview (top of column)
+            drawTextScreen('NEXT', vec2(px, Y_NEXT_LABEL), 14, hsl(0,0,.7), 2);
+            const nextIdx = currentMatch.seqIndex[i];
+            const nextPiece = currentMatch.sequence[nextIdx];
+            if (nextPiece)
+            {
+                const ws = 22;
+                drawSimpleGem(ctx, nextPiece.b, px, Y_NEXT_GEM_TOP, ws);
+                drawSimpleGem(ctx, nextPiece.a, px, Y_NEXT_GEM_BOT, ws);
+            }
 
-            drawTextScreen('SCORE ' + b.score, vec2(px, py + 90), 18, hsl(.16,1,.8), 3, hsl(0,0,0));
-            drawTextScreen('CHAIN ' + b.chain, vec2(px, py + 115), 16, hsl(.55,1,.8), 3, hsl(0,0,0));
+            // Portrait + name (middle)
+            drawPortrait(b.character, vec2(px, Y_PORTRAIT), 55, ctx);
+            drawTextScreen(b.character.name, vec2(px, Y_NAME), 18, hsl(0,0,1), 4, hsl(0,0,0));
 
+            // Score + chain (bottom)
+            drawTextScreen('SCORE ' + b.score, vec2(px, Y_SCORE), 16, hsl(.16,1,.8), 3, hsl(0,0,0));
+            drawTextScreen('CHAIN ' + b.chain, vec2(px, Y_CHAIN), 14, hsl(.55,1,.8), 3, hsl(0,0,0));
+
+            // Incoming warning (only when there's pressure)
             const inc = b.incomingQueue;
             if (inc > 0)
             {
@@ -2190,20 +2219,8 @@ function gameRenderPost()
                 let col = rgb(1, 1, .3);
                 if (inc > 30) { label = 'DANGER';  col = rgb(1, .3, .3); }
                 else if (inc > 10) { label = 'WARNING'; col = rgb(1, .6, .2); }
-                drawTextScreen(label, vec2(px, py + 150), 22, col, 4, hsl(0,0,0));
-                drawTextScreen('INCOMING ' + inc, vec2(px, py + 175), 18, hsl(0,0,1), 3, hsl(0,0,0));
-            }
-
-            const npx = px;
-            const npy = py + 230;
-            drawTextScreen('NEXT', vec2(npx, npy), 16, hsl(0,0,.7), 2);
-            const nextIdx = currentMatch.seqIndex[i];
-            const nextPiece = currentMatch.sequence[nextIdx];
-            if (nextPiece)
-            {
-                const ws = 22;
-                drawSimpleGem(ctx, nextPiece.b, npx, npy + 25, ws);
-                drawSimpleGem(ctx, nextPiece.a, npx, npy + 50, ws);
+                drawTextScreen(label, vec2(px, Y_INC_LABEL), 18, col, 4, hsl(0,0,0));
+                drawTextScreen('INCOMING ' + inc, vec2(px, Y_INC_COUNT), 14, hsl(0,0,1), 3, hsl(0,0,0));
             }
         }
     }
