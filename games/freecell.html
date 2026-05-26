@@ -445,6 +445,25 @@ function trySendHome()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+function checkWin()
+{
+    if (won) return;
+    let total = 0;
+    for (const s of cardStacks)
+        if (s.type === StackType.Foundation) total += s.cards.length;
+    if (total < 52) return;
+
+    won = true;
+    window.sndWin && window.sndWin.play();
+    showMenuToast({
+        icon:     '🎉',
+        title:    'You Win!',
+        text:     'Press NEW GAME to play again.',
+        duration: 5,
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
 function snapshot()
 {
     return {
@@ -524,7 +543,7 @@ function gameUpdate()
                     }
                     if (!placed) handStack.moveManyToStack(hit.stack);   // put it back
                     handStack.type = savedType;
-                    if (placed) { window.sndPlace && window.sndPlace.play(); trySendHome(); saveState(); }
+                    if (placed) { window.sndPlace && window.sndPlace.play(); trySendHome(); saveState(); checkWin(); }
                     return;
                 }
             }
@@ -579,7 +598,7 @@ function gameUpdate()
         // card is already where the cursor left it.
         handStack.moveManyToStack(target || pickupOrigin, undefined, !placed);
         pickupOrigin = null;
-        if (placed) { window.sndPlace && window.sndPlace.play(); trySendHome(); saveState(); }
+        if (placed) { window.sndPlace && window.sndPlace.play(); trySendHome(); saveState(); checkWin(); }
         else        { window.sndInvalid && window.sndInvalid.play(); }
     }
 
