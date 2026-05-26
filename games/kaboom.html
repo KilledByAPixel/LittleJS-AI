@@ -495,16 +495,7 @@ function drawBomber() {
     drawCircle(vec2(x, headY - 0.05), 0.5, hsl(.02, .6, .62));
     drawCircle(vec2(x - 0.1, headY + 0.05), 0.2, hsl(.02, .55, .8));
     // Mustache
-    drawRect(vec2(x, headY - 0.25), vec2(0.9, 0.12), hsl(0, 0, .05));
-    drawLine(vec2(x - 0.45, headY - 0.25),
-             vec2(x - 0.6, headY - 0.15), 0.08, hsl(0, 0, .05));
-    drawLine(vec2(x + 0.45, headY - 0.25),
-             vec2(x + 0.6, headY - 0.15), 0.08, hsl(0, 0, .05));
-    // Evil grin — widens on drop
-    const grin = 0.35 + (bomber.dropTimer > 0 ? 0.25 : 0);
-    drawRect(vec2(x, headY - 0.55), vec2(grin * 2, 0.18), hsl(0, 0, .05));
-    drawRect(vec2(x - grin * 0.5, headY - 0.55), vec2(0.08, 0.18), hsl(0, 0, .95));
-    drawRect(vec2(x + grin * 0.5, headY - 0.55), vec2(0.08, 0.18), hsl(0, 0, .95));
+    drawRect(vec2(x, headY - 0.3), vec2(0.9, 0.2), hsl(0, 0, .05));
 }
 
 // Layouts for the held bomb pile. Each entry positions bombs so the pile
