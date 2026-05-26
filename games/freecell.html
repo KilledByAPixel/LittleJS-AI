@@ -895,28 +895,14 @@ function gameRender()
             if (!c.isTweening())
                 drawCard(c, c.pos);
 
-    // Hover outline: a single blue bounding box around the cards that
-    // would lift together. Outline (not a tint) so the cards underneath
-    // stay fully opaque and readable.
+    // Hover tint: a light-blue veil over every card that would lift
+    // together if the player clicked right now. Uses the bg tile so the
+    // tint respects each card's rounded silhouette.
     if (handStack.isEmpty() && isPlaying && !won)
     {
-        const tail = pickableTail(stackUnderPoint(mousePos));
-        if (tail.length)
-        {
-            const topPos = tail[0].drawnPos();
-            const botPos = tail[tail.length - 1].drawnPos();
-            const yTop = topPos.y + CARD_SIZE.y/2;
-            const yBot = botPos.y - CARD_SIZE.y/2;
-            const yMid = (yTop + yBot) / 2;
-            const h    = yTop - yBot;
-            const outline = new Color(0.4, 0.8, 1.0, 0.9);
-            const o = 0.25;
-            const t = 0.25;
-            drawRect(vec2(topPos.x, yTop + o), vec2(CARD_SIZE.x + 2*o, t), outline);
-            drawRect(vec2(topPos.x, yBot - o), vec2(CARD_SIZE.x + 2*o, t), outline);
-            drawRect(vec2(topPos.x - CARD_SIZE.x/2 - o, yMid), vec2(t, h + 2*o), outline);
-            drawRect(vec2(topPos.x + CARD_SIZE.x/2 + o, yMid), vec2(t, h + 2*o), outline);
-        }
+        const tint = new Color(0.55, 0.8, 1.0, 0.4);
+        for (const c of pickableTail(stackUnderPoint(mousePos)))
+            drawTile(c.drawnPos(), CARD_SIZE, cardSprites.bg, tint);
     }
 
     // Legal-drop highlight (also on top of cards while dragging).
