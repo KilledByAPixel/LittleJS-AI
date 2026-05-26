@@ -31,9 +31,50 @@ canvasMaxSize = vec2(2048, 2048);
 const ARENA_MIN_X = -60, ARENA_MAX_X = 60;
 const ARENA_MIN_Y = -40, ARENA_MAX_Y = 40;
 
+const sprites = {};
+
+// Returns a draw function compatible with drawToTexture(). Renders one
+// emoji glyph centered in the 250px drawable cell. sizeMul leaves a few
+// px of breathing room so the glyph never clips the cell edge. The
+// vertical fudge compensates for emoji glyphs sitting slightly above
+// the math-center of their em box.
+function paintEmoji(emoji, sizeMul = .85)
+{
+    return ctx =>
+    {
+        ctx.font = `${250 * sizeMul}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(emoji, 125, 135);
+    };
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    initDrawToTexture(8);
+
+    sprites.player    = drawToTexture(0,  paintEmoji('🧙'), 'a wizard in robes, facing forward');
+
+    // enemies 8-10
+    sprites.zombie    = drawToTexture(8,  paintEmoji('🧟'), 'a green zombie shambling forward');
+    sprites.bat       = drawToTexture(9,  paintEmoji('🦇'), 'a black bat with spread wings');
+    sprites.skull     = drawToTexture(10, paintEmoji('💀'), 'a white skull, menacing');
+
+    // weapons / projectiles 16-18
+    sprites.fireball  = drawToTexture(16, paintEmoji('🔥'), 'a fireball, orange and yellow flames');
+    sprites.star      = drawToTexture(17, paintEmoji('🌟'), 'a yellow glowing star');
+    sprites.bolt      = drawToTexture(18, paintEmoji('⚡'), 'a yellow lightning bolt');
+
+    // pickups 24-25
+    sprites.gem       = drawToTexture(24, paintEmoji('💎'), 'a cyan diamond gem');
+    sprites.heart     = drawToTexture(25, paintEmoji('❤️'), 'a red heart');
+
+    // ground / decor 32-34
+    sprites.grass1    = drawToTexture(32, paintEmoji('🌿'), 'a green herb tuft');
+    sprites.grass2    = drawToTexture(33, paintEmoji('🌱'), 'a green seedling sprout');
+    sprites.rock      = drawToTexture(34, paintEmoji('🪨'), 'a gray rock');
+
     canvasClearColor = hsl(.3, .15, .05);  // dark forest-floor green
 
     // menus.js wiring — any visible menu auto-pauses the engine.
