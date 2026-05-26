@@ -350,6 +350,27 @@ async function gameInit()
         ],
     });
 
+    // ----- HUD toolbar -----
+    createToolbar({
+        id:        'hud',
+        anchor:    'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', id:'undo',   label:'↶', title:'Undo (Z)',          onClick: undoState},
+            {type:'button', id:'redo',   label:'↷', title:'Redo (Y)',          onClick: redoState},
+            {type:'button', id:'new',    label:'⟳', title:'New game',          onClick: () =>
+                showConfirmDialog({
+                    message: 'Abandon this game and start a new one?',
+                    onYes: () => newGame(),
+                })},
+            {type:'toggle', id:'mute',   label:'🔊', title:'Mute',              value: false,
+                hideOnTouch: true,
+                onChange: v => setSoundVolume(v ? 0 : (getMenu('options').getItem('volume').getValue() ?? 0.8))},
+            {type:'button', id:'fs',     label:'⛶', title:'Toggle fullscreen',  hideOnTouch: true,
+                onClick: toggleFullscreen},
+        ],
+    });
+
     // ----- pause menu -----
     createMenu({
         id: 'pause',
