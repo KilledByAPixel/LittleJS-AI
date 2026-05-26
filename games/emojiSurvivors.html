@@ -65,6 +65,7 @@ class Player extends EngineObject
         this.gravityScale = 0;
         this.angle = 0;  // emoji is upright; don't let it spin
         this.setCollision(false, false, false, false);  // no built-in collisions
+        this.hurtTimer = 0;
     }
 
     update()
@@ -78,6 +79,21 @@ class Player extends EngineObject
         // arena clamp
         this.pos.x = clamp(this.pos.x, ARENA_MIN_X + .6, ARENA_MAX_X - .6);
         this.pos.y = clamp(this.pos.y, ARENA_MIN_Y + .6, ARENA_MAX_Y - .6);
+    }
+
+    render()
+    {
+        if (this.hurtTimer > 0)
+        {
+            this.hurtTimer -= 1 / 60;
+            const flash = this.hurtTimer % .1 < .05;
+            drawTile(this.pos, this.size, sprites.player,
+                     flash ? new Color(1, .3, .3) : WHITE);
+        }
+        else
+        {
+            super.render();
+        }
     }
 }
 
@@ -105,6 +121,7 @@ class Enemy extends EngineObject
         this.angle = 0;
         this.setCollision(false, false, false, false);
         enemies.push(this);
+        this.hitCooldown = 0;
     }
 
     update()
@@ -119,6 +136,21 @@ class Enemy extends EngineObject
         }
 
         super.update();
+
+        // tick contact cooldown
+        if (this.hitCooldown > 0) this.hitCooldown -= 1 / 60;
+
+        // contact damage to player
+        if (this.hitCooldown <= 0 &&
+            isOverlapping(this.pos, this.size, player.pos, player.size))
+        {
+            player.hp -= this.dmg;
+            player.hurtTimer = .25;
+            this.hitCooldown = .4;
+            // small knockback so we don't re-hit instantly
+            const away = this.pos.subtract(player.pos).normalize(.5);
+            this.pos = this.pos.add(away);
+        }
 
         // despawn if dragged too far from the player or fully outside arena
         const farFromPlayer = player.pos.distance(this.pos) > 50;
