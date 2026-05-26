@@ -66,6 +66,9 @@ class Player extends EngineObject
         this.angle = 0;  // emoji is upright; don't let it spin
         this.setCollision(false, false, false, false);  // no built-in collisions
         this.hurtTimer = 0;
+        this.xp = 0;
+        this.level = 1;
+        this.pendingLevelUps = 0;
     }
 
     update()
@@ -164,6 +167,11 @@ class Enemy extends EngineObject
     {
         const i = enemies.indexOf(this);
         if (i >= 0) enemies.splice(i, 1);
+        if (this.hp <= 0)  // only drop on death, not despawn
+        {
+            const value = this.xpDrop;
+            new Pickup(this.pos.copy(), sprites.gem, 'gem', value);
+        }
         super.destroy();
     }
 
@@ -207,6 +215,59 @@ class Projectile extends EngineObject
                 this.hitSet.add(e);
                 if (!this.piercing) { this.destroy(); return; }
             }
+        }
+    }
+}
+
+function xpToNext(level) { return 5 + level * 3; }
+
+class Pickup extends EngineObject
+{
+    constructor(pos, sprite, kind, value)
+    {
+        super(pos, vec2(.6), sprite);
+        this.kind  = kind;   // 'gem' or 'heart'
+        this.value = value;
+        this.damping = .98;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.setCollision(false, false, false, false);
+        this.magnetting = false;
+    }
+
+    update()
+    {
+        // magnet
+        const toPlayer = player.pos.subtract(this.pos);
+        const dist = toPlayer.length();
+        if (this.magnetting || dist < magnetRadius)
+        {
+            this.magnetting = true;
+            const pull = toPlayer.normalize(min(.3, dist * .2));
+            this.velocity = this.velocity.add(pull);
+        }
+
+        super.update();
+
+        // pickup
+        if (dist < .8)
+        {
+            if (this.kind === 'gem')
+            {
+                player.xp += this.value;
+                while (player.xp >= xpToNext(player.level))
+                {
+                    player.xp -= xpToNext(player.level);
+                    player.level++;
+                    player.pendingLevelUps = (player.pendingLevelUps || 0) + 1;
+                }
+            }
+            else if (this.kind === 'heart')
+            {
+                player.hp = min(player.maxHp, player.hp + this.value);
+            }
+            this.destroy();
         }
     }
 }
@@ -293,6 +354,8 @@ function updateSpawner()
     }
     new Enemy(pos, type);
 }
+
+let magnetRadius = 3;
 
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
