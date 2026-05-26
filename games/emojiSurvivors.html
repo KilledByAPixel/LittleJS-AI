@@ -82,12 +82,22 @@ class Player extends EngineObject
         this.xp = 0;
         this.level = 1;
         this.pendingLevelUps = 0;
+        this.passives = [];
+        // multipliers populated by recomputeMultipliers() — passives mutate these
+        this.dmgMult        = 1;
+        this.cooldownMult   = 1;
+        this.areaMult       = 1;
+        this.projSpeedMult  = 1;
+        this.magnetMult     = 1;
+        this.maxHpMult      = 1;
+        this.moveSpeedMult  = 1;
+        this.xpGainMult     = 1;
     }
 
     update()
     {
-        this.speed = playerSpeed;
-        this.maxHp = playerMaxHp;
+        this.speed = playerSpeed * this.moveSpeedMult;
+        this.maxHp = playerMaxHp * this.maxHpMult;
         const dir = playerAI
             ? aiDirection()
             : keyDirection().add(gamepadStick(0));
@@ -321,10 +331,11 @@ class Pickup extends EngineObject
 
     update()
     {
-        // magnet
+        // magnet — scaled by player.magnetMult passive
         const toPlayer = player.pos.subtract(this.pos);
         const dist = toPlayer.length();
-        if (this.magnetting || dist < magnetRadius)
+        const effectiveMagnet = magnetRadius * player.magnetMult;
+        if (this.magnetting || dist < effectiveMagnet)
         {
             this.magnetting = true;
             const pull = toPlayer.normalize(min(.3, dist * .2));
@@ -340,7 +351,7 @@ class Pickup extends EngineObject
         {
             if (this.kind === 'gem')
             {
-                player.xp += this.value;
+                player.xp += this.value * player.xpGainMult;
                 while (player.xp >= xpToNext(player.level))
                 {
                     player.xp -= xpToNext(player.level);
@@ -382,9 +393,11 @@ class OrbitingStarWeapon
 
     update()
     {
-        this.angle += 4 / 60;  // 4 rad/sec
+        this.angle += 4 * player.cooldownMult / 60;  // faster spin with Stopwatch
 
-        const radius = 2.5;
+        const radius = 2.5 * player.areaMult;
+        const starSize = .7 * player.areaMult;
+        const dmg = this.damage() * player.dmgMult;
         const now = time;
         // tick hitMap — purge stale entries
         for (const [e, t] of this.hitMap)
@@ -395,15 +408,15 @@ class OrbitingStarWeapon
             const a = this.angle + i * 2 * PI / this.level;
             const pos = player.pos.add(vec2().setAngle(a, radius));
             // draw the star
-            drawTile(pos, vec2(.7), sprites.star, WHITE, a + time);
+            drawTile(pos, vec2(starSize), sprites.star, WHITE, a + time);
 
             // damage check
             for (const e of enemies)
             {
-                if (!isOverlapping(pos, vec2(.7), e.pos, e.size)) continue;
+                if (!isOverlapping(pos, vec2(starSize), e.pos, e.size)) continue;
                 const next = this.hitMap.get(e) || 0;
                 if (now < next) continue;
-                e.takeDamage(this.damage());
+                e.takeDamage(dmg);
                 this.hitMap.set(e, now + 1);
             }
         }
@@ -427,21 +440,24 @@ class ChainLightningWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        const first = nearestEnemy(player.pos, 8);
+        const range = 8 * player.areaMult;
+        const first = nearestEnemy(player.pos, range);
         if (!first) return;
-        this.cooldown = max(.4, 2.0 - this.level * .2);
+        this.cooldown = max(.4, 2.0 - this.level * .2) / player.cooldownMult;
 
         const hops = this.level + 1;
+        const chainRange = 5 * player.areaMult;
+        const dmg = this.damage() * player.dmgMult;
         const hit = new Set();
         let from = player.pos;
         let current = first;
         for (let h = 0; h < hops && current; ++h)
         {
-            current.takeDamage(this.damage());
+            current.takeDamage(dmg);
             hit.add(current);
             chainFlashes.push({a: from, b: current.pos.copy(), t: time + .15});
             from = current.pos;
-            let best = null, bestD = 5;
+            let best = null, bestD = chainRange;
             for (const e of enemies)
             {
                 if (hit.has(e)) continue;
@@ -476,12 +492,14 @@ class FireballWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        const target = nearestEnemy(player.pos, 12);
+        const target = nearestEnemy(player.pos, 12 * player.areaMult);
         if (!target) return;
         const dir = target.pos.subtract(player.pos);
-        new Projectile(player.pos.copy(), dir, 12, this.damage(),
+        new Projectile(player.pos.copy(), dir,
+                       12 * player.projSpeedMult,
+                       this.damage() * player.dmgMult,
                        1.2, sprites.fireball);
-        this.cooldown = 1.0 / this.level;
+        this.cooldown = (1.0 / this.level) / player.cooldownMult;
     }
 }
 
@@ -506,19 +524,21 @@ class PizzaTossWeapon
 
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.1;
+        this.cooldown = 1.1 / player.cooldownMult;
 
         // fan-shot — one slice at level 1, three at level 3, five at level 5
         const slices = 1 + (this.level - 1);
         const spread = slices === 1 ? 0 : .35;
         const baseAng = this.facing.angle();
+        const dmg = this.damage() * player.dmgMult;
+        const speed = 11 * player.projSpeedMult;
         for (let i = 0; i < slices; ++i)
         {
             const t = slices === 1 ? .5 : i / (slices - 1);
             const ang = baseAng + lerp(t, -spread, spread);
             const dir = vec2().setAngle(ang, 1);
-            const proj = new Projectile(player.pos.copy(), dir, 11,
-                this.damage(), 1.6, sprites.pizza, true);
+            const proj = new Projectile(player.pos.copy(), dir, speed,
+                dmg, 1.6, sprites.pizza, true);
             proj.angularVelocity = 10;  // tumble through the air
         }
     }
@@ -534,19 +554,20 @@ class IceCubeWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.5;
+        this.cooldown = 1.5 / player.cooldownMult;
 
         // fire `level` ice cubes at random enemies within range; freezes on hit
-        const range = 11;
+        const range = 11 * player.areaMult;
         const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
-        const dmg = this.damage();
+        const dmg = this.damage() * player.dmgMult;
+        const speed = 14 * player.projSpeedMult;
         for (let i = 0; i < this.level && candidates.length > 0; ++i)
         {
             const idx = randInt(candidates.length);
             const target = candidates[idx];
             candidates.splice(idx, 1);
             const dir = target.pos.subtract(player.pos);
-            new Projectile(player.pos.copy(), dir, 14, dmg, 1.0,
+            new Projectile(player.pos.copy(), dir, speed, dmg, 1.0,
                 sprites.ice, false, e => { e.frozenTimer = 1.5; });
         }
     }
@@ -563,8 +584,10 @@ class BombWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 2.6;
-        new Bomb(player.pos.copy(), this.damage(), this.radius());
+        this.cooldown = 2.6 / player.cooldownMult;
+        new Bomb(player.pos.copy(),
+                 this.damage() * player.dmgMult,
+                 this.radius() * player.areaMult);
     }
 }
 
@@ -619,6 +642,62 @@ class Bomb extends EngineObject
     {
         drawEmoji(this.pos, this.size, sprites.bomb, this.tint, this.additive);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PASSIVES — in-run stat upgrades. Each passive caps at 5 levels and applies
+// its bonus by multiplying the relevant player.*Mult field. recomputeMultipliers
+// resets all mults to 1 and walks player.passives to reapply, so it's safe
+// to call after any add/levelUp.
+
+class Passive
+{
+    constructor(name, emoji)
+    {
+        this.name = name;
+        this.emoji = emoji;
+        this.level = 1;
+    }
+    levelUp() { this.level = min(this.level + 1, 5); }
+    apply()   {}   // override to mutate player.*Mult fields
+}
+
+class FlexPassive       extends Passive { constructor(){ super('Flex',        '💪'); } apply(){ player.dmgMult        *= 1 + this.level * .18; } }
+class StopwatchPassive  extends Passive { constructor(){ super('Stopwatch',   '⏱️'); } apply(){ player.cooldownMult   *= 1 + this.level * .14; } }
+class MagnifierPassive  extends Passive { constructor(){ super('Magnifier',   '🔍'); } apply(){ player.areaMult       *= 1 + this.level * .12; } }
+class RocketPassive     extends Passive { constructor(){ super('Rocket',      '🚀'); } apply(){ player.projSpeedMult  *= 1 + this.level * .14; } }
+class MagnetPassive     extends Passive { constructor(){ super('Magnet',      '🧲'); } apply(){ player.magnetMult     *= 1 + this.level * .30; } }
+class HeartPassive      extends Passive { constructor(){ super('Heart',       '❤️'); } apply(){ player.maxHpMult      *= 1 + this.level * .20; } }
+class SneakerPassive    extends Passive { constructor(){ super('Sneaker',     '👟'); } apply(){ player.moveSpeedMult  *= 1 + this.level * .10; } }
+class SproutPassive     extends Passive { constructor(){ super('Sprout',      '🌱'); } apply(){ player.xpGainMult     *= 1 + this.level * .12; } }
+
+const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout'];
+
+function makePassiveByName(name)
+{
+    if (name === 'Flex')       return new FlexPassive();
+    if (name === 'Stopwatch')  return new StopwatchPassive();
+    if (name === 'Magnifier')  return new MagnifierPassive();
+    if (name === 'Rocket')     return new RocketPassive();
+    if (name === 'Magnet')     return new MagnetPassive();
+    if (name === 'Heart')      return new HeartPassive();
+    if (name === 'Sneaker')    return new SneakerPassive();
+    if (name === 'Sprout')     return new SproutPassive();
+    return null;
+}
+
+function recomputeMultipliers()
+{
+    if (!player) return;
+    const prevMaxHp = player.maxHp;
+    player.dmgMult = player.cooldownMult = player.areaMult = 1;
+    player.projSpeedMult = player.magnetMult = 1;
+    player.maxHpMult = player.moveSpeedMult = player.xpGainMult = 1;
+    for (const p of player.passives) p.apply();
+    // grant the player any new max HP from a fresh Heart pickup
+    const newMaxHp = playerMaxHp * player.maxHpMult;
+    if (newMaxHp > prevMaxHp) player.hp += (newMaxHp - prevMaxHp);
+    player.maxHp = newMaxHp;
 }
 
 const SPAWN_RADIUS = 20;
@@ -808,6 +887,8 @@ async function gameInit()
 
     player = new Player();
     player.weapons = [new FireballWeapon()];
+    player.passives = [];
+    recomputeMultipliers();
 
     tweakEngineDefaults();
     tweakDivider('Emoji Survivors');
@@ -848,6 +929,7 @@ function emojiForWeapon(name)
 function buildUpgradeChoices()
 {
     const choices = [];
+
     // Level-up existing weapons that aren't capped
     for (const w of player.weapons)
     {
@@ -874,11 +956,36 @@ function buildUpgradeChoices()
             });
         }
     }
-    // Generic max-hp pad
-    choices.push({
-        label: '❤️ +10 Max HP (and heal)',
-        apply: () => { player.maxHp += 10; player.hp = min(player.maxHp, player.hp + 10); },
-    });
+
+    // Level-up existing passives that aren't capped
+    for (const p of player.passives)
+    {
+        if (p.level < 5)
+        {
+            choices.push({
+                label: p.emoji + ' ' + p.name + ' → Lv ' + (p.level + 1),
+                apply: () => { p.levelUp(); recomputeMultipliers(); },
+            });
+        }
+    }
+    // Unlock new passives (cap at 5 owned)
+    if (player.passives.length < 5)
+    {
+        const haveP = new Set(player.passives.map(p => p.name));
+        for (const name of ALL_PASSIVES)
+        {
+            if (haveP.has(name)) continue;
+            const proto = makePassiveByName(name);
+            choices.push({
+                label: proto.emoji + ' Unlock ' + proto.name + ' (Lv 1)',
+                apply: () =>
+                {
+                    player.passives.push(makePassiveByName(name));
+                    recomputeMultipliers();
+                },
+            });
+        }
+    }
 
     // Random shuffle and pick up to 3
     for (let i = choices.length - 1; i > 0; --i)
@@ -943,6 +1050,8 @@ function restartGame()
 
     player = new Player();
     player.weapons = [new FireballWeapon()];
+    player.passives = [];
+    recomputeMultipliers();
 
     const m = getMenu('gameover');
     if (m) { hideMenu('gameover'); m.destroy(); }
