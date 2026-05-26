@@ -705,12 +705,46 @@ function gameRender()
     for (const s of cardStacks)
         if (s.isEmpty() || s.type !== StackType.Cascade)
             drawSlotOutline(s);
+    // Hover highlight on the topmost card under cursor when hand is empty.
+    if (handStack.isEmpty() && isPlaying && !won)
+    {
+        const hit = stackUnderPoint(mousePos);
+        if (hit && hit.card)
+        {
+            const c = hit.card;
+            const glow = new Color(1, 1, 0.3, 0.55);
+            // Outline drawn as 4 rects just outside the card edges.
+            const o = 0.25;
+            drawRect(vec2(c.pos.x, c.pos.y + CARD_SIZE.y/2 + o), vec2(CARD_SIZE.x + 2*o, 0.2), glow);
+            drawRect(vec2(c.pos.x, c.pos.y - CARD_SIZE.y/2 - o), vec2(CARD_SIZE.x + 2*o, 0.2), glow);
+            drawRect(vec2(c.pos.x - CARD_SIZE.x/2 - o, c.pos.y), vec2(0.2, CARD_SIZE.y + 2*o), glow);
+            drawRect(vec2(c.pos.x + CARD_SIZE.x/2 + o, c.pos.y), vec2(0.2, CARD_SIZE.y + 2*o), glow);
+        }
+    }
+    // Green outline on stacks that would accept the current hand.
+    if (!handStack.isEmpty())
+    {
+        const ok = new Color(0.3, 1.0, 0.4, 0.6);
+        for (const s of cardStacks)
+        {
+            if (s === pickupOrigin || !isMoveLegal(s)) continue;
+            const tp = s.topCard() ? s.topCard().pos : s.pos;
+            const o = 0.25;
+            drawRect(vec2(tp.x, tp.y + CARD_SIZE.y/2 + o), vec2(CARD_SIZE.x + 2*o, 0.2), ok);
+            drawRect(vec2(tp.x, tp.y - CARD_SIZE.y/2 - o), vec2(CARD_SIZE.x + 2*o, 0.2), ok);
+            drawRect(vec2(tp.x - CARD_SIZE.x/2 - o, tp.y), vec2(0.2, CARD_SIZE.y + 2*o), ok);
+            drawRect(vec2(tp.x + CARD_SIZE.x/2 + o, tp.y), vec2(0.2, CARD_SIZE.y + 2*o), ok);
+        }
+    }
     for (const s of cardStacks)
         for (const c of s.cards)
             drawCard(c, c.drawnPos());
-    // Hand cards on top of everything.
+    // Soft drop shadow under each hand card, then the cards themselves.
+    const shadow = new Color(0, 0, 0, 0.35);
     for (const c of handStack.cards)
-        drawCard(c, c.pos);   // hand cards never tween while dragged
+        drawRect(c.pos.add(vec2(0.25, -0.25)), CARD_SIZE.add(vec2(0.1, 0.1)), shadow);
+    for (const c of handStack.cards)
+        drawCard(c, c.pos);
 }
 function gameRenderPost() {}
 
