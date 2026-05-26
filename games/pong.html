@@ -176,7 +176,7 @@
       if (keyWasPressed('KeyT'))
           aiRight = !aiRight;
 
-      if (keyWasPressed('Space'))
+      if (keyWasPressed('Space') || mouseWasPressed(0))
       {
           if (gameOver)
           {
@@ -186,8 +186,12 @@
           serve();
       }
 
-      // Paddle input
-      left.pos.y += keyDirection().y * paddleSpeed * timeDelta;
+      // Paddle input — mouse takes priority, keyboard still works
+      const keyDir = keyDirection().y;
+      if (keyDir)
+          left.pos.y += keyDir * paddleSpeed * timeDelta;
+      else
+          left.pos.y = mousePos.y;
       clampPaddleY(left);
 
       if (!aiRight)
@@ -329,9 +333,9 @@
 
       // hints
       const lines = [];
-      lines.push('Left: W/S');
+      lines.push('Left: Mouse or W/S');
       lines.push(aiRight ? 'Right: AI (press T to toggle)' : 'Right: ↑/↓ (press T for AI)');
-      lines.push('Space: Serve / Start (enables sound)');
+      lines.push('Click or Space: Serve');
       lines.push('R: Reset');
 
       // status message
