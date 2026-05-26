@@ -695,6 +695,114 @@ function resolveBoard(grid, opts)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Deterministic PRNG (mulberry32) for shared piece sequence
+
+function makeRng(seed)
+{
+    let t = seed >>> 0;
+    return function() {
+        t = (t + 0x6D2B79F5) >>> 0;
+        let x = t;
+        x = Math.imul(x ^ (x >>> 15), x | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function makePieceSequence(seed, length)
+{
+    const rng = makeRng(seed);
+    const r = (n) => Math.floor(rng() * n);
+    const pieces = [];
+    for (let i = 0; i < length; i++)
+    {
+        // Every 25th piece (1-indexed: 25, 50, 75...) → diamond on top + regular on bottom
+        if ((i + 1) % 25 === 0)
+        {
+            pieces.push({ a: gemRegular(r(4)), b: gemDiamond() });
+            continue;
+        }
+        const mk = () => {
+            const isCrash = r(100) < 18;
+            const c = r(4);
+            return isCrash ? gemCrash(c) : gemRegular(c);
+        };
+        pieces.push({ a: mk(), b: mk() });
+    }
+    return pieces;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Match orchestration
+
+class GameMatch
+{
+    constructor(p1Char, p2Char, seed)
+    {
+        this.boards = [new Board(p1Char), new Board(p2Char)];
+        this.sequence = makePieceSequence(seed, 2000);
+        this.seqIndex = [0, 0];
+        this.elapsed = 0;
+        this.winner = -1;
+    }
+
+    spawn(boardIdx)
+    {
+        const piece = this.sequence[this.seqIndex[boardIdx]++];
+        this.boards[boardIdx].spawnNext(piece);
+    }
+
+    onLock(boardIdx, lockResult)
+    {
+        const me = this.boards[boardIdx];
+        const opp = this.boards[1 - boardIdx];
+
+        // Defense math against my own incoming queue
+        const def = applyDefense(me.incomingQueue, lockResult.totalDamage);
+        me.incomingQueue = def.remainingIncoming;
+        if (def.defendedRatio >= 0.5) me.nextOutgoingCountdown = 3;
+        else me.nextOutgoingCountdown = 5;
+
+        // Drop residual incoming on me using opp's pattern
+        if (me.incomingQueue > 0)
+        {
+            dropCounterGems(me.grid, me.incomingQueue, opp.character.pattern, me.nextOutgoingCountdown);
+            me.incomingQueue = 0;
+        }
+
+        // Outgoing
+        if (def.newOutgoing > 0) opp.incomingQueue += def.newOutgoing;
+        if (def.flipback > 0)    opp.incomingQueue += def.flipback;
+
+        // Spawn next for me unless game over
+        if (!me.gameOver) this.spawn(boardIdx);
+        if (me.gameOver) this.winner = 1 - boardIdx;
+    }
+
+    update(controllers)
+    {
+        if (this.winner >= 0) return;
+        this.elapsed += timeDelta;
+
+        // Speed ramp: 1.0s/cell → 0.5s/cell over first 90s; *1.5 after 3.5min
+        const t = this.elapsed;
+        let interval = 1.0 - Math.min(1, t / 90) * 0.5;
+        if (t > 210) interval /= 1.5;
+        this.boards[0].fallInterval = interval;
+        this.boards[1].fallInterval = interval;
+
+        for (let i = 0; i < 2; i++)
+        {
+            const b = this.boards[i];
+            const c = controllers[i];
+            if (!b.active) continue;
+            c.update(b);
+            boardTick(b, c, (board, res) => this.onLock(i, res));
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Board
 
 class Board
@@ -736,6 +844,8 @@ class Board
 
 let p1Board, p2Board;
 let p1Controller, p2Controller;
+let currentMatch;
+let controllers;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Rendering
@@ -1462,30 +1572,25 @@ async function gameInit()
     cameraPos = vec2(0, 0);
     cameraScale = 38;
 
-    p1Board = new Board(CHARACTERS[0]);
-    p2Board = new Board(CHARACTERS[0]);
-    p1Controller = new HumanController(KEYMAP_P1);
-    p1Board.spawnNext(makeRandomPiece());
-
+    startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF);
     runUnitTests();
+}
+
+function startMatch(p1Char, p2Char, seed)
+{
+    currentMatch = new GameMatch(p1Char, p2Char, seed);
+    controllers = [new HumanController(KEYMAP_P1), new HumanController(KEYMAP_P2)];
+    currentMatch.spawn(0);
+    currentMatch.spawn(1);
+    p1Board = currentMatch.boards[0];
+    p2Board = currentMatch.boards[1];
 }
 
 function gameUpdate()
 {
     if (keyWasPressed('KeyR'))
-    {
-        p1Board = new Board(CHARACTERS[0]);
-        p1Controller = new HumanController(KEYMAP_P1);
-        p1Board.spawnNext(makeRandomPiece());
-    }
-
-    if (p1Board && p1Controller)
-    {
-        p1Controller.update(p1Board);
-        boardTick(p1Board, p1Controller, (b) => {
-            b.spawnNext(makeRandomPiece());
-        });
-    }
+        startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF);
+    if (currentMatch) currentMatch.update(controllers);
 }
 function gameUpdatePost() { cameraPos = vec2(0, 0); }
 function gameRender()
@@ -1498,7 +1603,25 @@ function gameRender()
 }
 function gameRenderPost()
 {
-    drawTextScreen('Puzzle Fighter (scaffold)', vec2(mainCanvasSize.x/2, 40), 36, hsl(.6,1,.9), 4, hsl(0,0,0));
+    if (currentMatch)
+    {
+        const cx = mainCanvasSize.x / 2;
+        drawTextScreen(currentMatch.boards[0].character.name, vec2(cx - 280, 36), 30, hsl(.6,1,.9), 4, hsl(0,0,0));
+        drawTextScreen(currentMatch.boards[1].character.name, vec2(cx + 280, 36), 30, hsl(.0,1,.9), 4, hsl(0,0,0));
+
+        drawTextScreen('Score: ' + currentMatch.boards[0].score, vec2(cx - 280, 70), 22, hsl(0,0,1), 3, hsl(0,0,0));
+        drawTextScreen('Score: ' + currentMatch.boards[1].score, vec2(cx + 280, 70), 22, hsl(0,0,1), 3, hsl(0,0,0));
+
+        drawTextScreen('Incoming: ' + currentMatch.boards[0].incomingQueue, vec2(cx - 280, 100), 18, hsl(.1,1,.7), 3, hsl(0,0,0));
+        drawTextScreen('Incoming: ' + currentMatch.boards[1].incomingQueue, vec2(cx + 280, 100), 18, hsl(.1,1,.7), 3, hsl(0,0,0));
+
+        if (currentMatch.winner >= 0)
+        {
+            drawTextScreen((currentMatch.winner === 0 ? 'PLAYER 1' : 'PLAYER 2') + ' WINS',
+                vec2(cx, mainCanvasSize.y/2 - 20), 80, rgb(1,.4,.3), 8, hsl(0,0,0));
+            drawTextScreen('Press R to restart', vec2(cx, mainCanvasSize.y/2 + 60), 30, hsl(0,0,1), 4);
+        }
+    }
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
