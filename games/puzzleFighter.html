@@ -325,6 +325,36 @@ function runUnitTests()
         lockPieceWithSeparation(g, ph);
         assert(g[2][0] && g[2][0].color === COLOR_R, 'separation: a falls to bottom of empty col');
         assert(g[3][3] && g[3][3].color === COLOR_G, 'separation: b lands on top of stacked col');
+
+        // Rotate: in-place rotation when room is available
+        g = emptyGrid();
+        const pr = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 3, y: 5, rot: 0 };
+        assert(pieceTryRotate(g, pr, 1) && pr.rot === 1, 'rotate: CW from rot 0 to rot 1');
+        assert(pieceTryRotate(g, pr, -1) && pr.rot === 0, 'rotate: CCW back to rot 0');
+
+        // Rotate: wall kick at left wall (piece at x=0, rotating to rot=3 would put b at x=-1; kick right)
+        g = emptyGrid();
+        const pk = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 0, y: 5, rot: 0 };
+        assert(pieceTryRotate(g, pk, -1), 'rotate: wall-kick succeeds from x=0 to rot 3');
+        assert(pk.rot === 3 && pk.x === 1, 'rotate: kicked right to x=1');
+
+        // Rotate: blocked entirely (boxed in on all sides)
+        g = emptyGrid();
+        g[0][5] = gemRegular(COLOR_B);
+        g[2][5] = gemRegular(COLOR_B);
+        g[1][6] = gemRegular(COLOR_B);
+        g[1][4] = gemRegular(COLOR_B);
+        const pb = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 1, y: 5, rot: 0 };
+        // rot 0: b at (1,6) blocked. rot 1: b at (2,5) blocked. kicks shift by (-1,0)->b at (1,5) self-pos but a at (0,5) blocked. (+1,0)->a at (2,5) blocked. (0,+1)->b at (2,6) free, a at (1,6) blocked. All kicks fail.
+        assert(!pieceTryRotate(g, pb, 1), 'rotate: returns false when all kicks blocked');
+        assert(pb.rot === 0, 'rotate: failure leaves rot unchanged');
+
+        // Separation: rot=2 (b below a, same column) — sort ensures b lands first
+        g = emptyGrid();
+        const p2c = { a: gemRegular(COLOR_R), b: gemRegular(COLOR_G), x: 2, y: 5, rot: 2 };
+        lockPieceWithSeparation(g, p2c);
+        assert(g[2][0] && g[2][0].color === COLOR_G, 'separation: rot 2 b lands at y=0');
+        assert(g[2][1] && g[2][1].color === COLOR_R, 'separation: rot 2 a lands at y=1 (above b)');
     }
 
     if (fails.length === 0) console.log('All unit tests passed.');
