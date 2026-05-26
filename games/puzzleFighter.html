@@ -1070,6 +1070,247 @@ function boardTick(board, controller, onLock)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// AI
+
+const AI_WEIGHTS = {
+    easy: {
+        powerGemPotential:5, bombMatch:3, bombWaste:-1, colorClustering:1,
+        heightPenalty:-1, col4Penalty:-2, tower:0, counterAdj:1,
+        opponentPattern:0, clearImmediate:5, chainPotential:0,
+        decideMs:700, moveCellsPerSec:3, targetJitter:true,
+    },
+    normal: {
+        powerGemPotential:15, bombMatch:10, bombWaste:-5, colorClustering:3,
+        heightPenalty:-2, col4Penalty:-4, tower:4, counterAdj:3,
+        opponentPattern:2, clearImmediate:20, chainPotential:0,
+        decideMs:350, moveCellsPerSec:5, targetJitter:false,
+    },
+    hard: {
+        powerGemPotential:25, bombMatch:20, bombWaste:-10, colorClustering:5,
+        heightPenalty:-3, col4Penalty:-8, tower:8, counterAdj:6,
+        opponentPattern:6, clearImmediate:50, chainPotential:15,
+        decideMs:150, moveCellsPerSec:8, targetJitter:false,
+    },
+};
+
+function cloneGrid(grid)
+{
+    const out = [...Array(BOARD_W)].map(()=> Array(BOARD_H).fill(null));
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+    {
+        const g = grid[x][y];
+        if (!g) continue;
+        if (g.type === 'regular') out[x][y] = { type:'regular', color:g.color, powerGemId:g.powerGemId };
+        else if (g.type === 'crash') out[x][y] = gemCrash(g.color);
+        else if (g.type === 'counter') out[x][y] = gemCounter(g.color, g.countdown);
+        else out[x][y] = gemDiamond();
+    }
+    return out;
+}
+
+function findLandingY(grid, piece, x, rot)
+{
+    let y = BOARD_H + 1;
+    if (!pieceCanPlace(grid, piece, x, y, rot)) return -1;
+    while (pieceCanPlace(grid, piece, x, y - 1, rot)) y--;
+    return y;
+}
+
+function scorePlacement(board, piece, x, rot, opponentPattern, weights)
+{
+    if (!pieceCanPlace(board.grid, piece, x, BOARD_H, rot)) return -Infinity;
+    const landY = findLandingY(board.grid, piece, x, rot);
+    if (landY < 0) return -Infinity;
+
+    const sim = cloneGrid(board.grid);
+    const simPiece = { a: piece.a, b: piece.b, x, y: landY, rot };
+    lockPieceWithSeparation(sim, simPiece);
+    const before = sim.map(col => col.filter(c => c).length).reduce((a,b)=>a+b, 0);
+    const res = resolveBoard(sim, { characterMultiplier: 1 });
+    const after = sim.map(col => col.filter(c => c).length).reduce((a,b)=>a+b, 0);
+    const cleared = before - after;
+
+    let score = 0;
+
+    // Power gem potential - count power-gem cells after sim
+    let pgCells = 0;
+    for (let x2 = 0; x2 < BOARD_W; x2++)
+    for (let y2 = 0; y2 < BOARD_H; y2++)
+    {
+        const g = sim[x2][y2];
+        if (g && g.type === 'regular' && g.powerGemId >= 0) pgCells++;
+    }
+    score += pgCells * weights.powerGemPotential / 4;
+
+    if (cleared > 0) score += weights.clearImmediate + cleared * 2;
+    if (res.waves > 1) score += weights.chainPotential * (res.waves - 1);
+
+    let maxH = 0;
+    for (let cx = 0; cx < BOARD_W; cx++)
+    {
+        const h = columnHeight(sim, cx);
+        if (h > maxH) maxH = h;
+        if (cx === SPAWN_COL) score += weights.col4Penalty * Math.max(0, h - 3);
+    }
+    score += weights.heightPenalty * Math.max(0, maxH - 6);
+
+    const placedCells = pieceCells({a:piece.a, b:piece.b, x, y: landY, rot});
+
+    // Bomb match / waste
+    for (const c of placedCells)
+    {
+        if (c.gem.type !== 'crash') continue;
+        let matched = false;
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]])
+        {
+            const nx = c.x + dx, ny = c.y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = sim[nx][ny];
+            if (ng && (ng.type === 'regular' || ng.type === 'crash') && ng.color === c.gem.color)
+            { matched = true; break; }
+        }
+        score += matched ? weights.bombMatch : weights.bombWaste;
+    }
+
+    // Color clustering for regular gems
+    for (const c of placedCells)
+    {
+        if (c.gem.type !== 'regular') continue;
+        let cluster = 0;
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]])
+        {
+            const nx = c.x + dx, ny = c.y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = sim[nx][ny];
+            if (ng && ng.type === 'regular' && ng.color === c.gem.color) cluster++;
+        }
+        score += cluster * weights.colorClustering;
+    }
+
+    // Tower of power: bias regular gems toward cols 0/1 stacking same color
+    for (const c of placedCells)
+    {
+        if (c.gem.type !== 'regular') continue;
+        if (c.x > 1) continue;
+        if (c.y > 0)
+        {
+            const below = sim[c.x][c.y - 1];
+            if (below && below.type === 'regular' && below.color === c.gem.color)
+                score += weights.tower;
+        }
+    }
+
+    // Counter gem adjacency on own board
+    for (const c of placedCells)
+    {
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]])
+        {
+            const nx = c.x + dx, ny = c.y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const ng = sim[nx][ny];
+            if (ng && ng.type === 'counter') score += weights.counterAdj;
+        }
+    }
+
+    // Opponent pattern defense: reward same-color regulars where opponent's next pattern row would land
+    if (opponentPattern && weights.opponentPattern > 0)
+    {
+        for (const c of placedCells)
+        {
+            if (c.gem.type !== 'regular') continue;
+            const patColor = opponentPattern[0][c.x];
+            if (patColor === c.gem.color) score += weights.opponentPattern;
+        }
+    }
+
+    return score;
+}
+
+class AIController
+{
+    constructor(difficulty, opponentBoard)
+    {
+        this.weights = AI_WEIGHTS[difficulty];
+        this.opponent = opponentBoard;
+        this.target = null;
+        this.decideTimer = 0;
+        this.moveCooldown = 0;
+        this.hardDropping = false;
+    }
+
+    pickTarget(board)
+    {
+        const piece = board.active;
+        if (!piece) return null;
+        const candidates = [];
+        for (let rot = 0; rot < 4; rot++)
+        for (let x = 0; x < BOARD_W; x++)
+        {
+            const oppPattern = this.opponent ? this.opponent.character.pattern : null;
+            const s = scorePlacement(board, piece, x, rot, oppPattern, this.weights);
+            if (s > -Infinity) candidates.push({ x, rot, s });
+        }
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => b.s - a.s);
+        if (this.weights.targetJitter && candidates.length > 2)
+        {
+            const idx = randInt(3);
+            return candidates[idx];
+        }
+        return candidates[0];
+    }
+
+    update(board)
+    {
+        if (!board.active || board.gameOver) return;
+        if (!this.target)
+        {
+            this.decideTimer += timeDelta * 1000;
+            if (this.decideTimer >= this.weights.decideMs)
+            {
+                this.target = this.pickTarget(board);
+                this.decideTimer = 0;
+            }
+            return;
+        }
+
+        this.moveCooldown -= timeDelta;
+        if (this.moveCooldown > 0) return;
+        const moveDelay = 1 / this.weights.moveCellsPerSec;
+
+        if (board.active.rot !== this.target.rot)
+        {
+            const diff = (this.target.rot - board.active.rot + 4) % 4;
+            pieceTryRotate(board.grid, board.active, diff <= 2 ? 1 : -1);
+            this.moveCooldown = moveDelay;
+            return;
+        }
+
+        if (board.active.x < this.target.x)
+        {
+            pieceTryMove(board.grid, board.active, 1, 0);
+            this.moveCooldown = moveDelay;
+            return;
+        }
+        else if (board.active.x > this.target.x)
+        {
+            pieceTryMove(board.grid, board.active, -1, 0);
+            this.moveCooldown = moveDelay;
+            return;
+        }
+
+        this.hardDropping = true;
+        this.target = null;
+    }
+
+    fallSpeed(board)
+    {
+        return this.hardDropping ? 0 : board.fallInterval;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Unit tests (stub - tasks add cases here)
 
 function runUnitTests()
@@ -1572,14 +1813,18 @@ async function gameInit()
     cameraPos = vec2(0, 0);
     cameraScale = 38;
 
-    startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF);
+    startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF, 'hard');
     runUnitTests();
 }
 
-function startMatch(p1Char, p2Char, seed)
+function startMatch(p1Char, p2Char, seed, aiDifficulty)
 {
     currentMatch = new GameMatch(p1Char, p2Char, seed);
-    controllers = [new HumanController(KEYMAP_P1), new HumanController(KEYMAP_P2)];
+    const oppForAI = currentMatch.boards[0];
+    controllers = [
+        new HumanController(KEYMAP_P1),
+        aiDifficulty ? new AIController(aiDifficulty, oppForAI) : new HumanController(KEYMAP_P2),
+    ];
     currentMatch.spawn(0);
     currentMatch.spawn(1);
     p1Board = currentMatch.boards[0];
@@ -1589,7 +1834,7 @@ function startMatch(p1Char, p2Char, seed)
 function gameUpdate()
 {
     if (keyWasPressed('KeyR'))
-        startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF);
+        startMatch(CHARACTERS[0], CHARACTERS[3], Date.now() & 0x7FFFFFFF, 'hard');
     if (currentMatch) currentMatch.update(controllers);
 }
 function gameUpdatePost() { cameraPos = vec2(0, 0); }
