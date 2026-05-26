@@ -29,6 +29,7 @@
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
+tilesPixelated = false;
 
 // engine settings, customize if necessary
 gravity = vec2(0, 0);
@@ -48,8 +49,8 @@ const TOP_MARGIN    = 1;          // empty felt above the top row of stacks
 
 // Pip layout for number cards (2-10).
 const PIP_SIZE      = vec2(1.4);  // size of each pip glyph
-const PIP_SPREAD_X  = 1.5;        // horizontal half-spacing of pip grid
-const PIP_SPREAD_Y  = 1.8;        // vertical half-spacing of pip grid
+const PIP_SPREAD_X  = 1.0;        // horizontal half-spacing of pip grid
+const PIP_SPREAD_Y  = 2.0;        // vertical half-spacing of pip grid
 
 ///////////////////////////////////////////////////////////////////////////////
 // Card model
@@ -393,10 +394,10 @@ async function gameInit()
     //   volume, randomness, frequency, attack, release, shapeCurve, slide,
     //   pitchJump, pitchJumpTime, repeatTime, noise, bitCrush, delay
     // Tune by ear during polish — these are starting points.
-    const sndPickup     = new SoundGenerator({ frequency: 600, attack: 0.005, release: 0.05, shapeCurve: 0, volume: 0.4 });
-    const sndPlace      = new SoundGenerator({ frequency: 320, attack: 0.005, release: 0.08, shapeCurve: 0, volume: 0.5 });
+    const sndPickup     = new SoundGenerator({ frequency: 200, attack: 0, release: 0.005, volume: 0.4, noise:2 });
+    const sndPlace      = new SoundGenerator({ frequency: 400, attack: 0, release: 0.01, volume: 0.4, noise:2 });
     const sndInvalid    = new SoundGenerator({ frequency: 110, attack: 0.005, release: 0.14, shapeCurve: 2, noise: 0.4, slide: -2, volume: 0.4 });
-    const sndFoundation = new SoundGenerator({ frequency: 880, attack: 0.002, release: 0.08, shapeCurve: 0.5, volume: 0.4 });
+    const sndFoundation = new SoundGenerator({ frequency: 880, attack: 0.002, release: 0.08, volume: 0.4 });
     const sndWin        = new SoundGenerator({ frequency: 440, attack: 0.02, release: 0.5, pitchJump: 660, pitchJumpTime: 0.2, repeatTime: 0.25, volume: 0.5 });
 
     // Expose for the rest of the file via window globals (simple).
