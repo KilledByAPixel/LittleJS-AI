@@ -29,6 +29,71 @@ const BRICK_GOLD   = 2;
 
 const BRICK_SCORE = [100, 200, 0]; // indexed by type
 
+// Levels: each row is a string in left-to-right order. Characters:
+//   . = empty
+//   n = normal brick (color by row)
+//   s = silver (2 hits)
+//   g = gold (unbreakable)
+// Grid is 18 wide (2-unit bricks across a 38-unit field with 1-unit walls).
+// Up to 9 rows (top is y=20, bottom is y=12 — 8 brick rows fit comfortably).
+const LEVELS = [
+    // 1: Wall (8 rows of normal bricks)
+    [
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+        'nnnnnnnnnnnnnnnnnn',
+    ],
+    // 2: Pyramid (widest at top, narrowing)
+    [
+        'nnnnnnnnnnnnnnnnnn',
+        '.nnnnnnnnnnnnnnnn.',
+        '..nnnnnnnnnnnnnn..',
+        '...nnnnnnnnnnnn...',
+        '....nnnnnnnnnn....',
+        '.....nnnnnnnn.....',
+        '......nnnnnn......',
+        '.......nnnn.......',
+    ],
+    // 3: Castle (gold battlements frame normal interior)
+    [
+        'g.g.g.g.g.g.g.g.g.',
+        'gggggggggggggggggg',
+        'g.nnnnnnnnnnnnnn.g',
+        'g.nnnnnnnnnnnnnn.g',
+        'g.nnnnnnnnnnnnnn.g',
+        'g.nnnnnnnnnnnnnn.g',
+        'gggggggggggggggggg',
+        '..................',
+    ],
+    // 4: Checkerboard of normal + silver
+    [
+        'nsnsnsnsnsnsnsnsns',
+        'snsnsnsnsnsnsnsnsn',
+        'nsnsnsnsnsnsnsnsns',
+        'snsnsnsnsnsnsnsnsn',
+        'nsnsnsnsnsnsnsnsns',
+        'snsnsnsnsnsnsnsnsn',
+        'nsnsnsnsnsnsnsnsns',
+        'snsnsnsnsnsnsnsnsn',
+    ],
+    // 5: Gauntlet (maze of mixed bricks)
+    [
+        'gg..ssss....ssss..',
+        'gg..snnnnnnnns....',
+        '....snnnnnnnns..gg',
+        'ssssnnnnnnnnnnssss',
+        'snnnnnggggggnnnnnn',
+        'snnnnnnnnnnnnnnnns',
+        'ssss..nnnnnn..ssss',
+        '....gg........gg..',
+    ],
+];
+
 // tuning
 const SPECIAL_BRICKS_PER_LEVEL = 8; // only these drop powerups
 const PADDLE_BASE = vec2(6, .7);
@@ -50,7 +115,10 @@ let powerups = [];   // {pos, vel, size, type}
 let ballSpeed;
 let score = 0;
 let lives = 3;
-let state = 'serve'; // serve | win | lose (otherwise playing)
+let level = 1;   // 1..LEVELS.length
+let wave  = 1;   // increments after clearing level LEVELS.length
+const BALL_BASE_SPEED = 18;
+let state = 'serve'; // serve | lose (otherwise playing)
 
 let stickyTimer = 0;
 let laserTimer = 0;
@@ -162,7 +230,7 @@ function resetBall()
     balls.length = 0;
     bullets.length = 0;
 
-    ballSpeed = 18;
+    ballSpeed = ballSpeed || BALL_BASE_SPEED;
     const size = .8;
     const pos = paddlePos.add(vec2(0, paddleSize.y / 2 + size / 2 + .2));
     balls.push(makeBall(pos, vec2(0, 0), size));
@@ -176,48 +244,67 @@ function launchBall()
     balls[0].vel = vec2(Math.cos(angle), Math.sin(angle)).normalize(ballSpeed);
 }
 
-function resetBricks()
+function buildLevel()
 {
     bricks.length = 0;
 
+    const layout = LEVELS[(level - 1) % LEVELS.length];
+    const rows = layout.length;
     const brickSize = vec2(2, 1);
-    for (let y = 12; y <= levelSize.y - 2; y += 1)
-    for (let x = 2;  x <= levelSize.x - 2; x += 2)
+
+    for (let r = 0; r < rows; ++r)
     {
-        const t = percent(y, 12, levelSize.y - 2);
-        const color = hsl(lerp(.55, .05, t), .9, .6);
-        bricks.push({
-            pos: vec2(x, y),
-            size: brickSize,
-            color,
-            alive: true,
-            special: false,
-            dropType: '',
-            type: BRICK_NORMAL,
-            hp: 1,
-            maxHp: 1,
-        });
+        const row = layout[r];
+        for (let c = 0; c < row.length; ++c)
+        {
+            const ch = row[c];
+            if (ch === '.') continue;
+
+            const x = 2 + c * 2;            // 1-unit left margin + half brick offset
+            const y = levelSize.y - 1 - r;  // top row at y=19, descending
+
+            let type = BRICK_NORMAL, hp = 1;
+            if (ch === 's') { type = BRICK_SILVER; hp = 2; }
+            else if (ch === 'g') { type = BRICK_GOLD; hp = Infinity; }
+
+            // Color: normal bricks ramp by row (warm at top in original game,
+            // but rows here are top-down — keep the same hue ramp).
+            const t = percent(r, 0, rows - 1);
+            const color = hsl(lerp(.05, .55, t), .9, .6);
+
+            bricks.push({
+                pos: vec2(x, y),
+                size: brickSize,
+                color,
+                alive: true,
+                special: false,
+                dropType: '',
+                type,
+                hp,
+                maxHp: hp,
+            });
+        }
     }
 
-    // pick special bricks and ASSIGN their drop in advance
-    const n = min(SPECIAL_BRICKS_PER_LEVEL, bricks.length);
+    // Specials: 4 + level + (wave-1)*2, capped at 16; pick from non-gold bricks.
+    const targetSpecials = min(16, 4 + level + (wave - 1) * 2);
     const idx = [];
     for (let i = 0; i < bricks.length; ++i)
         if (bricks[i].type !== BRICK_GOLD)
             idx.push(i);
 
+    // Fisher-Yates with engine RNG
     for (let i = idx.length - 1; i > 0; --i)
     {
         const j = randInt(0, i + 1);
         const t = idx[i]; idx[i] = idx[j]; idx[j] = t;
     }
 
+    const n = min(targetSpecials, idx.length);
     for (let k = 0; k < n; ++k)
     {
         const b = bricks[idx[k]];
         b.special = true;
-
-        // Weighted drops: W common, M medium, T less, L rare
         const r = rand();
         b.dropType = r < .45 ? 'W' : r < .75 ? 'M' : r < .92 ? 'T' : 'L';
     }
@@ -299,15 +386,40 @@ function resetRunState()
     laserCooldown = 0;
 }
 
+function advanceLevel()
+{
+    level++;
+    if (level > LEVELS.length)
+    {
+        level = 1;
+        wave++;
+    }
+
+    // Speed scales by wave only; resets to base when wave=1.
+    ballSpeed = BALL_BASE_SPEED * Math.pow(1.10, wave - 1);
+
+    powerups.length = 0;
+    bullets.length = 0;
+    stickyTimer = 0;
+    laserTimer = 0;
+    laserCooldown = 0;
+    // Keep paddleExtra and lives; new level should feel like progress, not reset.
+    buildLevel();
+    resetBall();
+}
+
 function resetGame()
 {
     score = 0;
     lives = 3;
+    level = 1;
+    wave  = 1;
     state = 'serve';
+    ballSpeed = BALL_BASE_SPEED;
 
     resetPaddle();
     resetRunState();
-    resetBricks();
+    buildLevel();
     resetBall();
 }
 
@@ -364,7 +476,7 @@ function gameUpdate()
         return;
     }
 
-    if (state === 'win' || state === 'lose')
+    if (state === 'lose')
         return;
 
     // action: if any stuck, release first; otherwise fire laser
@@ -378,13 +490,13 @@ function gameUpdate()
     updateBullets(dt);
     updateBalls(dt);
 
-    // win check
+    // level clear check (gold doesn't count — only breakable bricks)
     for (const b of bricks)
-        if (b.alive)
+        if (b.alive && b.type !== BRICK_GOLD)
             return;
 
-    state = 'win';
     sfxWin.play();
+    advanceLevel();
 }
 
 function updatePowerups(dt)
@@ -586,6 +698,8 @@ function gameRender()
 function gameRenderPost()
 {
     drawTextScreen(`Score ${score}`, vec2(16, 16), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');
+    drawTextScreen(`Wave ${wave}  Level ${level}/${LEVELS.length}`,
+        vec2(mainCanvasSize.x / 2, 16), 24, hsl(0, 0, 1), 4, hsl(0, 0, 0));
     drawTextScreen(`Lives ${lives}`, vec2(mainCanvasSize.x - 16, 16), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'right');
 
     let status = '';
@@ -594,7 +708,7 @@ function gameRenderPost()
     if (laserTimer  > 0) status += `LASER ${laserTimer.toFixed(0)}s   `;
     if (balls.length > 1) status += `BALLS ${balls.length}`;
     if (status)
-        drawTextScreen(status, vec2(mainCanvasSize.x / 2, 16), 22, hsl(0, 0, .95), 4, hsl(0, 0, 0));
+        drawTextScreen(status, vec2(mainCanvasSize.x / 2, 42), 22, hsl(0, 0, .95), 4, hsl(0, 0, 0));
 
     if (state === 'serve')
     {
