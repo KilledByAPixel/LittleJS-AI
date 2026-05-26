@@ -390,6 +390,7 @@ async function gameInit()
         title: 'PLINKO',
         subtitle: 'Drop. Bounce. Score.',
         onPlay: playFromTitle,
+        revealOnClick: false,
         canReveal: () => !isPlaying,
         itemsBefore: [
             {type:'label', id:'bestLabel', text:'Best: ' + bestScore},
@@ -500,7 +501,7 @@ async function gameInit()
     });
 
     setPlaying(false);
-    // (click-to-reveal wired automatically by createTitleMenu)
+    showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
