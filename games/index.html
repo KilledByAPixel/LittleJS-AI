@@ -3,17 +3,20 @@
 <head>
 <meta charset="utf-8">
 <title>LittleJS Games</title>
+<link rel="icon" href="logo.png">
 <style>
   :root {
-    --bg: #0e1116;
-    --panel: #161b22;
-    --panel-2: #1f262f;
-    --border: #2a323d;
+    --bg: #0b0e14;
+    --bg-2: #0e1320;
+    --panel: #141a26;
+    --panel-2: #1c2332;
+    --border: #252e40;
     --text: #e6edf3;
     --muted: #8b949e;
     --accent: #58a6ff;
-    --accent-bg: #1f3a5f;
-    --chip-bg: #2a323d;
+    --accent-2: #ff7eb6;
+    --accent-bg: #1a2f4d;
+    --chip-bg: #232b3c;
     --chip-text: #adbac7;
   }
   * { box-sizing: border-box; }
@@ -24,32 +27,39 @@
     font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex;
   }
+  button { font: inherit; color: inherit; cursor: pointer; }
 
-  /* ---- Sidebar ---- */
+  /* ===================== Sidebar ===================== */
   #sidebar {
-    width: 320px;
-    flex: 0 0 320px;
+    width: 300px;
+    flex: 0 0 300px;
     background: var(--panel);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
-  #header {
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid var(--border);
+  #sidebar-header { padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
+
+  /* Sidebar logo — clickable "home" button */
+  #sidebar-logo-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 12px;
+    cursor: pointer;
   }
-  #header h1 {
-    margin: 0 0 8px;
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: .3px;
+  #sidebar-logo {
+    height: 64px;
+    width: auto;
+    filter: drop-shadow(0 0 12px rgba(88, 166, 255, .35));
+    transition: transform .15s, filter .15s;
+    animation: splat .55s cubic-bezier(.34, 1.56, .64, 1);
   }
-  #header h1 .count {
-    color: var(--muted);
-    font-weight: 400;
-    margin-left: 6px;
+  #sidebar-logo-wrap:hover #sidebar-logo {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 18px rgba(255, 126, 182, .55));
   }
+
   #search {
     width: 100%;
     padding: 7px 10px;
@@ -62,16 +72,36 @@
   }
   #search:focus { border-color: var(--accent); }
 
-  #list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 6px 0;
+  #filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
   }
+  .chip-filter {
+    background: var(--chip-bg);
+    color: var(--chip-text);
+    border: 1px solid transparent;
+    padding: 3px 9px;
+    border-radius: 11px;
+    font-size: 11px;
+    text-transform: lowercase;
+    letter-spacing: .3px;
+    transition: background .1s, color .1s, border-color .1s;
+  }
+  .chip-filter:hover { background: var(--panel-2); color: var(--text); }
+  .chip-filter.active {
+    background: var(--accent-bg);
+    color: var(--text);
+    border-color: var(--accent);
+  }
+
+  #list { flex: 1; overflow-y: auto; padding: 6px 0; }
   #list::-webkit-scrollbar { width: 10px; }
   #list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
 
   .card {
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-left: 3px solid transparent;
     cursor: pointer;
     user-select: none;
@@ -82,10 +112,7 @@
     background: var(--accent-bg);
     border-left-color: var(--accent);
   }
-  .card .title {
-    font-weight: 500;
-    font-size: 14px;
-  }
+  .card .title { font-weight: 500; font-size: 14px; }
   .card .body {
     max-height: 0;
     overflow: hidden;
@@ -97,11 +124,7 @@
     opacity: 1;
     margin-top: 6px;
   }
-  .card .desc {
-    color: var(--muted);
-    font-size: 12.5px;
-    margin-bottom: 6px;
-  }
+  .card .desc { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip {
     background: var(--chip-bg);
@@ -112,167 +135,296 @@
     text-transform: lowercase;
     letter-spacing: .3px;
   }
-  .empty {
-    padding: 20px 16px;
-    color: var(--muted);
-    font-size: 13px;
-    text-align: center;
-  }
+  .empty { padding: 20px 16px; color: var(--muted); font-size: 13px; text-align: center; }
 
-  /* ---- Stage ---- */
-  #stage {
-    flex: 1;
-    position: relative;
-    background: #000;
-    overflow: hidden;
-  }
-  #frame {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-  }
-  #placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    color: var(--muted);
-    text-align: center;
-    padding: 20px;
-    background:
-      radial-gradient(circle at 50% 40%, #1a2230 0%, #0a0d12 70%);
-  }
-  #placeholder h2 {
-    color: var(--text);
-    font-size: 22px;
-    font-weight: 600;
-    margin: 0 0 8px;
-    letter-spacing: .5px;
-  }
-  #placeholder p { margin: 4px 0; font-size: 13px; }
-
-  /* ---- Top-right controls ---- */
-  #controls {
-    position: absolute;
-    top: 8px;
-    right: 8px;
+  /* Sidebar footer — controls live here so they never overlap the game */
+  #sidebar-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
     display: flex;
     gap: 6px;
-    z-index: 10;
-    opacity: 0;
-    transition: opacity .15s;
-    pointer-events: none;
   }
-  #stage:hover #controls { opacity: 1; pointer-events: auto; }
-  .btn {
-    background: rgba(22, 27, 34, .85);
+  #sidebar-footer .btn {
+    flex: 1;
+    text-align: center;
+    background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    padding: 5px 10px;
-    border-radius: 5px;
-    font: 12px/1 -apple-system, sans-serif;
-    cursor: pointer;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12px;
     text-decoration: none;
+    transition: background .1s, border-color .1s, opacity .1s;
   }
-  .btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+  #sidebar-footer .btn:hover:not(.disabled) {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+  }
+  #sidebar-footer .btn.disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
+
+  /* ===================== Stage ===================== */
+  #stage { flex: 1; position: relative; background: #000; overflow: hidden; }
+  #frame { width: 100%; height: 100%; border: 0; display: block; }
+
+  /* ===================== Welcome screen ===================== */
+  #welcome {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(88, 166, 255, .12) 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 100%, rgba(255, 126, 182, .08) 0%, transparent 50%),
+      linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+    padding: 40px 48px 60px;
+  }
+  #welcome::-webkit-scrollbar { width: 10px; }
+  #welcome::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+  #welcome-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  #welcome-logo {
+    width: min(220px, 30vw);
+    height: auto;
+    filter: drop-shadow(0 8px 28px rgba(88, 166, 255, .45))
+            drop-shadow(0 0 40px rgba(255, 126, 182, .2));
+    animation: splat .7s cubic-bezier(.34, 1.56, .64, 1),
+               float 5s ease-in-out infinite 1s;
+  }
+  #welcome-tagline {
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 14px;
+    letter-spacing: .5px;
+  }
+
+  #quick-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+  }
+  .quick-btn {
+    background: linear-gradient(135deg, var(--accent-bg), var(--panel));
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform .12s, border-color .12s, box-shadow .12s;
+  }
+  .quick-btn:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: 0 6px 20px rgba(88, 166, 255, .25);
+  }
+  .quick-btn.primary {
+    background: linear-gradient(135deg, var(--accent), #2978d3);
+    border-color: var(--accent);
+  }
+  .quick-btn.primary:hover {
+    box-shadow: 0 6px 24px rgba(88, 166, 255, .5);
+  }
+  .quick-btn .icon { font-size: 16px; }
+  .quick-btn .sub {
+    color: rgba(255, 255, 255, .7);
+    font-size: 12px;
+    margin-left: 4px;
+  }
+
+  .row { margin-bottom: 32px; max-width: 100%; }
+  .row h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin: 0 0 12px;
+    padding-left: 4px;
+  }
+  .row .tiles {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 4px 12px;
+    scroll-snap-type: x proximity;
+  }
+  .row .tiles::-webkit-scrollbar { height: 8px; }
+  .row .tiles::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .tile {
+    flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+  }
+  .tile:hover {
+    transform: translateY(-4px) scale(1.02);
+    border-color: var(--accent);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45),
+                0 0 0 1px rgba(88, 166, 255, .3);
+  }
+  .tile .name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .tile .desc {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+    flex: 1;
+  }
+  .tile .chips { margin-top: 8px; }
+
+  /* Top picks — larger tiles with a gradient face */
+  .tiles.top .tile {
+    width: 220px;
+    min-height: 140px;
+    background: linear-gradient(135deg, #1a2f4d 0%, #2d1a3e 100%);
+    border-color: #3a4862;
+  }
+  .tiles.top .tile .name { font-size: 16px; }
+  .tiles.top .tile .desc { font-size: 12.5px; }
+
+  /* Standard category tiles */
+  .row:not(.row-top) .tile { width: 170px; min-height: 100px; }
+  .row:not(.row-top) .tile .desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  @keyframes splat {
+    0%   { transform: scale(0) rotate(-6deg); opacity: 0; }
+    60%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-8px); }
+  }
 </style>
 </head>
 <body>
 
 <aside id="sidebar">
-  <div id="header">
-    <h1>LittleJS Games <span class="count" id="count"></span></h1>
+  <div id="sidebar-header">
+    <div id="sidebar-logo-wrap" title="Back to library">
+      <img id="sidebar-logo" src="logo.png" alt="LittleJS">
+    </div>
     <input id="search" type="text" placeholder="Search..." autocomplete="off" spellcheck="false">
+    <div id="filter-chips"></div>
   </div>
   <div id="list"></div>
+  <div id="sidebar-footer">
+    <button class="btn disabled" id="reloadBtn" title="Reload the current game">Reload</button>
+    <a class="btn disabled" id="openBtn" target="_blank" rel="noopener" title="Open in a new tab">Open ↗</a>
+  </div>
 </aside>
 
 <main id="stage">
-  <div id="placeholder">
-    <h2>LittleJS Games</h2>
-    <p>Pick a game from the sidebar to start playing.</p>
-    <p style="margin-top:14px;font-size:12px;">Hover a card to see its description.</p>
-  </div>
+  <div id="welcome"></div>
   <iframe id="frame" allow="autoplay; gamepad; fullscreen" style="display:none;"></iframe>
-  <div id="controls">
-    <button class="btn" id="reloadBtn" title="Reload the current game">Reload</button>
-    <a class="btn" id="openBtn" target="_blank" rel="noopener" title="Open in a new tab">Open ↗</a>
-  </div>
 </main>
 
 <script>
 'use strict';
 
-// name = title shown in sidebar, file = filename in games/, desc = one-line,
-// tags = lowercase chips. Keep desc short — these are browse-only summaries.
+// category: row grouping in the welcome screen (one per game).
+// tags:     descriptive chips on the card.
+// top:      1..N — appears in the "Top Picks" row at that rank. Unset = not featured.
 const GAMES = [
-  { file: '2048.html',           name: '2048',            desc: 'Slide numbered tiles to combine matching pairs.',          tags: ['puzzle','grid'] },
-  { file: 'asteroids.html',      name: 'Asteroids',       desc: 'Rotate-and-thrust shooter — blast drifting space rocks.', tags: ['arcade','shooter'] },
-  { file: 'baseball.html',       name: 'Baseball',        desc: 'Pitch, swing, and run the bases.',                         tags: ['sports'] },
-  { file: 'basketball.html',     name: 'Pop-a-Shot',      desc: 'Sink as many shots as you can before the clock runs out.', tags: ['sports','arcade'] },
-  { file: 'breakout.html',       name: 'Breakout',        desc: 'Bounce a ball off a paddle to clear bricks.',              tags: ['arcade','paddle'] },
-  { file: 'captureGo.html',      name: 'Capture Go',      desc: 'Simplified Go — capture stones by surrounding them.',      tags: ['board','strategy'] },
-  { file: 'centipede.html',      name: 'Centipede',       desc: 'Shoot the descending centipede before it reaches you.',    tags: ['arcade','shooter'] },
-  { file: 'checkers.html',       name: 'Checkers',        desc: 'Classic 8×8 jump-to-capture board game.',                  tags: ['board','strategy'] },
-  { file: 'chess.html',          name: 'Chess',           desc: 'Two-player chess with full standard rules.',               tags: ['board','strategy'] },
-  { file: 'columns.html',        name: 'Columns',         desc: 'Match three jewels by rotating falling columns.',          tags: ['puzzle','falling'] },
-  { file: 'combat.html',         name: 'Combat',          desc: 'Two-player tank duels.',                                   tags: ['arcade','multiplayer'] },
-  { file: 'connect4.html',       name: 'Connect 4',       desc: 'Drop discs to line up four in a row.',                     tags: ['board','strategy'] },
-  { file: 'defender.html',       name: 'Defender',        desc: 'Side-scrolling shooter — protect humans from aliens.',     tags: ['arcade','shooter'] },
-  { file: 'drMario.html',        name: 'Dr. Mario',       desc: 'Match falling pills with viruses to clear them.',          tags: ['puzzle','falling'] },
-  { file: 'flappyBird.html',     name: 'Flappy Bird',     desc: 'Tap to flap through pipe gaps.',                           tags: ['arcade','one-button'] },
-  { file: 'frogger.html',        name: 'Frogger',         desc: 'Hop across traffic and rivers to safety.',                 tags: ['arcade'] },
-  { file: 'geometryDash.html',   name: 'Geometry Dash',   desc: 'Rhythm-jump through spike obstacles.',                     tags: ['arcade','runner'] },
-  { file: 'gradius.html',        name: 'Gradius',         desc: 'Power up your ship and blast through horizontal levels.',  tags: ['shooter','scrolling'] },
-  { file: 'iterate-test.html',   name: 'Iterate Test',    desc: 'Texture atlas test fixture — not a real game.',            tags: ['test'] },
-  { file: 'jetpackDash.html',    name: 'Jetpack Dash',    desc: 'Boost upward to dodge hazards.',                           tags: ['arcade','runner'] },
-  { file: 'joust.html',          name: 'Joust',           desc: 'Flap-jump knight combat — outheight your enemy.',          tags: ['arcade'] },
-  { file: 'kaboom.html',         name: 'Kaboom',          desc: 'Catch bombs dropped by a mad bomber.',                     tags: ['arcade','paddle'] },
-  { file: 'lunarLander.html',    name: 'Lunar Lander',    desc: 'Burn fuel to touch down softly.',                          tags: ['physics','arcade'] },
-  { file: 'mario.html',          name: 'Mario',           desc: 'Platformer with bricks, ? blocks, and a flagpole.',        tags: ['platformer'] },
-  { file: 'match3.html',         name: 'Match 3',         desc: 'Swap adjacent gems to make matches of three.',             tags: ['puzzle','grid'] },
-  { file: 'microRacer.html',     name: 'Micro Racer',     desc: 'Top-down racing on a tight track.',                        tags: ['racing'] },
-  { file: 'minesweeper.html',    name: 'Minesweeper',     desc: 'Reveal cells without hitting a mine.',                     tags: ['puzzle','grid'] },
-  { file: 'miniGolf.html',       name: 'Mini Golf',       desc: 'Aim and putt across miniature courses.',                   tags: ['sports','physics'] },
-  { file: 'missileCommand.html', name: 'Missile Command', desc: 'Defend cities from incoming nukes.',                       tags: ['arcade','shooter'] },
-  { file: 'moonPatrol.html',     name: 'Moon Patrol',     desc: 'Side-scrolling moon buggy — jump craters, shoot enemies.', tags: ['arcade','scrolling'] },
-  { file: 'mrDriller.html',      name: 'Mr. Driller',     desc: 'Drill down through colored blocks while managing air.',    tags: ['puzzle','action'] },
-  { file: 'orbitswarm.html',     name: 'OrbitSwarm',      desc: 'Orbit a star and shoot the incoming swarm.',               tags: ['arcade','shooter'] },
-  { file: 'othello.html',        name: 'Othello',         desc: 'Flank to flip — capture the most stones.',                 tags: ['board','strategy'] },
-  { file: 'pacman.html',         name: 'Pac-Man',         desc: 'Eat dots and dodge ghosts in a maze.',                     tags: ['arcade','maze'] },
-  { file: 'peggle.html',         name: 'Peggle',          desc: 'Aim balls at pegs to clear the board.',                    tags: ['physics','puzzle'] },
-  { file: 'pinball.html',        name: 'Pinball',         desc: 'Launch a ball, hit the flippers, chase the score.',        tags: ['physics','arcade'] },
-  { file: 'plinko.html',         name: 'Plinko',          desc: 'Drop chips down a peg field for prizes.',                  tags: ['physics','arcade'] },
-  { file: 'pokemon.html',        name: 'Pokemon',         desc: 'Top-down monster-collector RPG prototype.',                tags: ['rpg'] },
-  { file: 'polePosition.html',   name: 'Pole Position',   desc: 'Pseudo-3D racing — steer through the curves.',             tags: ['racing'] },
-  { file: 'pong.html',           name: 'Pong',            desc: 'Two-paddle bounce, first to score wins.',                  tags: ['arcade','paddle'] },
-  { file: 'pool.html',           name: 'Pool',            desc: '8-ball pool with cue physics.',                            tags: ['sports','physics'] },
-  { file: 'puzzleFighter.html',  name: 'Puzzle Fighter',  desc: 'Stack falling gems to build chain combos.',                tags: ['puzzle','falling'] },
-  { file: 'riverRaid.html',      name: 'River Raid',      desc: 'Vertical-scrolling river shooter — watch your fuel.',      tags: ['shooter','scrolling'] },
-  { file: 'robotron.html',       name: 'Robotron',        desc: 'Twin-stick shooter — save the humans.',                    tags: ['arcade','shooter','twin-stick'] },
-  { file: 'skiing.html',         name: 'Skiing',          desc: 'Slalom through gates downhill.',                           tags: ['arcade','racing'] },
-  { file: 'snake.html',          name: 'Snake',           desc: 'Eat to grow, don’t crash into yourself.',             tags: ['arcade','grid'] },
-  { file: 'snood.html',          name: 'Snood',           desc: 'Aim and shoot snoods to clear the board.',                 tags: ['puzzle','physics'] },
-  { file: 'sokoban.html',        name: 'Sokoban',         desc: 'Push boxes onto target squares.',                          tags: ['puzzle','grid'] },
-  { file: 'spaceInvaders.html',  name: 'Space Invaders',  desc: 'Shoot descending alien formations.',                       tags: ['arcade','shooter'] },
-  { file: 'spyhunter.html',      name: 'Spy Hunter',      desc: 'Top-down driving with car combat.',                        tags: ['arcade','driving'] },
-  { file: 'tetris.html',         name: 'Tetris',          desc: 'Stack falling tetrominoes to clear lines.',                tags: ['puzzle','falling'] },
+  { file:'2048.html',           name:'2048',            category:'puzzle',  desc:'Slide numbered tiles to combine matching pairs.',          tags:['puzzle','grid'] },
+  { file:'asteroids.html',      name:'Asteroids',       category:'shooter', desc:'Rotate-and-thrust shooter — blast drifting space rocks.', tags:['arcade','shooter'] },
+  { file:'baseball.html',       name:'Baseball',        category:'sports',  desc:'Pitch, swing, and run the bases.',                         tags:['sports'] },
+  { file:'basketball.html',     name:'Pop-a-Shot',      category:'sports',  desc:'Sink as many shots as you can before the clock runs out.', tags:['sports','arcade'] },
+  { file:'breakout.html',       name:'Breakout',        category:'arcade',  desc:'Bounce a ball off a paddle to clear bricks.',              tags:['arcade','paddle'] },
+  { file:'captureGo.html',      name:'Capture Go',      category:'board',   desc:'Simplified Go — capture stones by surrounding them.',      tags:['board','strategy'] },
+  { file:'centipede.html',      name:'Centipede',       category:'shooter', desc:'Shoot the descending centipede before it reaches you.',    tags:['arcade','shooter'] },
+  { file:'checkers.html',       name:'Checkers',        category:'board',   desc:'Classic 8×8 jump-to-capture board game.',                  tags:['board','strategy'] },
+  { file:'chess.html',          name:'Chess',           category:'board',   desc:'Two-player chess with full standard rules.',               tags:['board','strategy'] },
+  { file:'columns.html',        name:'Columns',         category:'puzzle',  desc:'Match three jewels by rotating falling columns.',          tags:['puzzle','falling'] },
+  { file:'combat.html',         name:'Combat',          category:'arcade',  desc:'Two-player tank duels.',                                   tags:['arcade','multiplayer'] },
+  { file:'connect4.html',       name:'Connect 4',       category:'board',   desc:'Drop discs to line up four in a row.',                     tags:['board','strategy'] },
+  { file:'defender.html',       name:'Defender',        category:'shooter', desc:'Side-scrolling shooter — protect humans from aliens.',     tags:['arcade','shooter'] },
+  { file:'drMario.html',        name:'Dr. Mario',       category:'puzzle',  desc:'Match falling pills with viruses to clear them.',          tags:['puzzle','falling'] },
+  { file:'flappyBird.html',     name:'Flappy Bird',     category:'arcade',  desc:'Tap to flap through pipe gaps.',                           tags:['arcade','one-button'] },
+  { file:'frogger.html',        name:'Frogger',         category:'arcade',  desc:'Hop across traffic and rivers to safety.',                 tags:['arcade'] },
+  { file:'geometryDash.html',   name:'Geometry Dash',   category:'arcade',  desc:'Rhythm-jump through spike obstacles.',                     tags:['arcade','runner'] },
+  { file:'gradius.html',        name:'Gradius',         category:'shooter', desc:'Power up your ship and blast through horizontal levels.',  tags:['shooter','scrolling'] },
+  { file:'jetpackDash.html',    name:'Jetpack Dash',    category:'arcade',  desc:'Boost upward to dodge hazards.',                           tags:['arcade','runner'] },
+  { file:'joust.html',          name:'Joust',           category:'arcade',  desc:'Flap-jump knight combat — outheight your enemy.',          tags:['arcade'] },
+  { file:'kaboom.html',         name:'Kaboom',          category:'arcade',  desc:'Catch bombs dropped by a mad bomber.',                     tags:['arcade','paddle'] },
+  { file:'lunarLander.html',    name:'Lunar Lander',    category:'arcade',  desc:'Burn fuel to touch down softly.',                          tags:['physics','arcade'] },
+  { file:'match3.html',         name:'Match 3',         category:'puzzle',  desc:'Swap adjacent gems to make matches of three.',             tags:['puzzle','grid'] },
+  { file:'microRacer.html',     name:'Micro Racer',     category:'arcade',  desc:'Top-down racing on a tight track.',                        tags:['racing'] },
+  { file:'minesweeper.html',    name:'Minesweeper',     category:'puzzle',  desc:'Reveal cells without hitting a mine.',                     tags:['puzzle','grid'] },
+  { file:'miniGolf.html',       name:'Mini Golf',       category:'sports',  desc:'Aim and putt across miniature courses.',                   tags:['sports','physics'] },
+  { file:'missileCommand.html', name:'Missile Command', category:'shooter', desc:'Defend cities from incoming nukes.',                       tags:['arcade','shooter'], top:5 },
+  { file:'moonPatrol.html',     name:'Moon Patrol',     category:'arcade',  desc:'Side-scrolling moon buggy — jump craters, shoot enemies.', tags:['arcade','scrolling'] },
+  { file:'mrDriller.html',      name:'Mr. Driller',     category:'puzzle',  desc:'Drill down through colored blocks while managing air.',    tags:['puzzle','action'] },
+  { file:'orbitswarm.html',     name:'OrbitSwarm',      category:'shooter', desc:'Orbit a star and shoot the incoming swarm.',               tags:['arcade','shooter'] },
+  { file:'othello.html',        name:'Othello',         category:'board',   desc:'Flank to flip — capture the most stones.',                 tags:['board','strategy'] },
+  { file:'pacman.html',         name:'Pac-Man',         category:'arcade',  desc:'Eat dots and dodge ghosts in a maze.',                     tags:['arcade','maze'], top:2 },
+  { file:'peggle.html',         name:'Peggle',          category:'puzzle',  desc:'Aim balls at pegs to clear the board.',                    tags:['physics','puzzle'] },
+  { file:'pinball.html',        name:'Pinball',         category:'arcade',  desc:'Launch a ball, hit the flippers, chase the score.',        tags:['physics','arcade']},
+  { file:'plinko.html',         name:'Plinko',          category:'puzzle',  desc:'Drop chips down a peg field for prizes.',                  tags:['physics','arcade'] },
+  { file:'pokemon.html',        name:'Pokemon',         category:'arcade',  desc:'Top-down monster-collector RPG prototype.',                tags:['rpg'] },
+  { file:'polePosition.html',   name:'Pole Position',   category:'arcade',  desc:'Pseudo-3D racing — steer through the curves.',             tags:['racing'] },
+  { file:'pong.html',           name:'Pong',            category:'arcade',  desc:'Two-paddle bounce, first to score wins.',                  tags:['arcade','paddle'] },
+  { file:'pool.html',           name:'Pool',            category:'sports',  desc:'8-ball pool with cue physics.',                            tags:['sports','physics'], top:5 },
+  { file:'puzzleFighter.html',  name:'Puzzle Fighter',  category:'puzzle',  desc:'Stack falling gems to build chain combos.',                tags:['puzzle','falling'] },
+  { file:'riverRaid.html',      name:'River Raid',      category:'shooter', desc:'Vertical-scrolling river shooter — watch your fuel.',      tags:['shooter','scrolling'] },
+  { file:'robotron.html',       name:'Robotron',        category:'shooter', desc:'Twin-stick shooter — save the humans.',                    tags:['arcade','shooter','twin-stick'], top:3 },
+  { file:'skiing.html',         name:'Skiing',          category:'arcade',  desc:'Slalom through gates downhill.',                           tags:['arcade','racing'] },
+  { file:'snake.html',          name:'Snake',           category:'arcade',  desc:'Eat to grow, don’t crash into yourself.',             tags:['arcade','grid'] },
+  { file:'snood.html',          name:'Snood',           category:'puzzle',  desc:'Aim and shoot snoods to clear the board.',                 tags:['puzzle','physics'] },
+  { file:'sokoban.html',        name:'Sokoban',         category:'puzzle',  desc:'Push boxes onto target squares.',                          tags:['puzzle','grid'] },
+  { file:'spaceInvaders.html',  name:'Space Invaders',  category:'shooter', desc:'Shoot descending alien formations.',                       tags:['arcade','shooter'] },
+  { file:'spyhunter.html',      name:'Spy Hunter',      category:'arcade',  desc:'Top-down driving with car combat.',                        tags:['arcade','driving'] },
+  { file:'tetris.html',         name:'Tetris',          category:'puzzle',  desc:'Stack falling tetrominoes to clear lines.',                tags:['puzzle','falling'] },
 ];
 
 GAMES.sort((a, b) => a.name.localeCompare(b.name));
+const gameByFile = Object.fromEntries(GAMES.map(g => [g.file, g]));
 
+// Display name + ordering for category rows in the welcome screen.
+const CATEGORIES = [
+  { key:'arcade',  label:'Arcade'  },
+  { key:'shooter', label:'Shooter' },
+  { key:'puzzle',  label:'Puzzle'  },
+  { key:'board',   label:'Board'   },
+  { key:'sports',  label:'Sports'  },
+];
+const LAST_GAME_KEY = 'littlejs-games-last';
+
+const sidebarLogoWrap = document.getElementById('sidebar-logo-wrap');
 const listEl = document.getElementById('list');
 const searchEl = document.getElementById('search');
-const countEl = document.getElementById('count');
+const filterChipsEl = document.getElementById('filter-chips');
 const frameEl = document.getElementById('frame');
-const placeholderEl = document.getElementById('placeholder');
+const welcomeEl = document.getElementById('welcome');
 const reloadBtn = document.getElementById('reloadBtn');
 const openBtn = document.getElementById('openBtn');
 
 let currentFile = null;
+let activeCategory = 'all'; // sidebar filter
+
+// ===================== Sidebar list =====================
 
 function makeCard(g) {
   const card = document.createElement('div');
@@ -297,11 +449,12 @@ function makeCard(g) {
   return card;
 }
 
-function render(filter) {
+function renderList() {
   listEl.innerHTML = '';
-  const q = filter.trim().toLowerCase();
+  const q = searchEl.value.trim().toLowerCase();
   let shown = 0;
   for (const g of GAMES) {
+    if (activeCategory !== 'all' && g.category !== activeCategory) continue;
     if (q) {
       const hay = (g.name + ' ' + g.desc + ' ' + g.tags.join(' ')).toLowerCase();
       if (!hay.includes(q)) continue;
@@ -314,25 +467,147 @@ function render(filter) {
   if (shown === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No games match "' + filter + '".';
+    empty.textContent = 'No games match.';
     listEl.appendChild(empty);
   }
-  countEl.textContent = '(' + shown + (q ? ' / ' + GAMES.length : '') + ')';
+}
+
+// ===================== Filter chips =====================
+
+function buildFilterChips() {
+  const all = [{ key:'all', label:'All' }, ...CATEGORIES];
+  for (const c of all) {
+    const btn = document.createElement('button');
+    btn.className = 'chip-filter' + (c.key === 'all' ? ' active' : '');
+    btn.dataset.cat = c.key;
+    btn.textContent = c.label;
+    btn.addEventListener('click', () => {
+      activeCategory = c.key;
+      for (const el of filterChipsEl.children) {
+        el.classList.toggle('active', el.dataset.cat === c.key);
+      }
+      renderList();
+    });
+    filterChipsEl.appendChild(btn);
+  }
+}
+
+// ===================== Welcome screen =====================
+
+function makeTile(g) {
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.innerHTML =
+    '<div class="name"></div>' +
+    '<div class="desc"></div>' +
+    '<div class="chips"></div>';
+  tile.querySelector('.name').textContent = g.name;
+  tile.querySelector('.desc').textContent = g.desc;
+  const chipsEl = tile.querySelector('.chips');
+  for (const t of g.tags.slice(0, 3)) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = t;
+    chipsEl.appendChild(chip);
+  }
+  tile.addEventListener('click', () => selectGame(g.file));
+  return tile;
+}
+
+function buildWelcome() {
+  welcomeEl.innerHTML = '';
+
+  // Hero — logo + tagline
+  const hero = document.createElement('div');
+  hero.id = 'welcome-hero';
+  hero.innerHTML =
+    '<img id="welcome-logo" src="logo.png" alt="LittleJS">' +
+    '<div id="welcome-tagline">' + GAMES.length + ' games · pick one to play</div>';
+  welcomeEl.appendChild(hero);
+
+  // Quick actions — Continue + Random
+  const quick = document.createElement('div');
+  quick.id = 'quick-actions';
+
+  const lastFile = localStorage.getItem(LAST_GAME_KEY);
+  const lastGame = lastFile && gameByFile[lastFile];
+  if (lastGame) {
+    const cont = document.createElement('button');
+    cont.className = 'quick-btn primary';
+    cont.innerHTML = '<span class="icon">▶</span>Continue<span class="sub">' + lastGame.name + '</span>';
+    cont.addEventListener('click', () => selectGame(lastGame.file));
+    quick.appendChild(cont);
+  }
+
+  const playable = GAMES.filter(g => g.category !== 'test');
+  const rand = document.createElement('button');
+  rand.className = 'quick-btn';
+  rand.innerHTML = '<span class="icon">🎲</span>Random Game';
+  rand.addEventListener('click', () => {
+    const g = playable[Math.floor(Math.random() * playable.length)];
+    selectGame(g.file);
+  });
+  quick.appendChild(rand);
+
+  welcomeEl.appendChild(quick);
+
+  // Top Picks
+  const topGames = GAMES.filter(g => g.top != null).sort((a, b) => a.top - b.top);
+  if (topGames.length) {
+    welcomeEl.appendChild(buildRow('Top Picks', topGames, true));
+  }
+
+  // Category rows
+  for (const cat of CATEGORIES) {
+    const games = GAMES.filter(g => g.category === cat.key);
+    if (games.length) welcomeEl.appendChild(buildRow(cat.label, games, false));
+  }
+}
+
+function buildRow(label, games, isTop) {
+  const row = document.createElement('section');
+  row.className = 'row' + (isTop ? ' row-top' : '');
+  const h2 = document.createElement('h2');
+  h2.textContent = label;
+  row.appendChild(h2);
+  const tiles = document.createElement('div');
+  tiles.className = 'tiles' + (isTop ? ' top' : '');
+  for (const g of games) tiles.appendChild(makeTile(g));
+  row.appendChild(tiles);
+  return row;
+}
+
+// ===================== Stage state =====================
+
+function showWelcome() {
+  currentFile = null;
+  frameEl.src = 'about:blank';
+  frameEl.style.display = 'none';
+  welcomeEl.style.display = 'block';
+  welcomeEl.scrollTop = 0;
+  reloadBtn.classList.add('disabled');
+  openBtn.classList.add('disabled');
+  openBtn.removeAttribute('href');
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  for (const c of listEl.querySelectorAll('.card')) c.classList.remove('selected');
+  buildWelcome(); // refresh continue button in case last-game changed
 }
 
 function selectGame(file) {
-  if (!GAMES.some(g => g.file === file)) return;
+  const g = gameByFile[file];
+  if (!g) return;
   currentFile = file;
-  // Cache-bust on every load so edits to a game show up without manual reload.
+  // Cache-bust so edits to a game show up without manual reload.
   frameEl.src = file + '?t=' + Date.now();
   frameEl.style.display = 'block';
-  placeholderEl.style.display = 'none';
+  welcomeEl.style.display = 'none';
+  reloadBtn.classList.remove('disabled');
+  openBtn.classList.remove('disabled');
   openBtn.href = file;
-  // Update hash without triggering hashchange handler.
+  localStorage.setItem(LAST_GAME_KEY, file);
   if (location.hash !== '#' + file) {
     history.replaceState(null, '', '#' + file);
   }
-  // Re-mark selection in current list.
   for (const c of listEl.querySelectorAll('.card')) {
     c.classList.toggle('selected', c.dataset.file === file);
   }
@@ -340,43 +615,47 @@ function selectGame(file) {
 
 function loadFromHash() {
   const file = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (file && GAMES.some(g => g.file === file)) selectGame(file);
+  if (file && gameByFile[file]) selectGame(file);
+  else showWelcome();
 }
 
-searchEl.addEventListener('input', () => render(searchEl.value));
+// ===================== Wire-up =====================
+
+sidebarLogoWrap.addEventListener('click', showWelcome);
+searchEl.addEventListener('input', renderList);
 window.addEventListener('hashchange', loadFromHash);
 reloadBtn.addEventListener('click', () => {
   if (currentFile) frameEl.src = currentFile + '?t=' + Date.now();
 });
 
-// Keyboard nav: ↑/↓ to move selection, Enter to focus the iframe.
 document.addEventListener('keydown', e => {
   if (document.activeElement === searchEl && e.key !== 'Escape') return;
   const cards = Array.from(listEl.querySelectorAll('.card'));
-  if (!cards.length) return;
-  const idx = cards.findIndex(c => c.classList.contains('selected'));
-  if (e.key === 'ArrowDown') {
+  if (e.key === 'ArrowDown' && cards.length) {
     e.preventDefault();
+    const idx = cards.findIndex(c => c.classList.contains('selected'));
     const next = cards[Math.min(cards.length - 1, idx + 1)] || cards[0];
     selectGame(next.dataset.file);
-    next.scrollIntoView({ block: 'nearest' });
-  } else if (e.key === 'ArrowUp') {
+    next.scrollIntoView({ block:'nearest' });
+  } else if (e.key === 'ArrowUp' && cards.length) {
     e.preventDefault();
+    const idx = cards.findIndex(c => c.classList.contains('selected'));
     const prev = cards[Math.max(0, idx - 1)] || cards[0];
     selectGame(prev.dataset.file);
-    prev.scrollIntoView({ block: 'nearest' });
+    prev.scrollIntoView({ block:'nearest' });
   } else if (e.key === '/' && document.activeElement !== searchEl) {
     e.preventDefault();
     searchEl.focus();
     searchEl.select();
   } else if (e.key === 'Escape' && document.activeElement === searchEl) {
     searchEl.value = '';
-    render('');
+    renderList();
     searchEl.blur();
   }
 });
 
-render('');
+buildFilterChips();
+renderList();
 loadFromHash();
 </script>
 </body>
