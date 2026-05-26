@@ -613,7 +613,7 @@ function updateBalls(dt)
                 ball.pos.y = paddlePos.y + paddleSize.y / 2 + r + .001;
                 const offset = (ball.pos.x - paddlePos.x) / (paddleSize.x / 2);
                 const x = clamp(offset, -1, 1);
-                ball.vel = vec2(x * 1.2, 1).normalize(ballSpeed);
+                ball.vel = vec2(x * 1.2, 1).normalize(effectiveSpeed);
                 sfxBounce.play();
             }
         }
@@ -628,6 +628,7 @@ function updateBalls(dt)
             if (fireballTimer > 0 && b.type !== BRICK_GOLD)
             {
                 // Fireball: destroy normal AND silver in one hit, no bounce.
+                // Gold falls through to the normal resolveBallRect bounce below.
                 b.hp = 1;     // force damageBrick to destroy in one tick
                 damageBrick(b);
                 continue;     // keep flying through the row
