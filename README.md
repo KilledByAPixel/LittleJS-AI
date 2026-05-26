@@ -2,6 +2,8 @@
 
 *50+ classic arcade games rebuilt in pure HTML5 — each one a single self-contained file, AI-assisted.*
 
+# 🎮 [▶ Play in the LittleJS Game Library](https://killedbyapixel.github.io/LittleJS-AI/games/)
+
 [LittleJS](https://github.com/KilledByAPixel/LittleJS) is a fast, lightweight, and fully open source HTML5 game engine designed for simplicity and performance.
 
 This repo is a library of LittleJS AI experiments:
@@ -43,8 +45,6 @@ Each game is one self-contained HTML file — no build step, no external assets,
 Mix in helper scripts to add features: `menus.js` (DOM menus), `soundGenerator.js` (procedural SFX), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
 
 ## 🕹️ Games Made With AI
-
-### 🎮 [▶ Play in the Game Library](https://killedbyapixel.github.io/LittleJS-AI/games/)
 
 Browse, search, and launch every game from a single console-style page — categories, top picks, random play, fullscreen, and a "continue last game" button.
 
