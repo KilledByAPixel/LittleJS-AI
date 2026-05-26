@@ -325,11 +325,60 @@ class OrbitingStarWeapon
         }
     }
 }
+// Transient lightning segments — drawn fading by drawChainFlashes() each frame.
+const chainFlashes = [];
+
 class ChainLightningWeapon
 {
-    constructor() { this.level = 1; this.name = 'Chain Lightning'; }
+    constructor()
+    {
+        this.level = 1;
+        this.name = 'Chain Lightning';
+        this.cooldown = 0;
+    }
     levelUp() { this.level = min(this.level + 1, 5); }
-    update() { /* TODO Task 13 */ }
+    damage()  { return 3 + this.level; }
+
+    update()
+    {
+        this.cooldown -= 1 / 60;
+        if (this.cooldown > 0) return;
+        const first = nearestEnemy(player.pos, 8);
+        if (!first) return;
+        this.cooldown = max(.4, 2.0 - this.level * .2);
+
+        const hops = this.level + 1;
+        const hit = new Set();
+        let from = player.pos;
+        let current = first;
+        for (let h = 0; h < hops && current; ++h)
+        {
+            current.takeDamage(this.damage());
+            hit.add(current);
+            chainFlashes.push({a: from, b: current.pos.copy(), t: time + .15});
+            from = current.pos;
+            let best = null, bestD = 5;
+            for (const e of enemies)
+            {
+                if (hit.has(e)) continue;
+                const d = from.distance(e.pos);
+                if (d < bestD) { best = e; bestD = d; }
+            }
+            current = best;
+        }
+    }
+}
+
+function drawChainFlashes()
+{
+    for (let i = chainFlashes.length - 1; i >= 0; --i)
+    {
+        const f = chainFlashes[i];
+        const remaining = f.t - time;
+        if (remaining <= 0) { chainFlashes.splice(i, 1); continue; }
+        const alpha = remaining / .15;
+        drawLine(f.a, f.b, .15, new Color(1, 1, .4, alpha));
+    }
 }
 class FireballWeapon
 {
@@ -590,6 +639,7 @@ function drawGround()
 function gameRender()
 {
     drawGround();
+    drawChainFlashes();
 }
 function formatTime(s)
 {
