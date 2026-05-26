@@ -1620,13 +1620,16 @@ let aiTargetPos = null;
 let aiNextRetargetTime = 0;
 let aiSmoothedDir = vec2(1, 0);
 
-// X-quadrant touch direction. The canvas is divided by its two diagonals
+// X-quadrant pointer direction. The canvas is divided by its two diagonals
 // into 4 triangles (top / right / bottom / left); a press in one triangle
 // moves the player that cardinal direction. Held = sustained motion.
-// Center deadzone prevents drift from a near-center tap.
+// Center deadzone prevents drift from a near-center press.
+// Works the same for mouse on desktop and touch on mobile — touch events
+// already route through the engine's mouse state, so one code path covers
+// both. The pause button etc. are DOM elements above the canvas and
+// consume their own clicks, so this only fires for canvas presses.
 function touchDirection()
 {
-    if (!isTouchDevice) return vec2();
     if (!mouseIsDown(0)) return vec2();
     const cs = mainCanvasSize;
     const dx = mousePosScreen.x - cs.x / 2;
