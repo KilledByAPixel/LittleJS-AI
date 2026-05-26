@@ -555,24 +555,6 @@ function drawBuckets() {
         drawRect(vec2(bucketX, cy + h/2), vec2(halfW * 2 + 0.2, 0.2), hsl(.55, .65, .72));
         drawRect(vec2(bucketX, cy + h/2 + 0.05), vec2(halfW * 2 + 0.3, 0.08), hsl(.55, .75, .88));
 
-        // Semi-circular wire handle — only on the catching (top) bucket.
-        // Identical arcs above lower buckets just collide visually with the
-        // bucket above and confuse the silhouette.
-        if (isTop) {
-            const rimY = cy + h/2;
-            const radiusX = halfW * 0.85;
-            const apex = h * 0.7;
-            const segments = 16;
-            const handleColor = hsl(.55, .55, .65);
-            let prev = vec2(bucketX - radiusX, rimY);
-            for (let s = 1; s <= segments; s++) {
-                const a = PI * (1 - s / segments);
-                const next = vec2(bucketX + radiusX * Math.cos(a),
-                                  rimY + apex * Math.sin(a));
-                drawLine(prev, next, 0.08, handleColor);
-                prev = next;
-            }
-        }
     }
 }
 
