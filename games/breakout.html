@@ -755,7 +755,8 @@ function updatePowerups(dt)
         if (isOverlapping(p.pos, p.size, paddlePos, paddleSize))
         {
             applyPowerup(p.type);
-            addShake(.10);
+            if (p.type !== '1')
+                addShake(.10);
             powerups.splice(i, 1);
         }
     }
@@ -918,7 +919,7 @@ function updateBalls(dt)
 function gameUpdatePost()
 {
     cameraPos = levelSize.scale(.5);
-    if (screenShake > 0)
+    if (screenShake > 0 && !paused)
         cameraPos = cameraPos.add(vec2(rand(-1, 1), rand(-1, 1)).scale(screenShake));
 
     const fit = min(mainCanvasSize.x / levelSize.x, mainCanvasSize.y / levelSize.y);
