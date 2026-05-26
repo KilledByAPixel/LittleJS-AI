@@ -100,12 +100,13 @@ function paintHeart(ctx)
     // cy=120 centers the shape in the 500x500 region — the bezier extends
     // from cy-40 (top of lobes) to cy+300 (bottom point), so range [80, 420].
     const cx = 250, cy = 120, w = 100;
+    const vPoint = .7;
     ctx.beginPath();
     ctx.moveTo(cx, cy + w * .4);
-    ctx.bezierCurveTo(cx, cy - w * .4, cx - w * 2, cy - w * .4, cx - w * 2, cy + w * .3);
+    ctx.bezierCurveTo(cx, cy - w * vPoint, cx - w * 2, cy - w * vPoint, cx - w * 2, cy + w * .3);
     ctx.bezierCurveTo(cx - w * 2, cy + w * 1.1, cx, cy + w * 2.2, cx, cy + w * 3);
     ctx.bezierCurveTo(cx, cy + w * 2.2, cx + w * 2, cy + w * 1.1, cx + w * 2, cy + w * .3);
-    ctx.bezierCurveTo(cx + w * 2, cy - w * .4, cx, cy - w * .4, cx, cy + w * .4);
+    ctx.bezierCurveTo(cx + w * 2, cy - w * vPoint, cx, cy - w * vPoint, cx, cy + w * vPoint);
     ctx.closePath();
     ctx.fillStyle = '#fff'; ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 28; ctx.stroke();
@@ -113,7 +114,7 @@ function paintHeart(ctx)
 
 function paintDiamond(ctx)
 {
-    const cx = 250, top = 50, bot = 450, sideY = 230;
+    const cx = 250, top = 50, bot = 450, sideY = 250;
     const left = 60, right = 440;
     ctx.beginPath();
     ctx.moveTo(cx, top);
@@ -123,11 +124,6 @@ function paintDiamond(ctx)
     ctx.closePath();
     ctx.fillStyle = '#fff'; ctx.fill();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 28; ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(140, sideY);
-    ctx.lineTo(cx, top + 40);
-    ctx.lineTo(360, sideY);
-    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 14; ctx.stroke();
 }
 
 function paintTriangle(ctx)
@@ -145,10 +141,10 @@ function paintTriangle(ctx)
 function paintBolt(ctx)
 {
     ctx.beginPath();
-    ctx.moveTo(290, 50);
-    ctx.lineTo(90,  280);
+    ctx.moveTo(210, 50);
+    ctx.lineTo(100,  280);
     ctx.lineTo(220, 280);
-    ctx.lineTo(150, 460);
+    ctx.lineTo(170, 460);
     ctx.lineTo(410, 220);
     ctx.lineTo(270, 220);
     ctx.lineTo(400, 50);
