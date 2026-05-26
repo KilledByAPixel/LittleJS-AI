@@ -110,19 +110,27 @@ function saveAtlasPrompt(filename = 'atlas-prompt')
     saveDataURL(url, filename + '.txt');
 }
 
+// Returns a Promise that resolves once the swap is done (or the image fails
+// to load, so callers can `await` it without hanging on a missing file).
+// Resolves with true on success, false on error.
 function useAtlasImage(url)
 {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () =>
+    return new Promise(resolve =>
     {
-        // paint the loaded image into the 2048 atlasCanvas, scaling as needed
-        // so tile coordinates stay correct regardless of source image size
-        atlasCtx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
-        atlasCtx.drawImage(img, 0, 0, ATLAS_SIZE, ATLAS_SIZE);
-        textureInfos[0].createWebGLTexture();
-    };
-    img.src = url;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () =>
+        {
+            // paint the loaded image into the 2048 atlasCanvas, scaling as needed
+            // so tile coordinates stay correct regardless of source image size
+            atlasCtx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
+            atlasCtx.drawImage(img, 0, 0, ATLAS_SIZE, ATLAS_SIZE);
+            textureInfos[0].createWebGLTexture();
+            resolve(true);
+        };
+        img.onerror = () => resolve(false);
+        img.src = url;
+    });
 }
 
 // Debug helper: pin the live atlasCanvas to the top-right of the page so
