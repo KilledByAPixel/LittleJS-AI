@@ -481,20 +481,8 @@ async function gameInit()
         ],
     });
 
-    // ----- HUD toolbar (only during gameplay) -----
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    // ----- HUD toolbar -----
+    installDefaultToolbar();
 
     showMenu('title');
 }
@@ -504,10 +492,6 @@ async function gameInit()
 
 function gameUpdate()
 {
-    // HUD visibility tracks "playing"
-    const hud = getToolbar('hud');
-    if (hud) (gamePhase === 'playing') ? hud.show() : hud.hide();
-
     updateHoopMotion();
 
     // tick balls (always — so the title screen demo / leftovers still settle)

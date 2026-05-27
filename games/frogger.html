@@ -361,7 +361,6 @@
     gameOver = false;
     resetRun(true);
     isPlaying = true;
-    getToolbar('hud')?.show();
   }
 
   function quitToTitle() {
@@ -370,7 +369,6 @@
     gameOver = false;
     resetRun(true);
     isPlaying = false;
-    getToolbar('hud')?.hide();
     if (typeof showMenu === 'function') showMenu('title');
   }
 
@@ -460,17 +458,7 @@
       ],
     });
 
-    createToolbar({
-      id:'hud', anchor:'top-right', direction:'horizontal',
-      items: [
-        {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-        {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () => {
-          if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-          else showMenu('pause');
-        }},
-      ],
-    });
-    getToolbar('hud')?.hide();
+    installDefaultToolbar();
 
     // Show the title menu immediately — no click-to-reveal step.
     showMenu('title');

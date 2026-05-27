@@ -75,6 +75,15 @@
 // per show/hide for ALL menus including dialogs. Use this for paused-
 // tracking; per-menu onShow/onHide are reserved for menu-specific logic.
 //
+// Default toolbar: installDefaultToolbar({mute, fullscreen, pauseMenuId,
+//                                         titleMenuId, titleDismissable,
+//                                         extraItemsBefore, extraItemsAfter})
+// Builds the standard top-right HUD toolbar in one call: optional mute
+// (toggles & persists soundVolume), optional fullscreen (auto-hidden on
+// touch), and a hamburger ☰ that opens the pause menu (and grays out
+// while the title menu is on top, unless titleDismissable). Toolbar is
+// always visible — no per-game show/hide wiring needed.
+//
 // Inputs: mouse/touch always; keyboard (arrows/Enter/Esc, with arrow
 // auto-repeat) and gamepad (d-pad/stick/A/B/Start) handled automatically
 // when a menu is visible. Selection only auto-shows for keyboard/gamepad
@@ -414,6 +423,157 @@ function createToolbar(config)
     };
     allToolbars.push(handle);
     return handle;
+}
+
+// ============================================================================
+// Default HUD toolbar — the standard mute / fullscreen / hamburger set.
+// ============================================================================
+//
+// One-call replacement for the createToolbar boilerplate every game was
+// hand-rolling. Builds a top-right toolbar that stays visible at all times
+// (including over the title menu). Defaults: mute + fullscreen + hamburger.
+//
+//   installDefaultToolbar();                       // most games
+//   installDefaultToolbar({mute: false});          // sound-driven games
+//   installDefaultToolbar({titleDismissable: true}); // fancy title screens
+//
+// Mute toggles `soundVolume` (LittleJS global) between 0 and the last
+// non-zero value; state persists per-page in localStorage under the
+// `muteStorageKey` (default 'menu.muted'). Pass `mute: false` to skip the
+// button entirely — sequencer-style games where muting makes no sense.
+//
+// Hamburger opens the configured pause menu. When the title menu is on
+// top, the hamburger grays out (browser-disabled), since a player can't
+// usefully "open the menu" from the menu they're already in. Set
+// `titleDismissable: true` if your title has a backdrop worth seeing and
+// you want clicking ☰ to dismiss the title.
+//
+// `extraItemsBefore` / `extraItemsAfter` accept the same item descriptors
+// as createToolbar (button, toggle, etc.), inserted at the left or right
+// of the default trio. Anchor is top-right so the LAST item sits in the
+// corner; the hamburger is always the last item.
+function installDefaultToolbar(opts)
+{
+    opts = Object.assign({
+        id:               'hud',
+        anchor:           'top-right',
+        direction:        'horizontal',
+        mute:             true,
+        fullscreen:       true,
+        pauseMenuId:      'pause',
+        titleMenuId:      'title',
+        titleDismissable: false,
+        muteStorageKey:   'menu.muted',
+        muteLabelOn:      '🔊',
+        muteLabelOff:     '🔇',
+        extraItemsBefore: [],
+        extraItemsAfter:  [],
+    }, opts || {});
+
+    const items = [];
+    items.push(...opts.extraItemsBefore);
+
+    if (opts.mute)
+    {
+        // Persisted mute state. Saved volume restores on unmute so the
+        // user's volume preference (set via an OPTIONS slider) survives.
+        let muted = localStorage.getItem(opts.muteStorageKey) === '1';
+        let savedVolume = (typeof soundVolume === 'number' && soundVolume > 0)
+            ? soundVolume : 0.3;
+        if (muted && typeof setSoundVolume === 'function')
+            setSoundVolume(0);
+
+        items.push({
+            type: 'button',
+            id:   'mute',
+            label: muted ? opts.muteLabelOff : opts.muteLabelOn,
+            title: muted ? 'Unmute' : 'Mute',
+            onClick: () =>
+            {
+                muted = !muted;
+                if (muted)
+                {
+                    if (typeof soundVolume === 'number' && soundVolume > 0)
+                        savedVolume = soundVolume;
+                    if (typeof setSoundVolume === 'function') setSoundVolume(0);
+                }
+                else
+                {
+                    if (typeof setSoundVolume === 'function')
+                        setSoundVolume(savedVolume || 0.3);
+                }
+                localStorage.setItem(opts.muteStorageKey, muted ? '1' : '0');
+                const item = getToolbar(opts.id)?.getItem('mute');
+                if (item)
+                {
+                    item.setLabel(muted ? opts.muteLabelOff : opts.muteLabelOn);
+                    item.setTitle?.(muted ? 'Unmute' : 'Mute');
+                }
+            },
+        });
+    }
+
+    if (opts.fullscreen)
+    {
+        items.push({
+            type: 'button',
+            id:   'fs',
+            label: '⛶',
+            title: 'Toggle fullscreen',
+            onClick: toggleFullscreen,
+            hideOnTouch: true,
+        });
+    }
+
+    items.push(...opts.extraItemsAfter);
+
+    items.push({
+        type: 'button',
+        id:   'menu',
+        label: '☰',
+        title: 'Menu',
+        onClick: () =>
+        {
+            const top = getTopMenu();
+            // Title is on top — leave it up (no useful exit). Games that
+            // genuinely want to dismiss the title set titleDismissable.
+            if (top && top.id === opts.titleMenuId && !opts.titleDismissable)
+                return;
+            if (top)
+            {
+                clearSubmenuStack();
+                hideAllMenus();
+            }
+            else
+            {
+                showMenu(opts.pauseMenuId);
+            }
+        },
+    });
+
+    const toolbar = createToolbar({
+        id:        opts.id,
+        anchor:    opts.anchor,
+        direction: opts.direction,
+        items,
+    });
+    toolbar.show();
+
+    // Gray the hamburger whenever the title menu is on top (and not
+    // dismissable). Keeps the button visible so the bar layout doesn't
+    // shift, but blocks clicks so the player can't dismiss the title.
+    function updateHamburgerGrayed()
+    {
+        const item = toolbar.getItem('menu');
+        if (!item) return;
+        const top = getTopMenu();
+        const grayed = top && top.id === opts.titleMenuId && !opts.titleDismissable;
+        item.setDisabled(!!grayed);
+    }
+    _addInternalVisibilityListener(updateHamburgerGrayed);
+    updateHamburgerGrayed();
+
+    return toolbar;
 }
 
 // ============================================================================
@@ -846,6 +1006,10 @@ function playMenuSound(name)
 // miss the internal dialog menus entirely).
 let menuVisibilityCallback = null;
 function setMenuVisibilityCallback(cb) { menuVisibilityCallback = cb || null; }
+// Internal listeners — used by built-in features (e.g. installDefaultToolbar)
+// that need to react to menu changes without stomping the user's callback.
+const _internalVisibilityListeners = [];
+function _addInternalVisibilityListener(fn) { _internalVisibilityListeners.push(fn); }
 function fireMenuVisibility()
 {
     const v = isMenuVisible();
@@ -862,6 +1026,7 @@ function fireMenuVisibility()
     if (!v && typeof inputClearKey === 'function')
         for (let b = 0; b < 3; b++) inputClearKey(b, 0, true, true, true);
     if (menuVisibilityCallback) menuVisibilityCallback(v);
+    for (const fn of _internalVisibilityListeners) fn(v);
 }
 
 // Currently arrow/d-pad-selected element. Independent of DOM focus — DOM
@@ -1126,6 +1291,10 @@ button.ljs-grid-cell { cursor: pointer; }
     .ljs-menu-toolbar button:hover { background: rgba(255,255,255,0.15); }
 }
 .ljs-menu-toolbar button.toolbar-toggle-off { opacity: 0.4; }
+.ljs-menu-toolbar button:disabled { opacity: 0.35; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+    .ljs-menu-toolbar button:disabled:hover { background: transparent; }
+}
 
 /* Toast: corner-anchored (position option picks which corner), slides in
    from the nearest horizontal edge. Pointer-events disabled so toasts
@@ -2184,6 +2353,7 @@ function buildToolbarButton(item)
     const handle = {
         type: 'button',
         setLabel(t)    { labelEl.textContent = t; },
+        setTitle(t)    { el.title = t || ''; },
         setValue()     {},
         getValue()     { return undefined; },
         setDisabled(d) { el.disabled = !!d; },
@@ -2214,6 +2384,7 @@ function buildToolbarToggle(item)
     const handle = {
         type: 'toggle',
         setLabel(t)    { labelEl.textContent = t; },
+        setTitle(t)    { el.title = t || ''; },
         setValue(v)    { value = !!v; render(); },
         getValue()     { return value; },
         setDisabled(d) { el.disabled = !!d; },

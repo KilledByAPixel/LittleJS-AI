@@ -749,18 +749,7 @@ async function gameInit() {
     });
 
     // ---- HUD toolbar ----
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
-            { type: 'button', label: '⛶', title: 'Fullscreen', hideOnTouch: true, onClick: toggleFullscreen },
-            { type: 'button', label: '☰', title: 'Menu', onClick: () => {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 
     // ---- initial state ----
     // Build a starting world so the title screen has a moving backdrop.

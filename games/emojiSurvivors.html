@@ -1798,8 +1798,6 @@ function startRun(hero)
 
     isPlaying = true;
     hideAllMenus();
-    const hud = getToolbar('hud');
-    if (hud) hud.show();
 }
 
 // AI auto-player — toggle with the T key. Useful for balance testing.
@@ -2213,24 +2211,9 @@ async function gameInit()
         ],
     });
 
-    // HUD toolbar — top-right corner. Pause button + fullscreen, hidden
-    // outside of an active run via setPlaying / show/hide on startRun.
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
-            {id: 'pause',
-                label: '☰',
-                title: 'Menu (Esc)',
-                onClick: () => { if (isPlaying) showMenu('pause'); }},
-            {id: 'fullscreen',
-                label: '⛶',
-                title: 'Fullscreen',
-                onClick: toggleFullscreen,
-                hideOnTouch: true},
-        ],
-    });
+    // HUD toolbar — top-right corner. Always visible; the hamburger grays
+    // out when the title menu is on top.
+    installDefaultToolbar();
 
     tweakEngineDefaults();
     tweakDivider('Emoji Survivors');
@@ -2419,8 +2402,6 @@ function goToTitle()
     gameOverFrameCount = 0;
     elapsedTime = 0;
     isPlaying = false;
-    const hud = getToolbar('hud');
-    if (hud) hud.hide();
 
     // Reset the title backdrop to the default wizard hero.
     currentHero = HEROES[0];

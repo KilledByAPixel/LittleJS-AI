@@ -48,8 +48,6 @@ let slowMoT;         // real-time seconds remaining of slow-mo
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 let sfxShoot, sfxPeg, sfxOrange, sfxPower, sfxBucket, sfxLose, sfxWin;
@@ -263,26 +261,7 @@ function buildMenus()
         ],
     });
 
-    createToolbar({
-        id:        'hud',
-        anchor:    'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen',
-                hideOnTouch: true, onClick: toggleFullscreen},
-            {type:'button', id:'menu', label:'☰', title:'Menu',
-                onClick: () => {
-                    if (isMenuVisible())
-                    {
-                        clearSubmenuStack();
-                        hideAllMenus();
-                    }
-                    else showMenu('pause');
-                }},
-        ],
-    });
-    // Toolbar is only meaningful during gameplay
-    getToolbar('hud').hide();
+    installDefaultToolbar();
 }
 
 function showEndDialog()

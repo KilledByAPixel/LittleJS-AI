@@ -667,8 +667,6 @@ let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWall
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 // Pick a random walkable (floor) tile within `radius` cells of `center`.
@@ -892,18 +890,8 @@ async function gameInit()
         ],
     });
 
-    // ----- HUD toolbar (gameplay only) -----
-    createToolbar({
-        id: 'hud', anchor: 'top-right', direction: 'horizontal',
-        items: [
-            {type: 'button', id: 'fs', label: '⛶', title: 'Fullscreen', onClick: toggleFullscreen, hideOnTouch: true},
-            {type: 'button', id: 'menu', label: '☰', title: 'Menu', onClick: () =>
-            {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    // ----- HUD toolbar -----
+    installDefaultToolbar();
 
     showMenu('title');
 }

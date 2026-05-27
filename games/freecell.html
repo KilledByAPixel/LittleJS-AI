@@ -423,8 +423,6 @@ let stateRedo = [];
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 async function gameInit()
@@ -545,26 +543,17 @@ async function gameInit()
     });
 
     // ----- HUD toolbar -----
-    createToolbar({
-        id:        'hud',
-        anchor:    'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'undo',   label:'↶', title:'Undo (Z)',          onClick: undoState},
-            {type:'button', id:'redo',   label:'↷', title:'Redo (Y)',          onClick: redoState},
-            {type:'button', id:'new',    label:'⟳', title:'New game',          onClick: () =>
+    // Extra game-specific buttons (undo / redo / new) live before the
+    // default mute / fullscreen / hamburger trio.
+    installDefaultToolbar({
+        extraItemsBefore: [
+            {type:'button', id:'undo', label:'↶', title:'Undo (Z)', onClick: undoState},
+            {type:'button', id:'redo', label:'↷', title:'Redo (Y)', onClick: redoState},
+            {type:'button', id:'new',  label:'⟳', title:'New game', onClick: () =>
                 showConfirmDialog({
                     message: 'Abandon this game and start a new one?',
                     onYes: () => newGame(),
                 })},
-            {type:'button', id:'menu',   label:'☰', title:'Menu',              onClick: () =>
-            {
-                // ☰ toggles between gameplay and the pause-menu flow.
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else                  showMenu('pause');
-            }},
-            {type:'button', id:'fs',     label:'⛶', title:'Toggle fullscreen',  hideOnTouch: true,
-                onClick: toggleFullscreen},
         ],
     });
 

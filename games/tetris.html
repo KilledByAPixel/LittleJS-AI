@@ -1579,24 +1579,7 @@ function buildMenus()
         ],
     });
 
-    createToolbar({
-        id:'hud',
-        anchor:'top-right',
-        direction:'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else showMenu('pause');
-            }},
-        ],
-    });
-    getToolbar('hud')?.hide();
+    installDefaultToolbar();
 
     // Show the title menu immediately — no click-to-reveal step.
     showMenu('title');
@@ -1618,7 +1601,6 @@ function quitToTitle()
     gameState = 'menu';
     applyCanvasSize();
     spawnMenuBackground();
-    getToolbar('hud')?.hide();
     if (typeof showMenu === 'function') showMenu('title');
 }
 
@@ -1713,7 +1695,6 @@ function startGame(mode)
     // Hide menus and the title attract field
     if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
     if (typeof hideAllMenus === 'function') hideAllMenus();
-    getToolbar('hud')?.show();
 
     // Canvas adapts to game mode + orientation (single+portrait = narrow board)
     applyCanvasSize();

@@ -351,12 +351,9 @@ function resetGame()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Set isPlaying & sync HUD visibility.
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -481,24 +478,7 @@ async function gameInit()
     });
 
     // ---------- HUD toolbar ----------
-    createToolbar({
-        id:        'hud',
-        anchor:    'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen',
-                onClick: toggleFullscreen, hideOnTouch: true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 
     setPlaying(false);
     showMenu('title');

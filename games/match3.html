@@ -232,7 +232,7 @@ async function gameInit()
         // is still gated by browser policy until the first user interaction.
         revealOnClick: false,
         onShow: () => getMenu('title').getItem('bestLabel').setLabel('Best: ' + bestScore),
-        onPlay: () => { gameReset(); isPlaying = true; getToolbar('hud')?.show(); },
+        onPlay: () => { gameReset(); isPlaying = true; },
     });
 
     createMenu({
@@ -278,7 +278,6 @@ async function gameInit()
                         clearSubmenuStack();
                         hideAllMenus();
                         isPlaying = false;
-                        getToolbar('hud')?.hide();
                         // Reset before showing title so the menu backdrop
                         // doesn't reveal a half-cleared board mid-cascade.
                         gameReset();
@@ -288,23 +287,7 @@ async function gameInit()
         ],
     });
 
-    createToolbar({
-        id:'hud',
-        anchor:'top-right',
-        direction:'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 
     // No attachClickToReveal — surface the title menu right away.
     showMenu('title');

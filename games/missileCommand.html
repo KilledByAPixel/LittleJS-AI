@@ -1085,7 +1085,6 @@ function startGame()
 {
   newGame();
   isPlaying = true;
-  getToolbar('hud')?.show();
 }
 
 function quitToTitle()
@@ -1094,7 +1093,6 @@ function quitToTitle()
   if (typeof hideAllMenus === 'function') hideAllMenus();
   newGame();
   isPlaying = false;
-  getToolbar('hud')?.hide();
   if (typeof showMenu === 'function') showMenu('title');
 }
 
@@ -1210,24 +1208,7 @@ function buildMenus()
     ],
   });
 
-  createToolbar({
-    id:'hud',
-    anchor:'top-right',
-    direction:'horizontal',
-    items: [
-      {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-      {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-      {
-        if (isMenuVisible())
-        {
-          clearSubmenuStack();
-          hideAllMenus();
-        }
-        else showMenu('pause');
-      }},
-    ],
-  });
-  getToolbar('hud')?.hide();
+  installDefaultToolbar();
 
   // Show the title menu immediately — no click-to-reveal step.
   showMenu('title');

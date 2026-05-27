@@ -641,8 +641,6 @@ function getAim()
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 function startPlay()
@@ -760,20 +758,7 @@ async function gameInit()
     });
 
     // ----- HUD toolbar -----
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
-        ],
-    });
-    getToolbar('hud')?.hide();
+    installDefaultToolbar();
 
     // Rack the table once so the title menu has gameplay behind it instead
     // of a black screen, then surface the title (menus.js pauses physics

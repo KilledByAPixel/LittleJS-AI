@@ -562,7 +562,6 @@ function startGame(diff)
     gameTimer = 0;
     clearSubmenuStack();
     hideAllMenus();
-    getToolbar('hud')?.show();
 }
 
 function quitToTitle()
@@ -578,7 +577,6 @@ function quitToTitle()
     selectedPlanet = null;
     initStarfield();
     explosionEffects.length = 0;
-    getToolbar('hud')?.hide();
     showMenu('title');
 }
 
@@ -991,23 +989,7 @@ function buildMenus()
         ],
     });
 
-    createToolbar({
-        id:'hud',
-        anchor:'top-right',
-        direction:'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else if (isPlaying) showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 }
 
 function gameUpdate()

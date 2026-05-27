@@ -302,7 +302,6 @@ async function gameInit()
         resetGame();
         isPlaying = true;
         hideMenu('title');
-        getToolbar('hud')?.show();
     };
 
     createMenu({
@@ -348,30 +347,13 @@ async function gameInit()
                         clearSubmenuStack();
                         hideAllMenus();
                         isPlaying = false;
-                        getToolbar('hud')?.hide();
                         showMenu('title');
                     },
                 })},
         ],
     });
 
-    createToolbar({
-        id:'hud',
-        anchor:'top-right',
-        direction:'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 
     // open straight to the title menu
     showMenu('title');

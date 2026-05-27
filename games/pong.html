@@ -234,13 +234,11 @@ showEngineVersion = false; // Hide engine version console display
       isPlaying = true;
       clearSubmenuStack();
       hideAllMenus();
-      getToolbar('hud')?.show();
   }
 
   function quitToTitle()
   {
       isPlaying = false;
-      getToolbar('hud')?.hide();
       clearSubmenuStack();
       hideAllMenus();
       showMenu('title');
@@ -274,23 +272,7 @@ showEngineVersion = false; // Hide engine version console display
           ],
       });
 
-      createToolbar({
-          id:'hud',
-          anchor:'top-right',
-          direction:'horizontal',
-          items: [
-              {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-              {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-              {
-                  if (isMenuVisible())
-                  {
-                      clearSubmenuStack();
-                      hideAllMenus();
-                  }
-                  else if (isPlaying) showMenu('pause');
-              }},
-          ],
-      });
+      installDefaultToolbar();
   }
 
   function gameUpdate()

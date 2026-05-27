@@ -1110,8 +1110,6 @@ function refreshDifficultyUI()
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 function startGame(mode)
@@ -1240,18 +1238,9 @@ async function gameInit()
     });
 
     // HUD toolbar
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
+    installDefaultToolbar({
+        extraItemsBefore: [
             {type:'button', id:'undo', label:'↶', title:'Undo last move', onClick: () => undoMove()},
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
         ],
     });
 

@@ -773,15 +773,12 @@ class Player extends EngineObject
 // this, alert dialogs leave paused=false, letting gameUpdate run on the same
 // frame as a menu Esc and re-open pause on top of the surfaced menu.
 
-// HUD toolbar is only meaningful during gameplay. Tracked separately
-// because "in a menu" doesn't tell us whether the game has started yet
-// (title screen is also a menu, but the HUD shouldn't be available there).
+// HUD toolbar is always visible now; isPlaying is still tracked because
+// gameplay code uses it for pause / input gating.
 let isPlaying = false;
 function setPlaying(p)
 {
     isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
 }
 
 async function gameInit()
@@ -959,29 +956,8 @@ async function gameInit()
         ],
     });
 
-    // ----- HUD toolbar (visible only during gameplay; setPlaying drives it) -----
-    createToolbar({
-        id:        'hud',
-        anchor:    'top-right',
-        direction: 'horizontal',
-        items: [
-            // Anchor is top-right so the LAST item sits on the far right —
-            // putting the hamburger (primary action) on the corner under the thumb.
-            {type:'button', id:'fs',    label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu',  label:'☰', title:'Menu', onClick: () =>
-            {
-                // ☰ toggles between gameplay and the pause-menu flow. If any
-                // menu is up (pause itself, or a sub-menu opened from pause),
-                // a press exits all the way back to gameplay.
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    // ----- HUD toolbar (always visible; grays the hamburger over title) -----
+    installDefaultToolbar();
 
     // Show the title menu immediately so the player lands on it instead of
     // a "CLICK TO PLAY" prompt. attachClickToReveal stays as a safety net so

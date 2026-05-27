@@ -1045,7 +1045,6 @@ function startGame()
         humans.push(new Human(rand(0, WORLD_W)));
     player = new Player();
     cameraPos = vec2(player.pos.x, 2);
-    setHudVisible(true);
     buildWave();
 }
 
@@ -1058,7 +1057,6 @@ function doGameOver()
         bestScore = score;
         try { localStorage.setItem('defender.best', bestScore); } catch(e) {}
     }
-    setHudVisible(false);
     showAlertDialog({
         title: 'GAME OVER',
         icon: '💥',
@@ -1106,7 +1104,6 @@ function startAttractMode()
     for (let i = 0; i < 2; i++)
         enemies.push(new Mutant(rand(0, WORLD_W), rand(4, SKY_TOP - 2)));
     cameraPos = vec2(rand(0, WORLD_W), 2);
-    setHudVisible(false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1160,14 +1157,6 @@ function enemyHitsPlayer()
             return;
         }
     }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// HUD toolbar
-function setHudVisible(v)
-{
-    const hud = getToolbar('hud');
-    if (hud) v ? hud.show() : hud.hide();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1271,19 +1260,7 @@ async function gameInit()
         ],
     });
 
-    createToolbar({
-        id: 'hud',
-        anchor: 'top-right',
-        direction: 'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Fullscreen', hideOnTouch: true, onClick: toggleFullscreen},
-            {type:'button', id:'menu', label:'☰', title:'Menu',       onClick: () =>
-            {
-                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
-                else showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 
     // Seed the attract-mode world and surface the title menu
     genStars();
