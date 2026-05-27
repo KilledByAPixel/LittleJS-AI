@@ -1662,12 +1662,25 @@ function drawFliers()
     const p = vec2(f.pos.x, f.pos.y + wobble);
     if (f.type === 'bomber')
     {
-      drawRect(p, vec2(1.4, .35), hsl(.55, .1, .55));
-      drawRect(p, vec2(1.0, .55), hsl(.55, .1, .42));
+      const dir = f.vel.x > 0 ? 1 : -1;
+      const body   = hsl(.55, .1, .55);
+      const accent = hsl(.55, .12, .40);
+      // swept wings — V shape angled back from mid-fuselage
+      drawLine(p.add(vec2(.15 * dir, 0)), p.add(vec2(-.45 * dir,  .60)), .22, accent);
+      drawLine(p.add(vec2(.15 * dir, 0)), p.add(vec2(-.45 * dir, -.60)), .22, accent);
+      // tail fins
+      drawLine(p.add(vec2(-.55 * dir, 0)), p.add(vec2(-.75 * dir,  .28)), .12, accent);
+      drawLine(p.add(vec2(-.55 * dir, 0)), p.add(vec2(-.75 * dir, -.28)), .12, accent);
+      // fuselage
+      drawLine(p.add(vec2(-.60 * dir, 0)), p.add(vec2(.55 * dir, 0)), .28, body);
+      // nose cone
+      drawCircle(p.add(vec2(.65 * dir, 0)), .26, body);
+      // cockpit
+      drawCircle(p.add(vec2(.30 * dir, .02)), .14, hsl(.55, .55, .82));
+      // wing-tip nav lights (aviation red on port / green on starboard)
       const blink = .5 + .5 * Math.sin(time * 8 + f.phase);
-      drawCircle(p.add(vec2(-.7, 0)), .12, hsl(0, 1, .6, .6 + .4 * blink));
-      drawCircle(p.add(vec2( .7, 0)), .12, hsl(.5, 1, .6, .6 + .4 * blink));
-      drawCircle(p.add(vec2(f.vel.x > 0 ? .25 : -.25, .08)), .12, hsl(.55, .4, .8));
+      drawCircle(p.add(vec2(-.45 * dir,  .60)), .11, hsl(0,   1, .6, .55 + .45 * blink));
+      drawCircle(p.add(vec2(-.45 * dir, -.60)), .11, hsl(.33, 1, .6, .55 + .45 * blink));
     }
     else
     {
