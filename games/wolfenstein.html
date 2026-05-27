@@ -137,13 +137,13 @@ let enemies = [];
 
 ///////////////////////////////////////////////////////////////////////////////
 // RENDER CONSTANTS
-const FOV = 1.0;                       // horizontal field of view, radians
+const FOV = 1.3;                       // horizontal field of view, radians (~75°)
 const SLICE_W = 15;                    // slice rect half-width in screen world units
 const SLICE_STEP = 0.1;
 const MAX_DIST = 30;
 const ANGLE_PER_X = (FOV / 2) / SLICE_W;
 const SCREEN_X_PER_RAD = SLICE_W / (FOV / 2);
-const PROJ = 25;                       // 1wu world height → PROJ/perpDist screen units (matches the wall projection in the source sketch)
+const PROJ = 20;                       // 1wu world height → PROJ/perpDist screen units. Lower = walls take up less vertical screen at a given distance (less claustrophobic)
 
 // Tile sampler — mutated per slice to point at a 2-pixel column of a wall tile
 let wallSliceInfo;
