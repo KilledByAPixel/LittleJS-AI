@@ -51,6 +51,8 @@ let bases = [];
 let enemyMissiles = [];
 let playerMissiles = [];
 let explosions = [];
+let fliers = [];
+let flierCooldown = 5;
 
 let score = 0;
 let bestScore = 0;
@@ -405,6 +407,7 @@ function resetWaveState(newWaveIndex)
     if (b.alive)
       b.ammo = Math.min(BASE_AMMO_MAX, b.ammo + 5);
 
+  flierCooldown = 5;
   sWave && sWave.play();
 }
 
@@ -414,6 +417,8 @@ function newGame()
   playerMissiles.length = 0;
   explosions.length = 0;
   particles.length = 0;
+  fliers.length = 0;
+  flierCooldown = 5;
   shakeTime = 0; shakeMag = 0; shakeTimeMax = 1;
   tally = null;
 
@@ -477,6 +482,75 @@ function mirvChance(wave)
 {
   if (wave < 3) return 0;
   return wave >= 7 ? .35 : .25;
+}
+
+function spawnFlier()
+{
+  const goingRight = rand() < .5;
+  const y = levelSize.y * .7 + rand(-1.5, 1.5);
+  const startX = goingRight ? -2 : levelSize.x + 2;
+  const speed = (goingRight ? 1 : -1) * rand(3.5, 5);
+  const dropCount = 1 + Math.min(2, (waveIndex / 5) | 0);
+  const dropTimes = [];
+  for (let i = 0; i < dropCount; i++)
+    dropTimes.push(.2 + (.6 * (i + .5) / dropCount) + rand(-.05, .05));
+
+  fliers.push({
+    pos: vec2(startX, y),
+    vel: vec2(speed, 0),
+    type: rand() < .5 ? 'bomber' : 'satellite',
+    alive: true,
+    t: 0,
+    duration: (levelSize.x + 4) / Math.abs(speed),
+    dropTimes,
+    phase: rand() * 100,
+  });
+}
+
+function updateFliers()
+{
+  if (!betweenWaves && !tally && waveIndex >= 3 && fliers.length === 0)
+  {
+    flierCooldown -= timeDelta;
+    if (flierCooldown <= 0)
+    {
+      spawnFlier();
+      flierCooldown = Math.max(8, 18 - waveIndex);
+    }
+  }
+
+  for (const f of fliers)
+  {
+    if (!f.alive) continue;
+    f.pos = f.pos.add(f.vel.scale(timeDelta));
+    const prevT = f.t;
+    f.t += timeDelta / f.duration;
+
+    for (const dt of f.dropTimes)
+      if (prevT < dt && f.t >= dt)
+      {
+        const start = f.pos.copy();
+        const target = pickEnemyTarget();
+        const delta = target.subtract(start);
+        const len = Math.max(.001, delta.length());
+        const speed = enemySpeedBase + (waveIndex-1)*.35 + rand(-.2,.2);
+        enemyMissiles.push({
+          start, target,
+          pos: start.copy(),
+          t: 0,
+          speed, len,
+          alive: true,
+          w: .07,
+          smokeT: 0,
+          mirv: rand() < mirvChance(waveIndex),
+        });
+      }
+
+    if (f.t >= 1)
+      f.alive = false;
+  }
+
+  fliers = fliers.filter(f => f.alive);
 }
 
 function spawnEnemyMissile()
@@ -690,6 +764,19 @@ function checkExplosionHits()
         score += 25 * waveMultiplier(waveIndex);
         checkBonusCities();
         emitEnemyKillBurst(m.pos);
+        sEnemyHit && sEnemyHit.play();
+      }
+    }
+
+    for (const f of fliers)
+    {
+      if (!f.alive) continue;
+      if (f.pos.distance(e.pos) <= e.r + .4)
+      {
+        f.alive = false;
+        score += 100 * waveMultiplier(waveIndex);
+        checkBonusCities();
+        emitEnemyKillBurst(f.pos);
         sEnemyHit && sEnemyHit.play();
       }
     }
@@ -1094,6 +1181,7 @@ function gameUpdate()
 
   updateExplosions();
   checkExplosionHits();
+  updateFliers();
 
   // filter AFTER checkExplosionHits so missiles killed by an explosion
   // don't get one final draw with their trail cutting through it
@@ -1408,6 +1496,33 @@ function drawMissiles()
   }
 }
 
+function drawFliers()
+{
+  for (const f of fliers)
+  {
+    const wobble = Math.sin(time * 3 + f.phase) * .08;
+    const p = vec2(f.pos.x, f.pos.y + wobble);
+    if (f.type === 'bomber')
+    {
+      drawRect(p, vec2(1.4, .35), hsl(.55, .1, .55));
+      drawRect(p, vec2(1.0, .55), hsl(.55, .1, .42));
+      const blink = .5 + .5 * Math.sin(time * 8 + f.phase);
+      drawCircle(p.add(vec2(-.7, 0)), .12, hsl(0, 1, .6, .6 + .4 * blink));
+      drawCircle(p.add(vec2( .7, 0)), .12, hsl(.5, 1, .6, .6 + .4 * blink));
+      drawCircle(p.add(vec2(f.vel.x > 0 ? .25 : -.25, .08)), .12, hsl(.55, .4, .8));
+    }
+    else
+    {
+      drawCircle(p, .55, hsl(.13, .15, .7));
+      drawCircle(p, .35, hsl(.55, .25, .55));
+      drawLine(p.add(vec2(-.4, .25)), p.add(vec2(-.7, .55)), .05, hsl(.55, .1, .6));
+      drawLine(p.add(vec2( .4, .25)), p.add(vec2( .7, .55)), .05, hsl(.55, .1, .6));
+      const blink = .5 + .5 * Math.sin(time * 6 + f.phase);
+      drawCircle(p, .1, hsl(.13, 1, .8, .5 + .5 * blink));
+    }
+  }
+}
+
 function drawExplosions()
 {
   if (!explosions.length) return;
@@ -1469,6 +1584,7 @@ function gameRender()
   drawGround();
   drawInstallations();
   drawMissiles();
+  drawFliers();
   drawExplosions();
   drawParticles();
   if (isPlaying)
