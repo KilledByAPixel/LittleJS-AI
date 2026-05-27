@@ -330,6 +330,7 @@ function startNewRun()
     resetGame();
     isPlaying = true;
     hideAllMenus();
+    getToolbar('hud')?.show();
 }
 
 function buildMenus()
@@ -394,6 +395,7 @@ function buildMenus()
                         clearSubmenuStack();
                         hideAllMenus();
                         isPlaying = false;
+                        getToolbar('hud')?.hide();
                         showMenu('title');
                     },
                 });
@@ -421,7 +423,6 @@ function buildMenus()
             }},
         ],
     });
-    getToolbar('hud')?.show();
 }
 
 function showGameOverMenu()
@@ -446,6 +447,7 @@ function showGameOverMenu()
                 clearSubmenuStack();
                 hideAllMenus();
                 isPlaying = false;
+                getToolbar('hud')?.hide();
                 showMenu('title');
             }},
         ],

@@ -2338,6 +2338,7 @@ function quitToTitle()
     matchState = 'title';
     currentMatch = null;
     p1Board = null; p2Board = null;
+    getToolbar('hud')?.hide();
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -2475,7 +2476,6 @@ function setupMenus()
             }},
         ],
     });
-    getToolbar('hud')?.show();
 
     setMenuVisibilityCallback(v => paused = v);
 }
@@ -2488,6 +2488,7 @@ function startMatchFromSelection()
     matchState = 'playing';
     clearSubmenuStack();
     hideAllMenus();
+    getToolbar('hud')?.show();
 }
 
 function checkRoundOver()

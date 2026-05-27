@@ -562,6 +562,7 @@ function startGame(diff)
     gameTimer = 0;
     clearSubmenuStack();
     hideAllMenus();
+    getToolbar('hud')?.show();
 }
 
 function quitToTitle()
@@ -577,6 +578,7 @@ function quitToTitle()
     selectedPlanet = null;
     initStarfield();
     explosionEffects.length = 0;
+    getToolbar('hud')?.hide();
     showMenu('title');
 }
 
@@ -1006,7 +1008,6 @@ function buildMenus()
             }},
         ],
     });
-    getToolbar('hud')?.show();
 }
 
 function gameUpdate()

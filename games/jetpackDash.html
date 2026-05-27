@@ -967,7 +967,7 @@ async function gameInit()
         items: [
             // Anchor is top-right so the LAST item sits on the far right —
             // putting the hamburger (primary action) on the corner under the thumb.
-            {type:'button', id:'fs',    label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen},
+            {type:'button', id:'fs',    label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
             {type:'button', id:'menu',  label:'☰', title:'Menu', onClick: () =>
             {
                 // ☰ toggles between gameplay and the pause-menu flow. If any

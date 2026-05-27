@@ -613,11 +613,13 @@ function startNewGame()
 {
     resetGame();
     isPlaying = true;
+    getToolbar('hud')?.show();
 }
 
 function backToTitle()
 {
     isPlaying = false;
+    getToolbar('hud')?.hide();
     clearSubmenuStack();
     hideAllMenus();
     // Reset for attract-mode rendering — a frozen world, not a black canvas.
@@ -735,7 +737,6 @@ async function gameInit()
             }},
         ],
     });
-    getToolbar('hud')?.show();
 
     // Build the attract-mode backdrop world (frozen bricks/paddle/ball
     // while the title is up), then show the title menu over it.

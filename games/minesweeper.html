@@ -302,6 +302,7 @@ async function gameInit()
         resetGame();
         isPlaying = true;
         hideMenu('title');
+        getToolbar('hud')?.show();
     };
 
     createMenu({
@@ -347,6 +348,7 @@ async function gameInit()
                         clearSubmenuStack();
                         hideAllMenus();
                         isPlaying = false;
+                        getToolbar('hud')?.hide();
                         showMenu('title');
                     },
                 })},
@@ -370,7 +372,6 @@ async function gameInit()
             }},
         ],
     });
-    getToolbar('hud')?.show();
 
     // open straight to the title menu
     showMenu('title');

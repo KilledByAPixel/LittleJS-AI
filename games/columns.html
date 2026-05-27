@@ -613,7 +613,12 @@
  ///////////////////////////////////////////////////////////////////////////////
  // MENU UI (menus.js)
 
- function setPlaying(p) { isPlaying = p; }
+ function setPlaying(p)
+ {
+     isPlaying = p;
+     if (p) getToolbar('hud')?.show();
+     else getToolbar('hud')?.hide();
+ }
 
  function buildMenus()
  {
@@ -715,7 +720,6 @@
              }},
          ],
      });
-     getToolbar('hud')?.show();
  }
 
  ///////////////////////////////////////////////////////////////////////////////
