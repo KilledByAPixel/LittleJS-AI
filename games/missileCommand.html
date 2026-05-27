@@ -683,7 +683,7 @@ function updateAI()
   aiCooldown -= timeDelta;
   if (aiCooldown > 0) return;
 
-  const horizon = .5;
+  const horizon = .8;
   const threats = [];
 
   for (const m of enemyMissiles)
@@ -703,6 +703,7 @@ function updateAI()
   const inFlight = playerMissiles.filter(p => p.alive).map(p => p.target);
 
   const clusterRadius = explosionMaxRadius * .9;
+  const coveredRadius = explosionMaxRadius * .9;
   let best = null;
   for (const seed of threats)
   {
@@ -728,7 +729,7 @@ function updateAI()
 
     let covered = false;
     for (const tgt of inFlight)
-      if (tgt.distance(centroid) < 1.5) { covered = true; break; }
+      if (tgt.distance(centroid) < coveredRadius) { covered = true; break; }
     if (covered) continue;
 
     if (!best ||
@@ -738,8 +739,14 @@ function updateAI()
   }
   if (!best) return;
 
+  if (best.size === 1 && best.minAlt > levelSize.y * .55)
+  {
+    aiCooldown = .15;
+    return;
+  }
+
   if (launchPlayerMissile(best.centroid))
-    aiCooldown = .10;
+    aiCooldown = .35;
 }
 
 function addExplosion(pos, friendly)
