@@ -796,10 +796,11 @@ const AI_VS_AI_DELAY = 0.5;
 
 async function gameInit()
 {
+    saveDataInit('othello');
     setCanvasFixedSize(vec2(720, 900));
     cameraPos = vec2(0, 0);
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('othello.difficulty') || 'hard';
+    difficulty = getSaveData().difficulty ?? 'hard';
     setSoundVolume(.8);
 
     // One callback drives `paused` for every menu (including dialogs).
@@ -829,7 +830,7 @@ async function gameInit()
 
     // ----- options menu -----
     createOptionsMenu({
-        persistKey: 'othello.volume',
+        persistKey: 'volume',
         extraItems: [
             {type:'separator'},
             {type:'label', text:'DIFFICULTY'},
@@ -874,7 +875,7 @@ async function gameInit()
 function setDifficulty(d)
 {
     difficulty = d;
-    localStorage.setItem('othello.difficulty', d);
+    saveData({difficulty: d});
     refreshDifficultyUI();
 }
 
