@@ -186,6 +186,7 @@ function paintPlus(ctx)
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('match3');
     // Atlas of 7 gem icons. Each is white-on-black so drawTile's tint param
     // colors them at runtime, letting one atlas serve all 7 gem types.
     initDrawToTexture();
@@ -228,7 +229,7 @@ async function gameInit()
         onPlay: () => { gameReset(); isPlaying = true; },
     });
 
-    createOptionsMenu({persistKey: 'match3.volume'});
+    createOptionsMenu();
 
     createMenu({
         id: 'about',
