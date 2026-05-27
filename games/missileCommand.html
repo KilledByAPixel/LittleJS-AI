@@ -495,7 +495,6 @@ function spawnEnemyMissile()
     w: .07,
     smokeT: 0,
     mirv: rand() < mirvChance(waveIndex),
-    isChild: false,
   });
 }
 
@@ -522,7 +521,6 @@ function maybeSplitMirv(m)
       w: .07,
       smokeT: 0,
       mirv: false,
-      isChild: true,
     });
   }
   m.alive = false;
