@@ -2416,22 +2416,33 @@ function buildButton(item)
 function persistedRead(key, defaultValue, kind)
 {
     if (!key) return defaultValue;
-    try
+    if (_saveName === null)
     {
-        const raw = localStorage.getItem(key);
-        if (raw === null) return defaultValue;
-        if (kind === 'number')  return Number.isFinite(+raw) ? +raw : defaultValue;
-        if (kind === 'boolean') return raw === 'true';
-        return raw;
+        _warnPreInitOnce('persistedRead:' + key,
+            'persist:"' + key + '" read before saveDataInit(name); using default');
+        return defaultValue;
     }
-    catch (e) { return defaultValue; }
+    const raw = _gameSaveData.options && _gameSaveData.options[key];
+    if (raw === undefined) return defaultValue;
+    if (kind === 'number')
+        return Number.isFinite(+raw) ? +raw : defaultValue;
+    if (kind === 'boolean')
+        return raw === true || raw === 'true';   // tolerate legacy string form
+    return raw;
 }
 
 function persistedWrite(key, value)
 {
     if (!key) return;
-    try { localStorage.setItem(key, String(value)); }
-    catch (e) { /* quota / privacy / disabled storage — ignore */ }
+    if (_saveName === null)
+    {
+        _warnPreInitOnce('persistedWrite:' + key,
+            'persist:"' + key + '" write before saveDataInit(name); ignoring');
+        return;
+    }
+    if (!_gameSaveData.options) _gameSaveData.options = {};
+    _gameSaveData.options[key] = value;
+    writeSaveData(_saveName, _gameSaveData);
 }
 
 function buildToggle(item)
