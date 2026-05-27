@@ -586,6 +586,10 @@ async function gameInit()
     sfxStart = new SoundGenerator({frequency: 440, release: .15, slide: .3, volume: .4});
 
     buildMenus();
+    // Set up the world so the title screen shows the actual start state
+    // (skier at the top, gates/obstacles laid out), frozen behind the
+    // menu via installAutoPause.
+    resetGame();
     showMenu('title');
 }
 
@@ -600,7 +604,9 @@ function startGame()
 function quitToTitle()
 {
     isPlaying = false;
-    gameStarted = false;
+    // Reset back to fresh start state so the title backdrop shows what
+    // the run looks like at the top of the slope, frozen behind the menu.
+    resetGame();
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -682,8 +688,8 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (!gameStarted)
-        return;
+    // No HUD while the title (or any menu) is up — backdrop sits frozen.
+    if (!isPlaying) return;
 
     // HUD - top left
     const speed = player.vel.length();

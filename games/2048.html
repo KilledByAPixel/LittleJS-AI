@@ -196,8 +196,9 @@ function newGame()
         for (let x = 0; x < GRID; ++x) grid[y][x] = null;
     }
 
-    addRandomTile();
-    addRandomTile();
+    // Silent on the opening two tiles — startup audio is noise, not feedback.
+    addRandomTile(true);
+    addRandomTile(true);
 }
 
 function boardWorldSize()
@@ -224,7 +225,7 @@ function empties()
     return e;
 }
 
-function addRandomTile()
+function addRandomTile(silent = false)
 {
     const e = empties();
     if (!e.length) return false;
@@ -234,7 +235,7 @@ function addRandomTile()
     t.spawnT = SPAWN_TIME;
     grid[y][x] = t;
     tiles.push(t);
-    sSpawn.play();
+    if (!silent) sSpawn.play();
     return true;
 }
 

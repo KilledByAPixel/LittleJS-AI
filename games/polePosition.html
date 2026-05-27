@@ -131,8 +131,6 @@ function resetGame()
             colorH: rand(),
         });
     }
-
-    sStart && sStart.play();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -151,6 +149,9 @@ function gameInit()
     proj = new Array(DRAW_DIST+2);
 
     buildMenus();
+    // Set up the world so the title screen shows the actual start state
+    // (road + starting cars), frozen behind the menu via installAutoPause.
+    resetGame();
     showMenu('title');
 }
 
@@ -158,6 +159,7 @@ function startGame()
 {
     resetGame();
     isPlaying = true;
+    sStart && sStart.play();
     clearSubmenuStack();
     hideAllMenus();
 }
@@ -165,7 +167,9 @@ function startGame()
 function quitToTitle()
 {
     isPlaying = false;
-    state = 'title';
+    // Reset to fresh start state so the title backdrop shows what the
+    // game looks like at the start of a run (paused behind the menu).
+    resetGame();
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -888,7 +892,7 @@ function gameRenderPost()
     const w = mainCanvasSize.x;
     const h = mainCanvasSize.y;
 
-    if (state === 'play')
+    if (state === 'play' && isPlaying)
     {
         const mph = (speed / MAX_SPEED * 230) | 0;
         const t = max(0, timeLeftFrames) / 60;
@@ -897,10 +901,6 @@ function gameRenderPost()
         drawTextScreen(`TIME   ${formatTime(t)}`, vec2(14, 48), 28, hsl(0,0,1), 4, hsl(0,0,0), 'left', 'monospace');
         drawTextScreen(`LAP    ${lap}`, vec2(14, 78), 28, hsl(0,0,1), 4, hsl(0,0,0), 'left', 'monospace');
         drawTextScreen(`SCORE  ${score|0}`, vec2(w-14, 18), 28, hsl(0,0,1), 4, hsl(0,0,0), 'right', 'monospace');
-
-        // small hints
-        drawTextScreen('ARROWS/WASD  = drive', vec2(w-14, h-52), 20, hsl(0,0,1,.85), 3, hsl(0,0,0,.8), 'right', 'monospace');
-        drawTextScreen('Stay on the asphalt!', vec2(w-14, h-28), 20, hsl(0,0,1,.85), 3, hsl(0,0,0,.8), 'right', 'monospace');
     }
     else if (state === 'timeup')
     {
