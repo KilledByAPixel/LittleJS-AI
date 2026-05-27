@@ -56,6 +56,42 @@ function getTrackConfig(track)
     return { kind:'piano', sound:sound_piano, semitone, hue, label };
 }
 
+class UITrackLabel extends UIButton
+{
+    constructor(track)
+    {
+        let pos = vec2(-1, trackCount-1-track);
+        pos = pos.multiply(buttonSize);
+        pos = pos.add(vec2(240, 40)).subtract(mainCanvasSize.scale(.5));
+        super(pos, buttonSize);
+
+        this.track = track;
+        this.cornerRadius = 4;
+        this.shadowColor = CLEAR_BLACK;
+        const cfg = getTrackConfig(track);
+        this.kind = cfg.kind;
+        this.hue = cfg.hue;
+        this.semitone = cfg.semitone;
+        this.builtInSound = cfg.sound;
+        this.text = cfg.label;
+        this.textHeight = 14;
+    }
+    onClick()
+    {
+        if (this.kind === 'piano') this.builtInSound.playNote(this.semitone);
+        else if (this.kind === 'drum') this.builtInSound.play();
+        // 'custom' kind: Task 4 will open the paste modal here
+    }
+    render()
+    {
+        const empty = this.kind === 'custom' && !customSounds[this.track];
+        const sat = empty ? .15 : .6;
+        const lit = empty ? .2 : .3;
+        this.color = this.isActiveObject() ? hsl(this.hue, .8, .5) : hsl(this.hue, sat, lit);
+        super.render();
+    }
+}
+
 class UISequencerButton extends UIButton
 {
     constructor(step, track)
@@ -126,6 +162,9 @@ function gameInit()
     for (let step=stepCount; step--;)
     for (let track=trackCount; track--;)
         new UISequencerButton(step, track);
+
+    for (let track=trackCount; track--;)
+        new UITrackLabel(track);
 
     const playButton = new UIButton(vec2(660,500).subtract(mainCanvasSize.scale(.5)), vec2(180,60), 'PLAY');
     playButton.onClick = ()=>
