@@ -21,35 +21,53 @@ cameraPos = vec2();
 canvasMaxSize = vec2(2048);
 setTileDefaultBleed(0);
 tilesPixelated = false;
+touchGamepadCenterButtonSize = 0;
+
+// Touch gamepad: left-side virtual analog stick (move), right-side face-button
+// area also tracked as an analog stick — perfect for twin-stick / FPS look on
+// mobile. `touchGamepadButtonCount = 1` collapses the face buttons into one
+// pad whose touch position drives gamepadStick(1).
+touchGamepadEnable = true;
+touchGamepadAnalog = true;
+touchGamepadButtonCount = 1;
 
 ///////////////////////////////////////////////////////////////////////////////
 // LEVEL
-// # wall   . floor   P player start   G guard   X exit
+// # wall   . floor   P player start   G ranged guard   M melee enemy   X exit
 // L lamp (decoration)   B barrel (decoration)
-// + health pickup     * ammo pickup
+// + health pickup       * ammo pickup
 const LEVEL_ASCII = [
-    '################',
-    '#G....+.......L#',
-    '#.#####..####..#',
-    '#.#..#...#.B#..#',
-    '#.#.P..*.#G....#',
-    '#.####...####..#',
-    '#......B...+...#',
-    '###.########.###',
-    '#B....#G.L#...B#',
-    '#.....#.*.#B...#',
-    '#.....#.###....#',
-    '#.B.*...#B.....#',
-    '#G......#......#',
-    '#....+..#B.....#',
-    '#L.....*......L#',
-    '########X#######',
+    '########################',
+    '#...G..*..............G#',
+    '#.######.###.######....#',
+    '#.#....#.#.#......#..M.#',
+    '#.#P.....#.#.+.B..#....#',
+    '#.#....#.#.#......#....#',
+    '#.######.#.#.######....#',
+    '#........#.#...........#',
+    '#.######.#.#.######...##',
+    '#......#.#.#.#G.M.#....#',
+    '#.B....#.#.#......#.+..#',
+    '#......#.#.#......#....#',
+    '#......#####......######',
+    '#......................#',
+    '#.####.####....####.####',
+    '#.#..#.#..#....#L.#.#G.#',
+    '#.#..#.#..#.+..#..#.#..#',
+    '#.####.####....####.####',
+    '#......................#',
+    '###.######.######.######',
+    '#.......G..*...........#',
+    '#L....B......+......G..#',
+    '#......................X',
+    '########################',
 ];
-const LEVEL_W = 16, LEVEL_H = 16;
+const LEVEL_W = LEVEL_ASCII[0].length;
+const LEVEL_H = LEVEL_ASCII.length;
 let levelGrid;             // levelGrid[y][x] -> '#' wall, 'X' exit, 'L'/'B' decoration, '.' floor
 let exitPos = null;        // center of the X cell, used for the win-trigger distance check
 let playerStartPos = vec2(2, 2);
-let enemySpawns = [];
+let enemySpawns = [];      // [{pos, kind:'guard'|'melee'}]
 let decorations = [];      // [{pos, kind:'lamp'|'barrel'}]
 let pickups = [];          // [{pos, kind:'health'|'ammo'}]
 
@@ -82,7 +100,8 @@ function parseLevel(rows)
             {
                 levelGrid[wy][x] = '.';
                 if      (c === 'P') playerStartPos = center;
-                else if (c === 'G') enemySpawns.push(center);
+                else if (c === 'G') enemySpawns.push({pos: center, kind: 'guard'});
+                else if (c === 'M') enemySpawns.push({pos: center, kind: 'melee'});
                 else if (c === 'L') { levelGrid[wy][x] = 'L'; decorations.push({pos: center, kind: 'lamp'}); }
                 else if (c === 'B') { levelGrid[wy][x] = 'B'; decorations.push({pos: center, kind: 'barrel'}); }
                 else if (c === '+') pickups.push({pos: center, kind: 'health'});
@@ -155,7 +174,7 @@ function tileCellPx(idx)
 }
 
 let guardIdleTile, guardShootTile, guardDeadTile, gunIdleTile, gunFireTile, exitTile;
-let metalDoorTile;
+let metalDoorTile, meleeTile;
 let lampTile, barrelTile, sparkTile, healthTile, ammoTile;
 
 // Short-lived puffs spawned at wall impact points. Updated in gameUpdate,
@@ -291,6 +310,63 @@ function paintGuard(ctx, firing)
 }
 function paintGuardIdle(ctx)  { paintGuard(ctx, false); }
 function paintGuardShoot(ctx) { paintGuard(ctx, true); }
+
+function paintMelee(ctx)
+{
+    // shirtless mutant, arms up, snarling
+    // legs
+    ctx.fillStyle = '#503020';
+    ctx.fillRect(170, 420, 70, 60);
+    ctx.fillRect(260, 420, 70, 60);
+    // torso (fleshy)
+    ctx.fillStyle = '#b88060';
+    ctx.fillRect(160, 240, 180, 200);
+    // chest shading
+    ctx.fillStyle = '#a06848';
+    ctx.fillRect(160, 240, 30, 200);
+    ctx.fillRect(310, 240, 30, 200);
+    // raised arms
+    ctx.fillStyle = '#b88060';
+    ctx.fillRect(80, 210, 70, 130);    // left upper arm
+    ctx.fillRect(350, 210, 70, 130);   // right upper arm
+    // fists
+    ctx.fillStyle = '#8a5838';
+    ctx.fillRect(80, 175, 70, 45);
+    ctx.fillRect(350, 175, 70, 45);
+    // head (bald, large)
+    ctx.fillStyle = '#c08868';
+    ctx.beginPath();
+    ctx.arc(250, 160, 78, 0, Math.PI * 2);
+    ctx.fill();
+    // skin shading on head
+    ctx.fillStyle = 'rgba(0,0,0,.15)';
+    ctx.beginPath();
+    ctx.arc(280, 180, 50, 0, Math.PI * 2);
+    ctx.fill();
+    // glowing red eyes — fill + small halo
+    for (const ex of [222, 278])
+    {
+        const g = ctx.createRadialGradient(ex, 152, 2, ex, 152, 16);
+        g.addColorStop(0,  '#ff8080');
+        g.addColorStop(.4, '#d01010');
+        g.addColorStop(1,  'rgba(120,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(ex, 152, 16, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    // snarling mouth, white teeth
+    ctx.fillStyle = '#300';
+    ctx.fillRect(216, 192, 68, 22);
+    ctx.fillStyle = '#f4ecd0';
+    for (let i = 0; i < 5; ++i)
+        ctx.fillRect(220 + i * 13, 195, 8, 16);
+    // blood smears on chest
+    ctx.fillStyle = '#7a0808';
+    ctx.fillRect(228, 260, 16, 60);
+    ctx.fillRect(244, 295, 12, 80);
+    ctx.fillRect(260, 280, 10, 40);
+}
 function paintGuardDead(ctx)
 {
     // pool — at the very bottom of the frame so feet/blood land on the floor when billboarded
@@ -621,24 +697,25 @@ function resetWorld()
     isAlive = true;
     kills = 0;
     hitFlashT = 0; muzzleFlashT = 0; deathFlashT = 0;
-    enemies = enemySpawns.map(p => ({
-        pos:           p.copy(),
-        homePos:       p.copy(),                     // patrol anchor
+    enemies = enemySpawns.map(spawn => ({
+        pos:           spawn.pos.copy(),
+        homePos:       spawn.pos.copy(),
         hp:            2,
         alive:         true,
         seenPlayer:    false,
-        state:         'idle',                       // 'idle' | 'shoot'
-        windup:        0,                            // seconds until shot resolves while in 'shoot'
+        state:         'idle',                       // 'idle' | 'shoot' (only used by ranged guards)
+        windup:        0,
         shootCooldown: 0.5 + rand(0, 1),
-        // Pathfinding / AI state
-        kind:          rand() < .5 ? 'patroller' : 'sentry',
-        path:          [],                           // array of world-space waypoints
+        // Behavioral kind: 'melee' = fast charger; otherwise random sentry/patroller (ranged)
+        kind:          spawn.kind === 'melee' ? 'melee'
+                       : (rand() < .5 ? 'patroller' : 'sentry'),
+        path:          [],
         pathIndex:     0,
         repathTimer:   0,
-        searchTime:    0,                            // time spent searching after losing LOS
+        searchTime:    0,
         lastKnownPlayerPos: null,
         patrolTarget:  null,
-        patrolPauseTimer: rand(0, 2),                // stagger initial patrol starts
+        patrolPauseTimer: rand(0, 2),
     }));
 }
 
@@ -666,6 +743,7 @@ async function gameInit()
     drawToTexture(0, paintBrick,       'dark red brick wall');
     drawToTexture(1, paintStone,       'mossy gray stone block wall');
     drawToTexture(2, paintTech,        'dark navy riveted metal panel wall with red status light');
+    meleeTile      = drawToTexture(3, paintMelee,      'shirtless bald mutant with raised fists, glowing red eyes, snarling teeth, blood smears');
     guardIdleTile  = drawToTexture(4, paintGuardIdle,  'cartoon guard sprite, helmet, holding pistol pointed down');
     guardShootTile = drawToTexture(5, paintGuardShoot, 'cartoon guard sprite firing pistol with muzzle flash');
     guardDeadTile  = drawToTexture(6, paintGuardDead,  'sprawled fallen guard with X eyes and blood pool');
@@ -831,28 +909,42 @@ async function gameInit()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-let mouseSensitivity = .01;     // radians per screen-pixel of mouse movement
+let mouseSensitivity = .01;      // radians per screen-pixel of mouse movement
 let invertX = false;
 let bobPhase = 0, bobAmount = 0;
+const GAMEPAD_LOOK_SPEED = .045; // rad per frame at full right-stick deflection
 
 function gameUpdate()
 {
     if (bindPauseKey({when: () => isPlaying && isAlive})) return;
     if (!isPlaying || !isAlive) return;
 
-    // mouse capture: click-to-lock; fire only while locked
+    // ---- desktop: mouse capture + fire ----
     const wantLock = mouseWasPressed(0);
-    if (wantLock && !pointerLockIsActive())
+    if (!isTouchDevice && wantLock && !pointerLockIsActive())
         pointerLockRequest();
-    else if (wantLock && pointerLockIsActive())
+    else if (!isTouchDevice && wantLock && pointerLockIsActive())
         playerFire();
 
     if (pointerLockIsActive())
         playerAngle += mouseDeltaScreen.x * mouseSensitivity * (invertX ? -1 : 1);
 
-    // movement: keyDirection().y = forward, .x = strafe
+    // ---- gamepad / touch: stick 0 moves, stick 1 looks, button 0 fires ----
+    // (gamepadStick / gamepadWasPressed merge physical pads AND the touchGamepad
+    //  enabled at the top of the script — so this works on desktop+controller
+    //  and mobile/touch with no extra branching.)
+    const stick1 = gamepadStick(1);
+    if (Math.abs(stick1.x) > .08)
+        playerAngle += stick1.x * GAMEPAD_LOOK_SPEED * (invertX ? -1 : 1);
+    if (gamepadWasPressed(0))
+        playerFire();
+
+    // movement: keyDirection().y = forward, .x = strafe; gamepad stick overrides if pushed harder
     // LittleJS angle is CW-positive (0=north), so player-right = facing + PI/2.
-    const input = keyDirection();
+    let input = keyDirection();
+    const stick0 = gamepadStick(0);
+    if (stick0.lengthSquared() > input.lengthSquared())
+        input = stick0;
     const fwd   = vec2().setAngle(playerAngle, 1);
     const right = vec2().setAngle(playerAngle + PI / 2, 1);
     const speed = .08;
@@ -1014,11 +1106,17 @@ function killEnemy(e)
     );
 }
 
-const ENEMY_SPEED = .032;       // world units per frame (player moves .08)
-const ENEMY_IDEAL_DIST = 3.5;     // stop and shoot once within this range
+const ENEMY_SPEED = .032;         // world units per frame (player moves .08)
+const ENEMY_IDEAL_DIST = 3.5;     // ranged guards stop and shoot at this range
 const ENEMY_SIGHT_DIST = 14;
 const ENEMY_PATROL_SPEED = .018;  // slower wander
 const ENEMY_SEARCH_SECONDS = 5;   // give up on hunting after this many sec of no-LOS
+
+// Melee charger constants
+const MELEE_SPEED = .055;         // ~70% of player walking speed — closes fast
+const MELEE_ATTACK_RANGE = .9;
+const MELEE_ATTACK_DAMAGE = 16;
+const MELEE_ATTACK_COOLDOWN = .8;
 
 function moveEnemyToward(e, target, speed = ENEMY_SPEED)
 {
@@ -1072,7 +1170,8 @@ function updateEnemy(e)
     // ---- choose movement goal ----
     let goal = null;
     let chasing = false;
-    if (e.seenPlayer && canSee && dist > ENEMY_IDEAL_DIST)
+    const stopDist = e.kind === 'melee' ? MELEE_ATTACK_RANGE * .9 : ENEMY_IDEAL_DIST;
+    if (e.seenPlayer && canSee && dist > stopDist)
     {
         goal = playerPos;
         chasing = true;       // repath more aggressively
@@ -1133,43 +1232,71 @@ function updateEnemy(e)
         if (e.pos.distance(wp) < .15)
             ++e.pathIndex;
         else
-            moveEnemyToward(e, wp, e.seenPlayer ? ENEMY_SPEED : ENEMY_PATROL_SPEED);
+        {
+            let speed;
+            if (e.kind === 'melee')     speed = MELEE_SPEED;
+            else if (e.seenPlayer)      speed = ENEMY_SPEED;
+            else                        speed = ENEMY_PATROL_SPEED;
+            moveEnemyToward(e, wp, speed);
+        }
     }
 
-    // ---- shoot ----
-    if (canSee && dist <= ENEMY_IDEAL_DIST + .5)
+    // ---- attack ----
+    if (e.kind === 'melee')
     {
-        if (e.state === 'idle')
+        // melee: charge into player, swing on cooldown when in range
+        if (canSee && dist < MELEE_ATTACK_RANGE)
         {
             e.shootCooldown -= 1/60;
             if (e.shootCooldown <= 0)
             {
-                e.state = 'shoot';
-                e.windup = .55;
-            }
-        }
-        else if (e.state === 'shoot')
-        {
-            e.windup -= 1/60;
-            if (e.windup <= 0)
-            {
-                e.state = 'idle';
-                e.shootCooldown = 1.0 + rand(0, .6);
-                // resolve: re-check LOS, distance-falloff damage
                 if (!lineTest(e.pos, playerPos, isWallAt))
                 {
-                    const dmg = Math.round(8 + 14 * Math.max(0, 1 - dist / ENEMY_SIGHT_DIST));
-                    damagePlayer(dmg);
-                    sndEnemyShoot.play();
+                    damagePlayer(MELEE_ATTACK_DAMAGE);
+                    sndEnemyShoot.play();   // reuse the enemy-shoot sound for the swing impact
                 }
+                e.shootCooldown = MELEE_ATTACK_COOLDOWN;
             }
         }
+        else if (e.shootCooldown > .3)
+            e.shootCooldown = .3;           // re-arm quickly the moment they get close
     }
     else
     {
-        e.state = 'idle';
-        if (e.shootCooldown > .4) e.shootCooldown = .4;
-        e.windup = 0;
+        // ranged guard: telegraph + shoot
+        if (canSee && dist <= ENEMY_IDEAL_DIST + .5)
+        {
+            if (e.state === 'idle')
+            {
+                e.shootCooldown -= 1/60;
+                if (e.shootCooldown <= 0)
+                {
+                    e.state = 'shoot';
+                    e.windup = .55;
+                }
+            }
+            else if (e.state === 'shoot')
+            {
+                e.windup -= 1/60;
+                if (e.windup <= 0)
+                {
+                    e.state = 'idle';
+                    e.shootCooldown = 1.0 + rand(0, .6);
+                    if (!lineTest(e.pos, playerPos, isWallAt))
+                    {
+                        const dmg = Math.round(8 + 14 * Math.max(0, 1 - dist / ENEMY_SIGHT_DIST));
+                        damagePlayer(dmg);
+                        sndEnemyShoot.play();
+                    }
+                }
+            }
+        }
+        else
+        {
+            e.state = 'idle';
+            if (e.shootCooldown > .4) e.shootCooldown = .4;
+            e.windup = 0;
+        }
     }
 }
 
@@ -1315,7 +1442,11 @@ function gameRender()
     {
         if (e.alive)
         {
-            const tile = e.state === 'shoot' && e.windup < .25 ? guardShootTile : guardIdleTile;
+            let tile;
+            if (e.kind === 'melee')
+                tile = meleeTile;
+            else
+                tile = e.state === 'shoot' && e.windup < .25 ? guardShootTile : guardIdleTile;
             pushSprite(e.pos, tile);
         }
         else
