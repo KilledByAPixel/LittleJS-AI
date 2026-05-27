@@ -110,10 +110,12 @@ function isBlocking(p)
     return c === '#' || c === 'X' || c === 'L' || c === 'B';
 }
 
-// Wall tile index: exit cell always uses the door tile; otherwise alternate 3 brick/stone/tech variants
+// Wall tile index: exit cell uses the metal locked-door tile (so the player
+// reads it as "do not pass through" — the win-trigger fires when they touch
+// it). Otherwise alternate 3 brick/stone/tech variants.
 function wallTileAt(x, y)
 {
-    if (levelGrid[y]?.[x] === 'X') return 10;
+    if (levelGrid[y]?.[x] === 'X') return 7;
     return (x * 3 + y * 7 + ((x + y) & 1) * 11) % 3;
 }
 
@@ -153,6 +155,7 @@ function tileCellPx(idx)
 }
 
 let guardIdleTile, guardShootTile, guardDeadTile, gunIdleTile, gunFireTile, exitTile;
+let metalDoorTile;
 let lampTile, barrelTile, sparkTile, healthTile, ammoTile;
 
 // Short-lived puffs spawned at wall impact points. Updated in gameUpdate,
@@ -516,6 +519,65 @@ function paintExit(ctx)
     ctx.fill();
 }
 
+function paintMetalDoor(ctx)
+{
+    // dark steel frame
+    ctx.fillStyle = '#1e2228';
+    ctx.fillRect(0, 0, 500, 500);
+    // recessed door panel
+    ctx.fillStyle = '#3a4048';
+    ctx.fillRect(40, 40, 420, 420);
+    ctx.strokeStyle = '#080a0e';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(40, 40, 420, 420);
+    // rivets around the perimeter — reads as heavy hardware
+    ctx.fillStyle = '#0a0c10';
+    for (let i = 0; i < 6; ++i)
+    {
+        const t = 70 + i * 72;
+        ctx.beginPath(); ctx.arc(t,  70, 10, 0, Math.PI * 2); ctx.fill();    // top row
+        ctx.beginPath(); ctx.arc(t, 430, 10, 0, Math.PI * 2); ctx.fill();    // bottom row
+    }
+    for (let i = 0; i < 4; ++i)
+    {
+        const t = 130 + i * 80;
+        ctx.beginPath(); ctx.arc( 70, t, 10, 0, Math.PI * 2); ctx.fill();    // left col
+        ctx.beginPath(); ctx.arc(430, t, 10, 0, Math.PI * 2); ctx.fill();    // right col
+    }
+    // inset lock panel
+    ctx.fillStyle = '#1a1e24';
+    ctx.fillRect(165, 180, 170, 180);
+    ctx.strokeStyle = '#06080a';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(165, 180, 170, 180);
+    // keypad grid (3x3)
+    ctx.fillStyle = '#4a5058';
+    for (let r = 0; r < 3; ++r)
+    for (let c = 0; c < 3; ++c)
+        ctx.fillRect(180 + c * 50, 195 + r * 50, 38, 38);
+    // tiny keypad highlights
+    ctx.fillStyle = 'rgba(255,255,255,.08)';
+    for (let r = 0; r < 3; ++r)
+    for (let c = 0; c < 3; ++c)
+        ctx.fillRect(180 + c * 50, 195 + r * 50, 38, 3);
+    // red "LOCKED" indicator with glow halo above the keypad
+    const g = ctx.createRadialGradient(250, 130, 4, 250, 130, 42);
+    g.addColorStop(0,   '#ff8080');
+    g.addColorStop(.25, '#e02020');
+    g.addColorStop(.7,  'rgba(170,16,16,.35)');
+    g.addColorStop(1,   'rgba(120,16,16,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(250, 130, 42, 0, Math.PI * 2);
+    ctx.fill();
+    // hazard stripes at the bottom edge — extra "do not enter" reading
+    for (let i = 0; i < 9; ++i)
+    {
+        ctx.fillStyle = (i & 1) ? '#ffc844' : '#1a1408';
+        ctx.fillRect(40 + i * 46.7, 470, 47, 20);
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // SOUNDS
 let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWallHit, sndPickup, sndEmpty;
@@ -567,6 +629,7 @@ async function gameInit()
     guardIdleTile  = drawToTexture(4, paintGuardIdle,  'cartoon guard sprite, helmet, holding pistol pointed down');
     guardShootTile = drawToTexture(5, paintGuardShoot, 'cartoon guard sprite firing pistol with muzzle flash');
     guardDeadTile  = drawToTexture(6, paintGuardDead,  'sprawled fallen guard with X eyes and blood pool');
+    metalDoorTile  = drawToTexture(7, paintMetalDoor,  'heavy steel locked door, riveted frame, keypad lock, red warning light, hazard stripes');
     gunIdleTile    = drawToTexture(8, paintGunIdle,    'first-person pistol, viewed from below, no muzzle flash');
     gunFireTile    = drawToTexture(9, paintGunFire,    'first-person pistol firing with bright muzzle flash');
     exitTile       = drawToTexture(10, paintExit,      'wooden exit door with brass knob');
