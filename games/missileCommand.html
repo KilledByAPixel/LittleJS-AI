@@ -471,6 +471,12 @@ function pickEnemyTarget()
   return aliveBases[randInt(aliveBases.length)].pos.copy();
 }
 
+function mirvChance(wave)
+{
+  if (wave < 3) return 0;
+  return wave >= 7 ? .35 : .25;
+}
+
 function spawnEnemyMissile()
 {
   const start = vec2(rand(0, levelSize.x), levelSize.y + 2.5);
@@ -488,7 +494,38 @@ function spawnEnemyMissile()
     alive: true,
     w: .07,
     smokeT: 0,
+    mirv: rand() < mirvChance(waveIndex),
+    isChild: false,
   });
+}
+
+function maybeSplitMirv(m)
+{
+  if (!m.mirv || !m.alive) return;
+  if (m.pos.y > levelSize.y * 0.55) return;
+  m.mirv = false;
+
+  const childCount = 2 + randInt(2);
+  for (let i = 0; i < childCount; i++)
+  {
+    const target = pickEnemyTarget();
+    const start = m.pos.copy();
+    const delta = target.subtract(start);
+    const len = Math.max(.001, delta.length());
+    enemyMissiles.push({
+      start, target,
+      pos: start.copy(),
+      t: 0,
+      speed: m.speed,
+      len,
+      alive: true,
+      w: .07,
+      smokeT: 0,
+      mirv: false,
+      isChild: true,
+    });
+  }
+  m.alive = false;
 }
 
 function launchPlayerMissile(target)
@@ -992,6 +1029,7 @@ function gameUpdate()
         emitMissileTrailSmoke(m);
         m.smokeT = .07;
       }
+      maybeSplitMirv(m);
     }
     if (impacted)
       resolveEnemyImpact(m.target);
