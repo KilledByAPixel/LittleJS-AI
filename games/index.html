@@ -666,13 +666,18 @@
     /* Bigger touch targets + readable text inside the drawer. */
     #sidebar-header { padding: 14px 14px 12px; }
     #search { padding: 11px 12px; font-size: 15px; }
-    .chip-filter { padding: 7px 13px; font-size: 13px; border-radius: 14px; }
     .card { padding: 12px 14px; }
     .card .title { font-size: 16px; }
     .card .title .emoji { font-size: 22px; flex-basis: 28px; }
     .card .desc { font-size: 13.5px; }
     .chip { padding: 2px 8px; font-size: 11.5px; }
-    #sidebar-footer .btn { padding: 11px 10px; font-size: 13px; }
+
+    /* Hide the category filter chips and the footer buttons on mobile —
+       the drawer is cramped enough already; leave just the logo, search,
+       and game list. (Footer actions are still reachable from the welcome
+       screen or via the iframe game's own UI / OS share.) */
+    #filter-chips { display: none; }
+    #sidebar-footer { display: none; }
 
     /* Welcome tiles — slightly bigger text so they're readable on phones. */
     .tile .name { font-size: 15px; }
