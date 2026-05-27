@@ -43,7 +43,6 @@ const COLOR_PLAYER_DARK = hsl(.58, .75, .35);
 // Game state
 let currentLevel = 0;
 let bestLevel = 0;  // highest level reached (1-indexed for display)
-try { bestLevel = +localStorage.getItem('sokoban.bestLevel') || 0; } catch(e) {}
 let moves = 0;
 let pushes = 0;
 let playerPos = vec2(0, 0);
@@ -502,7 +501,7 @@ function loadLevel(levelIndex)
     currentLevel = levelIndex % LEVELS.length;
     if (currentLevel + 1 > bestLevel) {
         bestLevel = currentLevel + 1;
-        try { localStorage.setItem('sokoban.bestLevel', bestLevel); } catch(e) {}
+        saveData({bestLevel});
     }
     parseLevel(LEVELS[currentLevel]);
     moves = 0;
@@ -752,6 +751,8 @@ function drawTarget(pos)
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('sokoban');
+    bestLevel = getSaveData().bestLevel ?? 0;
     setCanvasFixedSize(vec2(960, 720));
 
     // Initialize sounds
