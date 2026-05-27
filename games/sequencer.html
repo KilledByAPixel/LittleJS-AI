@@ -303,6 +303,29 @@ function closePasteModal()
     setTimeout(()=> m.destroy(), 0);
 }
 
+function applyTempo(v)
+{
+    tempo = v;
+    const tempoBtn = getToolbar('transport') && getToolbar('transport').getItem('tempo');
+    if (tempoBtn) tempoBtn.setLabel(`TEMPO: ${tempo}`);
+    scheduleSave();
+}
+
+function buildTempoDialog()
+{
+    createMenu({
+        id: 'tempo',
+        title: 'TEMPO',
+        dismissable: true,
+        items: [
+            {type:'slider', id:'bpm', label:'BPM',
+                min: 120, max: 480, step: 10, value: tempo,
+                onChange: v => applyTempo(v)},
+            {type:'button', label:'BACK', onClick: () => hideMenu('tempo')},
+        ],
+    });
+}
+
 function clearAllCells()
 {
     for (const obj of uiSystem.uiObjects)
@@ -365,7 +388,7 @@ function gameInit()
                 }},
             {type:'button', id:'tempo',
                 label: `TEMPO: ${tempo}`,
-                onClick: ()=> {}},
+                onClick: ()=> showMenu('tempo')},
         ],
     });
     getToolbar('transport').show();
@@ -390,6 +413,7 @@ function gameInit()
         ],
     });
     getToolbar('global').show();
+    buildTempoDialog();
 }
 
 function gameUpdate()
