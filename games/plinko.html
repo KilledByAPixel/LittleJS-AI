@@ -409,7 +409,7 @@ async function gameInit()
                     onYes: () =>
                     {
                         bestScore = 0;
-                        localStorage.removeItem('plinko.best');
+                        saveData({bestScore: 0});
                         const lbl = getMenu('title').getItem('bestLabel');
                         lbl && lbl.setLabel('Best: 0');
                     },
