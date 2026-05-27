@@ -1557,12 +1557,25 @@ function drawTilePrimitive(x, y, t)
         const flash = .8 + Math.sin(time * 4 + x * 1.7) * .15;
         drawRect(pos, vec2(1), rgb(flash, flash * .75, .15));
         drawRect(pos.add(vec2(0, .38)), vec2(1, .12), rgb(1, .9, .35));
-        // bordered ?
         drawRect(pos, vec2(.92, .92), rgb(flash * .9, flash * .65, .10));
-        drawRect(pos.add(vec2(0, .12)),  vec2(.18, .14), rgb(.35, .18, .05));
-        drawRect(pos.add(vec2(0, -.18)), vec2(.10, .10), rgb(.35, .18, .05));
-        drawRect(pos.add(vec2(-.12, .26)), vec2(.10, .10), rgb(.35, .18, .05));
-        drawRect(pos.add(vec2(.12, .26)),  vec2(.10, .10), rgb(.35, .18, .05));
+
+        // Chunky pixel-art ?  (5 cols x 8 rows; row 0 is top, y+ is up)
+        const px = .09;
+        const ink = rgb(.20, .08, .02);
+        const Q = [
+            [0,1,1,1,0],  // hook top
+            [0,0,0,0,1],  // hook right
+            [0,0,0,0,1],
+            [0,0,0,1,0],  // curve into stem
+            [0,0,1,0,0],  // stem
+            [0,0,1,0,0],
+            [0,0,0,0,0],  // gap
+            [0,0,1,0,0],  // dot
+        ];
+        for (let r = 0; r < Q.length; ++r)
+            for (let c = 0; c < 5; ++c)
+                if (Q[r][c])
+                    drawRect(pos.add(vec2((c - 2) * px, (3.5 - r) * px)), vec2(px, px), ink);
     }
     else if (t === TT.USED)
     {
