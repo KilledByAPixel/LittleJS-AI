@@ -129,6 +129,9 @@
   #list { flex: 1; overflow-y: auto; padding: 6px 0; }
   #list::-webkit-scrollbar { width: 10px; }
   #list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+  /* Suppress hover during scroll — otherwise each card under the cursor
+     briefly expands as the list slides by, causing visible flicker. */
+  #list.scrolling { pointer-events: none; }
 
   .card {
     padding: 8px 14px;
@@ -1140,6 +1143,15 @@ function loadFromHash() {
 sidebarLogoWrap.addEventListener('click', showWelcome);
 searchEl.addEventListener('input', renderList);
 window.addEventListener('hashchange', loadFromHash);
+
+// While the sidebar list is scrolling, disable hover effects so cards
+// passing under the cursor don't all briefly expand-collapse.
+let listScrollTimer;
+listEl.addEventListener('scroll', () => {
+  listEl.classList.add('scrolling');
+  clearTimeout(listScrollTimer);
+  listScrollTimer = setTimeout(() => listEl.classList.remove('scrolling'), 150);
+}, { passive: true });
 fullscreenBtn.addEventListener('click', () => {
   if (currentFile && frameEl.requestFullscreen) frameEl.requestFullscreen();
 });
