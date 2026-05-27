@@ -845,6 +845,9 @@ class Pickup extends EngineObject
                 coinsRun += this.value;
                 coins += this.value;
                 playPickupSound(sounds.coin, this.pos);
+                // Persist immediately so a tab close mid-run never costs
+                // the player coins they actually grabbed.
+                saveMetaState();
             }
             else if (this.kind === 'mystery')
             {
