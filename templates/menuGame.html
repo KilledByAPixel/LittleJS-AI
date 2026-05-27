@@ -160,7 +160,6 @@ async function gameInit()
     // onChange also fires once at init time with the resolved value, so
     // the consumer's effect (e.g. setSoundVolume) applies the saved value
     // before the first menu sound plays.
-    let musicOn = true;
     createMenu({
         id: 'options',
         title: 'OPTIONS',
@@ -169,9 +168,6 @@ async function gameInit()
             {type:'slider',   id:'volume', label:'VOLUME',       value: 0.8, min:0, max:1,
                 persist:'volume',
                 onChange: v => setSoundVolume(v)},
-            {type:'checkbox', id:'music',  label:'MUSIC',        value: musicOn,
-                persist:'music',
-                onChange: v => { musicOn = v; getToolbar('hud')?.getItem('music')?.setValue(v); }},
             {type:'separator'},
             {type:'checkbox', id:'shake',  label:'SCREEN SHAKE', value: true,
                 persist:'shake',
@@ -235,15 +231,8 @@ async function gameInit()
     // ----- toolbar (always visible, including over the title menu) -----
     // installDefaultToolbar gives the standard mute / fullscreen / hamburger
     // trio, with built-in title-aware hamburger graying so the player can't
-    // try to open the pause menu from on top of the title menu. The music
-    // toggle is appended via extraItemsBefore to demo the toolbar ↔ options
-    // menu sync pattern (changing music here updates the OPTIONS checkbox).
-    installDefaultToolbar({
-        extraItemsBefore: [
-            {type:'toggle', id:'music', label:'♪', title:'Toggle music', value: musicOn,
-                onChange: v => { musicOn = v; getMenu('options').getItem('music').setValue(v); }},
-        ],
-    });
+    // try to open the pause menu from on top of the title menu.
+    installDefaultToolbar();
 
     // Show the title menu immediately — no click-to-reveal step.
     showMenu('title');
