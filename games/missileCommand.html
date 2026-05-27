@@ -516,7 +516,7 @@ function spawnFlier()
 
 function updateFliers()
 {
-  if (!betweenWaves && !tally && waveIndex >= 3 && fliers.length === 0)
+  if (!betweenWaves && !tally && waveIndex >= 2 && fliers.length === 0)
   {
     flierCooldown -= timeDelta;
     if (flierCooldown <= 0)
