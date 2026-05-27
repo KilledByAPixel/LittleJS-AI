@@ -56,7 +56,14 @@
     color: var(--text);
     font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex;
+    /* Disable text selection on the launcher chrome — every clickable element
+       launches a game, so accidental selections just get in the way. The
+       iframe content is in its own document and is unaffected. */
+    user-select: none;
+    -webkit-user-select: none;
   }
+  /* …but keep text inputs selectable, obviously. */
+  input, textarea { user-select: text; -webkit-user-select: text; }
   button { font: inherit; color: inherit; cursor: pointer; }
 
   /* ===================== Sidebar ===================== */
