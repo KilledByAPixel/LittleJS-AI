@@ -78,7 +78,6 @@ let projectile; // {pos, vel, colorIndex}
 let currentColorIndex, nextColorIndex;
 let score, shots, gameOver, gameWin;
 let bestScore = 0;
-try { bestScore = +localStorage.getItem('snood.best') || 0; } catch(e) {}
 let descendOffset;    // continuous descent offset (rolls over into addRow at ROW_STEP_Y)
 let incomingRow;      // next row that's queued to become row 0 at the next rollover
 let gridParity;       // toggles every addRow so existing bubbles keep their hex xOff after a row shift
@@ -567,7 +566,7 @@ function showGameOverDialog()
 {
     if (score > bestScore) {
         bestScore = score;
-        try { localStorage.setItem('snood.best', bestScore); } catch(e) {}
+        saveData({bestScore});
     }
     // Surface a menus.js dialog so pause-callback drives `paused` for us.
     showAlertDialog({
@@ -586,6 +585,8 @@ function showGameOverDialog()
 
 function gameInit()
 {
+    saveDataInit('snood');
+    bestScore = getSaveData().bestScore ?? 0;
     // called once after the engine starts up
     //setCanvasMaxSize(vec2(1280, 720));
     // Canvas clear matches the panel tint so any area outside the play rectangle
@@ -621,7 +622,7 @@ function gameInit()
     });
 
     // ----- options menu -----
-    createOptionsMenu({persistKey: 'snood.volume'});
+    createOptionsMenu();
 
     // ----- about menu -----
     createMenu({
