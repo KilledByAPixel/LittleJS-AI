@@ -71,6 +71,9 @@ let nextBonusCityScore = 10000;
 let bankedCities = 0;
 let bonusCityToast = 0;
 
+let aiMode = false;
+let aiCooldown = 0;
+
 let sShoot, sBoom, sEnemyHit, sCityHit, sWave, sBonusCity, sBonusTick;
 
 // Visual effects
@@ -431,6 +434,7 @@ function newGame()
   bankedCities = 0;
   bonusCityToast = 0;
   smartBombsToSpawn = 0;
+  aiCooldown = 0;
 
   cities = [];
   const cityXs = [6.5, 10.5, 14.5, 25.5, 29.5, 33.5];
@@ -672,6 +676,70 @@ function launchPlayerMissile(target)
   emitMuzzleFlash(start, delta.normalize());
   sShoot && sShoot.play();
   return true;
+}
+
+function updateAI()
+{
+  aiCooldown -= timeDelta;
+  if (aiCooldown > 0) return;
+
+  const horizon = .5;
+  const threats = [];
+
+  for (const m of enemyMissiles)
+  {
+    if (!m.alive) continue;
+    const dir = m.target.subtract(m.start).normalize();
+    const pred = m.pos.add(dir.scale(m.speed * horizon));
+    threats.push({ pos: pred, altitude: m.pos.y });
+  }
+  for (const f of fliers)
+  {
+    if (!f.alive) continue;
+    threats.push({ pos: f.pos.add(f.vel.scale(horizon)), altitude: f.pos.y });
+  }
+  if (!threats.length) return;
+
+  const inFlight = playerMissiles.filter(p => p.alive).map(p => p.target);
+
+  const clusterRadius = explosionMaxRadius * .9;
+  let best = null;
+  for (const seed of threats)
+  {
+    let centroid = seed.pos.copy();
+    const members = [seed];
+    let minAlt = seed.altitude;
+    let added = true;
+    while (added)
+    {
+      added = false;
+      for (const t of threats)
+      {
+        if (members.includes(t)) continue;
+        if (t.pos.distance(centroid) > clusterRadius) continue;
+        members.push(t);
+        let sx = 0, sy = 0;
+        for (const mm of members) { sx += mm.pos.x; sy += mm.pos.y; }
+        centroid = vec2(sx / members.length, sy / members.length);
+        minAlt = Math.min(minAlt, t.altitude);
+        added = true;
+      }
+    }
+
+    let covered = false;
+    for (const tgt of inFlight)
+      if (tgt.distance(centroid) < 1.5) { covered = true; break; }
+    if (covered) continue;
+
+    if (!best ||
+        members.length > best.size ||
+        (members.length === best.size && minAlt < best.minAlt))
+      best = { centroid, size: members.length, minAlt };
+  }
+  if (!best) return;
+
+  if (launchPlayerMissile(best.centroid))
+    aiCooldown = .10;
 }
 
 function addExplosion(pos, friendly)
@@ -1152,10 +1220,16 @@ function gameUpdate()
   if (isPlaying && !gameOver && keyWasPressed('KeyR'))
     return startGame();
 
+  if (isPlaying && !gameOver && keyWasPressed('KeyT'))
+    aiMode = !aiMode;
+
   if (!gameOver && mouseWasPressed(0))
   {
     launchPlayerMissile(mousePos);
   }
+
+  if (aiMode && !gameOver && !betweenWaves && !tally)
+    updateAI();
 
   for (const b of bases)
   {
@@ -1680,6 +1754,9 @@ function gameRenderPost()
 
   if (!gameOver && !anyBasesAliveWithAmmo())
     drawTextScreen('NO AMMO! (protect what\'s left)', vec2(mainCanvasSize.x/2, 30), 22, hsl(.06,1,.65), 4, hsl(0,0,0,.7));
+
+  if (aiMode)
+    drawTextScreen('AI MODE  [T]', vec2(mainCanvasSize.x/2, 58), 22, hsl(.55,1,.85), 3, hsl(0,0,0,.7));
 
   if (tally && !gameOver)
   {
