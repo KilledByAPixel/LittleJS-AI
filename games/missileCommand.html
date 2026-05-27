@@ -1660,14 +1660,14 @@ function drawMissiles()
   {
     if (m.split)
     {
-      drawLine(m.start, m.pos, m.w * 2.6, hsl(.88, .8, .5, .18));
-      drawLine(m.start, m.pos, m.w * 1.1, hsl(.88, .9, .6, .55));
+      drawLine(m.start, m.pos, m.w * 3.8, hsl(.88, .8, .5, .22));
+      drawLine(m.start, m.pos, m.w * 1.7, hsl(.88, .9, .6, .55));
       continue;
     }
     if (m.mirv)
     {
-      drawLine(m.start, m.pos, m.w * 2.6, hsl(.88, 1, .55, .28));
-      drawLine(m.start, m.pos, m.w * 1.1, hsl(.88, .95, .7));
+      drawLine(m.start, m.pos, m.w * 3.8, hsl(.88, 1, .55, .32));
+      drawLine(m.start, m.pos, m.w * 1.7, hsl(.88, .95, .7));
       const pulse = .85 + .15 * Math.sin(time * 10 + m.pulsePhase);
       drawCircle(m.pos, .50 * pulse, hsl(0, 0, 1, .35));
       drawCircle(m.pos, .32, hsl(.88, 1, .7));
