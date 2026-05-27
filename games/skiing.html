@@ -567,8 +567,6 @@ function resetGame()
 
     // spawn initial obstacles around spawn
     spawnObstaclesAround(player.pos);
-
-    sfxStart && sfxStart.play();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -599,6 +597,7 @@ function startGame()
     isPlaying = true;
     clearSubmenuStack();
     hideAllMenus();
+    sfxStart && sfxStart.play();
 }
 
 function quitToTitle()
