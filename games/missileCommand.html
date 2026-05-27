@@ -383,6 +383,11 @@ function addShake(t, m)
 // Game logic
 // ------------------------------------------------------------
 
+function waveMultiplier(w)
+{
+  return Math.min(6, ((w + 1) / 2) | 0);
+}
+
 function resetWaveState(newWaveIndex)
 {
   waveIndex = newWaveIndex;
@@ -631,7 +636,7 @@ function checkExplosionHits()
       if (m.pos.distance(e.pos) <= e.r)
       {
         m.alive = false;
-        score += 25 + (waveIndex-1)*2;
+        score += 25 * waveMultiplier(waveIndex);
         emitEnemyKillBurst(m.pos);
         sEnemyHit && sEnemyHit.play();
       }
@@ -650,8 +655,9 @@ function checkWaveComplete()
     betweenWaves = true;
     betweenWavesTimer = 1.2;
 
-    const cityBonus = cities.filter(c=>c.alive).length * 100;
-    const ammoBonus = bases.reduce((a,b)=>a+(b.ammo|0),0) * 5;
+    const mult = waveMultiplier(waveIndex);
+    const cityBonus = cities.filter(c=>c.alive).length * 100 * mult;
+    const ammoBonus = bases.reduce((a,b)=>a+(b.ammo|0),0) * 5 * mult;
     score += cityBonus + ammoBonus;
   }
 }
