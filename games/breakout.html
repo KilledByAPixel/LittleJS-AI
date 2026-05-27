@@ -634,6 +634,7 @@ function backToTitle()
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('breakout');
     cameraPos = levelSize.scale(.5);
 
     sfxBounce = new SoundGenerator({ volume: .6, frequency: 400, release: .06, shapeCurve: 1.6 });
@@ -643,7 +644,7 @@ async function gameInit()
     sfxPower  = new SoundGenerator({ volume: .75, frequency: 740, release: .12, pitchJump: 260, pitchJumpTime: .03, shapeCurve: 1.1 });
     sfxLaser  = new SoundGenerator({ volume: .55, frequency: 980, release: .06, slide: 1.5, shapeCurve: 1.8 });
 
-    highScore = parseInt(localStorage.getItem('breakout.highScore') || '0', 10);
+    highScore = getSaveData().bestScore ?? 0;
 
     // One callback drives `paused` for every menu (including dialogs).
     installAutoPause();
@@ -665,11 +666,11 @@ async function gameInit()
     });
 
     createOptionsMenu({
-        persistKey: 'breakout.sfxVolume',
+        persistKey: 'sfxVolume',
         volumeLabel: 'SFX VOLUME',
         extraItems: [
             {type:'checkbox', id:'shake', label:'SCREEN SHAKE', value:true,
-                persist:'breakout.shake',
+                persist:'shake',
                 onChange: v => shakeEnabled = v},
         ],
     });
@@ -966,7 +967,7 @@ function updateBalls(dt)
             if (isNewBest)
             {
                 highScore = score;
-                localStorage.setItem('breakout.highScore', String(highScore));
+                saveData({bestScore: highScore});
             }
 
             const msg = isNewBest
