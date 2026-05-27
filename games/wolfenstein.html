@@ -163,6 +163,11 @@ let lampTile, barrelTile, sparkTile, healthTile, ammoTile;
 // walls and other sprites.
 let hitEffects = [];
 
+// A* pathfinder over the 16x16 grid — built once in gameInit, reads the
+// current levelGrid via its isWalkable override so resetWorld doesn't need
+// to rebuild it.
+let pathFinder;
+
 ///////////////////////////////////////////////////////////////////////////////
 // ATLAS PAINTERS
 function paintBrick(ctx)
@@ -590,6 +595,20 @@ function setPlaying(p)
     if (hud) p ? hud.show() : hud.hide();
 }
 
+// Pick a random walkable (floor) tile within `radius` cells of `center`.
+// Returns the tile center in world coords, or null if none found.
+function pickRandomWalkableNear(center, radius)
+{
+    for (let tries = 0; tries < 16; ++tries)
+    {
+        const tx = Math.floor(center.x) + Math.floor(rand(-radius, radius + 1));
+        const ty = Math.floor(center.y) + Math.floor(rand(-radius, radius + 1));
+        if (tx < 0 || tx >= LEVEL_W || ty < 0 || ty >= LEVEL_H) continue;
+        if (levelGrid[ty][tx] === '.') return vec2(tx + .5, ty + .5);
+    }
+    return null;
+}
+
 function resetWorld()
 {
     parseLevel(LEVEL_ASCII);
@@ -604,12 +623,22 @@ function resetWorld()
     hitFlashT = 0; muzzleFlashT = 0; deathFlashT = 0;
     enemies = enemySpawns.map(p => ({
         pos:           p.copy(),
+        homePos:       p.copy(),                     // patrol anchor
         hp:            2,
         alive:         true,
         seenPlayer:    false,
-        state:         'idle',  // 'idle' | 'shoot'
-        windup:        0,       // seconds until shot resolves while in 'shoot'
+        state:         'idle',                       // 'idle' | 'shoot'
+        windup:        0,                            // seconds until shot resolves while in 'shoot'
         shootCooldown: 0.5 + rand(0, 1),
+        // Pathfinding / AI state
+        kind:          rand() < .5 ? 'patroller' : 'sentry',
+        path:          [],                           // array of world-space waypoints
+        pathIndex:     0,
+        repathTimer:   0,
+        searchTime:    0,                            // time spent searching after losing LOS
+        lastKnownPlayerPos: null,
+        patrolTarget:  null,
+        patrolPauseTimer: rand(0, 2),                // stagger initial patrol starts
     }));
 }
 
@@ -622,6 +651,17 @@ function startGame()
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    // A* pathfinder over the level grid. Only true floor cells ('.') are
+    // walkable — walls, exits, lamps, and barrels all block. Built once;
+    // findPath re-reads isWalkable on each call so resetWorld doesn't need
+    // to rebuild it.
+    pathFinder = new PathFinder(vec2(LEVEL_W, LEVEL_H));
+    pathFinder.isWalkable = (x, y) =>
+    {
+        if (x < 0 || x >= LEVEL_W || y < 0 || y >= LEVEL_H) return false;
+        return levelGrid[y][x] === '.';
+    };
+
     initDrawToTexture();
     drawToTexture(0, paintBrick,       'dark red brick wall');
     drawToTexture(1, paintStone,       'mossy gray stone block wall');
@@ -975,15 +1015,17 @@ function killEnemy(e)
 }
 
 const ENEMY_SPEED = .032;       // world units per frame (player moves .08)
-const ENEMY_IDEAL_DIST = 3.5;   // stop and shoot once within this range
+const ENEMY_IDEAL_DIST = 3.5;     // stop and shoot once within this range
 const ENEMY_SIGHT_DIST = 14;
+const ENEMY_PATROL_SPEED = .018;  // slower wander
+const ENEMY_SEARCH_SECONDS = 5;   // give up on hunting after this many sec of no-LOS
 
-function moveEnemyToward(e, target)
+function moveEnemyToward(e, target, speed = ENEMY_SPEED)
 {
     const toward = target.subtract(e.pos);
     const len = toward.length();
     if (len < .001) return;
-    const step = toward.scale(ENEMY_SPEED / len);
+    const step = toward.scale(speed / len);
     const normal = vec2();
     let newPos = e.pos.add(step);
     if (lineTest(e.pos, newPos, isBlocking, normal))
@@ -1002,22 +1044,105 @@ function updateEnemy(e)
     const dist = e.pos.distance(playerPos);
     const losClear = !lineTest(e.pos, playerPos, isWallAt);
     const canSee = losClear && dist < ENEMY_SIGHT_DIST;
+
+    // ---- sense / alert ----
     if (canSee)
     {
         if (!e.seenPlayer)
         {
-            e.seenPlayer = true;
             sndAlert.play();
+            e.seenPlayer = true;
+            e.path = [];      // force a fresh path next step
         }
-        // close the distance if far; only stop to shoot once near
-        if (dist > ENEMY_IDEAL_DIST)
-            moveEnemyToward(e, playerPos);
+        e.lastKnownPlayerPos = playerPos.copy();
+        e.searchTime = 0;
+    }
+    else if (e.seenPlayer)
+    {
+        e.searchTime += 1/60;
+        if (e.searchTime > ENEMY_SEARCH_SECONDS)
+        {
+            // gave up — back to patrol/sentry behavior
+            e.seenPlayer = false;
+            e.lastKnownPlayerPos = null;
+            e.path = [];
+        }
+    }
 
+    // ---- choose movement goal ----
+    let goal = null;
+    let chasing = false;
+    if (e.seenPlayer && canSee && dist > ENEMY_IDEAL_DIST)
+    {
+        goal = playerPos;
+        chasing = true;       // repath more aggressively
+    }
+    else if (e.seenPlayer && !canSee && e.lastKnownPlayerPos)
+    {
+        if (e.pos.distance(e.lastKnownPlayerPos) > .5)
+            goal = e.lastKnownPlayerPos;
+        else
+        {
+            // reached last-known and didn't find them — give up immediately
+            e.lastKnownPlayerPos = null;
+            e.seenPlayer = false;
+            e.path = [];
+        }
+    }
+    else if (!e.seenPlayer && e.kind === 'patroller')
+    {
+        if (e.patrolPauseTimer > 0)
+            e.patrolPauseTimer -= 1/60;
+        else
+        {
+            // pick a new patrol target if we don't have one yet
+            if (!e.patrolTarget)
+            {
+                e.patrolTarget = pickRandomWalkableNear(e.homePos, 4);
+                e.path = [];
+            }
+            // reached target → pause briefly, then pick a new one next tick
+            if (e.patrolTarget && e.pos.distance(e.patrolTarget) < .4)
+            {
+                e.patrolTarget = null;
+                e.patrolPauseTimer = 1 + rand(0, 2);
+            }
+            else if (e.patrolTarget)
+                goal = e.patrolTarget;
+        }
+    }
+    // sentries with no LOS just stand still — goal stays null
+
+    // ---- refresh path ----
+    if (goal)
+    {
+        e.repathTimer += 1/60;
+        const threshold = chasing ? .4 : 1.5;
+        if (e.path.length === 0 || e.repathTimer > threshold)
+        {
+            e.path = pathFinder.findPath(e.pos, goal);
+            e.pathIndex = 0;
+            e.repathTimer = 0;
+        }
+    }
+
+    // ---- walk along path (skip while shooting so the guard commits) ----
+    if (e.state !== 'shoot' && e.path.length > 0 && e.pathIndex < e.path.length)
+    {
+        const wp = e.path[e.pathIndex];
+        if (e.pos.distance(wp) < .15)
+            ++e.pathIndex;
+        else
+            moveEnemyToward(e, wp, e.seenPlayer ? ENEMY_SPEED : ENEMY_PATROL_SPEED);
+    }
+
+    // ---- shoot ----
+    if (canSee && dist <= ENEMY_IDEAL_DIST + .5)
+    {
         if (e.state === 'idle')
         {
             e.shootCooldown -= 1/60;
-            // only commit to a shot once we're roughly at ideal range
-            if (e.shootCooldown <= 0 && dist <= ENEMY_IDEAL_DIST + .5)
+            if (e.shootCooldown <= 0)
             {
                 e.state = 'shoot';
                 e.windup = .55;
@@ -1042,7 +1167,6 @@ function updateEnemy(e)
     }
     else
     {
-        // lost sight: hold position (could chase last-known later)
         e.state = 'idle';
         if (e.shootCooldown > .4) e.shootCooldown = .4;
         e.windup = 0;
