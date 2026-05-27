@@ -48,7 +48,6 @@ let playerPos, playerVelX, playerAngle;
 let speed;
 let score;
 let bestScore = 0;
-try { bestScore = +localStorage.getItem('riverRaid.best') || 0; } catch(e) {}
 let fuel;
 let gameOver, gameOverReason;
 let flashTimer;
@@ -197,7 +196,7 @@ function crash(reason)
     gameOverReason = reason;
     if (score > bestScore) {
         bestScore = score;
-        try { localStorage.setItem('riverRaid.best', bestScore|0); } catch(e) {}
+        saveData({bestScore});
     }
     flashTimer = 30;
     sExplode && sExplode.play();
@@ -221,6 +220,8 @@ function shoot()
 ///////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
+    saveDataInit('riverRaid');
+    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(960, 540));
     cameraScale = 32;
 
