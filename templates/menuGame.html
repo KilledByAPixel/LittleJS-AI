@@ -72,6 +72,10 @@ async function gameInit()
     // so the very first menu sound plays at the user-visible volume.
     setSoundVolume(.8);
 
+    // Primes the unified save blobs. Must come before any menu construction
+    // so persist: items can read their stored values on init.
+    saveDataInit('LittleJS Menu Demo');
+
     // One callback drives `paused` for every menu, including dialogs.
     setMenuVisibilityCallback(v => paused = v);
 
@@ -116,7 +120,6 @@ async function gameInit()
         new MenuMedal(2, 'Speed Run',    'Finish a level in under 30s.',   '⚡'),
         new MenuMedal(3, 'Combo x10',    'Chain 10 hits without missing.', '🔥'),
     ];
-    saveDataInit('LittleJS Menu Demo'); // primes unified save blobs
     medalsInit('LittleJS Menu Demo');   // loads `unlocked` from localStorage
 
     const medalCellOf = m => ({
