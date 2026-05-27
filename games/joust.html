@@ -47,11 +47,10 @@ let platforms = [];
 let particles = [];
 let score = 0;
 let bestScore = 0;
-try { bestScore = +localStorage.getItem('joust.best') || 0; } catch(e) {}
 function saveBestScore() {
     if (score > bestScore) {
         bestScore = score;
-        try { localStorage.setItem('joust.best', bestScore); } catch(e) {}
+        saveData({bestScore});
     }
 }
 let lives = 3;
@@ -578,6 +577,8 @@ function createPlatforms()
 
 function gameInit()
 {
+    saveDataInit('joust');
+    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(LEVEL_WIDTH / 2, LEVEL_HEIGHT / 2);
     
