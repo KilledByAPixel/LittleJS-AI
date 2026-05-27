@@ -1,0 +1,2263 @@
+<!DOCTYPE html><head>
+<title>LittleJS Battleship</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1.18.15"></script>
+<script src="../templates/menus.js"></script>
+<script src="../templates/soundGenerator.js"></script>
+<script>
+'use strict';
+
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 38;
+canvasMaxSize = vec2(2048, 2048);
+
+///////////////////////////////////////////////////////////////////////////////
+// BATTLESHIP
+
+const GRID_SIZE = 10;
+const CELL_SIZE = 1.05;
+const BOARD_GAP = 3.2;
+
+const SHOT_NONE = 0;
+const SHOT_MISS = 1;
+const SHOT_HIT = 2;
+
+const PHASE_PLACE = 'place';
+const PHASE_BATTLE = 'battle';
+
+const PLAYER_1 = 1;
+const PLAYER_2 = 2;
+
+const SHIP_SPECS = [
+    {id: 1, len: 5, name: 'Carrier'},
+    {id: 2, len: 4, name: 'Battleship'},
+    {id: 3, len: 3, name: 'Cruiser'},
+    {id: 4, len: 3, name: 'Submarine'},
+    {id: 5, len: 2, name: 'Destroyer'},
+];
+
+let fleet1, fleet2;
+let ships1, ships2;
+let shotsAt1, shotsAt2;
+
+let phase = PHASE_PLACE;
+let placingPlayer = PLAYER_1;
+let currentPlayer = PLAYER_1;
+let placeShipIndex = 0;
+let placeHorizontal = true;
+let placementReady = false;
+
+let gameMode = 'ai';
+let gameOver = false;
+let winner = null;
+let isPlaying = false;
+
+let hoverCell = null;
+let hoverBoard = null;
+
+let aiThinkTimer = 0;
+let aiTargetQueue = [];
+const AI_THINK_DELAY = 0.55;
+
+const SONAR_REVEAL_SEC = 3;
+const SONAR_PULSE_SEC = 0.65;
+const ABILITY_CHARGES_PER_MATCH = 5;
+const ABILITY_BAR_SLOT_COUNT = 5;
+const SONAR_BAR_SLOT_W = 0.62;
+const SONAR_BAR_SLOT_H = 0.62;
+const SONAR_BAR_GAP = 0.28;
+const SONAR_BAR_BELOW_BOARD = 0.55;
+const ABILITY_BAR_GROUP_GAP = 0.45;
+
+const PLACE_BTN_SIZE = vec2(1.55, 0.58);
+const PLACE_BTN_GAP = 0.22;
+
+let battleAim = 'fire';
+let armedAbilitySlot = null;
+let abilityCharges = {
+    sonar: [0, ABILITY_CHARGES_PER_MATCH, ABILITY_CHARGES_PER_MATCH],
+    barrage: [0, ABILITY_CHARGES_PER_MATCH, ABILITY_CHARGES_PER_MATCH],
+};
+let sonarReveal = null;
+let sonarPulses = [];
+let endTurnWhenProjectilesClear = null;
+let hoverAbilityBar = null;
+let hoverAutoButton = false;
+let hoverStartButton = false;
+
+const PROJECTILE_SPEED_CELLS_PER_SEC = 18;
+const AI_SALVO_VISUAL_OFFSET_RADIUS = 4;
+const EXTRA_TURN_HINT_SEC = 2.75;
+let activeProjectiles = [];
+let extraTurnHint = null;
+
+let sfxPlace, sfxMiss, sfxHit, sfxSink, sfxSinkFriendly, sfxWin, sfxLose, sfxSonar, sfxBarrage;
+let sfxSalvoLaunch;
+let sfxRotate, sfxTurn, sfxBattle, sfxSelect;
+
+///////////////////////////////////////////////////////////////////////////////
+// FLEET HELPERS
+
+function createEmptyGrid()
+{
+    return Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(0));
+}
+
+function createEmptyShots()
+{
+    return Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(SHOT_NONE));
+}
+
+function createShipList()
+{
+    return SHIP_SPECS.map(s => ({
+        id: s.id,
+        len: s.len,
+        name: s.name,
+        cells: [],
+        hits: 0,
+        sunk: false,
+    }));
+}
+
+function getAbilityCharges(kind, player)
+{
+    return abilityCharges[kind][player];
+}
+
+function consumeAbilityCharge(kind, player)
+{
+    abilityCharges[kind][player] = max(0, abilityCharges[kind][player] - 1);
+}
+
+function resetAbilityState()
+{
+    battleAim = 'fire';
+    armedAbilitySlot = null;
+    for (const kind in abilityCharges)
+    {
+        abilityCharges[kind][PLAYER_1] = ABILITY_CHARGES_PER_MATCH;
+        abilityCharges[kind][PLAYER_2] = ABILITY_CHARGES_PER_MATCH;
+    }
+    sonarReveal = null;
+    sonarPulses = [];
+    endTurnWhenProjectilesClear = null;
+    hoverAbilityBar = null;
+    activeProjectiles = [];
+}
+
+function isBarrageCenterValid(centerRow, centerCol)
+{
+    return centerRow >= 1 && centerRow <= GRID_SIZE - 2 &&
+        centerCol >= 1 && centerCol <= GRID_SIZE - 2;
+}
+
+function pickBarrageTargets(centerRow, centerCol, rng = rand)
+{
+    const pool = sonarSweepCells(centerRow, centerCol);
+    const picks = [];
+    for (let n = min(4, pool.length); n > 0; n--)
+    {
+        const i = Math.floor(rng() * pool.length);
+        picks.push(pool[i]);
+        pool[i] = pool[pool.length - 1];
+        pool.pop();
+    }
+    return picks;
+}
+
+function countUnshotCellsInBarrageSweep(shots, centerRow, centerCol)
+{
+    let n = 0;
+    for (const {row, col} of sonarSweepCells(centerRow, centerCol))
+    {
+        if (!alreadyShot(shots, row, col))
+            n++;
+    }
+    return n;
+}
+
+function huntTargetsInBarrageSweep(centerRow, centerCol)
+{
+    const sweep = new Set(sonarSweepCells(centerRow, centerCol).map(c => c.row + ',' + c.col));
+    let n = 0;
+    for (const t of aiTargetQueue)
+    {
+        if (sweep.has(t.row + ',' + t.col))
+            n++;
+    }
+    return n;
+}
+
+function scoreBarrageCenterForAi(shots, centerRow, centerCol)
+{
+    const unshot = countUnshotCellsInBarrageSweep(shots, centerRow, centerCol);
+    const hunt = huntTargetsInBarrageSweep(centerRow, centerCol);
+    return unshot * 1.2 + hunt * 3.5;
+}
+
+function pickAiBarrageCenter(shots)
+{
+    const candidates = [];
+    for (let row = 1; row <= GRID_SIZE - 2; row++)
+    {
+        for (let col = 1; col <= GRID_SIZE - 2; col++)
+        {
+            if (countUnshotCellsInBarrageSweep(shots, row, col) > 0)
+                candidates.push({row, col});
+        }
+    }
+    if (candidates.length === 0)
+        return null;
+
+    let best = candidates[0];
+    let bestScore = scoreBarrageCenterForAi(shots, best.row, best.col);
+    for (let i = 1; i < candidates.length; i++)
+    {
+        const cell = candidates[i];
+        const score = scoreBarrageCenterForAi(shots, cell.row, cell.col);
+        if (score > bestScore || (score === bestScore && rand() >= 0.5))
+        {
+            best = cell;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+function sonarSweepCells(centerRow, centerCol)
+{
+    const cells = [];
+    for (let dr = -1; dr <= 1; dr++)
+    {
+        for (let dc = -1; dc <= 1; dc++)
+        {
+            const row = centerRow + dr;
+            const col = centerCol + dc;
+            if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE)
+                cells.push({row, col});
+        }
+    }
+    return cells;
+}
+
+function countHullInSweep(fleet, centerRow, centerCol)
+{
+    let n = 0;
+    for (const {row, col} of sonarSweepCells(centerRow, centerCol))
+    {
+        if (fleet[row][col] !== 0)
+            n++;
+    }
+    return n;
+}
+
+function getPlayerFriendlySide(player)
+{
+    return player === PLAYER_1 ? 'left' : 'right';
+}
+
+function getPlayerEnemySide(player)
+{
+    return player === PLAYER_1 ? 'right' : 'left';
+}
+
+function getFriendlyShipsFor(player)
+{
+    return player === PLAYER_1 ? ships1 : ships2;
+}
+
+function getOpponentPlayer(player)
+{
+    return player === PLAYER_1 ? PLAYER_2 : PLAYER_1;
+}
+
+function spawnSonarPulses(side, centerRow, centerCol)
+{
+    for (const {row, col} of sonarSweepCells(centerRow, centerCol))
+        sonarPulses.push({row, col, elapsed: 0, side});
+}
+
+function advanceSonarPulses(pulses, dt)
+{
+    const next = [];
+    for (const p of pulses)
+    {
+        const elapsed = p.elapsed + dt;
+        if (elapsed < SONAR_PULSE_SEC)
+            next.push({row: p.row, col: p.col, elapsed, side: p.side});
+    }
+    return next;
+}
+
+function sampleSonarPulseRing(elapsed)
+{
+    if (elapsed < 0 || elapsed > SONAR_PULSE_SEC)
+        return null;
+    const t = elapsed / SONAR_PULSE_SEC;
+    const maxR = CELL_SIZE * 18;
+    const minR = CELL_SIZE * 2;
+    return {
+        radius: minR + (maxR - minR) * t,
+        alpha: (1 - t) * 0.9,
+    };
+}
+
+function clearFleetData()
+{
+    fleet1 = createEmptyGrid();
+    fleet2 = createEmptyGrid();
+    ships1 = createShipList();
+    ships2 = createShipList();
+    shotsAt1 = createEmptyShots();
+    shotsAt2 = createEmptyShots();
+}
+
+function canPlaceShip(fleet, row, col, len, horizontal)
+{
+    for (let i = 0; i < len; i++)
+    {
+        const r = row + (horizontal ? 0 : i);
+        const c = col + (horizontal ? i : 0);
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE)
+            return false;
+        if (fleet[r][c] !== 0)
+            return false;
+    }
+    return true;
+}
+
+function placeShipOnFleet(fleet, ships, shipIndex, row, col, horizontal)
+{
+    const spec = SHIP_SPECS[shipIndex];
+    if (!canPlaceShip(fleet, row, col, spec.len, horizontal))
+        return false;
+
+    const ship = ships[shipIndex];
+    ship.cells = [];
+    for (let i = 0; i < spec.len; i++)
+    {
+        const r = row + (horizontal ? 0 : i);
+        const c = col + (horizontal ? i : 0);
+        fleet[r][c] = spec.id;
+        ship.cells.push({row: r, col: c});
+    }
+    ship.hits = 0;
+    ship.sunk = false;
+    return true;
+}
+
+function randomPlaceFleet(fleet, ships)
+{
+    for (let r = 0; r < GRID_SIZE; r++)
+        for (let c = 0; c < GRID_SIZE; c++)
+            fleet[r][c] = 0;
+    for (const ship of ships)
+    {
+        ship.cells = [];
+        ship.hits = 0;
+        ship.sunk = false;
+    }
+
+    for (let i = 0; i < SHIP_SPECS.length; i++)
+    {
+        let placed = false;
+        for (let attempt = 0; attempt < 400 && !placed; attempt++)
+        {
+            const horizontal = rand() < 0.5;
+            const row = randInt(GRID_SIZE);
+            const col = randInt(GRID_SIZE);
+            placed = placeShipOnFleet(fleet, ships, i, row, col, horizontal);
+        }
+        if (!placed)
+            return false;
+    }
+    return true;
+}
+
+function allShipsPlaced(ships)
+{
+    return ships.every(s => s.cells.length > 0);
+}
+
+function getActiveFleet()
+{
+    return placingPlayer === PLAYER_1 ? fleet1 : fleet2;
+}
+
+function getActiveShips()
+{
+    return placingPlayer === PLAYER_1 ? ships1 : ships2;
+}
+
+function placementBoardSide()
+{
+    return gameMode === 'pvp' && placingPlayer === PLAYER_2 ? 'right' : 'left';
+}
+
+function boardCenterFor(side)
+{
+    const half = (GRID_SIZE * CELL_SIZE) / 2;
+    if (side === 'left')
+        return vec2(-half - BOARD_GAP / 2, 0);
+    return vec2(half + BOARD_GAP / 2, 0);
+}
+
+function boardCoordScreenMetrics()
+{
+    const cellScreen = abs(worldToScreenDelta(vec2(CELL_SIZE, 0)).x);
+    const coordFontPx = max(11, cellScreen * 0.36);
+    const colLabelOffset = max(5, cellScreen * 0.16);
+    const rowLabelGutter = max(12, cellScreen * 0.42);
+    return {cellScreen, coordFontPx, colLabelOffset, rowLabelGutter};
+}
+
+/** Column numbers (1…N) above the grid; row letters (A…J, A at top) left of column 0. */
+function drawBoardCoordinateLabels(side)
+{
+    const boardWorld = GRID_SIZE * CELL_SIZE;
+    const center = boardCenterFor(side);
+    const {cellScreen, coordFontPx, colLabelOffset, rowLabelGutter} = boardCoordScreenMetrics();
+    const coordColor = rgb(.58, .64, .72, .88);
+    const lineColor = rgb(.06, .1, .15, .75);
+
+    const boardTop = worldToScreen(vec2(center.x, center.y + boardWorld / 2));
+    const colLabelY = boardTop.y - colLabelOffset;
+    const boardLeft = worldToScreen(vec2(center.x - boardWorld / 2, center.y));
+    const rowLabelX = boardLeft.x - rowLabelGutter + cellScreen * 0.08;
+
+    for (let col = 0; col < GRID_SIZE; col++)
+    {
+        const cellX = worldToScreen(getCellWorldPos(side, GRID_SIZE - 1, col)).x;
+        drawTextScreen(String(col + 1), vec2(cellX, colLabelY), coordFontPx,
+            coordColor, 1, lineColor, 'center');
+    }
+
+    for (let row = 0; row < GRID_SIZE; row++)
+    {
+        const letter = String.fromCharCode(65 + row);
+        const cellY = worldToScreen(getCellWorldPos(side, row, 0)).y;
+        drawTextScreen(letter, vec2(rowLabelX, cellY), coordFontPx,
+            coordColor, 1, lineColor, 'right');
+    }
+}
+
+function fitCameraToBoard()
+{
+    const boardWorld = GRID_SIZE * CELL_SIZE;
+    const labelAbove = 0.9;
+    const coordBand = max(0.45, CELL_SIZE * 0.52);
+    const rowGutterWorld = max(0.5, CELL_SIZE * 0.42);
+    const topExtent = boardWorld / 2 + labelAbove + coordBand + 0.6;
+    const bottomExtent = boardWorld / 2 + SONAR_BAR_BELOW_BOARD + SONAR_BAR_SLOT_H + 0.4;
+    const arenaW = boardWorld * 2 + BOARD_GAP + rowGutterWorld + 1.2;
+    const arenaH = topExtent + bottomExtent;
+    cameraScale = min(mainCanvasSize.x / arenaW, mainCanvasSize.y / arenaH) * 0.98;
+    cameraPos = vec2(0, 0);
+}
+
+function getCellWorldPos(side, row, col)
+{
+    const center = boardCenterFor(side);
+    const offset = -(GRID_SIZE * CELL_SIZE) / 2 + CELL_SIZE / 2;
+    return vec2(
+        center.x + offset + col * CELL_SIZE,
+        center.y + offset + (GRID_SIZE - 1 - row) * CELL_SIZE
+    );
+}
+
+function worldPosToCell(side, worldPos)
+{
+    const center = boardCenterFor(side);
+    const offset = -(GRID_SIZE * CELL_SIZE) / 2;
+    const col = Math.floor((worldPos.x - center.x - offset) / CELL_SIZE);
+    const row = GRID_SIZE - 1 - Math.floor((worldPos.y - center.y - offset) / CELL_SIZE);
+    if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE)
+        return {row, col};
+    return null;
+}
+
+function abilityBarCenterFor(side)
+{
+    const boardWorld = GRID_SIZE * CELL_SIZE;
+    const center = boardCenterFor(side);
+    const y = center.y - boardWorld / 2 - SONAR_BAR_BELOW_BOARD - SONAR_BAR_SLOT_H / 2;
+    return vec2(center.x, y);
+}
+
+function abilityBarGroupWidth(slotCount)
+{
+    return slotCount * SONAR_BAR_SLOT_W + (slotCount - 1) * SONAR_BAR_GAP;
+}
+
+function abilityBarSlotRects(side)
+{
+    const barCenter = abilityBarCenterFor(side);
+    const sonarW = abilityBarGroupWidth(ABILITY_BAR_SLOT_COUNT);
+    const barrageW = abilityBarGroupWidth(ABILITY_BAR_SLOT_COUNT);
+    const totalW = sonarW + ABILITY_BAR_GROUP_GAP + barrageW;
+    let x = barCenter.x - totalW / 2 + SONAR_BAR_SLOT_W / 2;
+    const rects = [];
+
+    for (let i = 0; i < ABILITY_BAR_SLOT_COUNT; i++)
+    {
+        rects.push({
+            kind: 'sonar',
+            pos: vec2(x, barCenter.y),
+            size: vec2(SONAR_BAR_SLOT_W, SONAR_BAR_SLOT_H),
+            slotIndex: i,
+        });
+        x += SONAR_BAR_SLOT_W + SONAR_BAR_GAP;
+    }
+
+    x += ABILITY_BAR_GROUP_GAP - SONAR_BAR_GAP;
+
+    for (let i = 0; i < ABILITY_BAR_SLOT_COUNT; i++)
+    {
+        rects.push({
+            kind: 'barrage',
+            pos: vec2(x, barCenter.y),
+            size: vec2(SONAR_BAR_SLOT_W, SONAR_BAR_SLOT_H),
+            slotIndex: i,
+        });
+        x += SONAR_BAR_SLOT_W + SONAR_BAR_GAP;
+    }
+
+    return rects;
+}
+
+function hitTestAbilityBar(worldPos)
+{
+    const sides = gameMode === 'pvp' ? ['left', 'right'] : ['left'];
+    for (const side of sides)
+    {
+        const player = side === 'left' ? PLAYER_1 : PLAYER_2;
+        for (const rect of abilityBarSlotRects(side))
+        {
+            if (isOverlapping(worldPos, vec2(.01, .01), rect.pos, rect.size))
+                return {kind: rect.kind, side, slotIndex: rect.slotIndex, player};
+        }
+    }
+    return null;
+}
+
+function abilityBarSlotAvailable(kind, player, slotIndex)
+{
+    return slotIndex < getAbilityCharges(kind, player);
+}
+
+function nextAbilitySlotIndex(kind, player)
+{
+    return max(0, getAbilityCharges(kind, player) - 1);
+}
+
+function isAbilitySlotArmed(kind, slotIndex)
+{
+    return armedAbilitySlot !== null &&
+        armedAbilitySlot.kind === kind &&
+        armedAbilitySlot.slotIndex === slotIndex;
+}
+
+function startButtonCenter()
+{
+    return vec2(0, 0);
+}
+
+function autoButtonCenter()
+{
+    return vec2(0, PLACE_BTN_SIZE.y + PLACE_BTN_GAP);
+}
+
+function placementButtonRect(center)
+{
+    return {pos: center, size: PLACE_BTN_SIZE};
+}
+
+function hitTestPlacementButton(worldPos, center)
+{
+    const {pos, size} = placementButtonRect(center);
+    return isOverlapping(worldPos, vec2(.01, .01), pos, size);
+}
+
+function hitTestAutoButton(worldPos)
+{
+    return hitTestPlacementButton(worldPos, autoButtonCenter());
+}
+
+function hitTestStartButton(worldPos)
+{
+    return hitTestPlacementButton(worldPos, startButtonCenter());
+}
+
+function drawPlacementButton(center, label, hovered, canPress, accent)
+{
+    const {pos, size} = placementButtonRect(center);
+    const fill = hovered ? accent.fillHover : accent.fill;
+    const border = canPress ? accent.border : accent.borderDisabled;
+
+    drawRect(pos, size, fill);
+    drawRect(pos, size.scale(1.08), border, 0, false);
+    drawText(label, pos, .34, canPress ? accent.text : accent.textDisabled, 0, BLACK);
+}
+
+function drawPlacementButtons()
+{
+    if (phase !== PHASE_PLACE)
+        return;
+
+    const canPress = humanCanAct();
+    const autoAccent = {
+        fill: hsl(.52, .42, .22),
+        fillHover: hsl(.52, .48, .3),
+        border: hsl(.52, .35, .38),
+        borderDisabled: hsl(.52, .2, .24),
+        text: rgb(.9, .95, .85),
+        textDisabled: rgb(.55, .58, .5),
+    };
+    const startAccent = {
+        fill: hsl(.38, .42, .18),
+        fillHover: hsl(.36, .45, .26),
+        border: hsl(.38, .35, .32),
+        borderDisabled: hsl(.38, .2, .22),
+        text: rgb(.85, .95, .88),
+        textDisabled: rgb(.55, .58, .5),
+    };
+
+    drawPlacementButton(autoButtonCenter(), 'AUTO', hoverAutoButton && canPress, canPress, autoAccent);
+
+    if (placementReady)
+        drawPlacementButton(startButtonCenter(), 'START', hoverStartButton && canPress, canPress, startAccent);
+}
+
+function tryAutoButtonClick()
+{
+    if (phase !== PHASE_PLACE || !humanCanAct())
+        return false;
+    if (!hitTestAutoButton(mousePos))
+        return false;
+
+    sfxSelect.play();
+    autoPlaceCurrentPlayer();
+    return true;
+}
+
+function tryStartButtonClick()
+{
+    if (phase !== PHASE_PLACE || !placementReady || !humanCanAct())
+        return false;
+    if (!hitTestStartButton(mousePos))
+        return false;
+
+    sfxSelect.play();
+    finishPlacementForCurrentPlayer();
+    return true;
+}
+
+function getPlacementPreviewCells()
+{
+    if (phase !== PHASE_PLACE || !hoverCell || placeShipIndex >= SHIP_SPECS.length)
+        return [];
+
+    const spec = SHIP_SPECS[placeShipIndex];
+    const cells = [];
+    for (let i = 0; i < spec.len; i++)
+    {
+        const r = hoverCell.row + (placeHorizontal ? 0 : i);
+        const c = hoverCell.col + (placeHorizontal ? i : 0);
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE)
+            return [];
+        cells.push({row: r, col: c});
+    }
+    return cells;
+}
+
+function isPreviewValid()
+{
+    if (placeShipIndex >= SHIP_SPECS.length)
+        return false;
+
+    const fleet = getActiveFleet();
+    const preview = getPlacementPreviewCells();
+    if (preview.length !== SHIP_SPECS[placeShipIndex].len)
+        return false;
+    for (const cell of preview)
+    {
+        if (fleet[cell.row][cell.col] !== 0)
+            return false;
+    }
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// COMBAT
+
+function getShotsBy(player)
+{
+    return player === PLAYER_1 ? shotsAt2 : shotsAt1;
+}
+
+function getFleetOf(defender)
+{
+    return defender === PLAYER_1 ? fleet1 : fleet2;
+}
+
+function getShipsOf(defender)
+{
+    return defender === PLAYER_1 ? ships1 : ships2;
+}
+
+function alreadyShot(shots, row, col)
+{
+    return shots[row][col] !== SHOT_NONE;
+}
+
+function findShipAt(ships, shipId)
+{
+    return ships.find(s => s.id === shipId);
+}
+
+function playSinkSfx(attacker)
+{
+    if (gameMode === 'ai' && attacker !== PLAYER_1)
+        sfxSinkFriendly.play();
+    else
+        sfxSink.play();
+}
+
+function fireAt(defender, row, col, attacker)
+{
+    const shots = getShotsBy(attacker);
+    if (alreadyShot(shots, row, col))
+        return null;
+
+    const fleet = getFleetOf(defender);
+    const ships = getShipsOf(defender);
+    const shipId = fleet[row][col];
+
+    if (shipId === 0)
+    {
+        shots[row][col] = SHOT_MISS;
+        sfxMiss.play();
+        return {hit: false, sunk: false, shipName: null};
+    }
+
+    shots[row][col] = SHOT_HIT;
+    const ship = findShipAt(ships, shipId);
+    ship.hits++;
+    let sunk = false;
+    if (ship.hits >= ship.len)
+    {
+        ship.sunk = true;
+        sunk = true;
+        playSinkSfx(attacker);
+    }
+    else
+        sfxHit.play();
+
+    return {hit: true, sunk, shipName: ship.name};
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// SALVO PROJECTILES
+
+function projectileDurationSeconds(startX, startY, endX, endY)
+{
+    const speed = PROJECTILE_SPEED_CELLS_PER_SEC * CELL_SIZE;
+    if (speed <= 0)
+        return 0;
+    return Math.hypot(endX - startX, endY - startY) / speed;
+}
+
+function sampleParabolicPoint(startX, startY, endX, endY, t)
+{
+    const x = startX + (endX - startX) * t;
+    const baseY = startY + (endY - startY) * t;
+    const arcPeak = max(0.12, abs(endX - startX) * 0.22);
+    const y = baseY + arcPeak * 4 * t * (1 - t);
+    return {x, y};
+}
+
+function pickShipLaunchCell(ship, defender)
+{
+    if (ship.sunk || ship.hits >= ship.len)
+        return null;
+    const incoming = defender === PLAYER_1 ? shotsAt1 : shotsAt2;
+    for (const cell of ship.cells)
+    {
+        if (incoming[cell.row][cell.col] !== SHOT_HIT)
+            return cell;
+    }
+    return null;
+}
+
+function shipFrontSortKey(ship, defender)
+{
+    const towardEnemy = defender === PLAYER_1;
+    const rows = ship.cells.map(c => c.row);
+    const cols = ship.cells.map(c => c.col);
+    const horizontal = ship.cells.length > 1 && ship.cells[0].row === ship.cells[1].row;
+    if (horizontal)
+        return towardEnemy ? Math.max(...cols) : Math.min(...cols);
+    return towardEnemy ? Math.max(...rows) : Math.min(...rows);
+}
+
+function pickFrontShipLaunchCell(ships, defender)
+{
+    const afloat = ships
+        .filter(s => !s.sunk && s.hits < s.len)
+        .sort((a, b) =>
+        {
+            const fa = shipFrontSortKey(a, defender);
+            const fb = shipFrontSortKey(b, defender);
+            const towardEnemy = defender === PLAYER_1;
+            if (fb !== fa)
+                return towardEnemy ? fb - fa : fa - fb;
+            return a.id - b.id;
+        });
+
+    for (const ship of afloat)
+    {
+        const cell = pickShipLaunchCell(ship, defender);
+        if (cell)
+            return cell;
+    }
+    return null;
+}
+
+function pickAiSalvoVisualLaunchCell(realR, realC)
+{
+    const candidates = [];
+    for (let r = 0; r < GRID_SIZE; r++)
+    {
+        for (let c = 0; c < GRID_SIZE; c++)
+        {
+            if (Math.hypot(r - realR, c - realC) <= AI_SALVO_VISUAL_OFFSET_RADIUS)
+                candidates.push({row: r, col: c});
+        }
+    }
+    return candidates[randInt(candidates.length)];
+}
+
+function hasInFlightProjectiles()
+{
+    return activeProjectiles.length > 0;
+}
+
+function finishProjectileVolleyIfIdle()
+{
+    if (hasInFlightProjectiles() || endTurnWhenProjectilesClear === null || gameOver)
+        return;
+
+    endTurnWhenProjectilesClear = null;
+    switchTurn();
+}
+
+function applySalvoImpact(attacker, targetRow, targetCol)
+{
+    const defender = getOpponentPlayer(attacker);
+    const result = fireAt(defender, targetRow, targetCol, attacker);
+    if (!result)
+    {
+        finishProjectileVolleyIfIdle();
+        return;
+    }
+
+    if (gameMode === 'ai' && attacker === PLAYER_2 && result.hit)
+        aiEnqueueNeighbors(shotsAt1, targetRow, targetCol);
+
+    if (allShipsSunk(getShipsOf(defender)))
+    {
+        endTurnWhenProjectilesClear = null;
+        endGame(attacker);
+        return;
+    }
+
+    if (endTurnWhenProjectilesClear === attacker)
+    {
+        finishProjectileVolleyIfIdle();
+        return;
+    }
+
+    if (result.hit)
+        showExtraTurnHint(attacker, result.sunk);
+    else
+        switchTurn();
+}
+
+function showExtraTurnHint(attacker, sunk)
+{
+    let text;
+    if (attacker === PLAYER_1)
+        text = sunk ? 'Ship sunk! Hit — fire again' : 'Hit! Fire again';
+    else if (gameMode === 'ai')
+        text = sunk ? 'Enemy hit — they fire again' : 'Enemy hit — fires again';
+    else
+        text = sunk
+            ? `Player ${attacker} sunk a ship — fire again`
+            : `Player ${attacker} hit — fire again`;
+
+    extraTurnHint = {text, timeLeft: EXTRA_TURN_HINT_SEC};
+}
+
+function launchSalvo(attacker, targetRow, targetCol, quietLaunch = false)
+{
+    const friendlySide = getPlayerFriendlySide(attacker);
+    const targetSide = getPlayerEnemySide(attacker);
+    const ships = getFriendlyShipsFor(attacker);
+    let launchCell = pickFrontShipLaunchCell(ships, attacker);
+
+    if (gameMode === 'ai' && attacker === PLAYER_2 && launchCell)
+        launchCell = pickAiSalvoVisualLaunchCell(launchCell.row, launchCell.col);
+
+    const endPos = getCellWorldPos(targetSide, targetRow, targetCol);
+    const startPos = launchCell
+        ? getCellWorldPos(friendlySide, launchCell.row, launchCell.col)
+        : endPos;
+
+    const duration = projectileDurationSeconds(startPos.x, startPos.y, endPos.x, endPos.y);
+    if (duration <= 0)
+    {
+        applySalvoImpact(attacker, targetRow, targetCol);
+        return;
+    }
+
+    if (!quietLaunch)
+        sfxSalvoLaunch.play();
+    activeProjectiles.push({
+        attacker,
+        targetRow,
+        targetCol,
+        elapsed: 0,
+        duration,
+        startX: startPos.x,
+        startY: startPos.y,
+        endX: endPos.x,
+        endY: endPos.y,
+        isPlayer: attacker === PLAYER_1,
+    });
+}
+
+function advanceActiveProjectiles(dt)
+{
+    const landed = [];
+    for (const p of activeProjectiles)
+    {
+        p.elapsed += dt;
+        if (p.elapsed >= p.duration)
+            landed.push(p);
+    }
+    activeProjectiles = activeProjectiles.filter(p => p.elapsed < p.duration);
+    for (const p of landed)
+        applySalvoImpact(p.attacker, p.targetRow, p.targetCol);
+}
+
+function drawProjectiles()
+{
+    for (const p of activeProjectiles)
+    {
+        const t = p.duration > 0 ? clamp(p.elapsed / p.duration, 0, 1) : 1;
+        const pt = sampleParabolicPoint(p.startX, p.startY, p.endX, p.endY, t);
+        const radius = max(0.08, CELL_SIZE * 0.14) * 2;
+        const fill = p.isPlayer ? rgb(.73, .9, .99) : rgb(.99, .65, .65);
+        const stroke = p.isPlayer ? rgb(.4, .7, .9) : rgb(.9, .4, .4);
+        drawCircle(vec2(pt.x, pt.y), radius, fill, 0, stroke);
+    }
+}
+
+function allShipsSunk(ships)
+{
+    return ships.every(s => s.sunk);
+}
+
+function endGame(winPlayer)
+{
+    gameOver = true;
+    winner = winPlayer;
+    extraTurnHint = null;
+    endTurnWhenProjectilesClear = null;
+    if (gameMode === 'ai')
+    {
+        if (winner === PLAYER_1) sfxWin.play();
+        else sfxLose.play();
+    }
+    else
+        sfxWin.play();
+}
+
+function switchTurn()
+{
+    currentPlayer = currentPlayer === PLAYER_1 ? PLAYER_2 : PLAYER_1;
+    battleAim = 'fire';
+    armedAbilitySlot = null;
+    if (phase === PHASE_BATTLE && !gameOver)
+        sfxTurn.play();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AI
+
+function aiUnshotCells(shots)
+{
+    const cells = [];
+    for (let r = 0; r < GRID_SIZE; r++)
+        for (let c = 0; c < GRID_SIZE; c++)
+            if (!alreadyShot(shots, r, c))
+                cells.push({row: r, col: c});
+    return cells;
+}
+
+function aiEnqueueNeighbors(shots, row, col)
+{
+    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+    for (const [dr, dc] of dirs)
+    {
+        const r = row + dr, c = col + dc;
+        if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE && !alreadyShot(shots, r, c))
+        {
+            if (!aiTargetQueue.some(t => t.row === r && t.col === c))
+                aiTargetQueue.push({row: r, col: c});
+        }
+    }
+}
+
+function aiPickShot()
+{
+    const shots = shotsAt1;
+
+    while (aiTargetQueue.length > 0)
+    {
+        const t = aiTargetQueue.shift();
+        if (!alreadyShot(shots, t.row, t.col))
+            return t;
+    }
+
+    const pool = aiUnshotCells(shots);
+    if (pool.length === 0)
+        return null;
+    return pool[randInt(pool.length)];
+}
+
+function aiFire()
+{
+    const pick = aiPickShot();
+    if (!pick)
+        return;
+
+    launchSalvo(PLAYER_2, pick.row, pick.col);
+}
+
+function tryAiBarrage()
+{
+    if (aiTargetQueue.length > 0)
+        return false;
+
+    if (getAbilityCharges('barrage', PLAYER_2) <= 0)
+        return false;
+
+    const center = pickAiBarrageCenter(shotsAt1);
+    if (!center)
+        return false;
+
+    const unshot = countUnshotCellsInBarrageSweep(shotsAt1, center.row, center.col);
+    if (unshot < 2)
+        return false;
+
+    const hunt = huntTargetsInBarrageSweep(center.row, center.col);
+    let prob;
+    if (hunt >= 1)
+        prob = 0.55;
+    else
+        prob = 0.14 + unshot * 0.05;
+
+    if (rand() >= prob)
+        return false;
+
+    consumeAbilityCharge('barrage', PLAYER_2);
+    battleAim = 'fire';
+    launchBarrage(PLAYER_2, center.row, center.col);
+    return true;
+}
+
+function tryAiSonar()
+{
+    if (aiTargetQueue.length > 0)
+        return false;
+
+    if (getAbilityCharges('sonar', PLAYER_2) <= 0)
+        return false;
+
+    let bestCenter = null;
+    let bestScore = -1;
+    for (let row = 0; row < GRID_SIZE; row++)
+    {
+        for (let col = 0; col < GRID_SIZE; col++)
+        {
+            if (alreadyShot(shotsAt1, row, col))
+                continue;
+
+            const hullHidden = countHullInSweep(fleet1, row, col);
+            let unshot = 0;
+            for (const cell of sonarSweepCells(row, col))
+            {
+                if (!alreadyShot(shotsAt1, cell.row, cell.col))
+                    unshot++;
+            }
+            const score = hullHidden * 2 + unshot * 0.3;
+            if (score > bestScore || (score === bestScore && rand() >= 0.5))
+            {
+                bestScore = score;
+                bestCenter = {row, col};
+            }
+        }
+    }
+    if (!bestCenter)
+        return false;
+
+    const hullHidden = countHullInSweep(fleet1, bestCenter.row, bestCenter.col);
+    const prob = hullHidden >= 1 ? 0.35 : 0.15;
+    if (rand() >= prob)
+        return false;
+
+    consumeAbilityCharge('sonar', PLAYER_2);
+    const occupied = countHullInSweep(fleet1, bestCenter.row, bestCenter.col);
+    sonarReveal = {
+        centerRow: bestCenter.row,
+        centerCol: bestCenter.col,
+        occupiedCells: occupied,
+        timeLeft: SONAR_REVEAL_SEC,
+        side: 'left',
+    };
+    spawnSonarPulses('left', bestCenter.row, bestCenter.col);
+    battleAim = 'fire';
+    sfxSonar.play();
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GAME FLOW
+
+function resetPlacementState()
+{
+    phase = PHASE_PLACE;
+    placingPlayer = PLAYER_1;
+    placeShipIndex = 0;
+    placeHorizontal = true;
+    placementReady = false;
+    currentPlayer = PLAYER_1;
+    gameOver = false;
+    winner = null;
+    aiTargetQueue = [];
+    aiThinkTimer = 0;
+    resetAbilityState();
+    extraTurnHint = null;
+}
+
+function initGame()
+{
+    clearFleetData();
+    resetPlacementState();
+}
+
+function beginBattle()
+{
+    phase = PHASE_BATTLE;
+    currentPlayer = PLAYER_1;
+    placementReady = false;
+    aiTargetQueue = [];
+    aiThinkTimer = 0;
+    resetAbilityState();
+    sfxBattle.play();
+}
+
+function finishPlacementForCurrentPlayer()
+{
+    const ships = getActiveShips();
+    if (!allShipsPlaced(ships))
+        return;
+
+    if (gameMode === 'ai' && placingPlayer === PLAYER_1)
+    {
+        randomPlaceFleet(fleet2, ships2);
+        beginBattle();
+        return;
+    }
+
+    if (gameMode === 'pvp' && placingPlayer === PLAYER_1)
+    {
+        placingPlayer = PLAYER_2;
+        placeShipIndex = 0;
+        placeHorizontal = true;
+        placementReady = false;
+        return;
+    }
+
+    beginBattle();
+}
+
+function tryPlaceCurrentShip(row, col)
+{
+    if (placeShipIndex >= SHIP_SPECS.length)
+        return;
+
+    const fleet = getActiveFleet();
+    const ships = getActiveShips();
+    if (!placeShipOnFleet(fleet, ships, placeShipIndex, row, col, placeHorizontal))
+        return;
+
+    sfxPlace.play();
+    placeShipIndex++;
+    if (placeShipIndex >= SHIP_SPECS.length)
+        placementReady = true;
+}
+
+function autoPlaceCurrentPlayer()
+{
+    const fleet = getActiveFleet();
+    const ships = getActiveShips();
+    randomPlaceFleet(fleet, ships);
+    placeShipIndex = SHIP_SPECS.length;
+    placementReady = true;
+    sfxPlace.play();
+}
+
+function setPlaying(p)
+{
+    isPlaying = p;
+    const hud = getToolbar('hud');
+    if (hud) p ? hud.show() : hud.hide();
+}
+
+function startGame(mode)
+{
+    gameMode = mode;
+    initGame();
+    setPlaying(true);
+    hideMenu('title');
+}
+
+function quitToTitle()
+{
+    setPlaying(false);
+    clearSubmenuStack();
+    hideAllMenus();
+    initGame();
+    showMenu('title');
+}
+
+function humanCanAct()
+{
+    if (!isPlaying || gameOver) return false;
+    if (hasInFlightProjectiles())
+        return false;
+    if (sonarReveal)
+        return false;
+    if (phase === PHASE_PLACE)
+        return gameMode === 'pvp' || placingPlayer === PLAYER_1;
+    if (gameMode === 'ai')
+        return currentPlayer === PLAYER_1;
+    return true;
+}
+
+function cancelAimMode()
+{
+    if (battleAim === 'fire')
+        return;
+    battleAim = 'fire';
+    armedAbilitySlot = null;
+}
+
+function disarmAbility(kind)
+{
+    if (battleAim === kind)
+        cancelAimMode();
+}
+
+function armAbility(kind, slotIndex)
+{
+    if (phase !== PHASE_BATTLE || gameOver || sonarReveal || !humanCanAct())
+        return;
+    if (!abilityBarSlotAvailable(kind, currentPlayer, slotIndex))
+        return;
+
+    battleAim = kind;
+    armedAbilitySlot = {kind, slotIndex};
+    sfxSelect.play();
+}
+
+function confirmPlayerSonar(row, col)
+{
+    if (battleAim !== 'sonar' || sonarReveal)
+        return;
+    if (getAbilityCharges('sonar', currentPlayer) <= 0)
+        return;
+
+    const opponent = getOpponentPlayer(currentPlayer);
+    const enemyFleet = getFleetOf(opponent);
+    const occupied = countHullInSweep(enemyFleet, row, col);
+
+    consumeAbilityCharge('sonar', currentPlayer);
+    sonarReveal = {
+        centerRow: row,
+        centerCol: col,
+        occupiedCells: occupied,
+        timeLeft: SONAR_REVEAL_SEC,
+        side: getPlayerEnemySide(currentPlayer),
+    };
+    spawnSonarPulses(sonarReveal.side, row, col);
+    cancelAimMode();
+    sfxSonar.play();
+}
+
+function launchBarrage(attacker, centerRow, centerCol)
+{
+    const targets = pickBarrageTargets(centerRow, centerCol);
+    endTurnWhenProjectilesClear = attacker;
+    sfxBarrage.play();
+    for (const {row, col} of targets)
+        launchSalvo(attacker, row, col, true);
+    finishProjectileVolleyIfIdle();
+}
+
+function confirmPlayerBarrage(row, col)
+{
+    if (battleAim !== 'barrage' || sonarReveal)
+        return;
+    if (getAbilityCharges('barrage', currentPlayer) <= 0)
+        return;
+    if (!isBarrageCenterValid(row, col))
+        return;
+
+    consumeAbilityCharge('barrage', currentPlayer);
+    cancelAimMode();
+    launchBarrage(currentPlayer, row, col);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// RENDERING
+
+const COLOR_WATER = hsl(.58, .55, .22);
+const COLOR_WATER_DARK = hsl(.58, .5, .16);
+const COLOR_SHIP = hsl(0, 0, .55);
+const COLOR_SHIP_HI = hsl(0, 0, .72);
+const COLOR_MISS = hsl(.6, .15, .75);
+const COLOR_HIT = hsl(0, .85, .5);
+const COLOR_SUNK = hsl(0, .7, .35);
+
+function drawBoardTurnBorder(side)
+{
+    const boardWorld = GRID_SIZE * CELL_SIZE;
+    const center = boardCenterFor(side);
+    const t = 0.05;
+    const half = boardWorld / 2;
+    let white = rgb(1, 1, 1);
+    const enemySide = getPlayerEnemySide(currentPlayer);
+    if (humanCanAct() && side === enemySide && battleAim === 'sonar')
+        white = rgb(.45 + .25 * abs(sin(time * 5.5)), 1, .55);
+    else if (humanCanAct() && side === enemySide && battleAim === 'barrage')
+        white = rgb(1, .78 + .12 * abs(sin(time * 5.5)), .28);
+
+    // Hug the grid only — column numbers sit above, row letters to the left.
+    const left = center.x - half;
+    const right = center.x + half;
+    const bottom = center.y - half;
+    const top = center.y + half;
+
+    const horizW = right - left + t;
+    const horizCx = (left + right) / 2;
+    drawRect(vec2(horizCx, top + t / 2), vec2(horizW, t), white);
+    drawRect(vec2(horizCx, bottom - t / 2), vec2(horizW, t), white);
+
+    const vertH = top - bottom + t;
+    const vertCy = (top + bottom) / 2;
+    drawRect(vec2(left - t / 2, vertCy), vec2(t, vertH), white);
+    drawRect(vec2(right + t / 2, vertCy), vec2(t, vertH), white);
+}
+
+function drawGridBoard(side, options = {})
+{
+    const {
+        showFleet = false,
+        fleet = null,
+        ships = null,
+        shots = null,
+        interactive = false,
+        label = '',
+    } = options;
+
+    const boardWorld = GRID_SIZE * CELL_SIZE;
+    const center = boardCenterFor(side);
+
+    drawRect(center, vec2(boardWorld + 0.35), rgb(.04, .06, .12));
+    drawRect(center, vec2(boardWorld), COLOR_WATER_DARK);
+
+    for (let i = 1; i < GRID_SIZE; i++)
+    {
+        const o = -boardWorld / 2 + i * CELL_SIZE;
+        const lx = center.x + o;
+        const ly0 = center.y - boardWorld / 2;
+        const ly1 = center.y + boardWorld / 2;
+        drawLine(vec2(lx, ly0), vec2(lx, ly1), .03, COLOR_WATER);
+        const ly = center.y + o;
+        const lx0 = center.x - boardWorld / 2;
+        const lx1 = center.x + boardWorld / 2;
+        drawLine(vec2(lx0, ly), vec2(lx1, ly), .03, COLOR_WATER);
+    }
+
+    for (let row = 0; row < GRID_SIZE; row++)
+    {
+        for (let col = 0; col < GRID_SIZE; col++)
+        {
+            const pos = getCellWorldPos(side, row, col);
+            const cellSize = vec2(CELL_SIZE * .94);
+
+            if (showFleet && fleet && fleet[row][col] !== 0)
+            {
+                const sunk = ships && ships.some(s =>
+                    s.id === fleet[row][col] && s.sunk);
+                drawRect(pos, cellSize, sunk ? COLOR_SUNK : COLOR_SHIP);
+                drawRect(pos, cellSize.scale(.35), COLOR_SHIP_HI);
+            }
+
+            if (shots)
+            {
+                const shot = shots[row][col];
+                if (shot === SHOT_MISS)
+                    drawCircle(pos, CELL_SIZE * .22, COLOR_MISS);
+                else if (shot === SHOT_HIT)
+                {
+                    let sunkCell = false;
+                    if (fleet && fleet[row][col] !== 0 && ships)
+                    {
+                        const ship = findShipAt(ships, fleet[row][col]);
+                        sunkCell = ship && ship.sunk;
+                        if (sunkCell)
+                            drawRect(pos, cellSize, COLOR_SUNK);
+                    }
+                    if (!sunkCell)
+                    {
+                        drawCircle(pos, CELL_SIZE * .3, COLOR_HIT);
+                        drawCircle(pos, CELL_SIZE * .12, rgb(1, 1, 1, .35));
+                    }
+                }
+            }
+
+            if (interactive && hoverBoard === side && hoverCell &&
+                hoverCell.row === row && hoverCell.col === col && !gameOver)
+            {
+                const shotsHere = shots && shots[row][col] !== SHOT_NONE;
+                const canPlace = phase === PHASE_PLACE;
+                if ((canPlace || !shotsHere))
+                    drawRect(pos, cellSize, rgb(1, 1, 1, .12));
+            }
+        }
+    }
+
+    drawBoardCoordinateLabels(side);
+
+    if (label)
+    {
+        const labelPos = worldToScreen(center.add(vec2(0, boardWorld / 2 + .9)));
+        drawTextScreen(label, labelPos, 22, rgb(.75, .85, 1), 2, BLACK);
+    }
+}
+
+function drawPlacementPreview()
+{
+    if (phase !== PHASE_PLACE || !hoverCell || placeShipIndex >= SHIP_SPECS.length)
+        return;
+
+    const preview = getPlacementPreviewCells();
+    const valid = isPreviewValid();
+    const side = placementBoardSide();
+
+    for (const cell of preview)
+    {
+        const pos = getCellWorldPos(side, cell.row, cell.col);
+        drawRect(pos, vec2(CELL_SIZE * .92),
+            valid ? rgb(.3, .85, 1, .35) : rgb(1, .3, .3, .35));
+    }
+}
+
+function drawPlacementBoard()
+{
+    const side = placementBoardSide();
+    const fleet = getActiveFleet();
+    const ships = getActiveShips();
+    const label = gameMode === 'pvp'
+        ? `Player ${placingPlayer} — place fleet`
+        : 'Your fleet';
+
+    drawGridBoard(side, {
+        showFleet: true,
+        fleet,
+        ships,
+        interactive: true,
+        label,
+    });
+    drawPlacementPreview();
+    drawPlacementButtons();
+}
+
+function drawAbilitySlotArmedLabel(rect, kind)
+{
+    const pulse = 0.55 + 0.45 * abs(sin(time * 5.5));
+    const isSonar = kind === 'sonar';
+    const labelColor = isSonar ? rgb(.55 + .2 * pulse, 1, .68) : rgb(1, .86, .42);
+    const screenC = worldToScreen(rect.pos.add(vec2(0, rect.size.y / 2 + .2)));
+    drawTextScreen(isSonar ? 'SONAR' : 'BARRAGE', screenC, 18, labelColor, 2, rgb(0, 0, 0, .88));
+}
+
+function drawAbilitySlotFrame(pos, size, available, hovered, armed, accent)
+{
+    const pad = 0.08;
+    const frameSize = size.add(vec2(pad * 2, pad * 2));
+
+    if (!available)
+    {
+        drawRect(pos, frameSize, rgb(.05, .07, .1, .55));
+        drawRect(pos, frameSize.add(vec2(.04, .04)), rgb(.14, .17, .22, .35));
+        return;
+    }
+
+    if (armed)
+    {
+        const pulse = 0.5 + 0.5 * abs(sin(time * 6));
+        drawRect(pos, frameSize.add(vec2(.12, .12)), rgb(accent.r, accent.g, accent.b, .18 * pulse));
+        drawRect(pos, frameSize.add(vec2(.06, .06)), rgb(accent.r, accent.g, accent.b, .42 + .35 * pulse));
+        drawRect(pos, frameSize, rgb(accent.r * .12, accent.g * .12, accent.b * .12, .92));
+        return;
+    }
+
+    if (hovered)
+    {
+        drawRect(pos, frameSize, rgb(.1, .16, .24, .9));
+        drawRect(pos, frameSize.add(vec2(.05, .05)), rgb(accent.r, accent.g, accent.b, .55));
+        return;
+    }
+
+    drawRect(pos, frameSize, rgb(.07, .1, .15, .78));
+    drawRect(pos, frameSize.add(vec2(.03, .03)), rgb(.22, .3, .4, .45));
+}
+
+function drawSweepPreview(side, centerRow, centerCol, inner, outer, requireValidCenter)
+{
+    if (centerRow === undefined || centerCol === undefined)
+        return;
+    if (requireValidCenter && !isBarrageCenterValid(centerRow, centerCol))
+        return;
+
+    for (const {row, col} of sonarSweepCells(centerRow, centerCol))
+    {
+        const pos = getCellWorldPos(side, row, col);
+        drawRect(pos, vec2(CELL_SIZE * .92), inner);
+        drawRect(pos, vec2(CELL_SIZE * .98), outer);
+    }
+}
+
+function drawSonarSlotIcon(rectPos, rectSize, available, hovered, armed)
+{
+    const screenC = worldToScreen(rectPos);
+    const worldR = min(rectSize.x, rectSize.y) * .46;
+    const screenR = abs(worldToScreen(rectPos.add(vec2(worldR, 0))).x - screenC.x);
+    const linePx = max(1.5, screenR * .08);
+    const clear = rgb(0, 0, 0, 0);
+
+    let stroke = available ? rgb(.55, .98, .62) : rgb(.42, .5, .46, .5);
+    let sweep = available ? rgb(.38, .9, .48, .48) : rgb(.32, .38, .35, .28);
+    let blip = available ? rgb(.82, 1, .86) : rgb(.5, .55, .52, .5);
+
+    if (hovered && available && !armed)
+    {
+        stroke = rgb(.72, 1, .78);
+        sweep = rgb(.48, .98, .58, .58);
+        blip = WHITE;
+        drawCircle(screenC, screenR * 2.2, rgb(.45, .98, .55, .2), 0, BLACK, false, true);
+    }
+
+    if (armed && available)
+    {
+        const pulse = 0.55 + 0.45 * abs(sin(time * 6));
+        stroke = rgb(.85, 1, .9);
+        sweep = rgb(.55, 1, .65, .65);
+        blip = WHITE;
+        drawCircle(screenC, screenR * 2.6, rgb(.4, 1, .55, .28 * pulse), 0, BLACK, false, true);
+        drawCircle(screenC, screenR * 2.15, rgb(.55, 1, .68, .45 + .35 * pulse), linePx * 1.4, stroke, false, true);
+    }
+
+    drawCircle(screenC, screenR * 2, clear, linePx, stroke, false, true);
+    drawCircle(screenC, screenR * 1.15, clear, linePx * .75, stroke, false, true);
+
+    const arm = screenR * .92;
+    drawLine(screenC.subtract(vec2(arm, 0)), screenC.add(vec2(arm, 0)), linePx, stroke,
+        vec2(), 0, false, true);
+    drawLine(screenC.subtract(vec2(0, arm)), screenC.add(vec2(0, arm)), linePx, stroke,
+        vec2(), 0, false, true);
+
+    const sweepMid = -PI / 4;
+    const sweepHalf = PI / 9;
+    const a0 = sweepMid - sweepHalf;
+    const a1 = sweepMid + sweepHalf;
+    drawPoly(
+        [
+            vec2(0, 0),
+            vec2(cos(a0) * arm, sin(a0) * arm),
+            vec2(cos(a1) * arm, sin(a1) * arm),
+        ],
+        sweep, 0, BLACK, screenC, 0, false, true);
+
+    const blipPos = vec2(screenC.x + screenR * .42, screenC.y - screenR * .36);
+    drawCircle(blipPos, max(4, screenR * .16), blip, 0, BLACK, false, true);
+}
+
+function drawBarrageSlotIcon(rectPos, rectSize, available, hovered, armed)
+{
+    const screenC = worldToScreen(rectPos);
+    const worldR = min(rectSize.x, rectSize.y) * .5;
+    const screenR = abs(worldToScreen(rectPos.add(vec2(worldR, 0))).x - screenC.x);
+    const headR = max(6, screenR * .22);
+    const linePx = max(2.5, screenR * .12);
+    const trailSpan = screenR * .22;
+
+    let color = available ? rgb(.99, .7, .28) : rgb(.55, .48, .4, .5);
+    let trail = available ? rgb(.98, .55, .15, .55) : rgb(.5, .42, .35, .35);
+
+    if (hovered && available && !armed)
+    {
+        color = rgb(1, .85, .45);
+        trail = rgb(1, .65, .2, .7);
+        drawCircle(screenC, screenR * 2.1, rgb(.98, .55, .15, .22), 0, BLACK, false, true);
+    }
+
+    if (armed && available)
+    {
+        const pulse = 0.55 + 0.45 * abs(sin(time * 6));
+        color = rgb(1, .92, .5);
+        trail = rgb(1, .7, .18, .85);
+        drawCircle(screenC, screenR * 2.5, rgb(.98, .55, .15, .3 * pulse), 0, BLACK, false, true);
+        drawCircle(screenC, screenR * 2.1, rgb(1, .78, .25, .5 + .35 * pulse), linePx * 1.3, color, false, true);
+    }
+
+    const rotCW = 20 * PI / 180;
+    const aim = -PI / 2 + rotCW;
+    const spread = PI / 3.1;
+    const angles = [
+        aim - spread * 1.45,
+        aim - spread * .48,
+        aim + spread * .48,
+        aim + spread * 1.45,
+    ];
+    const headDist = screenR * .48;
+    const origin = vec2(
+        screenC.x - cos(aim) * screenR * .22,
+        screenC.y - sin(aim) * screenR * .22);
+
+    for (const angle of angles)
+    {
+        const dir = vec2(cos(angle), sin(angle));
+        const head = vec2(origin.x + dir.x * headDist, origin.y + dir.y * headDist);
+        for (let s = 1; s <= 3; s++)
+        {
+            const t = s / 4;
+            const trailPos = vec2(
+                origin.x + dir.x * headDist * (.32 + t * .48),
+                origin.y + dir.y * headDist * (.32 + t * .48));
+            drawLine(trailPos, vec2(
+                trailPos.x + dir.x * trailSpan,
+                trailPos.y + dir.y * trailSpan),
+                linePx, rgb(trail.r, trail.g, trail.b, trail.a * (1 - t * .65)),
+                vec2(), 0, false, true);
+        }
+        drawCircle(head, headR, color, 0, BLACK, false, true);
+    }
+}
+
+function drawSonarRevealOverlay()
+{
+    if (!sonarReveal)
+        return;
+
+    const {centerRow, centerCol, occupiedCells, side} = sonarReveal;
+    for (const {row, col} of sonarSweepCells(centerRow, centerCol))
+    {
+        const pos = getCellWorldPos(side, row, col);
+        drawRect(pos, vec2(CELL_SIZE * .92), rgb(.13, .83, .93, .28));
+    }
+
+    const centerPos = getCellWorldPos(side, centerRow, centerCol);
+    const screenPos = worldToScreen(centerPos);
+    const label = String(occupiedCells);
+    const fontSize = 56;
+    drawTextScreen(label, screenPos, fontSize, rgb(.93, .99, 1), 4, rgb(.06, .15, .23, .88));
+}
+
+function drawAbilityItemBar(side, player, interactive)
+{
+    const isActivePlayer = currentPlayer === player;
+    const canUse = interactive && isActivePlayer && humanCanAct() && !sonarReveal;
+
+    for (const rect of abilityBarSlotRects(side))
+    {
+        const available = abilityBarSlotAvailable(rect.kind, player, rect.slotIndex);
+        const hovered = canUse && hoverAbilityBar && hoverAbilityBar.side === side &&
+            hoverAbilityBar.kind === rect.kind &&
+            hoverAbilityBar.slotIndex === rect.slotIndex;
+        const armedHere = canUse && isActivePlayer &&
+            isAbilitySlotArmed(rect.kind, rect.slotIndex);
+        const accent = rect.kind === 'sonar' ? rgb(.4, .98, .55) : rgb(1, .78, .22);
+
+        drawAbilitySlotFrame(rect.pos, rect.size, available, hovered, armedHere, accent);
+
+        if (rect.kind === 'sonar')
+            drawSonarSlotIcon(rect.pos, rect.size, available, hovered, armedHere);
+        else
+            drawBarrageSlotIcon(rect.pos, rect.size, available, hovered, armedHere);
+
+        if (armedHere)
+            drawAbilitySlotArmedLabel(rect, rect.kind);
+    }
+}
+
+function drawSonarPulses()
+{
+    for (const pulse of sonarPulses)
+    {
+        const ring = sampleSonarPulseRing(pulse.elapsed);
+        if (!ring)
+            continue;
+
+        const pos = getCellWorldPos(pulse.side, pulse.row, pulse.col);
+        const screenPos = worldToScreen(pos);
+        drawCircle(screenPos, ring.radius * 2, rgb(.4, .91, .98, ring.alpha), 0, BLACK, false, true);
+    }
+}
+
+function drawBattleBoards()
+{
+    const p1View = gameMode === 'pvp' || currentPlayer === PLAYER_1 || gameOver;
+    const inBattle = phase === PHASE_BATTLE && !gameOver;
+
+    const leftFriendlySelect = inBattle &&
+        ((gameMode === 'ai' && currentPlayer === PLAYER_1) ||
+         (gameMode === 'pvp' && currentPlayer === PLAYER_1));
+    const rightFriendlySelect = inBattle &&
+        gameMode === 'pvp' && currentPlayer === PLAYER_2;
+    const leftEnemyTarget = inBattle && gameMode === 'pvp' && currentPlayer === PLAYER_2;
+    const rightEnemyTarget = inBattle &&
+        ((gameMode === 'ai' && currentPlayer === PLAYER_1) ||
+         (gameMode === 'pvp' && currentPlayer === PLAYER_1));
+
+    drawGridBoard('left', {
+        showFleet: true,
+        fleet: fleet1,
+        ships: ships1,
+        shots: shotsAt1,
+        interactive: inBattle && p1View && (leftFriendlySelect || leftEnemyTarget),
+        label: gameMode === 'ai' ? 'Your fleet' : 'Player 1',
+    });
+
+    drawGridBoard('right', {
+        showFleet: gameOver,
+        fleet: fleet2,
+        ships: ships2,
+        shots: shotsAt2,
+        interactive: inBattle && (rightFriendlySelect || rightEnemyTarget),
+        label: gameMode === 'ai' ? 'Enemy waters' : 'Player 2',
+    });
+
+    if (inBattle)
+        drawBoardTurnBorder(getPlayerEnemySide(currentPlayer));
+
+    if (hoverBoard && hoverCell && hoverBoard === getPlayerEnemySide(currentPlayer))
+    {
+        if (battleAim === 'sonar')
+            drawSweepPreview(hoverBoard, hoverCell.row, hoverCell.col,
+                rgb(.22, .74, .96, .22), rgb(.49, .83, .99, .35), false);
+        else if (battleAim === 'barrage')
+            drawSweepPreview(hoverBoard, hoverCell.row, hoverCell.col,
+                rgb(.98, .57, .18, .2), rgb(.99, .73, .45, .38), true);
+    }
+
+    drawSonarRevealOverlay();
+    drawSonarPulses();
+    drawProjectiles();
+}
+
+function drawHUD()
+{
+    if (!isPlaying) return;
+
+    const screen = vec2(mainCanvasSize.x, mainCanvasSize.y);
+    let status = '';
+
+    if (gameOver)
+    {
+        if (gameMode === 'ai')
+            status = winner === PLAYER_1 ? 'Victory!' : 'Defeat!';
+        else
+            status = `Player ${winner} wins!`;
+        drawTextScreen(status, vec2(screen.x / 2, screen.y / 2), 52,
+            winner === PLAYER_1 ? rgb(0, 1, .45) : rgb(1, .45, .35), 5, BLACK);
+        drawTextScreen('R: rematch  ·  ESC: pause',
+            vec2(screen.x / 2, screen.y / 2 + 50), 22, WHITE, 2, BLACK);
+        return;
+    }
+
+    if (phase === PHASE_PLACE)
+    {
+        const spec = SHIP_SPECS[placeShipIndex];
+        if (placeShipIndex < SHIP_SPECS.length)
+            status = `Place ${spec.name} (${spec.len}) — click cell · R: rotate`;
+        else
+            status = 'Fleet ready — AUTO or START';
+        status += '  ·  A: auto-place';
+    }
+    else if (hasInFlightProjectiles())
+    {
+        status = 'Salvo in flight...';
+    }
+    else if (sonarReveal)
+    {
+        status = `Sonar: ${sonarReveal.occupiedCells} hull segment` +
+            (sonarReveal.occupiedCells === 1 ? '' : 's') + ' in sweep';
+    }
+    else if (battleAim === 'sonar')
+    {
+        status = 'SONAR armed — click center on enemy waters (ESC to cancel)';
+        drawTextScreen(status, vec2(screen.x / 2, 28), 28, rgb(.55, 1, .68), 4, rgb(0, 0, 0, .9));
+        return;
+    }
+    else if (battleAim === 'barrage')
+    {
+        status = 'BARRAGE armed — click center on enemy waters (ESC to cancel)';
+        drawTextScreen(status, vec2(screen.x / 2, 28), 28, rgb(1, .86, .42), 4, rgb(0, 0, 0, .9));
+        return;
+    }
+    else if (gameMode === 'ai')
+    {
+        status = currentPlayer === PLAYER_1
+            ? 'Sonar (S) · Barrage (B) · icons below fleet · fire on enemy waters'
+            : 'Enemy turn...';
+    }
+    else
+    {
+        status = `Player ${currentPlayer} — Sonar (S) · Barrage (B) · fire on enemy waters`;
+    }
+
+    drawTextScreen(status, vec2(screen.x / 2, 28), 24, rgb(.8, .9, 1), 3, BLACK);
+
+    if (extraTurnHint && extraTurnHint.timeLeft > 0)
+    {
+        const t = extraTurnHint.timeLeft / EXTRA_TURN_HINT_SEC;
+        const alpha = min(1, t * 2);
+        drawTextScreen(extraTurnHint.text, vec2(screen.x / 2, 56), 26,
+            rgb(1, .88, .35, alpha), 3, rgb(0, 0, 0, alpha * .85));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// INPUT / LOOP
+
+function updateHover()
+{
+    hoverCell = null;
+    hoverBoard = null;
+    hoverAbilityBar = null;
+    hoverAutoButton = false;
+    hoverStartButton = false;
+
+    if (phase === PHASE_PLACE)
+    {
+        if (humanCanAct())
+        {
+            hoverAutoButton = hitTestAutoButton(mousePos);
+            if (placementReady)
+                hoverStartButton = hitTestStartButton(mousePos);
+        }
+
+        if (!humanCanAct())
+            return;
+
+        if (hoverAutoButton || hoverStartButton)
+            return;
+
+        hoverCell = worldPosToCell(placementBoardSide(), mousePos);
+        hoverBoard = placementBoardSide();
+        return;
+    }
+
+    if (phase !== PHASE_BATTLE)
+        return;
+
+    const barHit = hitTestAbilityBar(mousePos);
+    if (barHit)
+    {
+        hoverAbilityBar = barHit;
+        return;
+    }
+
+    const enemySide = getPlayerEnemySide(currentPlayer);
+    const enemyCell = worldPosToCell(enemySide, mousePos);
+    if (enemyCell)
+    {
+        hoverCell = enemyCell;
+        hoverBoard = enemySide;
+    }
+}
+
+function tryAbilityBarClick()
+{
+    const barHit = hitTestAbilityBar(mousePos);
+    if (!barHit || !humanCanAct())
+        return false;
+    if (barHit.player !== currentPlayer)
+        return true;
+
+    const kind = barHit.kind;
+    if (battleAim === kind)
+    {
+        if (isAbilitySlotArmed(kind, barHit.slotIndex))
+            cancelAimMode();
+        else
+            armAbility(kind, barHit.slotIndex);
+        return true;
+    }
+    if (!abilityBarSlotAvailable(kind, barHit.player, barHit.slotIndex))
+        return true;
+    disarmAbility(kind === 'sonar' ? 'barrage' : 'sonar');
+    armAbility(kind, barHit.slotIndex);
+    return true;
+}
+
+async function gameInit()
+{
+    canvasClearColor = new Color().setHex('#081018');
+    setSoundVolume(.75);
+
+    setMenuVisibilityCallback(v => paused = v);
+
+    // Soft naval SFX — sine-like curves, gentle attack, low volume
+    sfxPlace = new SoundGenerator({
+        frequency: 440, attack: .008, release: .09, shapeCurve: 1.2,
+        volume: .22, randomness: .02,
+    });
+    sfxMiss = new SoundGenerator({
+        frequency: 340, attack: .01, release: .16, shapeCurve: 1.1,
+        slide: -.3, volume: .18, randomness: .03,
+    });
+    sfxHit = new SoundGenerator({
+        frequency: 480, attack: .006, release: .11, shapeCurve: 1.15,
+        pitchJump: 70, pitchJumpTime: .04, volume: .24, randomness: .02,
+    });
+    sfxSink = new SoundGenerator({
+        frequency: 523, attack: .012, release: .24, shapeCurve: 1.1,
+        pitchJump: 150, pitchJumpTime: .07, slide: .15, volume: .26,
+    });
+    sfxSinkFriendly = new SoundGenerator({
+        frequency: 165, attack: .02, release: .38, shapeCurve: 1,
+        slide: -.4, volume: .2,
+    });
+    sfxWin = new SoundGenerator({
+        frequency: 587, attack: .015, release: .42, shapeCurve: 1.1,
+        pitchJump: 180, pitchJumpTime: .09, delay: .05, volume: .28,
+    });
+    sfxLose = new SoundGenerator({
+        frequency: 280, attack: .015, release: .48, shapeCurve: 1,
+        slide: -.3, volume: .22,
+    });
+    sfxSonar = new SoundGenerator({
+        frequency: 660, attack: .01, release: .28, shapeCurve: 1.2,
+        slide: .2, delay: .04, volume: .19,
+    });
+    sfxRotate = new SoundGenerator({
+        frequency: 380, attack: .005, release: .055, shapeCurve: 1.1,
+        volume: .14, randomness: .02,
+    });
+    sfxTurn = new SoundGenerator({
+        frequency: 300, attack: .008, release: .13, shapeCurve: 1,
+        slide: -.12, volume: .15,
+    });
+    sfxBattle = new SoundGenerator({
+        frequency: 392, attack: .01, release: .22, shapeCurve: 1.15,
+        pitchJump: 110, pitchJumpTime: .05, volume: .2,
+    });
+    sfxSelect = new SoundGenerator({
+        frequency: 520, attack: .004, release: .065, shapeCurve: 1.2,
+        volume: .13,
+    });
+    sfxSalvoLaunch = new SoundGenerator({
+        frequency: 220, attack: .004, release: .1, shapeCurve: 1.05,
+        slide: .35, volume: .17, randomness: .04,
+    });
+    sfxBarrage = new SoundGenerator({
+        frequency: 180, attack: .006, release: .14, shapeCurve: 1.05,
+        slide: .25, volume: .2, randomness: .06,
+    });
+
+    const sound_select = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.18]);
+    const sound_activate = new Sound([.55,,30,.01,,.02,1,3.4,94,,,,,,,,,.45]);
+    setMenuSounds({
+        select: () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
+
+    createMenu({
+        id: 'title',
+        title: 'BATTLESHIP',
+        dismissable: false,
+        onStart: () => startGame('ai'),
+        items: [
+            {type:'button', label:'PLAY', onClick: () => startGame('ai')},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+        ],
+    });
+
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider', id:'volume', label:'VOLUME', value: .75, min:0, max:1,
+                persist:'battleship.volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'button', label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'button', label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    createMenu({
+        id: 'about',
+        title: 'HOW TO PLAY',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:'Place your fleet on the 10×10 grid, then take turns firing on enemy waters. ' +
+                'Sink every enemy ship to win.\n\n' +
+                'Placement: click a cell for each ship · R rotate · AUTO button (or A) randomizes fleet · START when ready.'},
+            {type:'text', text:'Battle: click an unshot cell on the enemy board to fire. Shells arc from your front ship to the target. A hit lets you shoot again; a miss passes the turn.'},
+            {type:'text', text:'SONAR — scans a 3×3 block on the enemy board and shows how many hull segments are inside (not which cells). ' +
+                'You get 5 sonar charges per match (icons below your fleet board). Using sonar ends your turn after the readout.\n\n' +
+                '1) Click a sonar icon below your fleet (or press S).\n' +
+                '2) Click the center cell of the area on enemy waters.\n' +
+                '3) Read the big number for about 3 seconds (0 = empty, 2+ = focus fire there).\n' +
+                'ESC or clicking the icon again cancels sonar aiming before you confirm.'},
+            {type:'text', text:'BARRAGE — fires four shells at random cells inside a 3×3 block on enemy waters. ' +
+                'You get 5 barrage charges per match (orange icons below your fleet). The center cell must be at least one cell in from the border. ' +
+                'Your turn ends when all four shells land (hits do not grant extra shots).\n\n' +
+                '1) Click a barrage icon (or press B).\n' +
+                '2) Click the center of the 3×3 on enemy waters.\n' +
+                'ESC or clicking the icon again cancels before you confirm.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME', onClick: () => hideMenu('pause')},
+            {type:'button', id:'restart', label:'RESTART', onClick: () => { initGame(); hideMenu('pause'); }},
+            {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({message: 'Quit to title?', onYes: quitToTitle});
+            }},
+        ],
+    });
+
+    createToolbar({
+        id: 'hud',
+        anchor: 'top-right',
+        direction: 'horizontal',
+        items: [
+            {type:'button', label:'⛶', title:'Toggle fullscreen', hideOnTouch:true, onClick: toggleFullscreen},
+            {type:'button', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible()) { clearSubmenuStack(); hideAllMenus(); }
+                else showMenu('pause');
+            }},
+        ],
+    });
+
+    initGame();
+    setPlaying(false);
+    showMenu('title');
+}
+
+function gameUpdate()
+{
+    if (!isPlaying) return;
+
+    if (extraTurnHint)
+    {
+        extraTurnHint.timeLeft -= timeDelta;
+        if (extraTurnHint.timeLeft <= 0)
+            extraTurnHint = null;
+    }
+
+    if (bindPauseKey({when: () => isPlaying})) return;
+
+    if (phase === PHASE_BATTLE && hasInFlightProjectiles())
+    {
+        advanceActiveProjectiles(timeDelta);
+        return;
+    }
+
+    if (phase === PHASE_BATTLE && sonarReveal)
+    {
+        sonarReveal.timeLeft -= timeDelta;
+        sonarPulses = advanceSonarPulses(sonarPulses, timeDelta);
+        if (sonarReveal.timeLeft <= 0)
+        {
+            sonarReveal = null;
+            switchTurn();
+        }
+        return;
+    }
+
+    updateHover();
+
+    if (keyWasPressed('KeyR'))
+    {
+        if (gameOver)
+            initGame();
+        else if (phase === PHASE_PLACE && humanCanAct())
+        {
+            placeHorizontal = !placeHorizontal;
+            sfxRotate.play();
+        }
+    }
+
+    if (keyWasPressed('KeyA') && phase === PHASE_PLACE && humanCanAct())
+        autoPlaceCurrentPlayer();
+
+    if ((keyWasPressed('Enter') || keyWasPressed('Space')) && phase === PHASE_PLACE &&
+        placementReady && humanCanAct())
+        finishPlacementForCurrentPlayer();
+
+    if (phase === PHASE_BATTLE && gameMode === 'ai' && currentPlayer === PLAYER_2 &&
+        !gameOver && !hasInFlightProjectiles())
+    {
+        aiThinkTimer += timeDelta;
+        if (aiThinkTimer >= AI_THINK_DELAY)
+        {
+            aiThinkTimer = 0;
+            if (tryAiBarrage())
+                return;
+            if (tryAiSonar())
+                return;
+            aiFire();
+        }
+        return;
+    }
+
+    if (keyWasPressed('Escape') && phase === PHASE_BATTLE && battleAim !== 'fire')
+        cancelAimMode();
+
+    if (keyWasPressed('KeyS') && phase === PHASE_BATTLE && humanCanAct())
+    {
+        if (battleAim === 'sonar')
+            cancelAimMode();
+        else if (getAbilityCharges('sonar', currentPlayer) > 0)
+        {
+            disarmAbility('barrage');
+            armAbility('sonar', nextAbilitySlotIndex('sonar', currentPlayer));
+        }
+    }
+
+    if (keyWasPressed('KeyB') && phase === PHASE_BATTLE && humanCanAct())
+    {
+        if (battleAim === 'barrage')
+            cancelAimMode();
+        else if (getAbilityCharges('barrage', currentPlayer) > 0)
+        {
+            disarmAbility('sonar');
+            armAbility('barrage', nextAbilitySlotIndex('barrage', currentPlayer));
+        }
+    }
+
+    if (!humanCanAct() || gameOver) return;
+
+    if (mouseWasPressed(0))
+    {
+        if (phase === PHASE_BATTLE && tryAbilityBarClick())
+            return;
+
+        if (phase === PHASE_PLACE && tryAutoButtonClick())
+            return;
+
+        if (phase === PHASE_PLACE && tryStartButtonClick())
+            return;
+
+        if (!hoverCell || !hoverBoard)
+            return;
+
+        if (phase === PHASE_PLACE)
+        {
+            if (!placementReady)
+                tryPlaceCurrentShip(hoverCell.row, hoverCell.col);
+        }
+        else if (phase === PHASE_BATTLE)
+        {
+            const enemySide = getPlayerEnemySide(currentPlayer);
+            if (hoverBoard === enemySide)
+            {
+                if (battleAim === 'sonar')
+                    confirmPlayerSonar(hoverCell.row, hoverCell.col);
+                else if (battleAim === 'barrage')
+                    confirmPlayerBarrage(hoverCell.row, hoverCell.col);
+                else if (!alreadyShot(getShotsBy(currentPlayer), hoverCell.row, hoverCell.col))
+                    launchSalvo(currentPlayer, hoverCell.row, hoverCell.col);
+            }
+        }
+    }
+}
+
+function drawTitleBackdrop()
+{
+    drawGridBoard('left', {label: ''});
+    drawGridBoard('right', {label: ''});
+}
+
+function gameRender()
+{
+    fitCameraToBoard();
+    drawRect(vec2(0, 0), vec2(80, 50), rgb(.03, .05, .1));
+
+    if (!isPlaying)
+        drawTitleBackdrop();
+    else if (phase === PHASE_PLACE)
+        drawPlacementBoard();
+    else
+        drawBattleBoards();
+
+    drawHUD();
+}
+
+function gameRenderPost()
+{
+    if (phase !== PHASE_BATTLE || gameOver)
+        return;
+
+    const p1BarInteractive = (gameMode === 'ai' && currentPlayer === PLAYER_1) ||
+        (gameMode === 'pvp' && currentPlayer === PLAYER_1);
+    const p2BarInteractive = gameMode === 'pvp' && currentPlayer === PLAYER_2;
+
+    drawAbilityItemBar('left', PLAYER_1, p1BarInteractive);
+    if (gameMode === 'pvp')
+        drawAbilityItemBar('right', PLAYER_2, p2BarInteractive);
+}
+
+engineInit(gameInit, gameUpdate, () => {}, gameRender, gameRenderPost);
+
+</script>
+</body></html>
