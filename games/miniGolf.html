@@ -41,7 +41,6 @@ let holeIndex = 0;
 let holeStrokes = 0;
 let totalStrokes = 0;
 let bestStrokes = 0;  // lower is better; 0 = unset
-try { bestStrokes = +localStorage.getItem('miniGolf.best') || 0; } catch(e) {}
 let completeTimer = new Timer();
 let gameState = 'menu';  // 'menu' or 'play'
 
@@ -708,6 +707,8 @@ function canShoot()
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('miniGolf');
+    bestStrokes = getSaveData().bestScore ?? 0;
     // setup box2d first!
     await box2dInit();
 
@@ -868,7 +869,7 @@ function gameUpdate()
         if (holeIndex + 1 >= holes.length) {
             if (bestStrokes === 0 || totalStrokes < bestStrokes) {
                 bestStrokes = totalStrokes;
-                try { localStorage.setItem('miniGolf.best', bestStrokes); } catch(e) {}
+                saveData({bestScore: bestStrokes});
             }
         }
         buildHole(holeIndex + 1);
