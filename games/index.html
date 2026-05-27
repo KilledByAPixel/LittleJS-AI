@@ -135,7 +135,12 @@
     border-color: var(--cat-color, var(--accent));
   }
 
-  #list { flex: 1; overflow-y: auto; padding: 6px 0; }
+  /* overflow-anchor: none disables Chrome's scroll-anchoring at the list
+     bottom. Without it, hovering the last card expands its body, which
+     grows scrollHeight, which the browser "corrects" by shifting scrollTop —
+     and that shift moves the card out from under the cursor, triggering a
+     hover-collapse-anchor-expand oscillation loop. */
+  #list { flex: 1; overflow-y: auto; padding: 6px 0; overflow-anchor: none; }
   #list::-webkit-scrollbar { width: 10px; }
   #list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
   /* Suppress hover during scroll — otherwise each card under the cursor
