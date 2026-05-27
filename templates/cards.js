@@ -55,6 +55,18 @@ let _cardSprites  = null;     // { ranks:[13], suits:[4], bg, tint, back } of Ti
 let _cardRedInk   = _CARD_DEFAULT_RED;
 let _cardBlackInk = _CARD_DEFAULT_BLACK;
 
+// --- Tile-bleed prevention ---
+// The bg/tint/back silhouettes are painted inside a margin so bilinear
+// sampling can't pick up neighbouring atlas tiles when the card is rendered
+// at sub-source-size scales. The renderer then scales the tile up by
+// _CARD_BG_SCALE so the painted silhouette still covers the caller's
+// requested CARD_SIZE — visible card stays the same size, just with a
+// transparent breathing-room border in the atlas.
+const _CARD_TILE_PX  = 250;                                       // tile drawable area
+const _CARD_INSET    = 16;                                        // transparent margin
+const _CARD_SILH_PX  = _CARD_TILE_PX - 2 * _CARD_INSET;           // painted silhouette = 218
+const _CARD_BG_SCALE = _CARD_TILE_PX / _CARD_SILH_PX;             // ~1.147 render compensation
+
 // =============================================================================
 // PUBLIC API
 // =============================================================================
@@ -88,12 +100,13 @@ function initCardAtlas(options = {})
 function drawCard(pos, rank, suit, options = {})
 {
     ASSERT(_cardSprites, 'initCardAtlas() must be called before drawCard()');
-    const size  = options.size || CARD_SIZE;
-    const angle = options.angle || 0;
-    const tint  = options.tint;
-    const scale = size.x / CARD_SIZE.x;
+    const size    = options.size || CARD_SIZE;
+    const angle   = options.angle || 0;
+    const tint    = options.tint;
+    const scale   = size.x / CARD_SIZE.x;
+    const bgSize  = size.scale(_CARD_BG_SCALE);   // compensates for paint inset
 
-    drawTile(pos, size, _cardSprites.bg, undefined, angle);
+    drawTile(pos, bgSize, _cardSprites.bg, undefined, angle);
 
     const color    = (suit % 2 === 0) ? _cardRedInk : _cardBlackInk;
     const rankTile = _cardSprites.ranks[rank];
@@ -130,18 +143,19 @@ function drawCard(pos, rank, suit, options = {})
 
     // Highlight veil last so it sits over the glyphs too. Tint tile has no
     // dark edge, so the bg's border isn't re-tinted.
-    if (tint) drawTile(pos, size, _cardSprites.tint, tint, angle);
+    if (tint) drawTile(pos, bgSize, _cardSprites.tint, tint, angle);
 }
 
 // Draws a face-down card. options: { size, angle, tint }
 function drawCardBack(pos, options = {})
 {
     ASSERT(_cardSprites, 'initCardAtlas() must be called before drawCardBack()');
-    const size  = options.size || CARD_SIZE;
-    const angle = options.angle || 0;
-    const tint  = options.tint;
-    drawTile(pos, size, _cardSprites.back, undefined, angle);
-    if (tint) drawTile(pos, size, _cardSprites.tint, tint, angle);
+    const size   = options.size || CARD_SIZE;
+    const angle  = options.angle || 0;
+    const tint   = options.tint;
+    const bgSize = size.scale(_CARD_BG_SCALE);
+    drawTile(pos, bgSize, _cardSprites.back, undefined, angle);
+    if (tint) drawTile(pos, bgSize, _cardSprites.tint, tint, angle);
 }
 
 // Draws a solid card-shaped silhouette in `color`. Use for shadows, empty-
@@ -150,7 +164,8 @@ function drawCardBack(pos, options = {})
 function drawCardShape(pos, size, color, angle = 0)
 {
     ASSERT(_cardSprites, 'initCardAtlas() must be called before drawCardShape()');
-    drawTile(pos, size || CARD_SIZE, _cardSprites.tint, color, angle);
+    const s = (size || CARD_SIZE).scale(_CARD_BG_SCALE);
+    drawTile(pos, s, _cardSprites.tint, color, angle);
 }
 
 // =============================================================================
@@ -184,29 +199,30 @@ function _paintSuitTile(glyph)
     };
 }
 
+// Silhouette painters all use _CARD_INSET / _CARD_SILH_PX so they share
+// identical outer rounded rects — the bg, tint, and back tiles must match
+// pixel-for-pixel so highlights and shadows align with the card edge.
+
 function _paintCardBg(ctx)
 {
-    // Painted inside a 4px margin within the 250x250 tile so the bg
-    // doesn't crowd neighbouring tiles in the atlas. Corners go slightly
-    // oval when stretched to a non-square card size but at radius 14
-    // the asymmetry is hard to see.
     const r = 14;
+    const o = _CARD_INSET, s = _CARD_SILH_PX;
     ctx.fillStyle = '#0a0a0a';
-    _cardRoundedRect(ctx, 4, 4, 242, 242, r);
+    _cardRoundedRect(ctx, o, o, s, s, r);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    _cardRoundedRect(ctx, 8, 8, 234, 234, r - 2);
+    _cardRoundedRect(ctx, o + 4, o + 4, s - 8, s - 8, r - 2);
     ctx.fill();
 }
 
 function _paintTintShape(ctx)
 {
-    // Matches the bg tile's OUTER rounded rect — same silhouette as the
-    // card — but solid white with no border, so a tinted overlay doesn't
-    // drag in the bg's dark edge.
+    // Matches the bg's OUTER rounded rect, but solid white with no border
+    // so a tinted overlay doesn't drag the bg's dark edge along with it.
     const r = 14;
+    const o = _CARD_INSET, s = _CARD_SILH_PX;
     ctx.fillStyle = '#fff';
-    _cardRoundedRect(ctx, 4, 4, 242, 242, r);
+    _cardRoundedRect(ctx, o, o, s, s, r);
     ctx.fill();
 }
 
@@ -215,31 +231,32 @@ function _paintDefaultCardBack(ctx)
     // Classic-looking back: dark border, deep navy field, white diagonal
     // cross-hatch, thin inset frame. Override via initCardAtlas({paintBack}).
     const r = 14;
+    const o = _CARD_INSET, s = _CARD_SILH_PX;
     ctx.fillStyle = '#0a0a0a';
-    _cardRoundedRect(ctx, 4, 4, 242, 242, r);
+    _cardRoundedRect(ctx, o, o, s, s, r);
     ctx.fill();
     ctx.fillStyle = '#1a3a8c';
-    _cardRoundedRect(ctx, 8, 8, 234, 234, r - 2);
+    _cardRoundedRect(ctx, o + 4, o + 4, s - 8, s - 8, r - 2);
     ctx.fill();
 
     ctx.save();
-    _cardRoundedRect(ctx, 8, 8, 234, 234, r - 2);
+    _cardRoundedRect(ctx, o + 4, o + 4, s - 8, s - 8, r - 2);
     ctx.clip();
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 3;
-    const step = 18;
+    const step = 16;
     ctx.beginPath();
-    for (let i = -250; i < 500; i += step)
+    for (let i = -_CARD_TILE_PX; i < _CARD_TILE_PX * 2; i += step)
     {
-        ctx.moveTo(i, 0);     ctx.lineTo(i + 250, 250);
-        ctx.moveTo(i, 250);   ctx.lineTo(i + 250, 0);
+        ctx.moveTo(i, 0);                ctx.lineTo(i + _CARD_TILE_PX, _CARD_TILE_PX);
+        ctx.moveTo(i, _CARD_TILE_PX);    ctx.lineTo(i + _CARD_TILE_PX, 0);
     }
     ctx.stroke();
     ctx.restore();
 
     ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 4;
-    _cardRoundedRect(ctx, 24, 24, 202, 202, r - 6);
+    _cardRoundedRect(ctx, o + 20, o + 20, s - 40, s - 40, r - 6);
     ctx.stroke();
 }
 
