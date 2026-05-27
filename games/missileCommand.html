@@ -427,6 +427,7 @@ function newGame()
 
   bases = [];
   const baseXs = [4.2, 20.0, 35.8];
+  const baseSpeeds = [14, 22, 14];
   for (let i=0;i<BASE_COUNT;i++)
     bases.push({
       pos: vec2(baseXs[i], groundHeight + .45),
@@ -435,6 +436,7 @@ function newGame()
       flash: 0,
       recoil: 0,
       cannonAngle: 0,
+      missileSpeed: baseSpeeds[i],
     });
 
   generateBackground();
@@ -511,7 +513,7 @@ function launchPlayerMissile(target)
     start, target: t,
     pos: start.copy(),
     t: 0,
-    speed: playerSpeed, len,
+    speed: b.missileSpeed, len,
     alive: true,
     w: .1,
   });
