@@ -73,7 +73,6 @@ let particles = [];
 let floaters = [];
 let score = 0;
 let best = 0;
-try { best = +localStorage.getItem('robotron.best') || 0; } catch(e) {}
 let gameOver = false;
 
 let gameWave = 1;
@@ -2083,7 +2082,7 @@ class Player extends EngineObject
             gameOver = true;
             if (score > best) {
                 best = score;
-                try { localStorage.setItem('robotron.best', best); } catch(e) {}
+                saveData({bestScore: best});
             }
             gameOverTimer = 90;
             return;
@@ -2442,7 +2441,7 @@ function buildMenus()
     });
 
     // Options menu (shared between title and pause)
-    createOptionsMenu({persistKey: 'robotron.volume'});
+    createOptionsMenu();
 
     // How to play
     createMenu({
@@ -2525,6 +2524,8 @@ function fitCameraToArena()
 
 function gameInit()
 {
+    saveDataInit('robotron');
+    best = getSaveData().bestScore ?? 0;
     // Let the canvas grow with the window. canvasMaxSize caps the internal resolution.
     canvasMaxSize = vec2(2048, 2048);
     cameraPos = vec2(0);
