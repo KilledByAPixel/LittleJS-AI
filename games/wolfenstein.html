@@ -26,36 +26,39 @@ tilesPixelated = false;
 // LEVEL
 // # wall   . floor   P player start   G guard   X exit
 // L lamp (decoration)   B barrel (decoration)
+// + health pickup     * ammo pickup
 const LEVEL_ASCII = [
     '################',
-    '#G............L#',
+    '#G....+.......L#',
     '#.#####..####..#',
     '#.#..#...#.B#..#',
-    '#.#.P....#G....#',
+    '#.#.P..*.#G....#',
     '#.####...####..#',
-    '#......B.......#',
+    '#......B...+...#',
     '###.########.###',
     '#B....#G.L#...B#',
-    '#.....#...#B...#',
+    '#.....#.*.#B...#',
     '#.....#.###....#',
-    '#.B.....#B.....#',
+    '#.B.*...#B.....#',
     '#G......#......#',
-    '#.......#B.....#',
-    '#L............L#',
+    '#....+..#B.....#',
+    '#L.....*......L#',
     '########X#######',
 ];
 const LEVEL_W = 16, LEVEL_H = 16;
-let levelGrid;             // levelGrid[y][x] -> '#' wall, 'X' exit (wall-like), '.' floor
+let levelGrid;             // levelGrid[y][x] -> '#' wall, 'X' exit, 'L'/'B' decoration, '.' floor
 let exitPos = null;        // center of the X cell, used for the win-trigger distance check
 let playerStartPos = vec2(2, 2);
 let enemySpawns = [];
 let decorations = [];      // [{pos, kind:'lamp'|'barrel'}]
+let pickups = [];          // [{pos, kind:'health'|'ammo'}]
 
 function parseLevel(rows)
 {
     levelGrid = [];
     enemySpawns = [];
     decorations = [];
+    pickups = [];
     exitPos = null;
     // ASCII row 0 = top; map it to high world Y so reading order matches the map
     for (let y = 0; y < rows.length; ++y)
@@ -82,6 +85,8 @@ function parseLevel(rows)
                 else if (c === 'G') enemySpawns.push(center);
                 else if (c === 'L') { levelGrid[wy][x] = 'L'; decorations.push({pos: center, kind: 'lamp'}); }
                 else if (c === 'B') { levelGrid[wy][x] = 'B'; decorations.push({pos: center, kind: 'barrel'}); }
+                else if (c === '+') pickups.push({pos: center, kind: 'health'});
+                else if (c === '*') pickups.push({pos: center, kind: 'ammo'});
             }
         }
     }
@@ -118,7 +123,12 @@ let isPlaying = false;
 let isAlive = true;
 let playerPos = vec2(), playerAngle = 0;
 let playerHP = 100;
+let playerAmmo = 0;
 const PLAYER_MAX_HP = 100;
+const MAX_AMMO = 60;
+const STARTING_AMMO = 24;
+const HEALTH_PICKUP_AMT = 25;
+const AMMO_PICKUP_AMT = 12;
 let hitFlashT = 0, muzzleFlashT = 0, deathFlashT = 0;
 let kills = 0;
 let enemies = [];
@@ -143,7 +153,7 @@ function tileCellPx(idx)
 }
 
 let guardIdleTile, guardShootTile, guardDeadTile, gunIdleTile, gunFireTile, exitTile;
-let lampTile, barrelTile, sparkTile;
+let lampTile, barrelTile, sparkTile, healthTile, ammoTile;
 
 // Short-lived puffs spawned at wall impact points. Updated in gameUpdate,
 // rendered through the same painter's-algorithm drawList so they sort with
@@ -375,6 +385,69 @@ function paintLamp(ctx)
     ctx.fillRect(196, 244, 108, 6);
 }
 
+function paintHealth(ctx)
+{
+    // floor shadow
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.beginPath();
+    ctx.ellipse(250, 460, 130, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // white medkit box
+    ctx.fillStyle = '#f4f4f4';
+    ctx.fillRect(110, 200, 280, 240);
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(110, 200, 280, 240);
+    // red cross
+    ctx.fillStyle = '#e02828';
+    ctx.fillRect(228, 240, 44, 160);    // vertical bar
+    ctx.fillRect(170, 298, 160, 44);    // horizontal bar
+    // a little highlight on the box top
+    ctx.fillStyle = 'rgba(255,255,255,.4)';
+    ctx.fillRect(118, 208, 264, 14);
+}
+
+function paintAmmo(ctx)
+{
+    // floor shadow
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.beginPath();
+    ctx.ellipse(250, 460, 140, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // brown wooden crate
+    ctx.fillStyle = '#5a3818';
+    ctx.fillRect(115, 230, 270, 210);
+    ctx.strokeStyle = '#2a1a08';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(115, 230, 270, 210);
+    // bullets sticking out the top
+    for (let i = 0; i < 4; ++i)
+    {
+        const x = 140 + i * 60;
+        // brass casing
+        ctx.fillStyle = '#d09838';
+        ctx.fillRect(x, 150, 40, 90);
+        ctx.strokeStyle = '#7a5818';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, 150, 40, 90);
+        // bullet tip
+        ctx.fillStyle = '#a86838';
+        ctx.beginPath();
+        ctx.moveTo(x,      150);
+        ctx.lineTo(x + 20, 110);
+        ctx.lineTo(x + 40, 150);
+        ctx.closePath();
+        ctx.fill();
+    }
+    // crate slats
+    ctx.strokeStyle = '#2a1a08';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(115, 300); ctx.lineTo(385, 300);
+    ctx.moveTo(115, 370); ctx.lineTo(385, 370);
+    ctx.stroke();
+}
+
 function paintSpark(ctx)
 {
     // soft white→amber→transparent radial glow used for wall-impact puffs
@@ -440,7 +513,7 @@ function paintExit(ctx)
 
 ///////////////////////////////////////////////////////////////////////////////
 // SOUNDS
-let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWallHit;
+let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWallHit, sndPickup, sndEmpty;
 
 ///////////////////////////////////////////////////////////////////////////////
 function setPlaying(p)
@@ -458,6 +531,7 @@ function resetWorld()
     bobPhase = bobAmount = 0;
     hitEffects = [];
     playerHP = PLAYER_MAX_HP;
+    playerAmmo = STARTING_AMMO;
     isAlive = true;
     kills = 0;
     hitFlashT = 0; muzzleFlashT = 0; deathFlashT = 0;
@@ -494,6 +568,8 @@ async function gameInit()
     lampTile       = drawToTexture(11, paintLamp,      'tall lamp on a pole with a glowing yellow-white bulb');
     barrelTile     = drawToTexture(12, paintBarrel,    'wooden barrel with iron bands and a yellow hazard stripe');
     sparkTile      = drawToTexture(13, paintSpark,     'soft white-to-amber radial glow, transparent edges, used for bullet impacts');
+    healthTile     = drawToTexture(14, paintHealth,    'white medical kit with red cross, dark outline');
+    ammoTile       = drawToTexture(15, paintAmmo,      'wooden ammo crate with brass bullets sticking out the top');
 
     // wall-column sampler (mutated per slice). bleed=0.5 keeps subpixel
     // filtering from reaching past the tile edge into the atlas gutter.
@@ -510,6 +586,8 @@ async function gameInit()
     sndEnemyDie    = new SoundGenerator({frequency: 120, attack: .005, release: .4,  shapeCurve: 2, slide: -3, noise: .5,  volume: .85});
     sndVictory     = new SoundGenerator({frequency: 440, attack: .02,  release: .5,  shapeCurve: 1, slide: 8,  pitchJump: 220, pitchJumpTime: .15, volume: 1});
     sndWallHit     = new SoundGenerator({frequency: 720, attack: .001, release: .08, shapeCurve: 0, slide: -28, noise: .35, bitCrush: 6, volume: .45});
+    sndPickup      = new SoundGenerator({frequency: 520, attack: .005, release: .18, shapeCurve: 1, slide: 12, pitchJump: 260, pitchJumpTime: .07, volume: .8});
+    sndEmpty       = new SoundGenerator({frequency: 110, attack: .002, release: .04, shapeCurve: 0, slide: -12, noise: .6, bitCrush: 10, volume: .35});
 
     // menu sounds
     const sndSelect   = new Sound([.4,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
@@ -704,6 +782,19 @@ function gameUpdate()
     // enemies
     for (const e of enemies) updateEnemy(e);
 
+    // pickup collection — walk near one to consume it
+    for (let i = pickups.length - 1; i >= 0; --i)
+    {
+        const p = pickups[i];
+        if (playerPos.distance(p.pos) > .55) continue;
+        if (p.kind === 'health')
+            playerHP = Math.min(PLAYER_MAX_HP, playerHP + HEALTH_PICKUP_AMT);
+        else if (p.kind === 'ammo')
+            playerAmmo = Math.min(MAX_AMMO, playerAmmo + AMMO_PICKUP_AMT);
+        pickups.splice(i, 1);
+        sndPickup.play();
+    }
+
     // bullet impact puffs
     for (let i = hitEffects.length - 1; i >= 0; --i)
     {
@@ -725,6 +816,12 @@ function gameUpdate()
 
 function playerFire()
 {
+    if (playerAmmo <= 0)
+    {
+        sndEmpty.play();
+        return;
+    }
+    --playerAmmo;
     muzzleFlashT = .08;
     sndShoot.play();
 
@@ -809,12 +906,34 @@ function killEnemy(e)
     );
 }
 
+const ENEMY_SPEED = .032;       // world units per frame (player moves .08)
+const ENEMY_IDEAL_DIST = 3.5;   // stop and shoot once within this range
+const ENEMY_SIGHT_DIST = 14;
+
+function moveEnemyToward(e, target)
+{
+    const toward = target.subtract(e.pos);
+    const len = toward.length();
+    if (len < .001) return;
+    const step = toward.scale(ENEMY_SPEED / len);
+    const normal = vec2();
+    let newPos = e.pos.add(step);
+    if (lineTest(e.pos, newPos, isBlocking, normal))
+    {
+        // slide along the surface so the guard doesn't get stuck on corners
+        const d = step.dot(normal);
+        newPos = newPos.subtract(vec2(d * normal.x, d * normal.y));
+        if (!isBlocking(newPos)) e.pos = newPos;
+    }
+    else e.pos = newPos;
+}
+
 function updateEnemy(e)
 {
     if (!e.alive) return;
     const dist = e.pos.distance(playerPos);
     const losClear = !lineTest(e.pos, playerPos, isWallAt);
-    const canSee = losClear && dist < 14;
+    const canSee = losClear && dist < ENEMY_SIGHT_DIST;
     if (canSee)
     {
         if (!e.seenPlayer)
@@ -822,10 +941,15 @@ function updateEnemy(e)
             e.seenPlayer = true;
             sndAlert.play();
         }
+        // close the distance if far; only stop to shoot once near
+        if (dist > ENEMY_IDEAL_DIST)
+            moveEnemyToward(e, playerPos);
+
         if (e.state === 'idle')
         {
             e.shootCooldown -= 1/60;
-            if (e.shootCooldown <= 0)
+            // only commit to a shot once we're roughly at ideal range
+            if (e.shootCooldown <= 0 && dist <= ENEMY_IDEAL_DIST + .5)
             {
                 e.state = 'shoot';
                 e.windup = .55;
@@ -841,7 +965,7 @@ function updateEnemy(e)
                 // resolve: re-check LOS, distance-falloff damage
                 if (!lineTest(e.pos, playerPos, isWallAt))
                 {
-                    const dmg = Math.round(8 + 14 * Math.max(0, 1 - dist / 14));
+                    const dmg = Math.round(8 + 14 * Math.max(0, 1 - dist / ENEMY_SIGHT_DIST));
                     damagePlayer(dmg);
                     sndEnemyShoot.play();
                 }
@@ -850,9 +974,8 @@ function updateEnemy(e)
     }
     else
     {
+        // lost sight: hold position (could chase last-known later)
         e.state = 'idle';
-        // shorten cooldown a touch so the next visible frame triggers soon,
-        // but don't refire instantly when stepping into view
         if (e.shootCooldown > .4) e.shootCooldown = .4;
         e.windup = 0;
     }
@@ -1014,6 +1137,13 @@ function gameRender()
         else if (d.kind === 'barrel')
             pushSprite(d.pos, barrelTile);
     }
+    // pickups — billboards with a gentle hover bob; phase varies per item
+    for (const p of pickups)
+    {
+        const bob = Math.sin(time * 3 + p.pos.x * 1.1 + p.pos.y * .7) * .12;
+        const tile = p.kind === 'health' ? healthTile : ammoTile;
+        pushSprite(p.pos, tile, {yOff: bob, scale: .55});
+    }
     // bullet-impact puffs — short-lived, fade out via alpha
     for (const p of hitEffects)
     {
@@ -1063,6 +1193,14 @@ function gameRenderPost()
         hsl(hpFrac * .33, .8, .5), 0, false, true);
     drawTextScreen(`HP ${playerHP}`, vec2(bx + 10, by + bh / 2 + 1),
         18, WHITE, 3, BLACK, 'left');
+
+    // ammo counter just right of the HP bar; goes red when low
+    const ammoColor = playerAmmo === 0 ? hsl(0, 1, .65)
+        : playerAmmo < 5 ? hsl(.05, 1, .65)
+        : WHITE;
+    drawTextScreen(`AMMO ${playerAmmo}`,
+        vec2(bx + bw + 18, by + bh / 2 + 1),
+        18, ammoColor, 3, BLACK, 'left');
 
     // kill counter
     drawTextScreen(`GUARDS ${kills}/${enemies.length}`,
