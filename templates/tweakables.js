@@ -120,7 +120,15 @@ function initTweakSystem()
 {
     if (tweakPanelEl) return;
 
-    tweakStorageKey = 'littlejs-tweaks-' + location.pathname;
+    // Prefer the unified save name (set by menus.js saveDataInit) so tweaks
+    // live in the same per-game namespace as everything else. Falls back
+    // to a per-path key when menus.js isn't loaded or saveDataInit hasn't
+    // been called yet — keeps loose dev/sandbox use of tweakables working.
+    const saveName = typeof getSaveName === 'function' && getSaveName();
+    tweakStorageKey = saveName
+        ? saveName + '.tweaks'
+        : 'littlejs-tweaks-' + location.pathname;
+
     try
     {
         const raw = localStorage.getItem(tweakStorageKey);
