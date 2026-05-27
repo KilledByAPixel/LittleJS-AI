@@ -1055,6 +1055,7 @@ function maybeSpawnShootingStar()
 
 function gameInit()
 {
+  saveDataInit('missileCommand');
   setCanvasFixedSize(vec2(1280, 720));
   setCameraPos(levelSize.scale(.5));
   setCameraScale(32);
@@ -1069,7 +1070,7 @@ function gameInit()
   sBonusCity = new SoundGenerator({volume:.7, frequency:660, attack:0, release:.4, shapeCurve:1.6, pitchJump:540, pitchJumpTime:.05});
   sBonusTick = new SoundGenerator({volume:.45, frequency:780, attack:0, release:.06, shapeCurve:1.6});
 
-  try { bestScore = +localStorage.getItem('missileCommand.best') || 0; } catch(e) { bestScore = 0; }
+  bestScore = getSaveData().bestScore ?? 0;
 
   installAutoPause();
 
@@ -1119,7 +1120,7 @@ function buildMenus()
     },
   });
 
-  createOptionsMenu({persistKey: 'missileCommand.volume'});
+  createOptionsMenu();
 
   createMenu({
     id: 'about',
@@ -1339,7 +1340,7 @@ function gameUpdate()
     if (score > bestScore)
     {
       bestScore = score;
-      try { localStorage.setItem('missileCommand.best', bestScore); } catch(e) {}
+      saveData({bestScore});
     }
   }
 }
