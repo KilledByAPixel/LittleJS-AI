@@ -180,7 +180,7 @@
       gameOverHoldTimer = 1.4;
       if (level > bestLevel) {
         bestLevel = level;
-        try { localStorage.setItem('frogger.bestLevel', bestLevel); } catch(e) {}
+        saveData({bestLevel});
       }
     }
   }
@@ -326,6 +326,7 @@
   // Engine callbacks
 
   function gameInit() {
+    saveDataInit('frogger');
     setCanvasFixedSize(vec2(960, 540));
     cameraScale = 28;
     setCameraPos(vec2(LEVEL_W/2, LEVEL_H/2));
@@ -346,7 +347,7 @@
     sHome = new SoundGenerator({ volume:.8, frequency:720, randomness:.06, attack:0, release:.14, shapeCurve:1.2, pitchJump:360, pitchJumpTime:.04 });
     sLevel= new SoundGenerator({ volume:.9, frequency:420, randomness:.03, attack:0, release:.35, shapeCurve:1.1, repeatTime:.08, pitchJump:140, pitchJumpTime:.02 });
 
-    try { bestLevel = +localStorage.getItem('frogger.bestLevel') || 1; } catch(e) { bestLevel = 1; }
+    bestLevel = getSaveData().bestLevel ?? 1;
 
     setSoundVolume(.8);
     if (typeof installAutoPause === 'function')
@@ -394,7 +395,7 @@
       },
     });
 
-    createOptionsMenu({persistKey: 'frogger.volume'});
+    createOptionsMenu();
 
     createMenu({
       id: 'about', title: 'HOW TO PLAY', onHide: popMenu,
