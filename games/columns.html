@@ -29,7 +29,6 @@
  let fallCounter = 0;
  let score = 0;
  let bestScore = 0;
- try { bestScore = +localStorage.getItem('columns.best') || 0; } catch(e) {}
  let level = 1;
  let combo = 0;
  let gameOver = false;
@@ -234,7 +233,7 @@
      gameOver = true;
      if (score > bestScore) {
          bestScore = score;
-         try { localStorage.setItem('columns.best', bestScore); } catch(e) {}
+         saveData({bestScore});
      }
      sfxGameOver.play();
      // surface a game-over dialog via menus.js
@@ -699,6 +698,8 @@
 
  function gameInit()
  {
+     saveDataInit('columns');
+     bestScore = getSaveData().bestScore ?? 0;
      setCanvasFixedSize(vec2(960, 540));
      setShowSplashScreen(false);
      setCameraScale(36);
