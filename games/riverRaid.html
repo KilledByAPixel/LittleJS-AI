@@ -4,6 +4,7 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -51,6 +52,7 @@ let gameOver, gameOverReason;
 let flashTimer;
 let shootCooldown;
 let cameraX;
+let isPlaying = false;
 
 // sounds
 let sShoot, sExplode, sFuel;
@@ -222,11 +224,81 @@ function gameInit()
     sFuel = new SoundGenerator({ volume:.6, frequency:280, release:.18, shapeCurve:1.2, slide:1.4, pitchJump:200, pitchJumpTime:.04 });
 
     resetGame();
+    buildMenus();
+    showMenu('title');
+}
+
+function startGame()
+{
+    resetGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'RIVER RAID',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (!isPlaying) return;
+
     if (keyWasPressed('Enter'))
         resetGame();
 

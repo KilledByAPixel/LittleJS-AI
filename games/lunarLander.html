@@ -4,12 +4,14 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
+paused = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Lunar Lander (solid-color primitives only)
@@ -42,6 +44,7 @@ const CAMERA_ZOOM_OUT_DIST = 18;   // start zooming in inside this distance
 
 let player, landingPad;
 let gameState = 0; // 0=playing, 1=landed, 2=crashed
+let isPlaying = false;
 let score = 0;
 let messageTimer = new Timer();
 let camTarget = vec2();
@@ -329,22 +332,93 @@ class Player extends EngineObject
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+function startGame()
+{
+    resetGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'LUNAR LANDER',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
     // called once after the engine starts up
     resetGame();
+    buildMenus();
+    showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && !gameState})) return;
+    if (!isPlaying) return;
+
     // restart
     if (keyWasPressed('KeyR'))
-        resetGame();
+        startGame();
 
     // quick retry after land/crash
     if (gameState && (keyWasPressed('Space') || keyWasPressed('Enter')))
-        resetGame();
+        startGame();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

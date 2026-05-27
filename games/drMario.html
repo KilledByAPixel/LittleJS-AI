@@ -4,6 +4,7 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -56,6 +57,9 @@ let active = null;        // {x,y,o,cA,cB}
 let nextPill = null;
 let linkIdGen = 1;
 let state = 'play';       // play | gameover | win
+
+// menu / session state
+let isPlaying = false;
 
 // drop / lock
 let fallAcc = 0;
@@ -626,17 +630,93 @@ function setState(s)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
+// Menus
+
+function startGame()
+{
+    newGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    // Only pause when a game is actually running. Title menu sits over
+    // the canvas without freezing anything.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'DR MARIO',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
     setCanvasFixedSize(vec2(780, 720));
     setCameraScale(32);
     setCameraPos(vec2(0,0));
     newGame();
+
+    buildMenus();
+    showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && state === 'play'})) return;
+    if (!isPlaying) return;
+
     updateParticles(timeDelta);
     updateShake(timeDelta);
 

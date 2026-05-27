@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -11,6 +12,7 @@
 debugWatermark = false;      // Hide debug watermark in corner
 showEngineVersion = false;   // Hide engine version console display
 paused = false;              // Start unpaused
+let isPlaying = false;
 
 // engine settings, customize if necessary
 gravity = vec2(0, 0);        // No gravity
@@ -388,11 +390,104 @@ async function gameInit()
     party = [makeCritter(1)];
     activeIndex = 0;
     money = 50;
+
+    buildMenus();
+    showMenu('title');
+}
+
+function resetGame()
+{
+    inBattle = false;
+    battleEnemy = null;
+    battleState = 'text';
+    battleQueue = [];
+    menuIndex = 0;
+    playerGuard = false;
+    enemyGuard = false;
+    playerHealCD = 0;
+    enemyHealCD = 0;
+
+    playerPos = vec2(0, -1);
+    playerDir = vec2(0, 1);
+    encounterDistance = 0;
+    nextEncounterAt = rand(6, 11);
+
+    party = [makeCritter(1)];
+    activeIndex = 0;
+    money = 50;
+}
+
+function startGame()
+{
+    resetGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'POKEMON',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying) return;
+
     if (inBattle)
         return updateBattle();
 

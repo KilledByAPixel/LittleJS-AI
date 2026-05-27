@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -11,7 +12,6 @@
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
-setDebugKey('Backquote');
 
 gravity = vec2(0, -0.005);
 cameraPos = vec2(0, 0);
@@ -51,6 +51,7 @@ let wave = 0;
 let gameState = 'title'; // title, playing, gameover, victory
 let waveTimer = 0;
 let spawnQueue = 0;
+let isPlaying = false;
 
 // Sounds
 let sfxFlap, sfxJoust, sfxDie, sfxEgg, sfxSpawn, sfxWave;
@@ -581,6 +582,8 @@ function gameInit()
     
     createPlatforms();
     resetGame();
+    buildMenus();
+    showMenu('title');
 }
 
 function resetGame()
@@ -596,34 +599,92 @@ function resetGame()
     waveTimer = 0;
 }
 
+function startGame()
+{
+    resetGame();
+    gameState = 'playing';
+    isPlaying = true;
+    spawnWave();
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    gameState = 'title';
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'JOUST',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
 function gameUpdate()
 {
-    if (gameState === 'title')
-    {
-        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
-        {
-            gameState = 'playing';
-            resetGame();
-            spawnWave();
-        }
-        return;
-    }
-    
+    if (bindPauseKey({when: () => isPlaying && gameState === 'playing'})) return;
+    if (!isPlaying) return;
+
     if (gameState === 'gameover' || gameState === 'victory')
     {
         if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
         {
-            gameState = 'title';
+            quitToTitle();
         }
         return;
     }
-    
+
     // Restart with R
     if (keyWasPressed('KeyR'))
     {
-        gameState = 'playing';
-        resetGame();
-        spawnWave();
+        startGame();
         return;
     }
     
@@ -736,15 +797,6 @@ function gameRenderPost()
         drawTextScreen(`Score: ${score}`, vec2(20, 30), 28, WHITE, 4, BLACK, 'left');
         drawTextScreen(`Lives: ${lives}`, vec2(mainCanvasSize.x - 20, 30), 28, WHITE, 4, BLACK, 'right');
         drawTextScreen(`Wave ${wave}`, vec2(mainCanvasSize.x / 2, 30), 32, hsl(0.15, 0.8, 0.6), 4, BLACK);
-    }
-    
-    // Title screen
-    if (gameState === 'title')
-    {
-        drawTextScreen('JOUST', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.3), 100, hsl(0.55, 0.8, 0.6), 8, BLACK);
-        drawTextScreen('Defeat enemies by hitting them from above!', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.5), 28, WHITE, 4, BLACK);
-        drawTextScreen('Arrow Keys/WASD to move, Space/Click to flap', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.58), 24, hsl(0, 0, 0.8), 3, BLACK);
-        drawTextScreen('Click or Press Space to Start', vec2(mainCanvasSize.x / 2, mainCanvasSize.y * 0.75), 36, hsl(0.15, 0.9, 0.7), 5, BLACK);
     }
     
     // Game over

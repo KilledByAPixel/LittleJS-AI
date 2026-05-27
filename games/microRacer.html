@@ -5,6 +5,7 @@
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../dist/box2d.wasm.js?1.18.0"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -12,6 +13,7 @@
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
+let isPlaying = false;
 
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
@@ -705,10 +707,81 @@ async function gameInit()
 
     trackSeed = Math.floor(Math.random() * 1e9);
     setupRace();
+    buildMenus();
+    showMenu('title');
+}
+
+function startGame()
+{
+    trackSeed = Math.floor(Math.random() * 1e9);
+    setupRace();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'MICRO RACER',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && !raceFinished})) return;
+    if (!isPlaying) return;
+
     if (keyWasPressed('KeyN'))
     {
         trackSeed = Math.floor(Math.random() * 1e9);
@@ -717,7 +790,7 @@ function gameUpdate()
     }
     if (raceFinished)
     {
-        if (keyWasPressed('KeyR')) setupRace();
+        if (keyWasPressed('KeyR')) startGame();
         return;
     }
 

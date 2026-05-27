@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -117,6 +118,9 @@ const STATE_DEAD  = 2;
 let state;
 let score;
 let bestScore;
+
+// menu / session state
+let isPlaying = false;
 let birdPos;
 let birdVelY;
 let pipeTimer;
@@ -576,6 +580,79 @@ function runSelfTests()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Menus
+
+function startGame()
+{
+    resetRun(true);
+    initScenery();
+    spawnPipe();
+    pipes[0].x = 6;
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    // Only pause when a game is actually running. Title menu sits over
+    // the canvas without freezing anything.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'FLAPPY BIRD',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
     // fixed resolution for consistent feel
@@ -591,11 +668,17 @@ async function gameInit()
     // small initial pipe preview in ready state
     spawnPipe();
     pipes[0].x = 6;
+
+    buildMenus();
+    showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && state !== STATE_DEAD})) return;
+    if (!isPlaying) return;
+
     const dt = timeDelta;
 
     // advance scenery scroll with gameplay (feels like the world moves)
@@ -938,6 +1021,8 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
+    if (!isPlaying) return;
+
     // score
     drawTextScreen('' + score, vec2(mainCanvasSize.x/2, 60), 72, hsl(0,0,1), 6, hsl(0,0,0));
 
@@ -945,12 +1030,7 @@ function gameRenderPost()
     drawTextScreen('BEST ' + bestScore, vec2(mainCanvasSize.x - 140, 26), 28, hsl(0,0,1), 4, hsl(0,0,0));
 
     // prompts
-    if (state === STATE_READY)
-    {
-        drawTextScreen('FLAPPY', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 20), 46, hsl(0,0,1), 6, hsl(0,0,0));
-        drawTextScreen('SPACE / CLICK / TAP to start', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 40), 30, hsl(0,0,1), 5, hsl(0,0,0));
-    }
-    else if (state === STATE_DEAD)
+    if (state === STATE_DEAD)
     {
         drawTextScreen('CRASH!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 30), 56, hsl(.02,.9,.55), 7, hsl(0,0,0));
         drawTextScreen('SPACE / CLICK / TAP to restart', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 30, hsl(0,0,1), 5, hsl(0,0,0));

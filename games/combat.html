@@ -4,6 +4,7 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -51,6 +52,9 @@ let scores = [0,0];
 let aiEnabled = true; // one player is AI by default
 let roundTimer = 0;
 let pausedLocal = false;
+
+// menu / session state
+let isPlaying = false;
 
 // sounds (lazy)
 let sShoot, sBounce, sHit, sBlip;
@@ -490,6 +494,76 @@ function initGameState()
 }
 
 // -------------------------------------------------------------------------
+// Menus
+
+function startGame()
+{
+    initGameState();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    // Only pause when a game is actually running. Title menu sits over
+    // the canvas without freezing anything.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'COMBAT',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
+// -------------------------------------------------------------------------
 // LittleJS callbacks
 
 function gameInit()
@@ -500,10 +574,16 @@ function gameInit()
 
     initSounds();
     initGameState();
+
+    buildMenus();
+    showMenu('title');
 }
 
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying) return;
+
     if (keyWasPressed('KeyP')) { pausedLocal = !pausedLocal; initSounds(); sBlip.play(); }
     if (keyWasPressed('KeyR')) { initGameState();           initSounds(); sBlip.play(); }
     if (keyWasPressed('KeyT')) { aiEnabled = !aiEnabled;    initSounds(); sBlip.play(); }

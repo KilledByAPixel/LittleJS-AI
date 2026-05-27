@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -52,8 +53,9 @@ let scrollSpeed = 0;
 let score = 0;
 let distance = 0;
 let gameTime = 0;
-let gameState = 'playing'; // 'playing', 'crashed', 'menu'
+let gameState = 'playing'; // 'playing', 'crashed'
 let gameStarted = false;
+let isPlaying = false;
 
 let obstacles = [];  // {pos, size, type: 'tree'|'rock'|'bump'|'ramp'}
 let gates = [];      // {pos, leftX, rightX, passed, missed}
@@ -576,21 +578,86 @@ async function gameInit()
     sfxGate = new SoundGenerator({frequency: 660, release: .08, pitchJump: 220, pitchJumpTime: .03, volume: .5});
     sfxCrash = new SoundGenerator({frequency: 120, release: .4, noise: .3, volume: .6});
     sfxStart = new SoundGenerator({frequency: 440, release: .15, slide: .3, volume: .4});
+
+    buildMenus();
+    showMenu('title');
+}
+
+function startGame()
+{
+    resetGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    gameStarted = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'DOWNHILL SKI',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 function gameUpdate()
 {
-    if (!gameStarted)
-    {
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
-            resetGame();
-        return;
-    }
+    if (bindPauseKey({when: () => isPlaying && gameState !== 'crashed'})) return;
+    if (!isPlaying) return;
 
     if (gameState === 'crashed')
     {
         updateParticles();
-        
+
         if (keyWasPressed('Space') || keyWasPressed('Enter') || keyWasPressed('KeyR'))
             resetGame();
         return;
@@ -638,17 +705,7 @@ function gameRender()
 function gameRenderPost()
 {
     if (!gameStarted)
-    {
-        // title screen
-        drawTextScreen('DOWNHILL SKI', vec2(mainCanvasSize.x / 2, 200), 90, hsl(.6, .9, .6), 9, hsl(0, 0, 0));
-        drawTextScreen('SkiFree Style!', vec2(mainCanvasSize.x / 2, 310), 40, hsl(.55, .7, .7), 5, hsl(0, 0, 0));
-        drawTextScreen('Press SPACE or Click to Start', vec2(mainCanvasSize.x / 2, 450), 36, hsl(0, 0, 1), 4, hsl(0, 0, 0));
-        drawTextScreen('Move mouse to control direction', vec2(mainCanvasSize.x / 2, 580), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
-        drawTextScreen('Point downward to go faster!', vec2(mainCanvasSize.x / 2, 630), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
-        drawTextScreen('Click to jump', vec2(mainCanvasSize.x / 2, 680), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
-        drawTextScreen('Avoid trees and rocks', vec2(mainCanvasSize.x / 2, 730), 28, hsl(0, 0, .9), 3, hsl(0, 0, 0));
         return;
-    }
 
     // HUD - top left
     const speed = player.vel.length();

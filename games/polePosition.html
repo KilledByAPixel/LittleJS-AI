@@ -4,12 +4,14 @@
 </head><body>
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
 // engine settings
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
+let isPlaying = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Pole Position (tiny playable prototype)
@@ -145,12 +147,84 @@ function gameInit()
     sEngine = new SoundGenerator({ volume:.22, frequency:55, attack:0, release:.06, shapeCurve:.3, noise:.05, bitCrush:7 });
 
     proj = new Array(DRAW_DIST+2);
+
+    buildMenus();
+    showMenu('title');
+}
+
+function startGame()
+{
+    resetGame();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    state = 'title';
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'POLE POSITION',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    // title / restart
+    if (bindPauseKey({when: () => isPlaying && state === 'play'})) return;
+    if (!isPlaying) return;
+
+    // restart on timeup
     const startPressed = keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0);
     if (state !== 'play')
     {
@@ -849,13 +923,6 @@ function gameRenderPost()
         // small hints
         drawTextScreen('ARROWS/WASD  = drive', vec2(w-14, h-52), 20, hsl(0,0,1,.85), 3, hsl(0,0,0,.8), 'right', 'monospace');
         drawTextScreen('Stay on the asphalt!', vec2(w-14, h-28), 20, hsl(0,0,1,.85), 3, hsl(0,0,0,.8), 'right', 'monospace');
-    }
-    else if (state === 'title')
-    {
-        drawTextScreen('POLE POSITION (tiny)', vec2(w/2, h*0.20), 70, hsl(.02,.9,.55), 8, hsl(0,0,0), 'center', 'monospace');
-        drawTextScreen('PRESS ENTER / SPACE', vec2(w/2, h*0.30), 34, hsl(0,0,1), 6, hsl(0,0,0), 'center', 'monospace');
-        drawTextScreen('ARROWS/WASD TO DRIVE', vec2(w/2, h*0.36), 24, hsl(0,0,1,.9), 4, hsl(0,0,0,.85), 'center', 'monospace');
-        drawTextScreen('PASS CARS • DON\'T GO OFFROAD', vec2(w/2, h*0.40), 22, hsl(0,0,1,.9), 4, hsl(0,0,0,.85), 'center', 'monospace');
     }
     else if (state === 'timeup')
     {

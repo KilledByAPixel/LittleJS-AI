@@ -644,7 +644,7 @@
          title: 'COLUMNS',
          subtitle: 'Match 3+ jewels — chain combos for huge scores',
          onPlay: playFromTitle,
-         canReveal: () => !isPlaying,
+         revealOnClick: false,
          items: [
              {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
          ],
@@ -746,7 +746,7 @@
      nextPiece = makePiece();
      piece = makePiece();
 
-     // (click-to-reveal wired automatically by createTitleMenu)
+     showMenu('title');
  }
 
  function gameUpdate()

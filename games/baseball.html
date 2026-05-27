@@ -5,6 +5,7 @@
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../dist/box2d.wasm.js"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -58,6 +59,9 @@ let swungAtPitch = false;       // did the player swing during this pitch?
 // Aim & swing state
 let swingTimer = new Timer();
 let swingConnected = false;
+
+// menu / session state
+let isPlaying = false;
 
 // Particles
 const puffs = [];
@@ -376,6 +380,76 @@ function resetSession()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Menus
+
+function startGame()
+{
+    resetSession();
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    // Only pause when a game is actually running. Title menu sits over
+    // the canvas without freezing anything.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'BASEBALL',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Engine hooks
 
 async function gameInit()
@@ -394,10 +468,16 @@ async function gameInit()
 
     ball = new Ball();
     autoPitchTimer.set(.8);
+
+    buildMenus();
+    showMenu('title');
 }
 
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying) return;
+
     if (keyWasPressed('Space') || mouseWasPressed(0)) trySwing();
     if (keyWasPressed('Enter')) startPitch();
     if (keyWasPressed('KeyR')) resetSession();

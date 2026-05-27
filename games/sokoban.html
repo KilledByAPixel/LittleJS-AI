@@ -4,6 +4,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
 <script src="../templates/soundGenerator.js"></script>
+<script src="../templates/menus.js"></script>
 <script>
 'use strict';
 
@@ -51,6 +52,7 @@ let undoStack = [];
 let levelComplete = false;
 let showingMessage = false;
 let messageTimer = 0;
+let isPlaying = false;
 
 // Input timing
 let moveTimer = 0;
@@ -745,20 +747,90 @@ function drawTarget(pos)
 async function gameInit()
 {
     setCanvasFixedSize(vec2(960, 720));
-    
+
     // Initialize sounds
     sfxMove = new SoundGenerator({ frequency: 280, release: .04, volume: .3 });
     sfxPush = new SoundGenerator({ frequency: 180, release: .08, volume: .5, noise: .05 });
     sfxComplete = new SoundGenerator({ frequency: 520, release: .3, slide: .5, pitchJump: 200, pitchJumpTime: .1, volume: .6 });
     sfxUndo = new SoundGenerator({ frequency: 350, release: .06, slide: -.5, volume: .3 });
     sfxRestart = new SoundGenerator({ frequency: 200, release: .1, volume: .4 });
-    
+
     loadLevel(0);
+    buildMenus();
+    showMenu('title');
+}
+
+function startGame()
+{
+    loadLevel(0);
+    isPlaying = true;
+    clearSubmenuStack();
+    hideAllMenus();
+    getToolbar('hud')?.show();
+}
+
+function quitToTitle()
+{
+    isPlaying = false;
+    getToolbar('hud')?.hide();
+    clearSubmenuStack();
+    hideAllMenus();
+    showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu !== 'function') return;
+
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
+
+    createTitleMenu({
+        title: 'SOKOBAN',
+        subtitle: '',
+        onPlay: startGame,
+        revealOnClick: false,
+    });
+
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => { hideMenu('pause'); startGame(); }},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () =>
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: quitToTitle,
+                })},
+        ],
+    });
+
+    createToolbar({
+        id:'hud',
+        anchor:'top-right',
+        direction:'horizontal',
+        items: [
+            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
+            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
+            {
+                if (isMenuVisible())
+                {
+                    clearSubmenuStack();
+                    hideAllMenus();
+                }
+                else if (isPlaying) showMenu('pause');
+            }},
+        ],
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    if (bindPauseKey({when: () => isPlaying && !levelComplete})) return;
+    if (!isPlaying) return;
+
     // Update async solver (processes in chunks to avoid freezing)
     updateSolver();
     
