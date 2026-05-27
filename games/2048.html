@@ -67,9 +67,10 @@ function quitToTitle()
 
 function gameInit()
 {
+    saveDataInit('2048');
     canvasClearColor = hsl(0, 0, .08);
 
-    best = +localStorage.getItem('ljs2048_best') || 0;
+    best = getSaveData().bestScore ?? 0;
 
     sMove  = new SoundGenerator({frequency: 260, release: .06, volume: .7, randomness: .02});
     sMerge = new SoundGenerator({frequency: 190, pitchJump: 320, pitchJumpTime: .02, release: .14, volume: .9, randomness: .02});
@@ -108,12 +109,7 @@ function buildMenus()
     });
 
     createOptionsMenu({
-        persistKey: '2048_volume',
-        extraItems: [
-            {type:'checkbox', label:'Sound', value:true,
-                persist:'2048_sound',
-                onChange: v => soundEnable = v},
-        ],
+        persistKey: 'volume',
     });
 
     createMenu({
@@ -344,7 +340,7 @@ function applyMove(dir)
     else sMove.play();
 
     best = max(best, score);
-    localStorage.setItem('ljs2048_best', best);
+    saveData({bestScore: best});
 }
 
 function updateAnimations()
