@@ -803,11 +803,12 @@ function createBarriers()
 
 function gameInit()
 {
+    saveDataInit('spaceInvaders');
     setCanvasFixedSize(vec2(960, 540));
     setCameraPos(levelSize.scale(.5));
     cameraScale = 16; // pixels per world unit
 
-    try { hiScore = +localStorage.getItem('spaceinvaders.hi') || 0; } catch(e) { hiScore = 0; }
+    hiScore = getSaveData().bestScore ?? 0;
 
     setSoundVolume(.8);
     // Title screen runs an attract-mode demo (animated wave / falling
@@ -864,7 +865,7 @@ function buildMenus()
         },
     });
 
-    createOptionsMenu({persistKey: 'spaceinvaders.volume'});
+    createOptionsMenu();
 
     createMenu({
         id: 'about', title: 'HOW TO PLAY', onHide: popMenu,
@@ -972,7 +973,7 @@ function gameUpdate()
         if (score > hiScore)
         {
             hiScore = score;
-            try { localStorage.setItem('spaceinvaders.hi', hiScore); } catch(e) {}
+            saveData({bestScore: hiScore});
         }
         if (typeof showMenu === 'function') showMenu('gameOver');
         return;
