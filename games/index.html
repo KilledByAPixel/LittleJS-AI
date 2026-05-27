@@ -652,6 +652,10 @@
     }
     #sidebar.open { transform: translateX(0); }
     #hamburger { display: flex; }
+    /* In-game on mobile: hide the drawer toggle. Browsing the library
+       while playing isn't useful here, and the button just covers game
+       UI. Browser back returns to the library. */
+    body.in-game #hamburger { display: none; }
     #backdrop  { display: block; }
 
     /* Stage takes the whole width once the sidebar is fixed-positioned. */
@@ -1246,6 +1250,7 @@ function loadIframe(url) {
 function showWelcome(pushHistory = true) {
   const wasGame = currentFile !== null;
   currentFile = null;
+  document.body.classList.remove('in-game');
   document.title = BASE_TITLE;
   loadIframe('about:blank');
   frameEl.style.display = 'none';
@@ -1273,6 +1278,7 @@ function selectGame(file, pushHistory = true) {
   if (!g) return;
   const wasLibrary = currentFile === null;
   currentFile = file;
+  document.body.classList.add('in-game');
   document.title = g.name + ' · ' + BASE_TITLE;
   pushRecent(file);
   // Cache-bust so edits to a game show up without manual reload.
