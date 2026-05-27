@@ -1086,11 +1086,28 @@ function gameUpdatePost()
 // Drawing
 // ------------------------------------------------------------
 
+function wavePalette(w)
+{
+  const palettes = [
+    { skyTop:.68, skyHoriz:.56, enemyHue:.04, abmHue:.55, groundHue:.08, mountainHue:.66 },
+    { skyTop:.88, skyHoriz:.92, enemyHue:.02, abmHue:.13, groundHue:.95, mountainHue:.85 },
+    { skyTop:.32, skyHoriz:.36, enemyHue:.98, abmHue:.55, groundHue:.28, mountainHue:.30 },
+    { skyTop:.98, skyHoriz:.02, enemyHue:.13, abmHue:.55, groundHue:.02, mountainHue:.95 },
+    { skyTop:.10, skyHoriz:.07, enemyHue:.95, abmHue:.55, groundHue:.07, mountainHue:.12 },
+    { skyTop:.52, skyHoriz:.48, enemyHue:.02, abmHue:.13, groundHue:.50, mountainHue:.55 },
+    { skyTop:.78, skyHoriz:.72, enemyHue:.13, abmHue:.55, groundHue:.75, mountainHue:.80 },
+    { skyTop:.06, skyHoriz:.08, enemyHue:.55, abmHue:.13, groundHue:.07, mountainHue:.10 },
+  ];
+  return palettes[(w - 1) % palettes.length];
+}
+
 function drawGround()
 {
+  const pal = wavePalette(waveIndex);
+
   // sky as a single vertical gradient
-  const skyTop   = hsl(.68, .6, .03);
-  const skyHoriz = hsl(.56, .5, .14);
+  const skyTop   = hsl(pal.skyTop,   .6, .03);
+  const skyHoriz = hsl(pal.skyHoriz, .5, .14);
   const skyBottom = groundHeight;
   const skyTopY   = levelSize.y + 10;
   const skyH = skyTopY - skyBottom;
@@ -1130,24 +1147,24 @@ function drawGround()
 
   // distant mountains
   for (const m of mountains)
-    drawCircle(vec2(m.x, m.y), m.r * 2, hsl(.66, .35, m.shade));
+    drawCircle(vec2(m.x, m.y), m.r * 2, hsl(pal.mountainHue, .35, m.shade));
   // secondary closer hill band
   drawRect(vec2(levelSize.x/2, groundHeight + .1), vec2(levelSize.x, .2),
-           hsl(.66, .3, .1));
+           hsl(pal.mountainHue, .3, .1));
 
   // backdrop below ground prevents sky bleed-through on shake
-  drawRect(vec2(levelSize.x/2, -5), vec2(levelSize.x, 10), hsl(.08, .35, .06));
+  drawRect(vec2(levelSize.x/2, -5), vec2(levelSize.x, 10), hsl(pal.groundHue, .35, .06));
 
   // ground as a vertical gradient (lighter at horizon, darker below)
   drawRectGradient(vec2(levelSize.x/2, groundY),
                    vec2(levelSize.x, groundHeight),
-                   hsl(.08, .4, .17), hsl(.08, .35, .07));
+                   hsl(pal.groundHue, .4, .17), hsl(pal.groundHue, .35, .07));
 
   // ground stripes
   for (let i = 0; i < 6; i++)
   {
     const y = (i / 6) * groundHeight + .15;
-    drawLine(vec2(0, y), vec2(levelSize.x, y), .04, hsl(.07, .4, .14, .35));
+    drawLine(vec2(0, y), vec2(levelSize.x, y), .04, hsl(pal.groundHue, .4, .14, .35));
   }
 
   // horizon glow
@@ -1321,23 +1338,25 @@ function drawInstallations()
 
 function drawMissiles()
 {
+  const pal = wavePalette(waveIndex);
+
   for (const m of enemyMissiles)
   {
     // outer glow line
-    drawLine(m.start, m.pos, m.w * 2.4, hsl(.05, 1, .55, .2));
+    drawLine(m.start, m.pos, m.w * 2.4, hsl(pal.enemyHue, 1, .55, .2));
     // bright trail
-    drawLine(m.start, m.pos, m.w, hsl(.04, .95, .65));
+    drawLine(m.start, m.pos, m.w, hsl(pal.enemyHue, .95, .65));
     // tip glow
-    drawCircle(m.pos, .35, hsl(.05, 1, .7, .5));
-    drawCircle(m.pos, .22, hsl(.06, 1, .8));
+    drawCircle(m.pos, .35, hsl(pal.enemyHue, 1, .7, .5));
+    drawCircle(m.pos, .22, hsl(pal.enemyHue, 1, .8));
     drawCircle(m.pos, .1, hsl(.15, 1, 1));
   }
 
   for (const m of playerMissiles)
   {
-    drawLine(m.start, m.pos, m.w * 2.6, hsl(.55, 1, .8, .18));
-    drawLine(m.start, m.pos, m.w, hsl(.55, .95, .75));
-    drawCircle(m.pos, .26, hsl(.55, 1, .85, .6));
+    drawLine(m.start, m.pos, m.w * 2.6, hsl(pal.abmHue, 1, .8, .18));
+    drawLine(m.start, m.pos, m.w, hsl(pal.abmHue, .95, .75));
+    drawCircle(m.pos, .26, hsl(pal.abmHue, 1, .85, .6));
     drawCircle(m.pos, .14, hsl(.5, .2, 1));
   }
 }
