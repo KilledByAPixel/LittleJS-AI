@@ -181,6 +181,19 @@
   }
   .empty { padding: 20px 16px; color: var(--muted); font-size: 13px; text-align: center; }
 
+  /* Subtle divider that separates "main" games from under-construction ones
+     at the bottom of the sidebar list. */
+  .list-divider {
+    margin: 14px 14px 4px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    color: var(--cat-construction);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+  }
+
   /* Sidebar footer — controls live here so they never overlap the game */
   #sidebar-footer {
     padding: 10px 14px;
@@ -789,19 +802,32 @@ function makeCard(g) {
 function renderList() {
   listEl.innerHTML = '';
   const q = searchEl.value.trim().toLowerCase();
-  let shown = 0;
+  // Two buckets — render regular alphabetically, then a divider, then the
+  // under-construction games so they sink to the bottom of the list.
+  const regular = [];
+  const construction = [];
   for (const g of GAMES) {
     if (activeCategory !== 'all' && g.category !== activeCategory) continue;
     if (q) {
       const hay = (g.name + ' ' + g.desc + ' ' + g.tags.join(' ')).toLowerCase();
       if (!hay.includes(q)) continue;
     }
+    (g.category === 'construction' ? construction : regular).push(g);
+  }
+  const appendCard = g => {
     const card = makeCard(g);
     if (g.file === currentFile) card.classList.add('selected');
     listEl.appendChild(card);
-    shown++;
+  };
+  for (const g of regular) appendCard(g);
+  if (regular.length && construction.length) {
+    const divider = document.createElement('div');
+    divider.className = 'list-divider';
+    divider.textContent = '🚧 Under Construction';
+    listEl.appendChild(divider);
   }
-  if (shown === 0) {
+  for (const g of construction) appendCard(g);
+  if (regular.length + construction.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent = 'No games match.';
