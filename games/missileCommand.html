@@ -596,9 +596,10 @@ function maybeSplitMirv(m)
   if (!m.mirv || !m.alive) return;
   if (m.pos.y > levelSize.y * 0.55) return;
   m.mirv = false;
+  m.split = true;
+  m.children = 2 + randInt(2);
 
-  const childCount = 2 + randInt(2);
-  for (let i = 0; i < childCount; i++)
+  for (let i = 0; i < m.children; i++)
   {
     const target = pickEnemyTarget();
     const start = m.pos.copy();
@@ -614,9 +615,10 @@ function maybeSplitMirv(m)
       w: .07,
       smokeT: 0,
       mirv: false,
+      parent: m,
+      pulsePhase: rand() * 100,
     });
   }
-  m.alive = false;
 }
 
 function applySmartBombDodge(m)
@@ -700,7 +702,7 @@ function updateAI()
 
   for (const m of enemyMissiles)
   {
-    if (!m.alive) continue;
+    if (!m.alive || m.split) continue;
     if (isHarmless(m.target)) continue;
     // Smart bombs dodge — long shots whiff. Wait until they're low.
     if (m.smart && m.pos.y > levelSize.y * .40) continue;
@@ -788,6 +790,7 @@ function addExplosion(pos, friendly)
 function updateMissile(m)
 {
   if (!m.alive) return;
+  if (m.split) return;
   m.t += (m.speed * timeDelta) / m.len;
   const p = clamp(m.t, 0, 1);
   if (m.smart)
@@ -891,7 +894,7 @@ function checkExplosionHits()
 
     for (const m of enemyMissiles)
     {
-      if (!m.alive) continue;
+      if (!m.alive || m.split) continue;
       if (m.pos.distance(e.pos) <= e.r)
       {
         m.alive = false;
@@ -1245,7 +1248,7 @@ function gameUpdate()
   if (isPlaying && !gameOver && keyWasPressed('KeyT'))
     aiMode = !aiMode;
 
-  if (!gameOver && mouseWasPressed(0))
+  if (!gameOver && !betweenWaves && !tally && mouseWasPressed(0))
   {
     launchPlayerMissile(mousePos);
   }
@@ -1323,7 +1326,7 @@ function gameUpdate()
       applySmartBombDodge(m);
 
     const impacted = updateMissile(m);
-    if (m.alive)
+    if (m.alive && !m.split)
     {
       m.smokeT -= timeDelta;
       if (m.smokeT <= 0)
@@ -1347,6 +1350,19 @@ function gameUpdate()
   updateExplosions();
   checkExplosionHits();
   updateFliers();
+
+  // Notify split-parent MIRVs when a child dies; parent persists as a
+  // frozen trail until all its children are gone.
+  for (const m of enemyMissiles)
+  {
+    if (!m.alive && m.parent && !m.parentNotified)
+    {
+      m.parentNotified = true;
+      m.parent.children--;
+      if (m.parent.children <= 0)
+        m.parent.alive = false;
+    }
+  }
 
   // filter AFTER checkExplosionHits so missiles killed by an explosion
   // don't get one final draw with their trail cutting through it
@@ -1642,6 +1658,23 @@ function drawMissiles()
 
   for (const m of enemyMissiles)
   {
+    if (m.split)
+    {
+      drawLine(m.start, m.pos, m.w * 2.6, hsl(.88, .8, .5, .18));
+      drawLine(m.start, m.pos, m.w * 1.1, hsl(.88, .9, .6, .55));
+      continue;
+    }
+    if (m.mirv)
+    {
+      drawLine(m.start, m.pos, m.w * 2.6, hsl(.88, 1, .55, .28));
+      drawLine(m.start, m.pos, m.w * 1.1, hsl(.88, .95, .7));
+      const pulse = .85 + .15 * Math.sin(time * 10 + m.pulsePhase);
+      drawCircle(m.pos, .50 * pulse, hsl(0, 0, 1, .35));
+      drawCircle(m.pos, .32, hsl(.88, 1, .7));
+      drawCircle(m.pos, .20, hsl(.88, 1, .85));
+      drawCircle(m.pos, .10, hsl(0, 0, 1));
+      continue;
+    }
     drawLine(m.start, m.pos, m.w * 2.4, hsl(pal.enemyHue, 1, .55, .2));
     drawLine(m.start, m.pos, m.w, hsl(pal.enemyHue, .95, .65));
     if (m.smart)
