@@ -394,7 +394,7 @@ function findBestAIMove(opts = {})
 function setDifficulty(d)
 {
     difficulty = d;
-    localStorage.setItem('connect4.difficulty', d);
+    saveData({difficulty: d});
     refreshDifficultyUI();
 }
 
@@ -619,10 +619,11 @@ const AI_VS_AI_DELAY = 0.5;
 
 async function gameInit()
 {
+    saveDataInit('connect4');
     setCanvasFixedSize(vec2(600, 720));
     cameraPos = vec2(0, 0);
     canvasClearColor = new Color().setHex('#0d0d14');
-    difficulty = localStorage.getItem('connect4.difficulty') || 'medium';
+    difficulty = getSaveData().difficulty ?? 'medium';
 
     // One callback drives `paused` for every menu (including dialogs).
     installAutoPause();
@@ -649,7 +650,7 @@ async function gameInit()
 
     // ----- options menu -----
     createOptionsMenu({
-        persistKey: 'connect4.volume',
+        persistKey: 'volume',
         extraItems: [
             {type:'separator'},
             {type:'label', text:'DIFFICULTY'},
