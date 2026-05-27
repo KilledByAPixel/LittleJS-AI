@@ -18,7 +18,40 @@ const customSounds = [null, null, null, null];
 let currentStep = 0, stepTime = 0, tempo = 240;
 let isPlaying = false, eraseMode = false;
 
-function scheduleSave() {} // real implementation in Task 6
+const STORAGE_KEY = 'ljs_sequencer_v1';
+let saveTimer = 0;
+function scheduleSave()
+{
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveState, 200);
+}
+function saveState()
+{
+    saveTimer = 0;
+    const cells = [];
+    for (let track = 0; track < trackCount; track++)
+    for (let step = 0; step < stepCount; step++)
+    {
+        const idx = step + track*stepCount;
+        if (sequencer[idx]) cells.push(`${track},${step}`);
+    }
+    const blob = { version:1, tempo, cells, customSounds };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(blob)); }
+    catch (e) { console.warn('sequencer: saveState failed', e); }
+}
+function loadState()
+{
+    let blob;
+    try
+    {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        blob = JSON.parse(raw);
+    }
+    catch (e) { console.warn('sequencer: loadState parse failed', e); return null; }
+    if (!blob || blob.version !== 1) return null;
+    return blob;
+}
 
 const sound_piano = new Sound([.3,0,220,,.1]);
 const sound_drumKick  = new Sound([,,99,,,.02,,,,,,,,2]);
@@ -158,6 +191,7 @@ class UISequencerButton extends UIButton
         eraseMode || this.playSound();
         const index = this.step + this.track*stepCount;
         sequencer[index] = eraseMode ? 0 : this;
+        scheduleSave();
     }
     render()
     {
@@ -273,9 +307,33 @@ function gameInit()
     uiSystem.defaultShadowColor = BLACK;
     canvasClearColor = GRAY;
 
+    const saved = loadState();
+    if (saved)
+    {
+        tempo = saved.tempo;
+        for (let i = 0; i < customSlotCount; i++)
+            customSounds[i] = saved.customSounds[i] || null;
+    }
+
     for (let step=stepCount; step--;)
     for (let track=trackCount; track--;)
         new UISequencerButton(step, track);
+
+    if (saved && saved.cells)
+    {
+        const buttonByKey = new Map();
+        for (const obj of uiSystem.uiObjects)
+            if (obj instanceof UISequencerButton)
+                buttonByKey.set(`${obj.track},${obj.step}`, obj);
+        for (const cell of saved.cells)
+        {
+            const btn = buttonByKey.get(cell);
+            if (!btn) continue;
+            btn.isOn = true;
+            const [t, s] = cell.split(',').map(Number);
+            sequencer[s + t*stepCount] = btn;
+        }
+    }
 
     for (let track=trackCount; track--;)
         new UITrackLabel(track);
@@ -302,6 +360,7 @@ function gameInit()
         tempo = lerp(minTempo, maxTempo, tempoSlider.value);
         tempo = floor(tempo/10) * 10;
         tempoSlider.text = `${tempo} BPM`;
+        scheduleSave();
     };
     tempoSlider.onChange();
 }
