@@ -327,18 +327,18 @@ function paintLamp(ctx)
     ctx.beginPath();
     ctx.ellipse(250, 492, 60, 14, 0, 0, Math.PI * 2);
     ctx.fill();
-    // soft halo: warm amber, falls off quickly so it reads as a lamp not a flashbang
+    // soft halo: warm amber, partly transparent so walls behind read through
     const g = ctx.createRadialGradient(250, 200, 4, 250, 200, 130);
-    g.addColorStop(0,  '#ffd070');
-    g.addColorStop(.35,'#d48028');
-    g.addColorStop(.7, '#7a3608');
-    g.addColorStop(1,  'rgba(60,20,0,0)');
+    g.addColorStop(0,  'rgba(255,208,112,.55)');
+    g.addColorStop(.35,'rgba(212,128,40,.32)');
+    g.addColorStop(.7, 'rgba(122, 54, 8,.14)');
+    g.addColorStop(1,  'rgba( 60, 20, 0,0)');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(250, 200, 130, 0, Math.PI * 2);
     ctx.fill();
-    // small warm bulb core (no pure white)
-    ctx.fillStyle = '#ffe8a0';
+    // small warm bulb core (semi-transparent so it never punches a hole through)
+    ctx.fillStyle = 'rgba(255,232,160,.7)';
     ctx.beginPath();
     ctx.arc(250, 200, 18, 0, Math.PI * 2);
     ctx.fill();
@@ -637,6 +637,20 @@ function gameUpdate()
         if (!isWallAt(newPos)) playerPos = newPos;
     }
     else playerPos = newPos;
+
+    // Keep a small buffer between the player and adjacent wall surfaces so
+    // extreme close-ups can't push perpDist below the render cutoff. Without
+    // this you can graze a wall hard enough to see the backdrop through it.
+    const BUF = .07;
+    const cx = Math.floor(playerPos.x), cy = Math.floor(playerPos.y);
+    if (isWallAt(vec2(cx + 1.1, playerPos.y)) && playerPos.x > cx + 1 - BUF)
+        playerPos = vec2(cx + 1 - BUF, playerPos.y);
+    if (isWallAt(vec2(cx - .1,  playerPos.y)) && playerPos.x < cx + BUF)
+        playerPos = vec2(cx + BUF,     playerPos.y);
+    if (isWallAt(vec2(playerPos.x, cy + 1.1)) && playerPos.y > cy + 1 - BUF)
+        playerPos = vec2(playerPos.x, cy + 1 - BUF);
+    if (isWallAt(vec2(playerPos.x, cy - .1))  && playerPos.y < cy + BUF)
+        playerPos = vec2(playerPos.x, cy + BUF);
 
     // enemies
     for (const e of enemies) updateEnemy(e);
