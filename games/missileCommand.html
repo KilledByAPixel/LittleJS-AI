@@ -1069,7 +1069,7 @@ function gameInit()
   sBonusCity = new SoundGenerator({volume:.7, frequency:660, attack:0, release:.4, shapeCurve:1.6, pitchJump:540, pitchJumpTime:.05});
   sBonusTick = new SoundGenerator({volume:.45, frequency:780, attack:0, release:.06, shapeCurve:1.6});
 
-  try { bestScore = +localStorage.getItem('missilecommand.best') || 0; } catch(e) { bestScore = 0; }
+  try { bestScore = +localStorage.getItem('missileCommand.best') || 0; } catch(e) { bestScore = 0; }
 
   installAutoPause();
 
@@ -1119,7 +1119,7 @@ function buildMenus()
     },
   });
 
-  createOptionsMenu({persistKey: 'missilecommand.volume'});
+  createOptionsMenu({persistKey: 'missileCommand.volume'});
 
   createMenu({
     id: 'about',
