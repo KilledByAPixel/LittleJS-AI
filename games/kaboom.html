@@ -218,7 +218,7 @@ function showGameOver() {
     gameOverShown = true;
     if (score > highScore) {
         highScore = score;
-        localStorage.setItem('kaboomHigh', String(highScore));
+        saveData({bestScore: highScore});
     }
     const summary = getMenu('gameover').getItem('summary');
     summary.setLabel(`SCORE  ${score}\nBEST  ${highScore}\nWAVE  ${wave}`);
@@ -594,6 +594,7 @@ function drawParticles(behindLayer=false) {
 // LITTLEJS CALLBACKS
 
 async function gameInit() {
+    saveDataInit('kaboom');
     canvasClearColor = new Color().setHex('#06061a');
     setSoundVolume(0.6);
 
@@ -647,10 +648,10 @@ async function gameInit() {
     windowSeeds = [];
     for (let i = 0; i < 9 * 7; i++) windowSeeds.push(rand(0, 5));
 
-    highScore = +(localStorage.getItem('kaboomHigh') || 0);
+    highScore = getSaveData().bestScore ?? 0;
 
     // ---- menus ----
-    createOptionsMenu({persistKey: 'kaboom.volume'});
+    createOptionsMenu();
 
     createMenu({
         id: 'about',
