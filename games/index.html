@@ -656,8 +656,8 @@
   </div>
   <div id="list"></div>
   <div id="sidebar-footer">
-    <a class="btn disabled" id="sourceBtn" target="_blank" rel="noopener" title="View this game's source on GitHub">Source ↗</a>
-    <button class="btn disabled" id="fullscreenBtn" title="Play fullscreen">Full ⛶</button>
+    <a class="btn" id="sourceBtn" target="_blank" rel="noopener" title="View the LittleJS-AI repo on GitHub">Source ↗</a>
+    <button class="btn" id="fullscreenBtn" title="Fullscreen the whole page">Full ⛶</button>
     <a class="btn disabled" id="openBtn" target="_blank" rel="noopener" title="Open in a new tab">Open ↗</a>
   </div>
 </aside>
@@ -764,6 +764,7 @@ const fullscreenBtn = document.getElementById('fullscreenBtn');
 const openBtn = document.getElementById('openBtn');
 // Base URL for the per-game "Source ↗" button — points at the game file on GitHub.
 const SOURCE_BASE = 'https://github.com/KilledByAPixel/LittleJS-AI/blob/main/games/';
+const MAIN_REPO   = 'https://github.com/KilledByAPixel/LittleJS-AI';
 
 let currentFile = null;
 let activeCategory = 'all'; // sidebar filter
@@ -1082,9 +1083,11 @@ function showWelcome(pushHistory = true) {
   frameEl.style.display = 'none';
   welcomeEl.style.display = 'block';
   welcomeEl.scrollTop = 0;
-  sourceBtn.classList.add('disabled');
-  sourceBtn.removeAttribute('href');
-  fullscreenBtn.classList.add('disabled');
+  // Source + Fullscreen stay enabled on the welcome screen — Source links to
+  // the repo, Fullscreen fullscreens the entire page (sidebar + welcome).
+  sourceBtn.href = MAIN_REPO;
+  sourceBtn.title = 'View the LittleJS-AI repo on GitHub';
+  fullscreenBtn.title = 'Fullscreen the whole page';
   openBtn.classList.add('disabled');
   openBtn.removeAttribute('href');
   // Push a history entry only on user-driven game→library transitions,
@@ -1109,9 +1112,9 @@ function selectGame(file, pushHistory = true) {
   loadIframe(file + '?t=' + Date.now());
   frameEl.style.display = 'block';
   welcomeEl.style.display = 'none';
-  sourceBtn.classList.remove('disabled');
   sourceBtn.href = SOURCE_BASE + file;
-  fullscreenBtn.classList.remove('disabled');
+  sourceBtn.title = "View this game's source on GitHub";
+  fullscreenBtn.title = 'Play this game fullscreen';
   openBtn.classList.remove('disabled');
   openBtn.href = file;
   localStorage.setItem(LAST_GAME_KEY, file);
@@ -1153,7 +1156,15 @@ listEl.addEventListener('scroll', () => {
   listScrollTimer = setTimeout(() => listEl.classList.remove('scrolling'), 150);
 }, { passive: true });
 fullscreenBtn.addEventListener('click', () => {
-  if (currentFile && frameEl.requestFullscreen) frameEl.requestFullscreen();
+  if (currentFile) {
+    // Game loaded → fullscreen the iframe. No toggle here; games have their
+    // own controls and the user can press Escape to exit anyway.
+    if (frameEl.requestFullscreen) frameEl.requestFullscreen();
+  } else {
+    // Library view → toggle the whole page in/out of fullscreen.
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  }
 });
 
 // ===================== Mobile drawer toggle =====================
