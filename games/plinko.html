@@ -54,7 +54,7 @@ const BALL_COLORS    = [
 // Game state
 let isPlaying      = false;
 let score          = 0;
-let bestScore      = +(localStorage.getItem('plinko.best') || 0);
+let bestScore      = 0;
 let dropCount      = 0;
 let aimX           = 0;
 let dropCooldown   = new Timer();
@@ -300,7 +300,7 @@ function checkScoring()
     if (score > bestScore)
     {
         bestScore = score;
-        localStorage.setItem('plinko.best', bestScore);
+        saveData({bestScore});
     }
 }
 
@@ -356,6 +356,8 @@ function setPlaying(p)
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('plinko');
+    bestScore = getSaveData().bestScore ?? 0;
     // Box2D first — every body needs the world to exist.
     await box2dInit();
 
@@ -398,7 +400,7 @@ async function gameInit()
 
     // ---------- Options ----------
     createOptionsMenu({
-        persistKey: 'plinko.volume',
+        persistKey: 'volume',
         extraItems: [
             {type:'separator'},
             {type:'button', label:'RESET BEST',
