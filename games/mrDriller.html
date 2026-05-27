@@ -126,11 +126,10 @@ let nextPieceId;
 let player;
 let air, depth, score, chain, gameOver, won;
 let bestScore = 0;
-try { bestScore = +localStorage.getItem('mrDriller.best') || 0; } catch(e) {}
 function saveDrillerBest() {
     if (score > bestScore) {
         bestScore = score;
-        try { localStorage.setItem('mrDriller.best', bestScore); } catch(e) {}
+        saveData({bestScore});
     }
 }
 let gravityTimer;
@@ -529,6 +528,8 @@ function killPlayer(reason)
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('mrDriller');
+    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(720, 960));
 
     sfxDrill   = new SoundGenerator({volume:.28, frequency:300, release:.12, shapeCurve:1.2, pitchJump:180, pitchJumpTime:.04, noise:.2});
