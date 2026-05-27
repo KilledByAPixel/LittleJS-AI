@@ -48,6 +48,7 @@ let score = 0;
 let lap = 0;
 let timeLeftFrames = 60 * 60; // 60 seconds at 60 fps
 let crashTimer = 0;
+let inputSteer = 0; // -1..1, combined keyboard + mouse, shared with render
 
 // AI cars
 let aiCars = [];
@@ -147,7 +148,7 @@ function gameInit()
 function gameUpdate()
 {
     // title / restart
-    const startPressed = keyWasPressed('Enter') || keyWasPressed('Space');
+    const startPressed = keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0);
     if (state !== 'play')
     {
         if (startPressed)
@@ -161,9 +162,23 @@ function gameUpdate()
     const left  = keyIsDown('ArrowLeft') || keyIsDown('KeyA');
     const right = keyIsDown('ArrowRight')|| keyIsDown('KeyD');
 
+    // pointer steering. On a mouse, cursor x-position always steers (no
+    // button required); on touch, only an active touch counts (because the
+    // pointer has no resting position when no finger is down).
+    // Button/touch held = gas, so single-pointer play is fully possible.
+    const cx = mainCanvasSize.x / 2;
+    let mouseSteer = 0;
+    let mouseSteerActive = false;
+    if (!isTouchDevice || mouseIsDown(0))
+    {
+        mouseSteer = clamp((mousePosScreen.x - cx) / cx, -1, 1);
+        mouseSteerActive = true;
+    }
+    const mouseGas = mouseIsDown(0);
+
     // speed
-    if (up)   speed += ACCEL;
-    else     speed -= COAST_DECEL;
+    if (up || mouseGas) speed += ACCEL;
+    else                speed -= COAST_DECEL;
     if (down) speed -= BRAKE;
     speed = clamp(speed, 0, MAX_SPEED);
 
@@ -177,7 +192,12 @@ function gameUpdate()
     // steering as lateral acceleration -> velocity (with damping)
     // gives weight/inertia: car keeps drifting briefly after key release,
     // so curves are about anticipating rather than spamming the key.
-    const steer = (right?1:0) - (left?1:0);
+    // Mouse takes priority when active so a pointer input doesn't fight the
+    // keyboard; keyboard arrows still work when the cursor is centered or on
+    // touch devices not currently being touched.
+    const kbSteer = (right?1:0) - (left?1:0);
+    const steer = mouseSteerActive ? mouseSteer : kbSteer;
+    inputSteer = steer;
     const speedFactor = 0.35 + (speed/MAX_SPEED) * 1.25; // less twitchy at low speed
     playerVX += steer * STEER_ACCEL * speedFactor;
 
@@ -366,7 +386,14 @@ function renderRoadAndCars()
         x += dx;
         dx += seg.curve;
 
-        const z = max(1.2, i + 1 - offset); // clamp near plane to prevent distortion but keep road visible
+        // proj[i].z is the distance from the camera to segment (baseIndex+i)'s
+        // far edge. Keep the relationship i+1-offset exact (no clamp) so the
+        // car projection formula (idx = dz + offset - 1) stays consistent —
+        // any clamp here would make near cars wobble across segment boundaries.
+        // proj[0] ends up at z ∈ (0,1] which projects below the bottom of the
+        // screen; the road loop just clamps its yNear to h and the road
+        // naturally fills to the bottom without needing a separate cap.
+        const z = i + 1 - offset;
         const p = projectPoint(z, x, w, h, horizonY);
         p.i = i;
         p.curve = seg.curve;
@@ -383,6 +410,13 @@ function renderRoadAndCars()
     const dashPeriod = 8;
     const dashOn = 4;
     const dashIsOn = (worldPos)=> ((worldPos % dashPeriod + dashPeriod) % dashPeriod) < dashOn;
+
+    // sprites (trees, signs, AI cars) queued during the road pass and drawn
+    // far->near AFTER the road. Sort key is "proj-index depth": for a tree at
+    // proj[i] that's just `i`; for a car at world-distance dz it's
+    // `dz + offset - 1` (the same value used to lerp its projection). Sorting
+    // by this means a tree at i=8 correctly occludes a car at idx=8.3.
+    const sprites = [];
 
     // draw from far -> near
     let prev = proj[DRAW_DIST];
@@ -436,102 +470,75 @@ function renderRoadAndCars()
                 farC+lineWFar, yFar, nearC+lineWNear, yNear);
         }
 
-        // roadside scenery (trees + signs)
-        // draw in the same far->near order so near scenery occludes far scenery
+        // roadside scenery (trees + signs) — queue for the depth-sorted pass
+        // so AI cars at the same depth correctly occlude / are occluded.
         if (cur.scale > 0.003 && yNear > horizonY + 6)
         {
             const segIndex = (baseIndex + i) % trackLen;
             const baseSize = clamp(cur.scale * h * 1.15, 14, 230);
 
-            // trees every ~7-11 segments
             if ((segIndex % 7) === 0)
             {
                 const xTreeL = cur.screenX - (cur.rumbleW + cur.roadW*0.85);
-                drawTree(ctx, xTreeL, yNear, baseSize, segIndex*3 + 1);
+                const seed = segIndex*3 + 1;
+                sprites.push({ depth: i, draw: ()=> drawTree(ctx, xTreeL, yNear, baseSize, seed) });
             }
             if ((segIndex % 11) === 0)
             {
                 const xTreeR = cur.screenX + (cur.rumbleW + cur.roadW*0.85);
-                drawTree(ctx, xTreeR, yNear, baseSize, segIndex*3 + 2);
+                const seed = segIndex*3 + 2;
+                sprites.push({ depth: i, draw: ()=> drawTree(ctx, xTreeR, yNear, baseSize, seed) });
             }
-
-            // signs every ~13 segments (alternate sides)
             if ((segIndex % 13) === 0)
             {
                 const side = (segIndex & 1) ? -1 : 1;
                 const xSign = cur.screenX + side * (cur.rumbleW + cur.roadW*0.55);
-                drawSign(ctx, xSign, yNear, baseSize*0.85, segIndex*5 + 7);
+                const seed = segIndex*5 + 7;
+                sprites.push({ depth: i, draw: ()=> drawSign(ctx, xSign, yNear, baseSize*0.85, seed) });
             }
         }
 
         prev = cur;
     }
 
-    // ensure the road reaches the bottom of the screen (near cap)
-    {
-        const p = proj[0];
-        if (p)
-        {
-            const yTop = clamp(Math.floor(p.screenY), 0, h);
-            if (yTop < h)
-            {
-                const yBottom = h + 2; // a tiny overshoot to avoid bottom edge gaps
-                const bottomScale = 1.18;
+    // (no manual near cap needed — with the z clamp removed, proj[0] always
+    // projects below the screen, so the road loop's i=0 quad reaches the
+    // bottom on its own with the correct per-frame lateral perspective.)
 
-                // rumble
-                const topL = p.screenX - p.rumbleW;
-                const topR = p.screenX + p.rumbleW;
-                const botL = p.screenX - p.rumbleW * bottomScale;
-                const botR = p.screenX + p.rumbleW * bottomScale;
-                ctx.fillStyle = (p.rumbleAlt ? hsl(0,0,1) : hsl(0,1,.45)).toString();
-                fillQuad(ctx, botL, yBottom, topL, yTop, topR, yTop, botR, yBottom);
-
-                // road
-                const topRL = p.screenX - p.roadW;
-                const topRR = p.screenX + p.roadW;
-                const botRL = p.screenX - p.roadW * bottomScale;
-                const botRR = p.screenX + p.roadW * bottomScale;
-                ctx.fillStyle = (p.rumbleAlt ? hsl(0,0,.23) : hsl(0,0,.18)).toString();
-                fillQuad(ctx, botRL, yBottom, topRL, yTop, topRR, yTop, botRR, yBottom);
-
-                // center stripe (match dash pattern)
-                const capWorldPos = baseIndex + offset;
-                if (dashIsOn(capWorldPos))
-                {
-                    ctx.fillStyle = hsl(0,0,.92,.9).toString();
-                    const lineWTop = max(1, p.roadW * .03);
-                    const lineWBot = max(1, p.roadW * .03 * bottomScale);
-                    fillQuad(ctx,
-                        p.screenX-lineWBot, yBottom, p.screenX-lineWTop, yTop,
-                        p.screenX+lineWTop, yTop, p.screenX+lineWBot, yBottom);
-                }
-            }
-        }
-    }
-
-    // draw AI cars from far -> near (using the projection table)
-    const visibleCars = [];
+    // queue AI cars into the same sprite list as trees/signs.
+    // proj[i].z = i+1-offset, so to find the proj slot at world-distance dz
+    // we solve i+t = dz + offset - 1. The old code used i = dz|0, which is
+    // only correct when offset==0 — as offset cycles 0->1 each segment the
+    // lerp t oscillated, producing visible per-frame jitter.
     for (const c of aiCars)
     {
         const dz = (c.z - trackPos + trackLen) % trackLen;
         if (dz <= 0 || dz >= DRAW_DIST) continue;
-        visibleCars.push({ c, dz });
-    }
-    visibleCars.sort((a,b)=> b.dz - a.dz); // far first
 
-    for (const {c, dz} of visibleCars)
-    {
-        const i = dz|0;
-        const t = dz - i;
-        const a = proj[i];
-        const b = proj[i+1];
-        if (!a || !b) continue;
-
-        const lerpP = (k)=> lerp(a[k], b[k], t);
-        const sx = lerpP('screenX');
-        const sy = lerpP('screenY');
-        const sc = lerpP('scale');
-        const roadW = lerpP('roadW');
+        const idx = dz + offset - 1;
+        let sx, sy, sc;
+        if (idx >= 0)
+        {
+            const i = idx | 0;
+            const t = idx - i;
+            const a = proj[i];
+            const b = proj[i+1];
+            if (!a || !b) continue;
+            sx = lerp(a.screenX, b.screenX, t);
+            sy = lerp(a.screenY, b.screenY, t);
+            sc = lerp(a.scale,   b.scale,   t);
+        }
+        else
+        {
+            // car is closer than proj[0]'s far edge — project directly so
+            // we don't snap to proj[0] (which would cause cars sitting right
+            // on the player to jitter as offset cycles 0->1).
+            // Road curve x is ~0 at this range so use x=0; this matches what
+            // proj[0] uses, keeping a smooth join at the dz = 1-offset boundary.
+            sc = CAMERA_DEPTH / dz;
+            sx = w/2 + sc * (0 - playerX) * w/2;
+            sy = horizonY + sc * CAMERA_HEIGHT * h;
+        }
 
         const carX = sx + sc * c.offset * w/2;
         const carW = max(6, sc * 0.28 * w/2);
@@ -540,12 +547,18 @@ function renderRoadAndCars()
         // simple occlusion: don't draw if behind horizon
         if (sy - carH < h*0.08 || sy > h) continue;
 
-        drawAICar(ctx, carX, sy, carW, carH, c.colorH);
+        const colorH = c.colorH;
+        sprites.push({ depth: idx, draw: ()=> drawAICar(ctx, carX, sy, carW, carH, colorH) });
     }
 
-    // player car (screen-fixed, like arcade view)
+    // draw queued sprites far -> near so trees can occlude cars and vice versa
+    sprites.sort((a, b)=> b.depth - a.depth);
+    for (const s of sprites) s.draw();
+
+    // player car (screen-fixed, like arcade view) — visual nudge mirrors the
+    // combined steer input (keyboard + mouse) for a touch of body roll feel.
     const carScreenY = h * 0.86;
-    const carScreenX = w * 0.5 + (keyIsDown('ArrowLeft')||keyIsDown('KeyA') ? -6 : 0) + (keyIsDown('ArrowRight')||keyIsDown('KeyD') ? 6 : 0);
+    const carScreenX = w * 0.5 + inputSteer * 6;
     const carScale = 1;
     drawPlayerCar(ctx, carScreenX, carScreenY, carScale);
 
