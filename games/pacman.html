@@ -99,6 +99,7 @@ let sPellet, sPower, sEatGhost, sDie, sWin, sFruit;
 // -----------------------------------------------------------------------------
 function gameInit()
 {
+    saveDataInit('pacman');
     setCanvasFixedSize(vec2(600, 720));
 
     // simple bleeps
@@ -109,7 +110,7 @@ function gameInit()
     sWin      = new SoundGenerator({frequency: 640, release: .22, volume: .6, randomness: .02, repeatTime: .08});
     sFruit    = new SoundGenerator({frequency: 540, release: .22, volume: .55, randomness: .04, pitchJump: 380, pitchJumpTime: .07});
 
-    try { bestScore = +localStorage.getItem('pacman.best') || 0; } catch(e) { bestScore = 0; }
+    bestScore = getSaveData().bestScore ?? 0;
 
     setSoundVolume(.8);
     installAutoPause();
@@ -162,7 +163,7 @@ function buildMenus()
         },
     });
 
-    createOptionsMenu({persistKey: 'pacman.volume'});
+    createOptionsMenu();
 
     createMenu({
         id: 'about',
@@ -251,7 +252,7 @@ function gameUpdate()
             if (score > bestScore)
             {
                 bestScore = score;
-                try { localStorage.setItem('pacman.best', bestScore); } catch(e) {}
+                saveData({bestScore});
             }
             if (typeof showMenu === 'function') showMenu('gameOver');
         }
