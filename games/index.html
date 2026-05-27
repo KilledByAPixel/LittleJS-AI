@@ -198,6 +198,39 @@
   }
   .empty { padding: 20px 16px; color: var(--muted); font-size: 13px; text-align: center; }
 
+  /* High-score badge — gold accent, used on tiles + sidebar cards. */
+  .score-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(247, 201, 72, .14);
+    color: #f7c948;
+    border: 1px solid rgba(247, 201, 72, .35);
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    line-height: 1.3;
+  }
+  .card .body .score-badge { margin-bottom: 6px; }
+  .tile .score-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+  }
+
+  /* "Your Scores" row — tiles show the score number prominently instead of
+     a description, since the whole point of this row is the number. */
+  .tile.score-tile .score-big {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f7c948;
+    margin-top: 2px;
+    letter-spacing: .3px;
+  }
+
   /* Subtle divider that separates "main" games from under-construction ones
      at the bottom of the sidebar list. */
   .list-divider {
@@ -688,6 +721,9 @@
 // emoji:    single grapheme used as "boxart" on tiles + sidebar cards.
 // tags:     descriptive chips on the card.
 // top:      1..N — appears in the "Top Picks" row at that rank. Unset = not featured.
+// scoreKey: optional localStorage key (or dotted path) to read this game's high
+//           score from. e.g. 'mario.highScore' reads localStorage['mario'] as
+//           JSON and returns the .highScore field. Plain string keys also work.
 const GAMES = [
   { file:'2048.html',           name:'2048', emoji:'🔢',            category:'puzzle',  desc:'Slide numbered tiles to combine matching pairs.',          tags:['puzzle','grid'] },
   { file:'asteroids.html',      name:'Asteroids', emoji:'🌑',       category:'shooter', desc:'Rotate-and-thrust shooter — blast drifting space rocks.', tags:['arcade','shooter'], top:10 },
@@ -785,6 +821,32 @@ let activeCategory = 'all'; // sidebar filter
 
 // ===================== Sidebar list =====================
 
+// Locale-aware number formatter for high-score badges ("1,234,567").
+const numFmt = new Intl.NumberFormat();
+
+// Read a game's high score from localStorage. Supports:
+//   scoreKey:'tetris_hi'           → reads localStorage.tetris_hi (number or numeric string)
+//   scoreKey:'mario.highScore'     → reads localStorage.mario as JSON, returns .highScore
+//   scoreKey:'save.level1.score'   → arbitrary dotted path through JSON
+// Returns a number, or null if missing / unparsable / no scoreKey set.
+function getHighScore(g) {
+  if (!g.scoreKey) return null;
+  const [key, ...path] = g.scoreKey.split('.');
+  const raw = localStorage.getItem(key);
+  if (raw == null) return null;
+  let v;
+  try { v = JSON.parse(raw); } catch { v = raw; }
+  for (const p of path) {
+    if (v == null || typeof v !== 'object') return null;
+    v = v[p];
+  }
+  if (typeof v === 'string') {
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  return typeof v === 'number' ? v : null;
+}
+
 // Recently-played history (newest first). Stored as an array of filenames.
 function getRecent() {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
@@ -808,6 +870,15 @@ function makeCard(g) {
   card.querySelector('.emoji').textContent = g.emoji || '';
   card.querySelector('.name').textContent = g.name;
   card.querySelector('.desc').textContent = g.desc;
+  // High score badge inside the expanded body, before the description.
+  const score = getHighScore(g);
+  if (score != null) {
+    const body = card.querySelector('.body');
+    const badge = document.createElement('div');
+    badge.className = 'score-badge';
+    badge.textContent = '🏆 ' + numFmt.format(score);
+    body.insertBefore(badge, body.firstChild);
+  }
   const chipsEl = card.querySelector('.chips');
   for (const t of g.tags) {
     const chip = document.createElement('span');
@@ -905,6 +976,14 @@ function makeTile(g, index) {
   // Color the left stripe + hover border by category.
   const cat = catByKey[g.category];
   if (cat) tile.style.setProperty('--cat-color', cat.color);
+  // High-score badge in the top-right corner (skipped when no score saved).
+  const score = getHighScore(g);
+  if (score != null) {
+    const badge = document.createElement('div');
+    badge.className = 'score-badge';
+    badge.textContent = '🏆 ' + numFmt.format(score);
+    tile.appendChild(badge);
+  }
   // Stagger the entrance animation by position; cap so wide rows finish fast.
   if (index != null) tile.style.setProperty('--i', Math.min(index, 12));
   tile.addEventListener('click', () => selectGame(g.file));
@@ -963,9 +1042,29 @@ function buildWelcome() {
     welcomeEl.appendChild(buildRow('Top Picks', '⭐', topGames, true, null));
   }
 
+  // Your Scores — only renders if at least one game has a stored high score.
+  // Sorted by recency: most-recently-played first, then non-recent games at
+  // the bottom (alphabetical for stable ordering).
+  const recentFiles = getRecent();
+  const scoreEntries = GAMES
+    .map(g => ({ game: g, score: getHighScore(g) }))
+    .filter(x => x.score != null)
+    .sort((a, b) => {
+      const ai = recentFiles.indexOf(a.game.file);
+      const bi = recentFiles.indexOf(b.game.file);
+      if (ai === -1 && bi === -1) return a.game.name.localeCompare(b.game.name);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  if (scoreEntries.length) {
+    welcomeEl.appendChild(buildScoreRow(scoreEntries));
+  }
+
   // Recently Played — only renders once the user has launched at least one
-  // game. Sits right under Top Picks so it's the first personal section.
-  const recentGames = getRecent().map(f => gameByFile[f]).filter(Boolean);
+  // game. Sits right under Top Picks (and Your Scores) so it's the first
+  // personal section.
+  const recentGames = recentFiles.map(f => gameByFile[f]).filter(Boolean);
   if (recentGames.length) {
     welcomeEl.appendChild(buildRow('Recently Played', '🕘', recentGames, false, null));
   }
@@ -983,6 +1082,38 @@ function buildWelcome() {
     'Built with <a href="https://github.com/KilledByAPixel/LittleJS" target="_blank" rel="noopener">LittleJS</a>' +
     ' — a tiny, fast, open-source HTML5 game engine.';
   welcomeEl.appendChild(about);
+}
+
+// Variant of makeTile that swaps the description for a big score number.
+// Used only in the "Your Scores" row.
+function makeScoreTile(g, score, index) {
+  const tile = document.createElement('div');
+  tile.className = 'tile score-tile';
+  tile.innerHTML =
+    '<div class="emoji"></div>' +
+    '<div class="info">' +
+      '<div class="name"></div>' +
+      '<div class="score-big"></div>' +
+    '</div>';
+  tile.querySelector('.emoji').textContent = g.emoji || '';
+  tile.querySelector('.name').textContent = g.name;
+  tile.querySelector('.score-big').textContent = '🏆 ' + numFmt.format(score);
+  const cat = catByKey[g.category];
+  if (cat) tile.style.setProperty('--cat-color', cat.color);
+  if (index != null) tile.style.setProperty('--i', Math.min(index, 12));
+  tile.addEventListener('click', () => selectGame(g.file));
+  return tile;
+}
+
+// Wraps buildRow's structure for the score-tile content, since the standard
+// makeTile draws desc + chips rather than a big score line.
+function buildScoreRow(entries) {
+  // Reuse buildRow by passing a placeholder; we'll replace its tiles below.
+  const row = buildRow('Your Scores', '🏆', entries.map(e => e.game), false, null);
+  const tiles = row.querySelector('.tiles');
+  tiles.innerHTML = '';
+  entries.forEach((e, i) => tiles.appendChild(makeScoreTile(e.game, e.score, i)));
+  return row;
 }
 
 function buildRow(label, rowEmoji, games, isTop, cat) {

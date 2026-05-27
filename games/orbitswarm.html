@@ -941,7 +941,9 @@ function buildMenus()
 {
     if (typeof createMenu !== 'function') return;
 
-    setMenuVisibilityCallback(v => paused = v);
+    // Only pause for in-game menus (pause/dialog). The title menu sits over
+    // the animated starfield + planet decor and shouldn't freeze them.
+    setMenuVisibilityCallback(v => paused = v && isPlaying);
 
     createTitleMenu({
         title: '',     // canvas draws ORBITSWARM
@@ -1004,6 +1006,7 @@ function buildMenus()
             }},
         ],
     });
+    getToolbar('hud')?.show();
 }
 
 function gameUpdate()
