@@ -6,6 +6,20 @@
     color: #f55;
     min-height: 1.2em;
 }
+#littlejs-menus .ljs-menu-panel[data-menu-id="controls"] {
+    top: var(--toolbar-margin, 0.5em);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+}
+#littlejs-menus .ljs-menu-panel[data-menu-id="controls"] .ljs-slider {
+    min-width: 180px;
+    margin: 0;
+}
 </style>
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1.18.15"></script>
@@ -306,22 +320,23 @@ function pasteTryParse()
 function applyTempo(v)
 {
     tempo = v;
-    const tempoBtn = getToolbar('transport') && getToolbar('transport').getItem('tempo');
-    if (tempoBtn) tempoBtn.setLabel(`TEMPO: ${tempo}`);
     scheduleSave();
 }
 
-function buildTempoDialog()
+function buildControlsMenu()
 {
     createMenu({
-        id: 'tempo',
-        title: 'TEMPO',
-        dismissable: true,
+        id: 'controls',
+        backdrop: false,
+        dismissable: false,
         items: [
-            {type:'slider', id:'bpm', label:'BPM',
+            {type:'slider', id:'tempo', label:'TEMPO', title:'Tempo (BPM)',
                 min: 120, max: 480, step: 10, value: tempo,
                 onChange: v => applyTempo(v)},
-            {type:'button', label:'BACK', onClick: () => hideMenu('tempo')},
+            {type:'slider', id:'volume', label:'VOLUME', title:'Volume',
+                min: 0, max: 1, step: 0.05, value: soundVolume,
+                persist: 'seqVolume',
+                onChange: v => setSoundVolume(v)},
         ],
     });
 }
@@ -379,16 +394,14 @@ function gameInit()
         direction: 'horizontal',
         items: [
             {type:'button', id:'play',
-                label: isPlaying ? '■ STOP' : '▶ PLAY',
+                label: isPlaying ? '■' : '▶',
+                title: 'Play / Stop',
                 onClick: ()=>
                 {
                     isPlaying = !isPlaying;
                     currentStep = stepTime = 0;
-                    getToolbar('transport').getItem('play').setLabel(isPlaying ? '■ STOP' : '▶ PLAY');
+                    getToolbar('transport').getItem('play').setLabel(isPlaying ? '■' : '▶');
                 }},
-            {type:'button', id:'tempo',
-                label: `TEMPO: ${tempo}`,
-                onClick: ()=> showMenu('tempo')},
         ],
     });
     getToolbar('transport').show();
@@ -398,7 +411,8 @@ function gameInit()
         anchor: 'top-right',
         direction: 'horizontal',
         items: [
-            {type:'button', id:'clear', label:'CLEAR',
+            {type:'button', id:'clear', label:'🗑',
+                title: 'Clear pattern',
                 onClick: ()=> showConfirmDialog({
                     title: 'CLEAR',
                     icon: '🗑',
@@ -407,13 +421,15 @@ function gameInit()
                     noLabel: 'CANCEL',
                     onYes: clearAllCells,
                 })},
-            {type:'button', id:'fullscreen', label:'⛶ FULLSCREEN',
+            {type:'button', id:'fullscreen', label:'⛶',
+                title: 'Toggle fullscreen',
                 hideOnTouch: true,
                 onClick: toggleFullscreen},
         ],
     });
     getToolbar('global').show();
-    buildTempoDialog();
+    buildControlsMenu();
+    showMenu('controls');
     buildPasteDialog();
 }
 
