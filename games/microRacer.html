@@ -67,6 +67,8 @@ let finishPos, finishNormal, finishTangent, finishSide;
 let pickups = [];
 let cars = [], player;
 let raceTime = 0, countdown = 3, countdownTimer = 0;
+let bestTime = 0;
+try { bestTime = +localStorage.getItem('microRacer.bestTime') || 0; } catch(e) {}
 let raceStarted = false, raceFinished = false, finalPlacements = [];
 
 let sndCount, sndGo, sndLap, sndBump, sndBoost, sndWin;
@@ -549,7 +551,14 @@ class Car extends Box2dObject
                 {
                     this.finished = true;
                     this.finishTime = raceTime;
-                    if (this.isPlayer) sndWin.play(this.pos);
+                    if (this.isPlayer) {
+                        sndWin.play(this.pos);
+                        // Best time: lower is better. Only save if first finish or beat previous.
+                        if (bestTime === 0 || raceTime < bestTime) {
+                            bestTime = raceTime;
+                            try { localStorage.setItem('microRacer.bestTime', bestTime); } catch(e) {}
+                        }
+                    }
                 }
             }
         }

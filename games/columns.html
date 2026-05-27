@@ -28,6 +28,8 @@
  let piece, nextPiece;
  let fallCounter = 0;
  let score = 0;
+ let bestScore = 0;
+ try { bestScore = +localStorage.getItem('columns.best') || 0; } catch(e) {}
  let level = 1;
  let combo = 0;
  let gameOver = false;
@@ -230,6 +232,10 @@
  {
      if (gameOver) return;
      gameOver = true;
+     if (score > bestScore) {
+         bestScore = score;
+         try { localStorage.setItem('columns.best', bestScore); } catch(e) {}
+     }
      sfxGameOver.play();
      // surface a game-over dialog via menus.js
      showAlertDialog({

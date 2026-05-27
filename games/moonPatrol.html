@@ -275,7 +275,10 @@ function die(atPos)
 {
     if (gameState) return;
     gameState = 1;
-    best = Math.max(best|0, score|0);
+    if ((score|0) > (best|0)) {
+        best = score|0;
+        try { localStorage.setItem('moonPatrol.best', best); } catch(e) {}
+    }
 
     playSoundSafe(sBoom);
     playSoundSafe(sThud);
@@ -531,6 +534,7 @@ function gameInit()
     sHeal = new SoundGenerator({ volume:.45, frequency:720, attack:0, release:.10, shapeCurve:1.1, slide:0.9, noise:.01 });
 
     best = 0;
+    try { best = +localStorage.getItem('moonPatrol.best') || 0; } catch(e) {}
     resetGame();
 
     buildMenus();

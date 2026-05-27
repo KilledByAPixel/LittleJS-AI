@@ -68,6 +68,8 @@ let nextShotColor = 0;
 let loadedShotColor = 0;
 let aimDir = vec2(1, 0);       // unit vector — pointing right at startup
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('zuma.best') || 0; } catch(e) {}
 let isPlaying = false;
 let gameOverPending = false;
 let currentCombo = 0;          // resets on shoot, increments per pop event
@@ -455,6 +457,10 @@ function endGame(won)
 {
     if (gameOverPending) return;
     gameOverPending = true;
+    if (score > bestScore) {
+        bestScore = score;
+        try { localStorage.setItem('zuma.best', bestScore|0); } catch(e) {}
+    }
     if (!won) sound_lose.play();
     showAlertDialog({
         title: won ? 'CLEARED!' : 'GAME OVER',

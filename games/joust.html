@@ -46,6 +46,14 @@ let eggs = [];
 let platforms = [];
 let particles = [];
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('joust.best') || 0; } catch(e) {}
+function saveBestScore() {
+    if (score > bestScore) {
+        bestScore = score;
+        try { localStorage.setItem('joust.best', bestScore); } catch(e) {}
+    }
+}
 let lives = 3;
 let wave = 0;
 let gameState = 'title'; // title, playing, gameover, victory
@@ -437,6 +445,7 @@ function playerDeath()
     else
     {
         gameState = 'gameover';
+        saveBestScore();
     }
 }
 
@@ -740,6 +749,7 @@ function gameUpdate()
         if (wave >= 10)
         {
             gameState = 'victory';
+            saveBestScore();
         }
         else
         {

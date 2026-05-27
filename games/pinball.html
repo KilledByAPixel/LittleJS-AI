@@ -82,6 +82,7 @@ let bumpers = [];
 let slingshots = [];
 let score = 0;
 let highScore = 0;
+try { highScore = +localStorage.getItem('pinball.highScore') || 0; } catch(e) {}
 let ballsLeft = 3;
 let gameOver = false;
 let launchCharge = 0;
@@ -317,7 +318,10 @@ function loseBall()
     if (ballsLeft <= 0)
     {
         gameOver = true;
-        highScore = Math.max(highScore, score);
+        if (score > highScore) {
+            highScore = score;
+            try { localStorage.setItem('pinball.highScore', highScore); } catch(e) {}
+        }
     }
     else
     {

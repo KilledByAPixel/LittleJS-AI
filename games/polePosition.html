@@ -50,6 +50,8 @@ let speed = 0;
 let playerX = 0;     // lateral offset in world units
 let playerVX = 0;    // lateral velocity
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('polePosition.best') || 0; } catch(e) {}
 let lap = 0;
 let timeLeftFrames = 60 * 60; // 60 seconds at 60 fps
 let crashTimer = 0;
@@ -336,6 +338,10 @@ function gameUpdate()
     {
         state = 'timeup';
         speed = 0;
+        if (score > bestScore) {
+            bestScore = score;
+            try { localStorage.setItem('polePosition.best', bestScore|0); } catch(e) {}
+        }
         return;
     }
 

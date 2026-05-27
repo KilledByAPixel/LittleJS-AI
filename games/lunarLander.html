@@ -46,6 +46,8 @@ let player, landingPad;
 let gameState = 0; // 0=playing, 1=landed, 2=crashed
 let isPlaying = false;
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('lunarLander.best') || 0; } catch(e) {}
 let messageTimer = new Timer();
 let camTarget = vec2();
 let camScale = CAMERA_SCALE_FAR;
@@ -273,6 +275,10 @@ class Player extends EngineObject
 
                 // score: more fuel + faster landing
                 score = (this.fuel*10|0) + (max(0, 100 - this.velocity.length()*1000)|0);
+                if (score > bestScore) {
+                    bestScore = score;
+                    try { localStorage.setItem('lunarLander.best', bestScore); } catch(e) {}
+                }
                 messageTimer.set(999);
                 return true;
             }

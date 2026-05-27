@@ -330,7 +330,6 @@ function startNewRun()
     resetGame();
     isPlaying = true;
     hideAllMenus();
-    getToolbar('hud')?.show();
 }
 
 function buildMenus()
@@ -395,7 +394,6 @@ function buildMenus()
                         clearSubmenuStack();
                         hideAllMenus();
                         isPlaying = false;
-                        getToolbar('hud')?.hide();
                         showMenu('title');
                     },
                 });
@@ -406,23 +404,7 @@ function buildMenus()
     // Game Over (built fresh each death so the score lines reflect this run)
     // We expose a helper that (re)builds and shows it.
 
-    createToolbar({
-        id:'hud',
-        anchor:'top-right',
-        direction:'horizontal',
-        items: [
-            {type:'button', id:'fs',   label:'⛶', title:'Toggle fullscreen', onClick: toggleFullscreen, hideOnTouch:true},
-            {type:'button', id:'menu', label:'☰', title:'Menu', onClick: () =>
-            {
-                if (isMenuVisible())
-                {
-                    clearSubmenuStack();
-                    hideAllMenus();
-                }
-                else if (isPlaying) showMenu('pause');
-            }},
-        ],
-    });
+    installDefaultToolbar();
 }
 
 function showGameOverMenu()
@@ -447,7 +429,6 @@ function showGameOverMenu()
                 clearSubmenuStack();
                 hideAllMenus();
                 isPlaying = false;
-                getToolbar('hud')?.hide();
                 showMenu('title');
             }},
         ],

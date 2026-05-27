@@ -125,6 +125,14 @@ let pieces;
 let nextPieceId;
 let player;
 let air, depth, score, chain, gameOver, won;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('mrDriller.best') || 0; } catch(e) {}
+function saveDrillerBest() {
+    if (score > bestScore) {
+        bestScore = score;
+        try { localStorage.setItem('mrDriller.best', bestScore); } catch(e) {}
+    }
+}
 let gravityTimer;
 let pendingMatchCheck;
 let shakeTime;
@@ -512,6 +520,7 @@ function killPlayer(reason)
 {
     if (gameOver) return;
     gameOver = true;
+    saveDrillerBest();
     player.deathReason = reason;
     shakeTime = 0.5;
     sfxDeath.play();
@@ -614,7 +623,7 @@ function gameUpdate()
     air -= AIR_DRAIN * timeDelta;
     if (air <= 0) { air = 0; killPlayer('suffocated'); return; }
 
-    if (player.gy >= MAX_DEPTH) { won = true; gameOver = true; sfxWin.play(); return; }
+    if (player.gy >= MAX_DEPTH) { won = true; gameOver = true; saveDrillerBest(); sfxWin.play(); return; }
 
     processInput();
     updatePlayer();

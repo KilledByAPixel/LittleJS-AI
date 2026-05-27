@@ -73,6 +73,7 @@ let particles = [];
 let floaters = [];
 let score = 0;
 let best = 0;
+try { best = +localStorage.getItem('robotron.best') || 0; } catch(e) {}
 let gameOver = false;
 
 let gameWave = 1;
@@ -2080,7 +2081,10 @@ class Player extends EngineObject
         if (this.lives < 0)
         {
             gameOver = true;
-            best = max(best, score);
+            if (score > best) {
+                best = score;
+                try { localStorage.setItem('robotron.best', best); } catch(e) {}
+            }
             gameOverTimer = 90;
             return;
         }

@@ -26,6 +26,8 @@ const PLAYER_SIZE = vec2(.80);
 
 // Game state
 let state;          // 'play' | 'dead' | 'win'
+let bestProgress = 0;  // % of level reached, persisted to localStorage
+try { bestProgress = +localStorage.getItem('geometryDash.bestProgress') || 0; } catch(e) {}
 let player;
 let solids = [];
 let spikes = [];
@@ -139,6 +141,11 @@ function killPlayer()
 {
     if (state !== 'play') return;
     state = 'dead';
+    const pct = (clamp(player.pos.x / endX, 0, 1) * 100) | 0;
+    if (pct > bestProgress) {
+        bestProgress = pct;
+        try { localStorage.setItem('geometryDash.bestProgress', bestProgress); } catch(e) {}
+    }
     sDie.play(player.pos);
 
     // little burst

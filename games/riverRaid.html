@@ -47,6 +47,8 @@ let objects, bullets;
 let playerPos, playerVelX, playerAngle;
 let speed;
 let score;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('riverRaid.best') || 0; } catch(e) {}
 let fuel;
 let gameOver, gameOverReason;
 let flashTimer;
@@ -193,6 +195,10 @@ function crash(reason)
     if (gameOver) return;
     gameOver = true;
     gameOverReason = reason;
+    if (score > bestScore) {
+        bestScore = score;
+        try { localStorage.setItem('riverRaid.best', bestScore|0); } catch(e) {}
+    }
     flashTimer = 30;
     sExplode && sExplode.play();
 }

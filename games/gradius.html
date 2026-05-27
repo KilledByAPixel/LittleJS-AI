@@ -57,6 +57,8 @@ let particles = [];
 let stars = [];
 
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('gradius.best') || 0; } catch(e) {}
 let lives = 3;
 let gameState = 'playing'; // 'playing', 'gameover', 'win'
 
@@ -413,6 +415,10 @@ function damagePlayer()
     {
         player.alive = false;
         gameState = 'gameover';
+        if (score > bestScore) {
+            bestScore = score;
+            try { localStorage.setItem('gradius.best', bestScore); } catch(e) {}
+        }
         return;
     }
 

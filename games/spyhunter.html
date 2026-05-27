@@ -103,6 +103,8 @@ let oilSlicks = [];
 let smokeScreens = [];
 
 let score = 0;
+let bestScore = 0;
+try { bestScore = +localStorage.getItem('spyhunter.best') || 0; } catch(e) {}
 let distance = 0;
 let gameOver = false;
 let isPlaying = false;
@@ -784,6 +786,10 @@ function triggerGameOver()
 {
     if (gameOver) return;
     gameOver = true;
+    if (score > bestScore) {
+        bestScore = score;
+        try { localStorage.setItem('spyhunter.best', bestScore|0); } catch(e) {}
+    }
     if (!player) return;
 
     // sustained fire/sparks for ~0.6s

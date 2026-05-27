@@ -42,6 +42,8 @@ const COLOR_PLAYER_DARK = hsl(.58, .75, .35);
 
 // Game state
 let currentLevel = 0;
+let bestLevel = 0;  // highest level reached (1-indexed for display)
+try { bestLevel = +localStorage.getItem('sokoban.bestLevel') || 0; } catch(e) {}
 let moves = 0;
 let pushes = 0;
 let playerPos = vec2(0, 0);
@@ -498,6 +500,10 @@ function parseLevel(levelData)
 function loadLevel(levelIndex)
 {
     currentLevel = levelIndex % LEVELS.length;
+    if (currentLevel + 1 > bestLevel) {
+        bestLevel = currentLevel + 1;
+        try { localStorage.setItem('sokoban.bestLevel', bestLevel); } catch(e) {}
+    }
     parseLevel(LEVELS[currentLevel]);
     moves = 0;
     pushes = 0;
