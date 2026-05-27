@@ -120,36 +120,35 @@ function getTrackConfig(track)
 
 function parseZzfxText(text)
 {
-    let s = (text || '').trim();
-    const wrapMatch = s.match(/^new\s+Sound\s*\(\s*(\[[\s\S]*\])\s*\)\s*;?\s*$/i);
-    if (wrapMatch) s = wrapMatch[1];
-    s = s.trim();
-    if (!s.startsWith('[') || !s.endsWith(']'))
-        throw new Error('expected [ ... ]');
-    let padded = '';
-    for (let i = 0; i < s.length; i++)
+    let code = (text || '').trim();
+    if (!code) throw new Error('empty input');
+
+    // Strip optional 'new Sound(' or '[' wrapper — take everything after the
+    // first '[' if present, else after the first '(', else use the raw text.
+    code = code.split('[')[1] || code.split('(')[1] || code;
+
+    // Validate: each comma-separated part must be empty or a finite number.
+    // Trailing ']' / ')' / whitespace is fine — parseFloat ignores them.
+    const parts = code.split(',');
+    for (const p of parts)
     {
-        padded += s[i];
-        if (s[i] === '[' || s[i] === ',')
-        {
-            let j = i + 1;
-            while (j < s.length && /\s/.test(s[j])) j++;
-            if (j < s.length && (s[j] === ',' || s[j] === ']'))
-                padded += 'null';
-        }
+        if (p.trim() === '') continue;
+        if (!Number.isFinite(parseFloat(p)))
+            throw new Error('invalid zzfx code');
     }
-    const arr = JSON.parse(padded);
-    if (!Array.isArray(arr) || arr.length < 1)
-        throw new Error('not an array');
-    for (const v of arr)
-        if (v !== null && (typeof v !== 'number' || !isFinite(v)))
-            throw new Error('non-numeric element');
-    return arr;
+
+    // Build the param array: undefined for blanks (zzfx uses defaults),
+    // numbers otherwise.
+    return parts.map(p =>
+    {
+        const f = parseFloat(p);
+        return Number.isFinite(f) ? f : undefined;
+    });
 }
 
 function formatZzfxArray(arr)
 {
-    return '[' + arr.map(v => v === null ? '' : String(v)).join(',') + ']';
+    return '[' + arr.map(v => v == null ? '' : String(v)).join(',') + ']';
 }
 
 class UITrackLabel extends UIButton
