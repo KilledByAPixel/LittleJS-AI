@@ -460,9 +460,9 @@ function createToolbar(config)
 //   installDefaultToolbar({titleDismissable: true}); // fancy title screens
 //
 // Mute toggles `soundVolume` (LittleJS global) between 0 and the last
-// non-zero value; state persists per-page in localStorage under the
-// `muteStorageKey` (default 'menu.muted'). Pass `mute: false` to skip the
-// button entirely — sequencer-style games where muting makes no sense.
+// non-zero value; state persists site-wide in the `littlejs.global` save
+// blob (see the Unified save data section). Pass `mute: false` to skip
+// the button entirely — sequencer-style games where muting makes no sense.
 //
 // Hamburger opens the configured pause menu. When the title menu is on
 // top, the hamburger grays out (browser-disabled), since a player can't
