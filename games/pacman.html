@@ -104,7 +104,7 @@ function gameInit()
     sPellet   = new SoundGenerator({frequency: 780, release: .05, volume: .35, randomness: .02});
     sPower    = new SoundGenerator({frequency: 420, release: .14, volume: .5, randomness: .03, pitchJump: 240, pitchJumpTime: .05});
     sEatGhost = new SoundGenerator({frequency: 980, release: .12, volume: .55, randomness: .02, slide: .25});
-    sDie      = new SoundGenerator({frequency: 160, release: .25, volume: .7, randomness: .06, noise: .18, slide: -.35});
+    sDie      = new Sound([.7,,528,,.2,.6,,2.3,9,,-99,,.1,,,,,.92,.1,.16,112]); // Powerup 6758
     sWin      = new SoundGenerator({frequency: 640, release: .22, volume: .6, randomness: .02, repeatTime: .08});
     sFruit    = new SoundGenerator({frequency: 540, release: .22, volume: .55, randomness: .04, pitchJump: 380, pitchJumpTime: .07});
 
