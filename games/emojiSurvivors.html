@@ -2333,9 +2333,13 @@ class Breakable extends EngineObject
     {
         super.update();
         this.renderOrder = -this.pos.y;
-        // Breakables no longer chip on player contact — only weapons damage
-        // them. Removes the "free loot just by running over a crate" path
-        // and gives auto-aim weapons a clear use during combat lulls.
+        // Breakables no longer chip on player contact in normal play —
+        // only weapons damage them. The one exception is AI test mode:
+        // the AI can't aim at a specific crate, so it would just clip
+        // through them forever. Walk-into break stays on for the AI so
+        // balance runs don't deadlock on a crate field.
+        if (playerAI && isOverlapping(this.pos, this.size, player.pos, player.size))
+            this.takeDamage(this.hp);
     }
 
     render()
@@ -2931,15 +2935,23 @@ function touchDirection()
     return vec2(dx / len, -dy / len);
 }
 
+// Vision range for the AI auto-player — anything farther than this is
+// invisible to it, so it doesn't run across the whole map for a single
+// distant crate or barrel it shouldn't realistically be able to see.
+// Roughly matches the visible camera area at cameraScale = 40 with a
+// little margin (camera shows ~24×16 wu, this is a ~30 wu radius bubble).
+const AI_VISION_RANGE = 30;
+const AI_VISION_RANGE_SQ = AI_VISION_RANGE * AI_VISION_RANGE;
+
 function aiDirection()
 {
     // AI is invuln in test mode, so there's no reason to fear enemies —
     // chasing loot keeps it moving and naturally pulls weapons through the
     // swarm. Priority: a real Pickup > a Breakable (loot source) > the
     // nearest enemy (so weapons have something to fire at). Falls back to
-    // origin if the arena is completely clean.
+    // origin if nothing's within vision range.
     let goal = null;
-    let goalD2 = Infinity;
+    let goalD2 = AI_VISION_RANGE_SQ;
 
     for (const obj of engineObjects)
     {
