@@ -251,7 +251,7 @@ class Chest extends EngineObject
             {
                 showMenuToast({icon: evolution.evo.emoji, title: 'EVOLVED!',
                     text: oldName + ' → ' + evolution.evo.name,
-                    duration: 4});
+                    duration: 4, position: 'bottom-right'});
             }
         }
         else
@@ -266,7 +266,8 @@ class Chest extends EngineObject
             if (typeof showMenuToast === 'function')
             {
                 showMenuToast({icon: '🎁', title: 'Chest!',
-                               text: '+3 upgrades', duration: 2.5});
+                               text: '+3 upgrades', duration: 2.5,
+                               position: 'bottom-right'});
             }
         }
         // fireworks burst — radial chainFlashes for the reward moment
@@ -520,10 +521,11 @@ class Enemy extends EngineObject
                     new Pickup(this.pos.copy(), sprites.clover, 'mystery', 0);
                 else if (roll < .035)
                     new Pickup(this.pos.copy(), sprites.coin, 'coin', 1);
-                else if (roll < .135)
+                else if (roll < .075)
                     new Pickup(this.pos.copy(), sprites.heart, 'heart', 20);
-                else
+                else if (roll < .575)
                     new Pickup(this.pos.copy(), sprites.gem, 'gem', this.xpDrop);
+                // else: no drop (~42.5% of kills)
             }
         }
         else if (this.isBoss && activeBoss === this)
@@ -763,7 +765,7 @@ function applyRandomBuff(pos)
 function toastBuff(icon, title, text)
 {
     if (typeof showMenuToast === 'function')
-        showMenuToast({icon, title, text, duration: 2.5, position: 'top-left'});
+        showMenuToast({icon, title, text, duration: 2.5, position: 'bottom-right'});
 }
 
 class Pickup extends EngineObject
