@@ -93,6 +93,8 @@ function drawToTexture(tileIndex, drawFn, description)
 //   drawTextToTexture(37, '🧙', {hueShift: 180, description: 'evil wizard'});
 //   drawTextToTexture(46, '💎', {filter: 'hue-rotate(260deg) saturate(1.3)'});
 //   drawTextToTexture(7, 'GO', {sizeMul: .6, font: 'sans-serif'});
+//   drawTextToTexture(31, '🗡️', {flipX: true});   // mirror across vertical axis
+//   drawTextToTexture(44, '🪓', {flipY: true});   // mirror across horizontal axis
 //
 // Options:
 //   description  – atlas-prompt label; falls back to `text` if omitted
@@ -101,6 +103,8 @@ function drawToTexture(tileIndex, drawFn, description)
 //                  this for saturate / brightness / etc. combos
 //   sizeMul      – font scale; default .85 leaves a few px of breathing room
 //   font         – font family, default 'serif' (matches the emoji look)
+//   flipX        – mirror the glyph left↔right (about the vertical axis)
+//   flipY        – mirror the glyph top↔bottom (about the horizontal axis)
 function drawTextToTexture(tileIndex, text, options)
 {
     options = options || {};
@@ -108,6 +112,8 @@ function drawTextToTexture(tileIndex, text, options)
     const filter      = options.filter      || (hueShift ? 'hue-rotate(' + hueShift + 'deg)' : '');
     const sizeMul     = options.sizeMul     != null ? options.sizeMul : .85;
     const font        = options.font        || 'serif';
+    const flipX       = !!options.flipX;
+    const flipY       = !!options.flipY;
     // Falling back to the glyph itself as the description keeps the
     // atlas-prompt output legible even when the caller didn't spell out
     // a label — for emoji sheets that's almost always good enough.
@@ -121,7 +127,21 @@ function drawTextToTexture(tileIndex, text, options)
         ctx.textBaseline = 'middle';
         // emoji glyphs sit a few px above the math-center of their em box —
         // nudge down so the visual centre lands at the tile centre.
-        ctx.fillText(text, TILE_SIZE / 2, TILE_SIZE / 2 + TILE_SIZE * .04);
+        const cx = TILE_SIZE / 2;
+        const cy = TILE_SIZE / 2 + TILE_SIZE * .04;
+        if (flipX || flipY)
+        {
+            // Translate + scale so the flip pivots around the glyph centre.
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+            ctx.fillText(text, 0, 0);
+            ctx.restore();
+        }
+        else
+        {
+            ctx.fillText(text, cx, cy);
+        }
     }, description);
 }
 

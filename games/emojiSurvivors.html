@@ -3022,48 +3022,29 @@ async function gameInit()
 
     // hero sprites — painted once at startup; HEROES[*].spriteKey selects
     // which one the player uses. Avoids any mid-game atlas re-upload.
-    sprites.heroWizard = drawTextToTexture(0, '🧙', {description: 'wizard hero'});
-    sprites.heroSmiley = drawTextToTexture(1, '🙂', {description: 'smiley hero'});
-    sprites.heroCat    = drawTextToTexture(2, '🐱', {description: 'cat hero'});
-    sprites.heroBot    = drawTextToTexture(3, '🤖', {description: 'bot hero'});
-    sprites.heroVamp   = drawTextToTexture(5, '🧛', {description: 'vampire hero'});
+    // ─── Atlas layout (8×8) ─────────────────────────────────────────────
+    // Row 0 — Utility + Heroes
+    // Row 1 — Common enemies
+    // Row 2 — Theme enemies + bolt + 1 breakable (barrel)
+    // Row 3 — Bosses + Volcano backdrops
+    // Row 4 — Base weapons
+    // Row 5 — Evolved weapons + Beach/Frozen borders
+    // Row 6 — Pickups + gems + 1 breakable (crate)
+    // Row 7 — Meadow / Graveyard / Beach backdrops
+    // ────────────────────────────────────────────────────────────────────
 
-    sprites.fish      = drawTextToTexture(4, '🐟', {description: 'a blue fish'});
-    sprites.tsunami   = drawTextToTexture(6, '🌊', {description: 'a cresting blue wave'});   // beach border
-
-    // enemies 8-15
-    sprites.zombie    = drawTextToTexture(8,  '🧟', {description: 'a green zombie shambling forward'});
-    sprites.bat       = drawTextToTexture(9,  '🦇', {description: 'a black bat with spread wings'});
-    sprites.skull     = drawTextToTexture(10, '💀', {description: 'a white skull, menacing'});
-    sprites.ant       = drawTextToTexture(11, '🐜', {description: 'a small black ant'});
-    sprites.snail     = drawTextToTexture(12, '🐌', {description: 'a brown snail with shell'});
-    sprites.clown     = drawTextToTexture(13, '🤡', {description: 'a clown face with red nose'});
-    sprites.reaper    = drawTextToTexture(14, '☠️', {description: 'a skull and crossbones reaper'});
-    sprites.duck      = drawTextToTexture(15, '🦆', {description: 'a yellow duck'});
-
-    // weapons / projectiles 16-23
-    sprites.fireball  = drawTextToTexture(16, '🔥', {description: 'a fireball, orange and yellow flames'});
-    sprites.star      = drawTextToTexture(17, '🌟', {description: 'a yellow glowing star'});
-    sprites.bolt      = drawTextToTexture(18, '⚡', {description: 'a yellow lightning bolt'});
-    sprites.pizza     = drawTextToTexture(19, '🍕', {description: 'a pizza slice'});
-    sprites.bomb      = drawTextToTexture(20, '💣', {description: 'a black bomb with fuse'});
-    sprites.ice       = drawTextToTexture(21, '🧊', {description: 'a clear ice cube'});
-    sprites.starToss  = drawTextToTexture(22, '⭐', {description: 'a yellow five-pointed star'});
-    sprites.fireImp   = drawTextToTexture(23, '😈', {description: 'a smiling devil-face fire imp'});
-
-    // pickups 24-26
-    sprites.gem       = drawTextToTexture(24, '💎', {description: 'a cyan diamond gem'});
-    sprites.heart     = drawTextToTexture(25, '❤️', {description: 'a red heart'});
-    sprites.chest     = drawTextToTexture(26, '🎁', {description: 'a wrapped gift box with bow'});
-    sprites.coin      = drawTextToTexture(27, '💰', {description: 'a gold coin or money bag'});
-
-    // Soft radial gradient circle — white center fading to transparent. Used
-    // for shadows (tinted dark) and any "soft glow" effects. Painted in white
-    // so we can color it via the tint argument at draw time. Radius shrunk
-    // slightly from 122→114 so the soft alpha edge stays a few pixels inside
-    // the 250px tile and never bleeds into neighboring atlas cells.
-    sprites.shadow    = drawToTexture(28, ctx =>
+    // Row 0 — Utility + Heroes
+    sprites.circle    = drawToTexture(0, ctx =>
     {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(125, 125, 114, 0, Math.PI * 2);
+        ctx.fill();
+    }, 'a solid white circle');
+    sprites.shadow    = drawToTexture(1, ctx =>
+    {
+        // Radius 114 keeps the soft alpha edge a few px inside the 250px
+        // tile so it never bleeds into a neighbouring cell.
         const grad = ctx.createRadialGradient(125, 125, 0, 125, 125, 114);
         grad.addColorStop(0,   'rgba(255,255,255,1)');
         grad.addColorStop(.55, 'rgba(255,255,255,.7)');
@@ -3073,76 +3054,95 @@ async function gameInit()
         ctx.arc(125, 125, 114, 0, Math.PI * 2);
         ctx.fill();
     }, 'a soft white radial gradient circle');
+    sprites.heroWizard = drawTextToTexture(2, '🧙', {description: 'wizard hero'});
+    sprites.heroSmiley = drawTextToTexture(3, '🙂', {description: 'smiley hero'});
+    sprites.heroCat    = drawTextToTexture(4, '🐱', {description: 'cat hero'});
+    sprites.heroBot    = drawTextToTexture(5, '🤖', {description: 'bot hero'});
+    sprites.heroVamp   = drawTextToTexture(6, '🧛', {description: 'vampire hero'});
+    // slot 7: free
 
-    // Solid white circle — for hard-edged filled circles, range indicators,
-    // pickup auras. Tint to color, scale to size.
-    sprites.circle    = drawToTexture(29, ctx =>
-    {
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(125, 125, 114, 0, Math.PI * 2);
-        ctx.fill();
-    }, 'a solid white circle');
+    // Row 1 — Common enemies
+    sprites.ant       = drawTextToTexture(8,  '🐜', {description: 'a small black ant'});
+    sprites.bat       = drawTextToTexture(9,  '🦇', {description: 'a black bat with spread wings'});
+    sprites.zombie    = drawTextToTexture(10, '🧟', {description: 'a green zombie shambling forward'});
+    sprites.skull     = drawTextToTexture(11, '💀', {description: 'a white skull, menacing'});
+    sprites.clown     = drawTextToTexture(12, '🤡', {description: 'a clown face with red nose'});
+    sprites.duck      = drawTextToTexture(13, '🦆', {description: 'a yellow duck'});
+    sprites.ghost     = drawTextToTexture(14, '👻', {description: 'a pale ghost'});
+    sprites.snail     = drawTextToTexture(15, '🐌', {description: 'a brown snail with shell'});
 
-    // Mystery present + Water Splash sprites
-    sprites.clover    = drawTextToTexture(30, '🍀', {description: 'a green four-leaf clover'});
-    sprites.dagger    = drawTextToTexture(31, '🗡️', {description: 'a small dagger'});
+    // Row 2 — Theme enemies + bolt + barrel
+    sprites.fireImp   = drawTextToTexture(16, '😈', {description: 'a smiling devil-face fire imp'});
+    sprites.iceImp    = drawTextToTexture(17, '🥶', {description: 'a freezing cold-face ice imp'});
+    sprites.skeleton  = drawTextToTexture(18, '🦴', {description: 'a single white bone'});
+    sprites.crab      = drawTextToTexture(19, '🦀', {description: 'a red crab'});
+    sprites.octopus   = drawTextToTexture(20, '🐙', {description: 'a purple octopus'});
+    sprites.penguin   = drawTextToTexture(21, '🐧', {description: 'a black-and-white penguin'});
+    sprites.bolt      = drawTextToTexture(22, '⚡', {description: 'a yellow lightning bolt'});
+    sprites.barrel    = drawTextToTexture(23, '🛢️', {description: 'an oil barrel'});
 
-    sprites.iceImp      = drawTextToTexture(36, '🥶', {description: 'a freezing cold-face ice imp'});
-    // 180° hue rotation — same baking trick as the large gem. Flips the
-    // player wizard's purple robes to the opposite hue (yellow-green) so
-    // the evil version reads as a clearly different mage at a glance, no
-    // extra atlas slot needed.
-    sprites.evilWizard  = drawTextToTexture(37, '🧙', {hueShift: 180,
+    // Row 3 — Bosses + Volcano stage backdrops. evilWizard is a 180° hue
+    // rotation of the same 🧙 glyph the player hero uses, so the evil
+    // version reads as a clearly different mage at a glance.
+    sprites.reaper      = drawTextToTexture(24, '☠️', {description: 'a skull and crossbones reaper'});
+    sprites.evilWizard  = drawTextToTexture(25, '🧙', {hueShift: 180,
         description: 'a hue-shifted evil wizard'});
-    sprites.megaSnake   = drawTextToTexture(38, '🐍', {description: 'a large green snake'});
-    sprites.ghost       = drawTextToTexture(39, '👻', {description: 'a pale ghost'});
+    sprites.megaSnake   = drawTextToTexture(26, '🐍', {description: 'a large green snake'});
+    sprites.ogre        = drawTextToTexture(27, '👹', {description: 'a red ogre face'});
+    sprites.dragon      = drawTextToTexture(28, '🐉', {description: 'a green dragon'});
+    sprites.snowman     = drawTextToTexture(29, '☃️', {description: 'a smiling snowman'});
+    sprites.boulder     = drawTextToTexture(30, '🗻', {description: 'a stone hill'});
+    sprites.volcano     = drawTextToTexture(31, '🌋', {description: 'an erupting volcano'});
 
-    // weapon glyphs distinct from the base/pickup forms
-    sprites.heartDrain  = drawTextToTexture(40, '💓', {description: 'a beating red heart'});
-    sprites.shark       = drawTextToTexture(41, '🦈', {description: 'a grey shark'});
-    sprites.comet       = drawTextToTexture(42, '☄️', {description: 'a fiery comet'});
-    sprites.nuke        = drawTextToTexture(43, '☢️', {description: 'a radioactive trefoil'});
-    sprites.axe         = drawTextToTexture(44, '🪓', {description: 'a wood-handled axe'});
+    // Row 4 — Base weapons. Dagger gets a vertical-axis mirror so the
+    // blade points the opposite direction on the sheet (asked-for tweak).
+    sprites.fireball  = drawTextToTexture(32, '🔥', {description: 'a fireball, orange and yellow flames'});
+    sprites.ice       = drawTextToTexture(33, '🧊', {description: 'a clear ice cube'});
+    sprites.bomb      = drawTextToTexture(34, '💣', {description: 'a black bomb with fuse'});
+    sprites.pizza     = drawTextToTexture(35, '🍕', {description: 'a pizza slice'});
+    sprites.starToss  = drawTextToTexture(36, '⭐', {description: 'a yellow five-pointed star'});
+    sprites.dagger    = drawTextToTexture(37, '🗡️', {description: 'a small dagger', flipX: true});
+    sprites.fish      = drawTextToTexture(38, '🐟', {description: 'a blue fish'});
+    sprites.heartDrain = drawTextToTexture(39, '💓', {description: 'a beating red heart'});
+
+    // Row 5 — Evolved weapons + Beach/Frozen stage borders. Axe gets a
+    // horizontal-axis mirror so the head sits on the opposite side from
+    // the dagger's blade (asked-for tweak).
+    sprites.comet       = drawTextToTexture(40, '☄️', {description: 'a fiery comet'});
+    sprites.nuke        = drawTextToTexture(41, '☢️', {description: 'a radioactive trefoil'});
+    sprites.axe         = drawTextToTexture(42, '🪓', {description: 'a wood-handled axe', flipY: true});
+    sprites.star        = drawTextToTexture(43, '🌟', {description: 'a yellow glowing star'});
+    sprites.shark       = drawTextToTexture(44, '🦈', {description: 'a grey shark'});
     sprites.heartSpiral = drawTextToTexture(45, '💖', {description: 'a sparkling pink heart'});
+    sprites.tsunami     = drawTextToTexture(46, '🌊', {description: 'a cresting blue wave (beach border)'});
+    sprites.snowflake   = drawTextToTexture(47, '❄️', {description: 'a six-pointed snowflake (frozen border)'});
 
-    // Tiered XP gems — same 💎 glyph baked at three hues so big gems pop in
-    // a crowded field. The base 💎 (sprites.gem) stays as the small tier.
-    sprites.gemMedium = drawTextToTexture(46, '💎',
+    // Row 6 — Pickups + gems + crate.
+    // Tiered XP gems share the 💎 glyph at three hues so big gems pop in
+    // a crowded field.
+    sprites.gem       = drawTextToTexture(48, '💎', {description: 'a cyan diamond gem'});
+    sprites.gemMedium = drawTextToTexture(49, '💎',
         {filter: 'hue-rotate(260deg) saturate(1.3)',
          description: 'a warm-tinted diamond gem'});
-    sprites.gemLarge  = drawTextToTexture(47, '💎',
+    sprites.gemLarge  = drawTextToTexture(50, '💎',
         {hueShift: 160, description: 'a hue-shifted diamond gem'});
+    sprites.heart     = drawTextToTexture(51, '❤️', {description: 'a red heart'});
+    sprites.coin      = drawTextToTexture(52, '💰', {description: 'a gold coin or money bag'});
+    sprites.clover    = drawTextToTexture(53, '🍀', {description: 'a green four-leaf clover'});
+    sprites.chest     = drawTextToTexture(54, '🎁', {description: 'a wrapped gift box with bow'});
+    sprites.crate     = drawTextToTexture(55, '📦', {description: 'a wooden crate'});
 
-    // Breakables — 📦 crate (common) and 🛢️ barrel (rare, gold-glow).
-    sprites.crate     = drawTextToTexture(48, '📦', {description: 'a wooden crate'});
-    sprites.barrel    = drawTextToTexture(49, '🛢️', {description: 'an oil barrel'});
-
-    // Meadow backdrop + border — also re-used by other stages where the
-    // glyph fits (e.g. the frozen pine tree2 doubles as frost-trim).
-    sprites.tree1     = drawTextToTexture(32, '🌳', {description: 'a deciduous tree'});
-    sprites.tree2     = drawTextToTexture(33, '🌲', {description: 'an evergreen pine tree'});
-    sprites.tree3     = drawTextToTexture(34, '🌴', {description: 'a palm tree'});
-    sprites.wall      = drawTextToTexture(35, '⛰️', {description: 'a rocky mountain peak'});
-
-    // New stages — backdrop scatter, border tile, signature enemies, bosses.
-    // 🪦 headstone and 🪨 boulder are both Unicode 13.0 and don't render in
-    // older Windows emoji fonts — swapped to ⚰️ coffin and 🗻 stone hill so
-    // the atlas never bakes a blank cell.
-    sprites.graveStone = drawTextToTexture(50, '⚰️', {description: 'a brown coffin'});
-    sprites.candle     = drawTextToTexture(51, '🕯️', {description: 'a lit candle'});
-    sprites.brick      = drawTextToTexture(52, '🧱', {description: 'a red brick block'});
-    sprites.shell      = drawTextToTexture(53, '🐚', {description: 'a spiral seashell'});
-    sprites.snowman    = drawTextToTexture(54, '☃️', {description: 'a smiling snowman'});
-    sprites.boulder    = drawTextToTexture(55, '🗻', {description: 'a stone hill'});
-    sprites.volcano    = drawTextToTexture(56, '🌋', {description: 'an erupting volcano'});
-    sprites.skeleton   = drawTextToTexture(57, '🦴', {description: 'a single white bone'});
-    sprites.crab       = drawTextToTexture(58, '🦀', {description: 'a red crab'});
-    sprites.octopus    = drawTextToTexture(59, '🐙', {description: 'a purple octopus'});
-    sprites.penguin    = drawTextToTexture(60, '🐧', {description: 'a black-and-white penguin'});
-    sprites.ogre       = drawTextToTexture(61, '👹', {description: 'a red ogre face'});
-    sprites.dragon     = drawTextToTexture(62, '🐉', {description: 'a green dragon'});
-    sprites.snowflake  = drawTextToTexture(63, '❄️', {description: 'a six-pointed snowflake'});
+    // Row 7 — Meadow / Graveyard / Beach backdrops. 🪦 headstone is Unicode
+    // 13.0 and doesn't render in older Windows emoji fonts, so use ⚰️
+    // coffin to keep the atlas from baking a blank cell.
+    sprites.tree1      = drawTextToTexture(56, '🌳', {description: 'a deciduous tree'});
+    sprites.tree2      = drawTextToTexture(57, '🌲', {description: 'an evergreen pine tree'});
+    sprites.tree3      = drawTextToTexture(58, '🌴', {description: 'a palm tree'});
+    sprites.wall       = drawTextToTexture(59, '⛰️', {description: 'a rocky mountain peak'});
+    sprites.graveStone = drawTextToTexture(60, '⚰️', {description: 'a brown coffin'});
+    sprites.candle     = drawTextToTexture(61, '🕯️', {description: 'a lit candle'});
+    sprites.brick      = drawTextToTexture(62, '🧱', {description: 'a red brick block'});
+    sprites.shell      = drawTextToTexture(63, '🐚', {description: 'a spiral seashell'});
 
     // Floor color is set per-stage in startRun; default to the Meadow tint
     // so the title backdrop looks right before any run starts.
