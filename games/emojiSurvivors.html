@@ -2977,7 +2977,7 @@ async function gameInit()
     sprites.ghost       = drawToTexture(39, paintEmoji('👻'), 'a pale ghost');
 
     // weapon glyphs distinct from the base/pickup forms
-    sprites.heartDrain  = drawToTexture(40, paintEmoji('💞'), 'revolving pink hearts');
+    sprites.heartDrain  = drawToTexture(40, paintEmoji('💓'), 'a beating red heart');
     sprites.shark       = drawToTexture(41, paintEmoji('🦈'), 'a grey shark');
     sprites.comet       = drawToTexture(42, paintEmoji('☄️'), 'a fiery comet');
     sprites.nuke        = drawToTexture(43, paintEmoji('☢️'), 'a radioactive trefoil');
@@ -3163,7 +3163,12 @@ async function gameInit()
         subtitle: 'Permanent bonuses, apply to every future run',
         dismissable: true,
         onShow: refreshShopLabels,
-        onHide: popMenu,
+        // Only pop back to the title on a real dismiss — the confirm dialog
+        // launched by Refund All pushes itself on top of the shop, which
+        // fires onHide with reason 'push'. If we popMenu there too, the
+        // shop gets removed from the stack and the dialog has nothing to
+        // surface back to. Branch on reason per the menus.js docs.
+        onHide: reason => { if (reason === 'dismiss') popMenu(); },
         items: [
             {type: 'label', id: 'shopCoins', text: '💰 0'},
             {type: 'separator'},
@@ -3220,8 +3225,10 @@ async function gameInit()
         // Only surface the title menu again if the user dismissed via BACK/Esc.
         // If a hero pick is in flight, startRun() set isPlaying=true and is
         // about to hideAllMenus() — re-showing title here would clobber the
-        // run before it starts.
-        onHide: () => { if (!isPlaying()) popMenu(); },
+        // run before it starts. Also branch on the reason so pushing the
+        // stage-select doesn't pop heroSelect off the stack (BACK from
+        // stage-select needs to come back here, not skip to title).
+        onHide: reason => { if (reason === 'dismiss' && !isPlaying()) popMenu(); },
         items: HEROES.map(h => ({
             type: 'button',
             id: 'hero-' + h.key,
@@ -3259,7 +3266,7 @@ async function gameInit()
                 item.setDisabled(!unlocked);
             }
         },
-        onHide: () => { if (!isPlaying()) popMenu(); },
+        onHide: reason => { if (reason === 'dismiss' && !isPlaying()) popMenu(); },
         items: STAGES.map(s => ({
             type: 'button',
             id: 'stage-' + s.key,
@@ -3342,7 +3349,7 @@ function emojiForWeapon(name)
     if (name === 'Bomb')           return '💣';
     if (name === 'WaterSplash')    return '💧';
     if (name === 'StarToss')       return '⭐';
-    if (name === 'HeartDrain')     return '💞';
+    if (name === 'HeartDrain')     return '💓';
     return '?';
 }
 
@@ -3358,7 +3365,7 @@ const WEAPON_DESCRIPTIONS = {
     Bomb:           '💣 explodes after a short fuse, damaging everything in radius.',
     WaterSplash:    '💧 light damage that slows enemies hit.',
     StarToss:       '⭐ boomerang stars that pierce and return.',
-    HeartDrain:     '💞 hearts orbit you, dealing damage and healing you on hit.',
+    HeartDrain:     '💓 hearts orbit you, dealing damage and healing you on hit.',
     SpicyPizza:     '🌶️ wider pizza fan with a burn DOT.',
     FishStorm:      '🦈 faster, denser orbit ring.',
     Thunderstorm:   '🌩️ multiple strikes at random enemies in a wide radius.',
@@ -4167,7 +4174,12 @@ function drawHUD()
     const hpFrac = max(0, player.hp / player.maxHp);
     drawRect(vec2(hpX - hpW/2 + hpW*hpFrac/2, hpY), vec2(hpW * hpFrac, hpH),
              new Color(.85, .15, .2), 0, false, true);
-    drawTextScreen('❤ ' + max(0, Math.ceil(player.hp)) + ' / ' + player.maxHp,
+    // Round both for display — Vamp's 1.10 maxHpMult gives a maxHp of
+    // 100 × 1.1 = 110.000000000000014 in IEEE-754, which used to print
+    // ceil(hp)=111 over a raw 110.0000…1 max. The underlying hp / maxHp
+    // values are equal; only the displayed integers were misleading.
+    drawTextScreen('❤ ' + max(0, Math.round(player.hp)) + ' / ' +
+                   Math.round(player.maxHp),
                    vec2(hpX, hpY + 2), 18, WHITE, 3, BLACK);
 
     // Stats stack under HP bar — timer (turns red near end, REAPER countdown
