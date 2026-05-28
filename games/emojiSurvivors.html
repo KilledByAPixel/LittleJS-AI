@@ -444,12 +444,14 @@ class Enemy extends EngineObject
         // Fast enemies like 🦇 were stepping past player.pos in a single
         // frame, which read as a glitchy snap. Now we stop within touch
         // range and let contact damage + knockback handle the bump.
+        // AI test mode lets enemies pass through the player so the AI
+        // never gets pinned by a ring of clumping mobs.
         const toPlayer = player.pos.subtract(this.pos);
         const dist = toPlayer.length();
         if (dist > .01)
         {
             const targetStep = this.speed * moveScale / 60;
-            const contactDist = (this.size.x + player.size.x) * .4;
+            const contactDist = playerAI ? 0 : (this.size.x + player.size.x) * .4;
             const usableDist = max(0, dist - contactDist);
             const stepLen = min(targetStep, usableDist);
             let dir = toPlayer.normalize();
@@ -491,8 +493,10 @@ class Enemy extends EngineObject
         if (this.hitCooldown > 0) this.hitCooldown -= 1 / 60;
 
         // contact damage to player — fully blocked while ✨ invuln is active
+        // and in AI test mode (so the AI can wade through swarms unbothered)
         if (this.hitCooldown <= 0 &&
             player.invulnTimer <= 0 &&
+            !playerAI &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.dmg;
