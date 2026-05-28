@@ -34,13 +34,6 @@ let particles, scorePops, stars, trail;
 let score, ballsRemaining, orangeLeft, comboCount, maxCombo;
 let win, gameOver;
 let bestScore = 0;
-try { bestScore = +localStorage.getItem('peggle.best') || 0; } catch(e) {}
-function savePeggleBest() {
-    if (score > bestScore) {
-        bestScore = score;
-        try { localStorage.setItem('peggle.best', bestScore); } catch(e) {}
-    }
-}
 let isPlaying;       // false while title is up
 let endDialogShown;  // prevents re-triggering the game-over dialog
 let slowMoT;         // real-time seconds remaining of slow-mo
@@ -55,6 +48,8 @@ let sfxShoot, sfxPeg, sfxOrange, sfxPower, sfxBucket, sfxLose, sfxWin;
 ///////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
+    saveDataInit('peggle');
+    bestScore = getSaveData().bestScore ?? 0;
     cameraScale = 26;
     cameraPos = vec2(0, 0);
     gravity = vec2(0, 0); // ball gravity is applied manually
@@ -212,12 +207,7 @@ function buildMenus()
     });
 
     createOptionsMenu({
-        persistKey: 'peggle_volume',
-        extraItems: [
-            {type:'checkbox', label:'Sound', value:true,
-                persist:'peggle_sound',
-                onChange: v => soundEnable = v},
-        ],
+        persistKey: 'volume',
     });
 
     createMenu({
@@ -417,7 +407,7 @@ function loseBall()
     {
         win = false;
         gameOver = true;
-        savePeggleBest();
+        if (score > bestScore) { bestScore = score; saveData({bestScore}); }
     }
 }
 
@@ -503,7 +493,7 @@ function stepBall(dt)
                     win = true;
                     gameOver = true;
                     sfxWin.play();
-                    savePeggleBest();
+                    if (score > bestScore) { bestScore = score; saveData({bestScore}); }
                 }
             }
             else
