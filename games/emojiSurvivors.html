@@ -30,6 +30,13 @@ canvasMaxSize = vec2(2048, 2048);
 // Disabled here; see touchDirection() below.
 touchGamepadEnable = false;
 
+// ─── Debug flags ────────────────────────────────────────────────────────
+// Skip the title / hero-select / stage-select flow at startup and drop
+// the player straight into a run with the first hero (🙂 Smiley) on the
+// first stage (Meadow). Useful when iterating on gameplay code so you
+// don't have to click through three menus every reload.
+const DEBUG_AUTOSTART = false;
+
 ///////////////////////////////////////////////////////////////////////////////
 // EMOJI SURVIVORS
 //
@@ -1578,15 +1585,76 @@ function emitRadialFlashes(pos, radius, rayCount = 12, rayColor, rayDuration = .
     }
 }
 
-// Damage every enemy in `radius` and emit a radial chainFlash burst. Bomb /
-// NukeBomb / Comet all want this same shape; the only differences are spoke
-// count, colour, and ray lifetime — pass them in.
+// Pre-baked starburst explosion polygons. Each entry caches its own random
+// point list + rotation so re-rendering the same explosion across frames is
+// stable (just fades out + expands slightly). Drawn by drawExplosions().
+const explosions = [];
+
+// Queue an animated star-burst explosion at `pos`. Two concentric jagged
+// polygons (5–7 points each, per-vertex radius jitter, random rotation):
+// a larger orange shell with a white outline, then a smaller redder core
+// painted on top. Fades + expands over ~.35 s.
+function pushExplosion(pos, radius)
+{
+    const pointCount = randInt(5, 8);             // 5, 6, or 7 points
+    const outerPts = [];
+    const innerPts = [];
+    for (let i = 0; i < pointCount; ++i)
+    {
+        // Even base angle + a small jitter so points aren't perfectly spaced.
+        const a = i * 2 * PI / pointCount + rand(-.18, .18);
+        outerPts.push(vec2().setAngle(a, radius * rand(.82, 1.18)));
+        innerPts.push(vec2().setAngle(a, radius * .55 * rand(.8, 1.2)));
+    }
+    explosions.push({
+        pos: pos.copy(),
+        outerPts, innerPts,
+        outerAngle: rand(2 * PI),
+        innerAngle: rand(2 * PI),
+        t: time + .35,
+        duration: .35,
+    });
+}
+
+function drawExplosions()
+{
+    for (let i = explosions.length - 1; i >= 0; --i)
+    {
+        const e = explosions[i];
+        const remaining = e.t - time;
+        if (remaining <= 0) { explosions.splice(i, 1); continue; }
+        const f = remaining / e.duration;        // 1 → 0 as it ages
+        const scale = 1 + (1 - f) * .18;         // small expansion as it fades
+        const a = f;
+        // Outer shell — orange w/ white outline. Draw first so the core
+        // lands on top.
+        const outer = e.outerPts.map(p => p.scale(scale));
+        drawPoly(outer,
+            new Color(1,  .55, .15, a * .85),    // orange fill, alpha eased
+            .14,                                 // line width
+            new Color(1,  1,   .92, a),          // creamy-white outline
+            e.pos, e.outerAngle);
+        // Inner core — redder, no outline, slightly brighter alpha so it
+        // punches against the orange shell.
+        const inner = e.innerPts.map(p => p.scale(scale));
+        drawPoly(inner,
+            new Color(1,  .22, .12, a),
+            0, BLACK,
+            e.pos, e.innerAngle);
+    }
+}
+
+// Damage every enemy in `radius` and emit a radial chainFlash burst plus
+// a starburst explosion polygon. Bomb / NukeBomb / Comet all want this
+// same shape; the only differences are spoke count, colour, and ray
+// lifetime — pass them in.
 function radialBlast(pos, radius, damage, rayCount = 12, rayColor, rayDuration = .25)
 {
     for (const e of enemies)
         if (e.pos.distance(pos) < radius)
             e.takeDamage(damage);
     emitRadialFlashes(pos, radius, rayCount, rayColor, rayDuration);
+    pushExplosion(pos, radius);
 }
 class FireballWeapon
 {
@@ -2932,6 +3000,7 @@ function tearDownRun()
             obj.destroy();
     }
     chainFlashes.length = 0;
+    explosions.length = 0;
     damageNumbers.length = 0;
     aiSmoothedDir = vec2(1, 0);
     timeSlowTimer = 0;
@@ -3487,7 +3556,8 @@ async function gameInit()
     tweak('runDuration',              {min: 60,  max: 1800});
     tweak('pizzaSpinRate',            {min: 0,   max: 20});
 
-    showMenu('title');
+    if (DEBUG_AUTOSTART) startRun(HEROES[0], STAGES[0]);
+    else                 showMenu('title');
 }
 
 // Single source of truth for the base-weapon roster — constructor + glyph
@@ -4291,6 +4361,7 @@ function gameRender()
     drawWalls();
     drawWeaponVisuals();
     drawChainFlashes();
+    drawExplosions();
     drawDamageNumbers();
 }
 function formatTime(s)
@@ -4578,6 +4649,34 @@ window.spawnChest = function()
     const pos = player.pos.add(vec2(1.5, 0));
     new Chest(pos);
     console.log('🎁 Chest spawned at ' + pos.x.toFixed(1) + ', ' + pos.y.toFixed(1));
+};
+
+// Grant every base weapon in ALL_WEAPONS that the player doesn't already
+// own. Goes past the normal 5-slot cap so you can pile on all 9 at once
+// to test fire patterns and projectile interactions. Pair with maxBuild()
+// to also crank them all to Lv 5.
+window.giveAllWeapons = function()
+{
+    if (!player)
+    {
+        console.warn('giveAllWeapons: no player yet — start a run first.');
+        return;
+    }
+    const owned = new Set(player.weapons.map(w =>
+        w.constructor.name.replace(/Weapon$/, '')));
+    let added = 0;
+    for (const name of ALL_WEAPONS)
+    {
+        if (owned.has(name)) continue;
+        const w = makeWeaponByName(name);
+        if (!w) continue;
+        player.weapons.push(w);
+        ++added;
+    }
+    console.log('🗡️ Added ' + added + ' weapons. Now own ' +
+                player.weapons.length + ': ' +
+                player.weapons.map(w => w.name).join(', '));
+    return player.weapons.map(w => w.name);
 };
 
 // Flip the `godMode` debug flag. Skips HP loss AND the rest of the hit
