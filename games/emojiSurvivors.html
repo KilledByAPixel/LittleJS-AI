@@ -1023,6 +1023,65 @@ class FishOrbitWeapon
         }
     }
 }
+class HeartDrainWeapon
+{
+    constructor()
+    {
+        this.level = 1;
+        this.name = 'Heart Drain';
+        this.angle = 0;
+        this.hitMap = new Map();   // enemy -> next-allowed-hit time
+    }
+    levelUp() { this.level = min(this.level + 1, 5); }
+    damage()  { return 1 + this.level; }
+    healPerHit() { return min(2, this.level); }
+    heartCount() { return min(2 + Math.floor((this.level - 1) / 2), 3); }  // 2, 2, 3, 3, 3
+
+    update()
+    {
+        this.angle += 3 * player.cooldownMult / 60;
+
+        const radius = 2.0 * player.areaMult;
+        const heartSize = .65 * player.areaMult;
+        const dmg = this.damage() * player.dmgMult;
+        const heal = this.healPerHit();
+        const now = time;
+        for (const [e, t] of this.hitMap)
+            if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
+
+        // damage check only — drawing moved to draw() because update() runs
+        // during gameUpdate (before render). drawTile from update batches GL
+        // vertices that the next frame's enginePreRender then asserts on.
+        const count = this.heartCount();
+        for (let i = 0; i < count; ++i)
+        {
+            const a = this.angle + i * 2 * PI / count;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            for (const e of enemies)
+            {
+                if (!isOverlapping(pos, vec2(heartSize), e.pos, e.size)) continue;
+                const next = this.hitMap.get(e) || 0;
+                if (now < next) continue;
+                e.takeDamage(dmg);
+                this.hitMap.set(e, now + 1);
+                player.hp = min(player.maxHp, player.hp + heal);
+            }
+        }
+    }
+
+    draw()
+    {
+        const radius = 2.0 * player.areaMult;
+        const heartSize = .65 * player.areaMult;
+        const count = this.heartCount();
+        for (let i = 0; i < count; ++i)
+        {
+            const a = this.angle + i * 2 * PI / count;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            drawTile(pos, vec2(heartSize), sprites.heart, WHITE, a + time);
+        }
+    }
+}
 // Transient lightning segments — drawn fading by drawChainFlashes() each frame.
 const chainFlashes = [];
 
@@ -1490,6 +1549,58 @@ class BlizzardWeapon
     }
 }
 
+class HeartSpiralWeapon
+{
+    constructor()
+    {
+        this.level = 5; this.evolved = true; this.name = 'Heart Spiral';
+        this.angle = 0; this.hitMap = new Map();
+    }
+    levelUp() {}
+    damage() { return 6; }
+
+    update()
+    {
+        this.angle += 4 * player.cooldownMult / 60;
+        const radius = 3.5 * player.areaMult;
+        const heartSize = .9 * player.areaMult;
+        const dmg = this.damage() * player.dmgMult;
+        const heal = 4;
+        const now = time;
+        for (const [e, t] of this.hitMap)
+            if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
+
+        const orbits = 5;
+        for (let i = 0; i < orbits; ++i)
+        {
+            const a = this.angle + i * 2 * PI / orbits;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            for (const e of enemies)
+            {
+                if (!isOverlapping(pos, vec2(heartSize), e.pos, e.size)) continue;
+                const next = this.hitMap.get(e) || 0;
+                if (now < next) continue;
+                e.takeDamage(dmg);
+                this.hitMap.set(e, now + .5);
+                player.hp = min(player.maxHp, player.hp + heal);
+            }
+        }
+    }
+
+    draw()
+    {
+        const radius = 3.5 * player.areaMult;
+        const heartSize = .9 * player.areaMult;
+        const orbits = 5;
+        for (let i = 0; i < orbits; ++i)
+        {
+            const a = this.angle + i * 2 * PI / orbits;
+            const pos = player.pos.add(vec2().setAngle(a, radius));
+            drawTile(pos, vec2(heartSize), sprites.heart, WHITE, a + time);
+        }
+    }
+}
+
 const EVOLUTIONS = {
     PizzaToss:      {passive: 'Flex',      name: 'Spicy Pizza',  emoji: '🌶️',
                      ctor: () => new SpicyPizzaWeapon()},
@@ -1499,6 +1610,8 @@ const EVOLUTIONS = {
                      ctor: () => new ThunderstormWeapon()},
     IceCube:        {passive: 'Stopwatch', name: 'Blizzard',     emoji: '❄️',
                      ctor: () => new BlizzardWeapon()},
+    HeartDrain:     {passive: 'Snack',     name: 'Heart Spiral', emoji: '💖',
+                     ctor: () => new HeartSpiralWeapon()},
 };
 
 function findAvailableEvolution()
@@ -2323,7 +2436,7 @@ async function gameInit()
 
 // All available weapons by name. Names match the constructor classes below.
 const ALL_WEAPONS = ['Fireball', 'FishOrbit', 'ChainLightning',
-                     'PizzaToss', 'IceCube', 'Bomb', 'WaterSplash', 'StarToss'];
+                     'PizzaToss', 'IceCube', 'Bomb', 'WaterSplash', 'StarToss', 'HeartDrain'];
 
 function makeWeaponByName(name)
 {
@@ -2335,6 +2448,7 @@ function makeWeaponByName(name)
     if (name === 'Bomb')           return new BombWeapon();
     if (name === 'WaterSplash')    return new WaterSplashWeapon();
     if (name === 'StarToss')       return new StarTossWeapon();
+    if (name === 'HeartDrain')     return new HeartDrainWeapon();
     return null;
 }
 
@@ -2348,6 +2462,7 @@ function emojiForWeapon(name)
     if (name === 'Bomb')           return '💣';
     if (name === 'WaterSplash')    return '💧';
     if (name === 'StarToss')       return '⭐';
+    if (name === 'HeartDrain')     return '❤️';
     return '?';
 }
 
