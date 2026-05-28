@@ -456,6 +456,10 @@ class Enemy extends EngineObject
         this.type     = type;
         this.hp       = type.hp * (elite ? elite.hpMult : 1) * curseFactor;
         this.maxHp    = this.hp;
+        // Smoothed HP for the in-world boss bar — lerps toward this.hp so
+        // damage drains over ~.1 s instead of snapping. Initial value = hp
+        // so the bar opens full.
+        this.displayHp = this.hp;
         this.dmg      = type.dmg * (elite ? elite.dmgMult : 1);
         this.speed    = type.speed * (elite ? elite.speedMult : 1) * curseFactor;
         this.xpDrop   = type.xpDrop * (elite ? elite.xpMult : 1);
@@ -553,10 +557,47 @@ class Enemy extends EngineObject
         if (this.type.key === 'ghost' && finalTint === WHITE)
             finalTint = new Color(1, 1, 1, .7);
         drawEmoji(renderPos, renderSize, this.tileInfo, finalTint, additive, renderAngle);
+
+        // In-world boss HP bar — floats just above the sprite, scaled to the
+        // boss's width so a small boss gets a small bar and a giant boss
+        // gets a giant one. Per-boss so the multi-Reaper escalation reads
+        // naturally. Regular enemies are too short-lived to need a bar; the
+        // existing additive glow tells you when they're elite already.
+        if (this.isBoss)
+        {
+            const w   = this.size.x * .9;
+            const h   = .15;
+            const yOff = this.size.y * .55 + .25;
+            const center = vec2(this.pos.x, this.pos.y + yOff);
+            const frac = max(0, min(1, this.displayHp / this.maxHp));
+            // Outline — slightly larger black backing rect for legibility
+            // against any floor or backdrop.
+            drawRect(center, vec2(w + .08, h + .08), new Color(0, 0, 0, .9));
+            // Frame backdrop flashes white briefly on hit, matching the
+            // existing enemy hit-flash juice. hitFlashTimer is already
+            // decremented inside Enemy.render above, so we just sample it.
+            const frame = this.hitFlashTimer > 0
+                ? new Color(1, 1, 1, .95)
+                : new Color(.12, .12, .12, .9);
+            drawRect(center, vec2(w, h), frame);
+            // Red fill, left-aligned so it drains rightward → leftward.
+            if (frac > 0)
+            {
+                const fillW = w * frac;
+                const fillX = center.x - w / 2 + fillW / 2;
+                drawRect(vec2(fillX, center.y), vec2(fillW, h),
+                         new Color(1, .22, .22, 1));
+            }
+        }
     }
 
     update()
     {
+        // Smooth the displayed HP toward the real HP every frame. Boss bars
+        // sample displayHp, so this gives the bar a ~.1 s drain animation
+        // when the boss takes damage instead of snapping in single frames.
+        // Per-frame factor .18 → ~62% of the gap closes in 6 frames (.1 s).
+        this.displayHp = lerp(this.displayHp, this.hp, .18);
         // Skeleton revival — collapsed enemies skip AI, contact, and the
         // physics step entirely until the timer expires. Then they pop back
         // up to half HP and resume normal behaviour.
@@ -4147,25 +4188,10 @@ function formatTime(s)
     return m + ':' + (sec < 10 ? '0' : '') + sec;
 }
 
-function drawBossHpBar()
-{
-    if (!activeBoss || activeBoss.destroyed) return;
-    const cs = mainCanvasSize;
-    const w = cs.x * .55, h = 18;
-    const x = cs.x / 2, y = 130;
-    drawRect(vec2(x, y), vec2(w, h), new Color(0, 0, 0, .75), 0, false, true);
-    const frac = max(0, activeBoss.hp / activeBoss.maxHp);
-    drawRect(vec2(x - w/2 + w*frac/2, y), vec2(w * frac, h),
-             new Color(1, .2, .15), 0, false, true);
-    drawTextScreen('⚠️ ' + activeBoss.bossDef.name + ' ⚠️',
-                   vec2(x, y - 14), 22, new Color(1, .9, .7), 3, BLACK);
-}
-
 function drawHUD()
 {
     const cs = mainCanvasSize;
     const pad = 20;
-    drawBossHpBar();
 
     // TOP-LEFT stack: HP bar, then timer / kills / coins underneath.
     const hpW = 260, hpH = 28;
@@ -4221,9 +4247,11 @@ function drawHUD()
 }
 
 // Edge-of-screen indicators — needed once the camera can't show the whole
-// arena. Per the launch spec only the active boss and dropped boss chests
-// get arrows: those are the only objects a player MUST reach. Barrels and
-// regular pickups stay un-indicated so the edge doesn't clutter.
+// arena. Per the launch spec only off-screen bosses and dropped boss chests
+// get arrows. Boss arrows carry a small HP fill of their own so the player
+// can see how close a kited boss is to dying even when they can't see it.
+// Iterates all boss enemies so the Reaper escalation's stacked bosses each
+// get their own indicator.
 function drawOffScreenIndicators()
 {
     if (isMenuVisible()) return;
@@ -4231,9 +4259,16 @@ function drawOffScreenIndicators()
     const cx = cs.x / 2, cy = cs.y / 2;
     const pad = 50;
     const targets = [];
-    if (activeBoss && !activeBoss.destroyed)
-        targets.push({pos: activeBoss.pos, icon: '⚠️',
-                      color: new Color(1, .35, .35, 1)});
+    for (const e of enemies)
+    {
+        if (!e.isBoss || e.destroyed) continue;
+        targets.push({
+            pos:   e.pos,
+            icon:  '⚠️',
+            color: new Color(1, .35, .35, 1),
+            hpFrac: max(0, min(1, e.displayHp / e.maxHp)),
+        });
+    }
     for (const obj of engineObjects)
         if (obj instanceof Chest && !obj.destroyed)
             targets.push({pos: obj.pos, icon: '🎁',
@@ -4256,6 +4291,22 @@ function drawOffScreenIndicators()
         const ex = cx + dx * scale;
         const ey = cy + dy * scale;
         drawTextScreen(t.icon, vec2(ex, ey), 36, t.color, 4, BLACK);
+        // Boss arrows carry a small HP fill so a kited boss's status is
+        // visible at the edge. The on-screen and off-screen bars hand off:
+        // one or the other is always showing while the boss is alive.
+        if (t.hpFrac !== undefined)
+        {
+            const barW = 56, barH = 6;
+            const barY = ey + 28;
+            drawRect(vec2(ex, barY), vec2(barW + 4, barH + 4),
+                     new Color(0, 0, 0, .85), 0, false, true);
+            drawRect(vec2(ex, barY), vec2(barW, barH),
+                     new Color(.12, .12, .12, .9), 0, false, true);
+            if (t.hpFrac > 0)
+                drawRect(vec2(ex - barW / 2 + barW * t.hpFrac / 2, barY),
+                         vec2(barW * t.hpFrac, barH),
+                         new Color(1, .22, .22, 1), 0, false, true);
+        }
     }
 }
 
