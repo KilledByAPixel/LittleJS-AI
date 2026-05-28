@@ -53,9 +53,9 @@ const sprites = {};
 //   green tint               = poisoned
 //   gold additive            = elite
 //   white additive flash     = hit feedback
-function drawEmoji(pos, size, sprite, tint, additive, angle = 0)
+function drawEmoji(pos, size, sprite, tint, additive, angle = 0, mirror = false)
 {
-    drawTile(pos, size, sprite, tint || WHITE, angle, false, additive);
+    drawTile(pos, size, sprite, tint || WHITE, angle, mirror, additive);
 }
 
 // Disable engine-driven physics + collision so we can drive position by
@@ -499,6 +499,10 @@ class Enemy extends EngineObject
         // hit-box), then stands back up at half HP.
         this.revivingTimer = 0;
         this.hasRevived    = false;
+        // Sprite-mirror flag for facing. Sticky — only flips when the enemy
+        // actually moves horizontally, so a frozen enemy stays oriented the
+        // way it last walked instead of snapping back to right.
+        this.facingLeft    = false;
     }
 
     render()
@@ -559,7 +563,7 @@ class Enemy extends EngineObject
         let finalTint = tint;
         if (this.type.key === 'ghost' && finalTint === WHITE)
             finalTint = new Color(1, 1, 1, .7);
-        drawEmoji(renderPos, renderSize, this.tileInfo, finalTint, additive, renderAngle);
+        drawEmoji(renderPos, renderSize, this.tileInfo, finalTint, additive, renderAngle, this.facingLeft);
 
         // In-world boss HP bar — floats just above the sprite, scaled to the
         // boss's width so a small boss gets a small bar and a giant boss
@@ -671,6 +675,10 @@ class Enemy extends EngineObject
                 if (dir.length() > .01) dir = dir.normalize();
             }
             this.velocity = stepLen > 0 ? dir.scale(stepLen) : vec2();
+            // Stickily update facing — only flips on real horizontal motion,
+            // so frozen / time-slowed enemies keep their last orientation.
+            if      (this.velocity.x >  .001) this.facingLeft = false;
+            else if (this.velocity.x < -.001) this.facingLeft = true;
         }
 
         // Boss ranged attack — fires an EnemyProjectile every `shootEvery` seconds.
@@ -704,7 +712,7 @@ class Enemy extends EngineObject
         // and in AI test mode (so the AI can wade through swarms unbothered)
         if (this.hitCooldown <= 0 &&
             player.invulnTimer <= 0 &&
-            !playerAI &&
+            !playerAI && !godMode &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.dmg;
@@ -928,7 +936,7 @@ class EnemyProjectile extends EngineObject
 
         // player contact — respects invuln, same gate as Enemy contact
         // (also skipped in AI test mode so the AI never bleeds to wizard bolts)
-        if (player.invulnTimer <= 0 && !playerAI &&
+        if (player.invulnTimer <= 0 && !playerAI && !godMode &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.damage;
@@ -2439,7 +2447,7 @@ class LavaPatch extends EngineObject
         this.renderOrder = -this.pos.y - 800;   // ground decal beneath entities
         // DOT the player while standing in it. Respects the invuln window
         // and the AI-mode gate (AI is intentionally invuln in test mode).
-        if (!playerAI && player.invulnTimer <= 0 &&
+        if (!playerAI && !godMode && player.invulnTimer <= 0 &&
             player.pos.distance(this.pos) < this.lavaRadius)
         {
             // ~12 HP per second while feet are in lava — survivable to
@@ -2938,6 +2946,11 @@ function startRun(hero, stage)
 // Movement only (weapons auto-fire anyway), random level-up picks, and
 // an automatic restart ~1.5s after death so a long balance pass loops.
 let playerAI = false;
+// Debug god-mode toggle (window.godMode() flips it). When true the player
+// takes no damage AND no contact reaction at all — same gate as the AI
+// test mode so hurt-flash, hurt-sound, and the enemy knockback bounce are
+// all skipped, not just the HP subtraction.
+let godMode = false;
 
 // Smoothed heading for the AI auto-player so a goal-switch doesn't flip
 // direction abruptly. The AI itself just chases the nearest loot; see
@@ -3054,7 +3067,7 @@ async function gameInit()
         ctx.arc(125, 125, 114, 0, Math.PI * 2);
         ctx.fill();
     }, 'a soft white radial gradient circle');
-    sprites.heroWizard = drawTextToTexture(2, '🧙', {description: 'wizard hero'});
+    sprites.heroWizard = drawTextToTexture(2, '🧙', {description: 'wizard hero', flipX: true});
     sprites.heroSmiley = drawTextToTexture(3, '🙂', {description: 'smiley hero'});
     sprites.heroCat    = drawTextToTexture(4, '🐱', {description: 'cat hero'});
     sprites.heroBot    = drawTextToTexture(5, '🤖', {description: 'bot hero'});
@@ -3062,12 +3075,12 @@ async function gameInit()
     // slot 7: free
 
     // Row 1 — Common enemies
-    sprites.ant       = drawTextToTexture(8,  '🐜', {description: 'a small black ant'});
+    sprites.ant       = drawTextToTexture(8,  '🐜', {description: 'a small black ant', flipX: true});
     sprites.bat       = drawTextToTexture(9,  '🦇', {description: 'a black bat with spread wings'});
     sprites.zombie    = drawTextToTexture(10, '🧟', {description: 'a green zombie shambling forward'});
     sprites.skull     = drawTextToTexture(11, '💀', {description: 'a white skull, menacing'});
     sprites.clown     = drawTextToTexture(12, '🤡', {description: 'a clown face with red nose'});
-    sprites.duck      = drawTextToTexture(13, '🦆', {description: 'a yellow duck'});
+    sprites.duck      = drawTextToTexture(13, '🦆', {description: 'a yellow duck', flipX: true});
     sprites.ghost     = drawTextToTexture(14, '👻', {description: 'a pale ghost'});
     sprites.snail     = drawTextToTexture(15, '🐌', {description: 'a brown snail with shell'});
 
@@ -3077,7 +3090,7 @@ async function gameInit()
     sprites.skeleton  = drawTextToTexture(18, '🦴', {description: 'a single white bone', flipX: true});
     sprites.crab      = drawTextToTexture(19, '🦀', {description: 'a red crab'});
     sprites.octopus   = drawTextToTexture(20, '🐙', {description: 'a purple octopus'});
-    sprites.penguin   = drawTextToTexture(21, '🐧', {description: 'a black-and-white penguin'});
+    sprites.penguin   = drawTextToTexture(21, '🐧', {description: 'a black-and-white penguin', flipX: true});
     sprites.bolt      = drawTextToTexture(22, '⚡', {description: 'a yellow lightning bolt'});
     sprites.barrel    = drawTextToTexture(23, '🛢️', {description: 'an oil barrel'});
 
@@ -3086,10 +3099,10 @@ async function gameInit()
     // version reads as a clearly different mage at a glance.
     sprites.reaper      = drawTextToTexture(24, '☠️', {description: 'a skull and crossbones reaper'});
     sprites.evilWizard  = drawTextToTexture(25, '🧙', {hueShift: 180,
-        description: 'a hue-shifted evil wizard'});
-    sprites.megaSnake   = drawTextToTexture(26, '🐍', {description: 'a large green snake'});
+        description: 'a hue-shifted evil wizard', flipX: true});
+    sprites.megaSnake   = drawTextToTexture(26, '🐍', {description: 'a large green snake', flipX: true});
     sprites.ogre        = drawTextToTexture(27, '👹', {description: 'a red ogre face'});
-    sprites.dragon      = drawTextToTexture(28, '🐉', {description: 'a green dragon'});
+    sprites.dragon      = drawTextToTexture(28, '🐉', {description: 'a green dragon', flipX: true});
     sprites.snowman     = drawTextToTexture(29, '☃️', {description: 'a smiling snowman'});
     sprites.boulder     = drawTextToTexture(30, '🗻', {description: 'a stone hill'});
     sprites.volcano     = drawTextToTexture(31, '🌋', {description: 'an erupting volcano'});
@@ -3102,7 +3115,7 @@ async function gameInit()
     sprites.pizza     = drawTextToTexture(35, '🍕', {description: 'a pizza slice'});
     sprites.starToss  = drawTextToTexture(36, '⭐', {description: 'a yellow five-pointed star'});
     sprites.dagger    = drawTextToTexture(37, '🗡️', {description: 'a small dagger', flipY: true});
-    sprites.fish      = drawTextToTexture(38, '🐟', {description: 'a blue fish'});
+    sprites.fish      = drawTextToTexture(38, '🐟', {description: 'a blue fish', flipX: true});
     sprites.heartDrain = drawTextToTexture(39, '💓', {description: 'a beating red heart'});
 
     // Row 5 — Evolved weapons + Beach/Frozen stage borders. Axe gets a
@@ -3112,7 +3125,7 @@ async function gameInit()
     sprites.nuke        = drawTextToTexture(41, '☢️', {description: 'a radioactive trefoil'});
     sprites.axe         = drawTextToTexture(42, '🪓', {description: 'a wood-handled axe', flipX: true});
     sprites.star        = drawTextToTexture(43, '🌟', {description: 'a yellow glowing star'});
-    sprites.shark       = drawTextToTexture(44, '🦈', {description: 'a grey shark'});
+    sprites.shark       = drawTextToTexture(44, '🦈', {description: 'a grey shark', flipX: true});
     sprites.heartSpiral = drawTextToTexture(45, '💖', {description: 'a sparkling pink heart'});
     sprites.tsunami     = drawTextToTexture(46, '🌊', {description: 'a cresting blue wave (beach border)'});
     sprites.snowflake   = drawTextToTexture(47, '❄️', {description: 'a six-pointed snowflake (frozen border)'});
@@ -4530,6 +4543,39 @@ window.spawnChest = function()
     const pos = player.pos.add(vec2(1.5, 0));
     new Chest(pos);
     console.log('🎁 Chest spawned at ' + pos.x.toFixed(1) + ', ' + pos.y.toFixed(1));
+};
+
+// Flip the `godMode` debug flag. Skips HP loss AND the rest of the hit
+// reaction (hurt-flash, hurt-sound, enemy knockback bounce) — same gate
+// path as AI test mode. Reusable toggle: call it again to turn off.
+window.godMode = function()
+{
+    godMode = !godMode;
+    console.log('🛡️ God Mode ' + (godMode ? 'ON' : 'OFF'));
+    return godMode;
+};
+
+// Spawn one of every regular enemy type in a ring around the player so you
+// can visually QA all the sprites + wobble animations side by side. Skips
+// bosses — they'd dominate the frame. Each enemy's wobble phase is per-
+// instance so the ring reads as a chorus rather than a sync'd row.
+window.spawnAllEnemies = function()
+{
+    if (!player)
+    {
+        console.warn('spawnAllEnemies: no player yet — start a run first.');
+        return;
+    }
+    const radius = 6;
+    for (let i = 0; i < ENEMY_TYPES.length; ++i)
+    {
+        const a = i * 2 * PI / ENEMY_TYPES.length;
+        const pos = player.pos.add(vec2().setAngle(a, radius));
+        new Enemy(pos, ENEMY_TYPES[i]);
+    }
+    console.log('🎯 Spawned ' + ENEMY_TYPES.length +
+                ' enemies (one of each type) in a ring around you.');
+    return ENEMY_TYPES.map(t => t.key);
 };
 
 // In-run cheat — drops the player straight into max-build territory so
