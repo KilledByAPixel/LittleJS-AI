@@ -1606,7 +1606,7 @@ class StarStormWeapon
     constructor()
     {
         this.level = 5; this.evolved = true; this.name = 'Star Storm';
-        this.cooldown = 0; this.hitMap = new Map();
+        this.cooldown = 0;
     }
     levelUp() {}
     damage() { return 10; }
@@ -1614,11 +1614,7 @@ class StarStormWeapon
     update()
     {
         this.cooldown -= 1 / 60;
-        if (this.cooldown > 0)
-        {
-            this._purgeHitMap();
-            return;
-        }
+        if (this.cooldown > 0) return;
         this.cooldown = .7 / player.cooldownMult;
 
         const target = nearestEnemy(player.pos, 14 * player.areaMult);
@@ -1638,13 +1634,6 @@ class StarStormWeapon
                 .9, sprites.starToss, true);
             proj.angleVelocity = 8;
         }
-    }
-
-    _purgeHitMap()
-    {
-        const now = time;
-        for (const [e, t] of this.hitMap)
-            if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
     }
 }
 
