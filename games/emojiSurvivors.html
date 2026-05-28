@@ -74,6 +74,18 @@ function drawEmoji(pos, size, sprite, tint, additive, angle = 0)
     drawTile(pos, size, sprite, tint || WHITE, angle, false, additive);
 }
 
+// Disable engine-driven physics + collision so we can drive position by
+// hand. Every game prop in this file wants this — player, enemies, pickups,
+// projectiles, bombs, breakables, ground decals — so it lives in one place.
+function setupKinematicProp(obj)
+{
+    obj.damping       = 1;
+    obj.friction      = 1;
+    obj.gravityScale  = 0;
+    obj.angle         = 0;
+    obj.setCollision(false, false, false, false);
+}
+
 let player;
 
 class Player extends EngineObject
@@ -85,12 +97,7 @@ class Player extends EngineObject
         this.maxHp = playerMaxHp;
         this.hp = this.maxHp;
         this.speed = playerSpeed;
-        // Disable engine-driven physics — we want exact velocity control.
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;  // emoji is upright; don't let it spin
-        this.setCollision(false, false, false, false);  // no built-in collisions
+        setupKinematicProp(this);   // hand-driven velocity, no engine collision
         this.hurtTimer = 0;
         this.xp = 0;
         this.level = 1;
@@ -332,11 +339,7 @@ class Chest extends EngineObject
     constructor(pos)
     {
         super(pos, vec2(1.4), sprites.chest);
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.velocity = vec2();
         this.spawnTime = time;
     }
@@ -397,12 +400,7 @@ class Chest extends EngineObject
             }
         }
         // fireworks burst — radial chainFlashes for the reward moment
-        for (let i = 0; i < 16; ++i)
-        {
-            const a = i * 2 * PI / 16;
-            const tip = this.pos.add(vec2().setAngle(a, 3));
-            chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .5});
-        }
+        emitRadialFlashes(this.pos, 3, 16, null, .5);
         if (sounds.chest && sounds.chest.play) sounds.chest.play(this.pos);
     }
 
@@ -471,11 +469,7 @@ class Enemy extends EngineObject
         // bosses always glow gold so they read against a swarm of regulars
         if (this.isBoss && !this.eliteAdditive)
             this.eliteAdditive = new Color(.55, .42, 0, 0);
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         enemies.push(this);
         this.hitCooldown = 0;
         this.hitFlashTimer = 0;
@@ -843,11 +837,7 @@ class Projectile extends EngineObject
         this.piercing = piercing;
         this.onHit    = onHit;
         this.hitSet   = new Set();
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         // ring buffer of recent (pos, angle) for the motion trail
         this.trail = [];
         this.maxTrail = 5;
@@ -909,12 +899,8 @@ class EnemyProjectile extends EngineObject
         this.velocity = dir.normalize(speed / 60);
         this.damage   = damage;
         this.lifetime = lifetime;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
+        setupKinematicProp(this);
         this.angleVelocity = 6;   // visible spin
-        this.setCollision(false, false, false, false);
     }
 
     update()
@@ -962,12 +948,8 @@ class StarToss extends EngineObject
         this.range = range;
         this.returning = false;
         this.hitMap = new Map();
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
+        setupKinematicProp(this);
         this.angleVelocity = 10;       // visible spin (LittleJS naming!)
-        this.setCollision(false, false, false, false);
         this.life = 3.0;                // hard timeout if we never reach player
     }
 
@@ -1108,11 +1090,8 @@ class Pickup extends EngineObject
         super(pos, vec2(.6 * sizeMult), sprite);
         this.kind  = kind;   // 'gem', 'heart', or 'coin'
         this.value = value;
-        this.damping = .98;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
+        this.damping = .98;            // soft float toward magnet
         this.magnetting = false;
         // per-instance phase so a pile of dropped gems doesn't sparkle in sync
         this.sparklePhase = rand(2 * PI);
@@ -1461,6 +1440,31 @@ function drawChainFlashes()
         drawLine(f.a, f.b, .15, new Color(c.r, c.g, c.b, alpha));
     }
 }
+
+// Emit an N-spoke chainFlash burst radiating from a point. Used standalone
+// by chest fireworks and as the visual half of radialBlast.
+function emitRadialFlashes(pos, radius, rayCount = 12, rayColor, rayDuration = .25)
+{
+    for (let i = 0; i < rayCount; ++i)
+    {
+        const a = i * 2 * PI / rayCount;
+        const tip = pos.add(vec2().setAngle(a, radius));
+        const flash = {a: pos.copy(), b: tip, t: time + rayDuration};
+        if (rayColor) flash.color = rayColor;
+        chainFlashes.push(flash);
+    }
+}
+
+// Damage every enemy in `radius` and emit a radial chainFlash burst. Bomb /
+// NukeBomb / Comet all want this same shape; the only differences are spoke
+// count, colour, and ray lifetime — pass them in.
+function radialBlast(pos, radius, damage, rayCount = 12, rayColor, rayDuration = .25)
+{
+    for (const e of enemies)
+        if (e.pos.distance(pos) < radius)
+            e.takeDamage(damage);
+    emitRadialFlashes(pos, radius, rayCount, rayColor, rayDuration);
+}
 class FireballWeapon
 {
     constructor() { this.level = 1; this.cooldown = 0; }
@@ -1584,42 +1588,55 @@ class BombWeapon
     }
 }
 
-// Water Splash — soft crowd control. Hits `level` random nearby enemies
-// each cooldown tick, dealing light damage and applying a slow status.
-// Replaces the old 🔥 Fire Patch (which visually overlapped Fireball and
-// was the only weapon using burn DOT besides nothing — slow status was
-// dead code before this swap).
-class WaterSplashWeapon
+// Dagger Slash — the only directional short-range melee in the roster, in
+// the spirit of VS's first-character whip. Throws a slow, spinning, piercing
+// dagger horizontally in the direction the player last moved on the X axis
+// (vertical-only input keeps the previous facing). Just a Projectile with a
+// short lifetime + slow speed + heavy spin — no custom hitbox needed.
+// Replaces Water Splash, which was mechanically redundant with Ice Cube.
+class DaggerSlashWeapon
 {
-    constructor() { this.level = 1; this.name = 'Water Splash'; this.cooldown = 0; }
+    constructor()
+    {
+        this.level = 1;
+        this.name = 'Dagger Slash';
+        this.cooldown = 0;
+        this.facing = 1;       // initial run state per spec — right
+    }
     levelUp() { this.level = min(this.level + 1, 5); }
-    damage() { return 2 + this.level; }
+    damage()  { return 5 + this.level * 2; }
+    // ~4–5× the dagger's own size (which matches the player). Grows modestly
+    // with level so higher-level Smiley reaches a bit farther forward.
+    range()   { return 5.0 + (this.level - 1) * .25; }   // 5.0 → 6.0 wu
 
     update()
     {
+        // Track horizontal facing — read player velocity since keyDirection /
+        // gamepadStick / touchDirection all feed into it. Vertical-only input
+        // leaves facing unchanged.
+        if      (player.velocity.x >  .005) this.facing =  1;
+        else if (player.velocity.x < -.005) this.facing = -1;
+
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.1 / player.fireRateMult;
+        this.cooldown = .9 / player.fireRateMult;
 
-        const range = 9 * player.areaMult;
-        const candidates = enemies.filter(e => !e.isBreakable && e.pos.distance(player.pos) < range);
-        const dmg = this.damage() * player.dmgMult;
-        const blue = new Color(.35, .65, 1, 1);
-        for (let i = 0; i < this.level && candidates.length > 0; ++i)
-        {
-            const idx = randInt(candidates.length);
-            const target = candidates[idx];
-            candidates.splice(idx, 1);
-            target.takeDamage(dmg);
-            target.slowTimer = 2.0;
-            // visual splash line via chainFlashes (color-tinted blue)
-            chainFlashes.push({
-                a: player.pos.copy(),
-                b: target.pos.copy(),
-                t: time + .18,
-                color: blue,
-            });
-        }
+        // Slow, deliberate throw so the spin reads. Lifetime = range / speed
+        // gives an exact stop-at-range without per-frame distance checks.
+        const speed = 6 * player.projSpeedMult;        // wu/sec, slow on purpose
+        const range = this.range() * player.areaMult;
+        const dmg   = this.damage() * player.dmgMult;
+        const dir   = vec2(this.facing, 0);
+        const proj  = new Projectile(player.pos.copy(), dir, speed, dmg,
+            range / speed, sprites.dagger, true);
+        // Size the dagger to roughly match the player so it reads as a
+        // weapon-in-hand silhouette rather than a tiny shuriken. Projectile
+        // collision uses this.size for AABB checks, so a larger size also
+        // gives the slash a more forgiving hitbox.
+        proj.size = vec2(1.2);
+        // Spin direction mirrors the throw — facing right ⇒ clockwise (positive
+        // in LittleJS), facing left ⇒ counter-clockwise. ~2 turns / sec.
+        proj.angleVelocity = this.facing * 4 * PI;
     }
 }
 
@@ -1903,12 +1920,8 @@ class CometProjectile extends EngineObject
         this.target = target;
         this.damage = damage;
         this.life = 2.5;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
+        setupKinematicProp(this);
         this.angleVelocity = 4;
-        this.setCollision(false, false, false, false);
         this.speedPerFrame = 18 * player.projSpeedMult / 60;
     }
 
@@ -1927,18 +1940,8 @@ class CometProjectile extends EngineObject
         if (toTarget.length() < 1.0)
         {
             const aoeR = 2.5 * player.areaMult;
-            for (const e of enemies)
-                if (e.pos.distance(this.pos) < aoeR)
-                    e.takeDamage(this.damage);
-            const rays = 8;
-            const flameColor = new Color(1, .55, .2, 1);
-            for (let i = 0; i < rays; ++i)
-            {
-                const a = i * 2 * PI / rays;
-                const tip = this.pos.add(vec2().setAngle(a, aoeR));
-                chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .25,
-                                   color: flameColor});
-            }
+            radialBlast(this.pos, aoeR, this.damage,
+                        8, new Color(1, .55, .2, 1));
             this.destroy();
             return;
         }
@@ -2001,11 +2004,7 @@ class NukeField extends EngineObject
         this.life = 2.0;
         this.lifeMax = 2.0;
         this.tickTimer = 0;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.velocity = vec2();
     }
 
@@ -2045,11 +2044,7 @@ class NukeBomb extends EngineObject
         this.damageAmount = damage;
         this.radius = radius;
         this.fuse = 1.2;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.velocity = vec2();
         this.additive = null;
     }
@@ -2065,18 +2060,8 @@ class NukeBomb extends EngineObject
 
         if (this.fuse <= 0)
         {
-            for (const e of enemies)
-                if (e.pos.distance(this.pos) < this.radius)
-                    e.takeDamage(this.damageAmount);
-            const rays = 24;
-            const greenGlow = new Color(.7, 1, .3, 1);
-            for (let i = 0; i < rays; ++i)
-            {
-                const a = i * 2 * PI / rays;
-                const tip = this.pos.add(vec2().setAngle(a, this.radius));
-                chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .4,
-                                   color: greenGlow});
-            }
+            radialBlast(this.pos, this.radius, this.damageAmount,
+                        24, new Color(.7, 1, .3, 1), .4);
             // lingering field — half blast damage spread across 8 ticks
             new NukeField(this.pos.copy(), this.damageAmount / 16, this.radius);
             this.destroy();
@@ -2166,7 +2151,7 @@ const EVOLUTIONS = {
                      ctor: () => new CometWeapon()},
     Bomb:           {passive: 'Magnet',    name: 'Nuke',         emoji: '☢️',
                      ctor: () => new NukeWeapon()},
-    WaterSplash:    {passive: 'Heart',     name: 'Tsunami',      emoji: '🌊',
+    DaggerSlash:    {passive: 'Heart',     name: 'Tsunami',      emoji: '🌊',
                      ctor: () => new TsunamiWeapon()},
 };
 
@@ -2194,11 +2179,7 @@ class Bomb extends EngineObject
         this.damageAmount = damage;
         this.radius = radius;
         this.fuse = .9;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.velocity = vec2();
         this.tint = null;
         this.additive = null;
@@ -2218,18 +2199,7 @@ class Bomb extends EngineObject
 
         if (this.fuse <= 0)
         {
-            // damage all enemies in radius
-            for (const e of enemies)
-                if (e.pos.distance(this.pos) < this.radius)
-                    e.takeDamage(this.damageAmount);
-            // visual blast: emit chainFlashes radiating outward
-            const rays = 12;
-            for (let i = 0; i < rays; ++i)
-            {
-                const a = i * 2 * PI / rays;
-                const tip = this.pos.add(vec2().setAngle(a, this.radius));
-                chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .25});
-            }
+            radialBlast(this.pos, this.radius, this.damageAmount);
             this.destroy();
         }
     }
@@ -2259,11 +2229,7 @@ class Breakable extends EngineObject
         this.isBarrel = isBarrel;
         this.isBreakable = true;
         this.dmg = 0;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.hitFlashTimer = 0;
         this.bobPhase = rand(2 * PI);
         // Fake type so any defensive read of .type.key (none today outside
@@ -2374,11 +2340,7 @@ class LavaPatch extends EngineObject
     {
         super(pos, vec2(radius * 2), sprites.volcano);
         this.lavaRadius = radius;
-        this.damping = 1;
-        this.friction = 1;
-        this.gravityScale = 0;
-        this.angle = 0;
-        this.setCollision(false, false, false, false);
+        setupKinematicProp(this);
         this.velocity = vec2();
         this.bobPhase = rand(2 * PI);
         lavaPatches.push(this);
@@ -2494,21 +2456,26 @@ class SproutPassive     extends Passive { constructor(){ super('Sprout',      '�
 class PlusOnePassive    extends Passive { constructor(){ super('Plus One',    '➕'); } apply(){ player.extraProjectiles += this.level; } }
 class SnackPassive      extends Passive { constructor(){ super('Snack',       '🍗'); } apply(){ player.heartMult      *= 1 + this.level * .25; } }
 
-const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout','Plus One','Snack'];
+// Single source of truth for which passives exist + how to spawn one. The
+// order of keys here is the order they show up in ALL_PASSIVES below.
+const PASSIVE_CTORS = {
+    'Flex':      FlexPassive,
+    'Stopwatch': StopwatchPassive,
+    'Magnifier': MagnifierPassive,
+    'Rocket':    RocketPassive,
+    'Magnet':    MagnetPassive,
+    'Heart':     HeartPassive,
+    'Sneaker':   SneakerPassive,
+    'Sprout':    SproutPassive,
+    'Plus One':  PlusOnePassive,
+    'Snack':     SnackPassive,
+};
+const ALL_PASSIVES = Object.keys(PASSIVE_CTORS);
 
 function makePassiveByName(name)
 {
-    if (name === 'Flex')       return new FlexPassive();
-    if (name === 'Stopwatch')  return new StopwatchPassive();
-    if (name === 'Magnifier')  return new MagnifierPassive();
-    if (name === 'Rocket')     return new RocketPassive();
-    if (name === 'Magnet')     return new MagnetPassive();
-    if (name === 'Heart')      return new HeartPassive();
-    if (name === 'Sneaker')    return new SneakerPassive();
-    if (name === 'Sprout')     return new SproutPassive();
-    if (name === 'Plus One')    return new PlusOnePassive();
-    if (name === 'Snack')      return new SnackPassive();
-    return null;
+    const C = PASSIVE_CTORS[name];
+    return C ? new C() : null;
 }
 
 function recomputeMultipliers()
@@ -2713,12 +2680,12 @@ function playPickupSound(s, pos)
 // player sprite slot at run start.
 
 const HEROES = [
+    {key:'smiley', emoji:'🙂', name:'Smiley',  weapon:'DaggerSlash',
+        spriteKey:'heroSmiley', stats:{},
+        blurb:'Cheerful little knife guy'},
     {key:'wizard', emoji:'🧙', name:'Wizard',  weapon:'Fireball',
         spriteKey:'heroWizard', stats:{areaMult: 1.15},
         blurb:'Balanced caster, +15% area'},
-    {key:'smiley', emoji:'🙂', name:'Smiley',  weapon:'PizzaToss',
-        spriteKey:'heroSmiley', stats:{},
-        blurb:'Pizza ace, all-rounder'},
     {key:'cat',    emoji:'🐱', name:'Cat',     weapon:'FishOrbit',
         spriteKey:'heroCat',    stats:{moveSpeedMult: 1.2, maxHpMult: .85},
         blurb:'Quick on its paws, fragile'},
@@ -2810,15 +2777,12 @@ function onHeroPicked(hero)
     pushMenu('stageSelect');
 }
 
-function startRun(hero, stage)
+// Wipe every run-scoped entity and timer back to a clean board. Called by
+// startRun (before spawning the new run) and goToTitle (before resetting
+// the title backdrop). Kept in one place so adding a new entity class only
+// needs the instanceof line touched once.
+function tearDownRun()
 {
-    applyHero(hero);
-    currentStage = stage || currentStage || STAGES[0];
-    // Floor colour swaps per stage; gameRender already clears with
-    // canvasClearColor every frame so this picks up immediately.
-    canvasClearColor = currentStage.floorColor;
-    // Fresh run state — same teardown that restartGame uses, but starts
-    // with the hero's chosen weapon instead of the default fireball.
     for (const e of enemies.slice()) e.destroy();
     enemies.length = 0;
     breakables.length = 0;
@@ -2837,17 +2801,29 @@ function startRun(hero, stage)
     damageNumbers.length = 0;
     aiSmoothedDir = vec2(1, 0);
     timeSlowTimer = 0;
-    spawner.timer = 0;
-    spawner.interval = 1.5;
-    elapsedTime = 0;
-    killCount = 0;
-    coinsRun = 0;
-    gameOver = false;
-    gameOverFrameCount = 0;
     bossesSpawned.clear();
     activeBoss = null;
     finalBossesSpawned = 0;
     runVictory = false;
+    gameOver = false;
+    gameOverFrameCount = 0;
+    elapsedTime = 0;
+}
+
+function startRun(hero, stage)
+{
+    applyHero(hero);
+    currentStage = stage || currentStage || STAGES[0];
+    // Floor colour swaps per stage; gameRender already clears with
+    // canvasClearColor every frame so this picks up immediately.
+    canvasClearColor = currentStage.floorColor;
+    // Fresh run state — same teardown that restartGame uses, but starts
+    // with the hero's chosen weapon instead of the default fireball.
+    tearDownRun();
+    spawner.timer = 0;
+    spawner.interval = 1.5;
+    killCount = 0;
+    coinsRun = 0;
 
     player = new Player();
     player.weapons = [makeWeaponByName(hero.weapon)];
@@ -3010,7 +2986,7 @@ async function gameInit()
 
     // Mystery present + Water Splash sprites
     sprites.clover    = drawToTexture(30, paintEmoji('🍀'), 'a green four-leaf clover');
-    sprites.water     = drawToTexture(31, paintEmoji('💧'), 'a blue water droplet');
+    sprites.dagger    = drawToTexture(31, paintEmoji('🗡️'), 'a small dagger');
 
     sprites.iceImp      = drawToTexture(36, paintEmoji('🧊'), 'a small ice imp');
     sprites.evilWizard  = drawToTexture(37, paintEmoji('🧙'), 'an evil wizard');
@@ -3204,12 +3180,12 @@ async function gameInit()
         subtitle: 'Permanent bonuses, apply to every future run',
         dismissable: true,
         onShow: refreshShopLabels,
-        // Only pop back to the title on a real dismiss — the confirm dialog
-        // launched by Refund All pushes itself on top of the shop, which
-        // fires onHide with reason 'push'. If we popMenu there too, the
-        // shop gets removed from the stack and the dialog has nothing to
-        // surface back to. Branch on reason per the menus.js docs.
-        onHide: reason => { if (reason === 'dismiss') popMenu(); },
+        // Surface the title screen on every real dismiss (BACK / Esc /
+        // backdrop). Avoids submenuStack altogether — the confirm dialog's
+        // YES handler calls clearSubmenuStack() and would leave popMenu()
+        // with nothing to surface. Push events (sub-dialog opens) carry
+        // reason 'push' and are ignored here.
+        onHide: reason => { if (reason === 'dismiss') showMenu('title'); },
         items: [
             {type: 'label', id: 'shopCoins', text: '💰 0'},
             {type: 'separator'},
@@ -3235,7 +3211,11 @@ async function gameInit()
                                  '💰 ' + refund + ' coins.',
                         yesLabel: 'REFUND',
                         noLabel:  'CANCEL',
-                        onYes: refundAllPowerUps,
+                        // showConfirmDialog's YES handler intentionally
+                        // calls clearSubmenuStack() (so quit-to-title-style
+                        // navigations work cleanly), which wipes the back
+                        // chain. Re-show the shop explicitly afterward.
+                        onYes: () => { refundAllPowerUps(); showMenu('shop'); },
                     });
                 }},
             {type: 'button', label: 'BACK', onClick: () => hideMenu('shop')},
@@ -3362,36 +3342,32 @@ async function gameInit()
     showMenu('title');
 }
 
-// All available weapons by name. Names match the constructor classes below.
-const ALL_WEAPONS = ['Fireball', 'FishOrbit', 'ChainLightning',
-                     'PizzaToss', 'IceCube', 'Bomb', 'WaterSplash', 'StarToss', 'HeartDrain'];
+// Single source of truth for the base-weapon roster — constructor + glyph
+// per name. Adding a weapon = one row here (plus its class) instead of
+// editing three parallel switch chains.
+const WEAPON_INFO = {
+    Fireball:       {ctor: FireballWeapon,       emoji: '🔥'},
+    FishOrbit:      {ctor: FishOrbitWeapon,      emoji: '🐟'},
+    ChainLightning: {ctor: ChainLightningWeapon, emoji: '⚡'},
+    PizzaToss:      {ctor: PizzaTossWeapon,      emoji: '🍕'},
+    IceCube:        {ctor: IceCubeWeapon,        emoji: '🧊'},
+    Bomb:           {ctor: BombWeapon,           emoji: '💣'},
+    DaggerSlash:    {ctor: DaggerSlashWeapon,    emoji: '🗡️'},
+    StarToss:       {ctor: StarTossWeapon,       emoji: '⭐'},
+    HeartDrain:     {ctor: HeartDrainWeapon,     emoji: '💓'},
+};
+const ALL_WEAPONS = Object.keys(WEAPON_INFO);
 
 function makeWeaponByName(name)
 {
-    if (name === 'Fireball')       return new FireballWeapon();
-    if (name === 'FishOrbit')      return new FishOrbitWeapon();
-    if (name === 'ChainLightning') return new ChainLightningWeapon();
-    if (name === 'PizzaToss')      return new PizzaTossWeapon();
-    if (name === 'IceCube')        return new IceCubeWeapon();
-    if (name === 'Bomb')           return new BombWeapon();
-    if (name === 'WaterSplash')    return new WaterSplashWeapon();
-    if (name === 'StarToss')       return new StarTossWeapon();
-    if (name === 'HeartDrain')     return new HeartDrainWeapon();
-    return null;
+    const info = WEAPON_INFO[name];
+    return info ? new info.ctor() : null;
 }
 
 function emojiForWeapon(name)
 {
-    if (name === 'Fireball')       return '🔥';
-    if (name === 'FishOrbit')      return '🐟';
-    if (name === 'ChainLightning') return '⚡';
-    if (name === 'PizzaToss')      return '🍕';
-    if (name === 'IceCube')        return '🧊';
-    if (name === 'Bomb')           return '💣';
-    if (name === 'WaterSplash')    return '💧';
-    if (name === 'StarToss')       return '⭐';
-    if (name === 'HeartDrain')     return '💓';
-    return '?';
+    const info = WEAPON_INFO[name];
+    return info ? info.emoji : '?';
 }
 
 // Tooltip text — surfaces what each upgrade actually does in the level-up
@@ -3404,7 +3380,7 @@ const WEAPON_DESCRIPTIONS = {
     ChainLightning: '⚡ jumps between enemies in range.',
     IceCube:        '🧊 freezes enemies on impact.',
     Bomb:           '💣 explodes after a short fuse, damaging everything in radius.',
-    WaterSplash:    '💧 light damage that slows enemies hit.',
+    DaggerSlash:    '🗡️ short forward arc, swings in your last horizontal direction.',
     StarToss:       '⭐ boomerang stars that pierce and return.',
     HeartDrain:     '💓 hearts orbit you, dealing damage and healing you on hit.',
     SpicyPizza:     '🌶️ wider pizza fan with a burn DOT.',
@@ -3886,31 +3862,7 @@ function goToTitle()
 {
     // Tear down the run and surface the title menu so the player can
     // pick a different hero or just inspect their stats.
-    for (const e of enemies.slice()) e.destroy();
-    enemies.length = 0;
-    breakables.length = 0;
-    lavaPatches.length = 0;
-    for (const obj of engineObjects.slice())
-    {
-        if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
-            obj instanceof Pickup || obj instanceof Bomb ||
-            obj instanceof Chest || obj instanceof StarToss ||
-            obj instanceof CometProjectile || obj instanceof NukeBomb ||
-            obj instanceof NukeField || obj instanceof Breakable ||
-            obj instanceof LavaPatch)
-            obj.destroy();
-    }
-    chainFlashes.length = 0;
-    damageNumbers.length = 0;
-    aiSmoothedDir = vec2(1, 0);
-    timeSlowTimer = 0;
-    bossesSpawned.clear();
-    activeBoss = null;
-    finalBossesSpawned = 0;
-    runVictory = false;
-    gameOver = false;
-    gameOverFrameCount = 0;
-    elapsedTime = 0;
+    tearDownRun();
     setPlaying(false);
 
     // Reset the title backdrop to the default wizard hero on the Meadow.
