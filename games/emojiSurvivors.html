@@ -1233,7 +1233,7 @@ const ENEMY_DROP_TABLE = [
     {chance: .005, spawn: pos      => new Pickup(pos, sprites.clover, 'mystery', 0)},
     {chance: .03, spawn: pos      => new Pickup(pos, sprites.coin,   'coin', 1)},
     {chance: .02, spawn: pos      => new Pickup(pos, sprites.heart,  'heart', 20)},
-    {chance: .3, spawn: (pos, e) => dropGem(pos, e.xpDrop, e.isElite)},
+    {chance: .25, spawn: (pos, e) => dropGem(pos, e.xpDrop, e.isElite)},
 ];
 
 // 📦 Crate. Explicit rolls are mystery (.04) + heart (.14) = 18 %; the
