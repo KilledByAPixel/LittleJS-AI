@@ -6,6 +6,8 @@
 // from the original module). cols=8 gives 64 tiles of 250px with 3px
 // gutters. Only 4 and 8 are supported. initDrawToTexture() replaces
 // textureInfos[0]. drawToTexture() paints a tile and returns a TileInfo.
+// drawTextToTexture() is the shortcut for the common "centre an emoji or
+// short string in a tile" case, with optional hue-shift recolour.
 // saveAtlasImage()/saveAtlasPrompt() export the sheet + prompt.
 // useAtlasImage(url) swaps in an AI-generated 2048 image without
 // invalidating already-returned TileInfos.
@@ -77,6 +79,50 @@ function drawToTexture(tileIndex, drawFn, description)
 
     return new TileInfo(vec2(drawX, drawY), vec2(TILE_SIZE),
         textureInfos[0], TILE_PADDING);
+}
+
+// Convenience wrapper for the common case — paint a single emoji or short
+// text glyph centred in a tile, optionally hue-shifted. Removes the
+// "ctx.font / textAlign / textBaseline / fillText" boilerplate from every
+// caller, and lets a game produce recoloured variants of the same emoji
+// (e.g. a 180° hue-shifted Evil Wizard) by passing `hueShift` instead of
+// painting a custom drawFn.
+//
+// Usage:
+//   drawTextToTexture(0, '🧙');
+//   drawTextToTexture(37, '🧙', {hueShift: 180, description: 'evil wizard'});
+//   drawTextToTexture(46, '💎', {filter: 'hue-rotate(260deg) saturate(1.3)'});
+//   drawTextToTexture(7, 'GO', {sizeMul: .6, font: 'sans-serif'});
+//
+// Options:
+//   description  – atlas-prompt label; falls back to `text` if omitted
+//   hueShift     – degrees, 0–360. 0 = no filter applied
+//   filter       – raw CSS canvas filter string (overrides hueShift) — use
+//                  this for saturate / brightness / etc. combos
+//   sizeMul      – font scale; default .85 leaves a few px of breathing room
+//   font         – font family, default 'serif' (matches the emoji look)
+function drawTextToTexture(tileIndex, text, options)
+{
+    options = options || {};
+    const hueShift    = options.hueShift    || 0;
+    const filter      = options.filter      || (hueShift ? 'hue-rotate(' + hueShift + 'deg)' : '');
+    const sizeMul     = options.sizeMul     != null ? options.sizeMul : .85;
+    const font        = options.font        || 'serif';
+    // Falling back to the glyph itself as the description keeps the
+    // atlas-prompt output legible even when the caller didn't spell out
+    // a label — for emoji sheets that's almost always good enough.
+    const description = options.description || text;
+
+    return drawToTexture(tileIndex, ctx =>
+    {
+        if (filter) ctx.filter = filter;
+        ctx.font = (TILE_SIZE * .96 * sizeMul) + 'px ' + font;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // emoji glyphs sit a few px above the math-center of their em box —
+        // nudge down so the visual centre lands at the tile centre.
+        ctx.fillText(text, TILE_SIZE / 2, TILE_SIZE / 2 + TILE_SIZE * .04);
+    }, description);
 }
 
 function flushAtlas()
