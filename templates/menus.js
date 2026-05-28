@@ -1089,14 +1089,15 @@ function showGameOverDialog(opts)
 {
     opts = opts || {};
     const won            = !!opts.won;
-    const score          = (typeof opts.score === 'number') ? opts.score : 0;
+    const hasScore       = (typeof opts.score === 'number');
+    const score          = hasScore ? opts.score : 0;
     const submitBest     = opts.submitBest !== false;
     const lowerIsBetter  = !!opts.lowerIsBetter;
     const onContinue     = (typeof opts.onContinue === 'function')
         ? opts.onContinue : () => quitToTitle();
 
     let newBest = false;
-    if (submitBest)
+    if (submitBest && hasScore)
         newBest = submitBestScore(score, {lowerIsBetter});
 
     let message;
