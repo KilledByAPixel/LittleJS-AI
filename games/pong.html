@@ -1,508 +1,508 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <title>LittleJS Pong</title>
-  <style>
-    html, body { margin:0; padding:0; background:#000; overflow:hidden; }
-  </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>LittleJS Pong</title>
+    <style>
+        html, body { margin:0; padding:0; background:#000; overflow:hidden; }
+    </style>
 </head>
 <body>
-  <script src="../dist/littlejs.js?1779932166044"></script>
-  <script src="../templates/gameFx.js?1779932166044"></script>
-  <script src="../templates/menus.js?1779932166044"></script>
-  <script>
-  'use strict';
+    <script src="../dist/littlejs.js?1779932166044"></script>
+    <script src="../templates/gameFx.js?1779932166044"></script>
+    <script src="../templates/menus.js?1779932166044"></script>
+    <script>
+    'use strict';
 
 // engine settings
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
-  // Pong State
-
-  const fieldSize = vec2(40, 22);          // world units
-  const halfField = fieldSize.scale(.5);
-
-  const paddleSize = vec2(1.1, 5.2);
-  const ballSize   = vec2(1.0, 1.0);
-
-  const paddleSpeed = 18;
-  const aiSpeed     = 15;
-
-  const maxBallSpeed = 30;
-
-  let left = { pos: vec2(-halfField.x + 2.2, 0) };
-  let right = { pos: vec2( halfField.x - 2.2, 0) };
-
-  let ball = { pos: vec2(0,0), vel: vec2(0,0) };
-
-  let scoreL = 0;
-  let scoreR = 0;
-
-  let waitingForServe = true;
-  let gameOver = false;
-  let aiRight = true; // press T to toggle
-
-  // AI configuration
-  const aiReactionDelay = 0.15;   // seconds before AI reacts to ball direction change
-  const aiErrorMargin = 1.5;      // random offset to make AI imperfect
-  const aiPredictionNoise = 0.12; // noise in ball trajectory prediction
-  let aiTargetY = 0;              // where AI wants to move
-  let aiLastUpdate = 0;           // time of last prediction update
-  let aiPredictedY = 0;           // predicted ball Y at paddle
-
-  // Sounds
-  let sfxPaddle, sfxWall, sfxScore, sfxServe;
-
-  // FX state
-  const COLOR_L = hsl(.50, .9, .65);   // cyan (left team)
-  const COLOR_R = hsl(.95, .9, .65);   // magenta (right team)
-  const TRAIL_LEN = 14;
-
-  let leftFlash = 0, rightFlash = 0;
-  let leftScoreFlash = 0, rightScoreFlash = 0;
-  let bgFlash = 0, bgFlashColor = COLOR_L;
-  let lastHitter = 0;                  // -1 left, +1 right, 0 none
-  let ballTrail = [];                  // {pos, color}
-
-  function ballTintColor()
-  {
-      if (lastHitter < 0) return COLOR_L;
-      if (lastHitter > 0) return COLOR_R;
-      return hsl(0, 0, 1);
-  }
-
-  function colorLerp(a, b, k)
-  {
-      return new Color(lerp(a.r, b.r, k), lerp(a.g, b.g, k), lerp(a.b, b.b, k), 1);
-  }
-
-  function spawnHitBurst(pos, color)
-  {
-      new ParticleEmitter(
-          pos, 0,                       // pos, angle
-          vec2(.1),                     // emitSize
-          .06,                          // emitTime
-          400,                          // emitRate
-          PI,                           // emitConeAngle (full burst)
-          undefined,
-          color, color,
-          new Color(color.r, color.g, color.b, 0),
-          new Color(color.r, color.g, color.b, 0),
-          .55,                          // particleTime
-          .35, .05,                     // sizeStart, sizeEnd
-          .5,                           // speed
-          0, .9, 1, 0,                  // angleSpeed, damping, angleDamping, gravityScale
-          PI, .1, .6,                   // particleConeAngle, fadeRate, randomness
-          false, true,                  // collideTiles, additive
-      );
-  }
-
-  ///////////////////////////////////////////////////////////////////////////////////////////////
-  // Helpers
-
-  function aabbOverlap(posA, sizeA, posB, sizeB)
-  {
-      return Math.abs(posA.x - posB.x) < (sizeA.x + sizeB.x) * .5 &&
-             Math.abs(posA.y - posB.y) < (sizeA.y + sizeB.y) * .5;
-  }
-
-  function clampPaddleY(p)
-  {
-      const limit = halfField.y - paddleSize.y/2;
-      p.pos.y = clamp(p.pos.y, -limit, limit);
-  }
-
-  // Predict where ball will be when it reaches a given x position
-  function predictBallY(targetX)
-  {
-      if (ball.vel.x === 0) return 0;
-      
-      let simPos = ball.pos.copy();
-      let simVel = ball.vel.copy();
-      const yLimit = halfField.y - ballSize.y/2;
-      const maxSteps = 500;
-      
-      for (let i = 0; i < maxSteps; i++)
-      {
-          // Step simulation
-          const dt = 0.016; // ~60fps step
-          simPos = simPos.add(simVel.scale(dt));
-          
-          // Wall bounces
-          if (simPos.y > yLimit) { simPos.y = yLimit; simVel.y = -Math.abs(simVel.y); }
-          if (simPos.y < -yLimit) { simPos.y = -yLimit; simVel.y = Math.abs(simVel.y); }
-          
-          // Check if reached target x
-          if ((simVel.x > 0 && simPos.x >= targetX) || (simVel.x < 0 && simPos.x <= targetX))
-              return simPos.y;
-      }
-      return 0;
-  }
-
-  function resetRound(servingToRight)
-  {
-      ball.pos = vec2(0, 0);
-      ball.vel = vec2(0, 0);
-      waitingForServe = true;
-      gameOver = false;
-
-      // tiny nudge so it doesn't always serve dead-center
-      left.pos.y = 0;
-      right.pos.y = 0;
-
-      // store who serves next on the ball object
-      ball._serveDir = servingToRight ? 1 : -1;
-  }
-
-  function serve()
-  {
-      if (!waitingForServe || gameOver)
-          return;
-
-      // Serve direction: +x goes right, -x goes left
-      const dirX = ball._serveDir ?? (randBool() ? 1 : -1);
-      const angle = rand(-.25, .25); // slight vertical variance
-      const speed = 14;
-      ball.vel = vec2(dirX, angle).normalize(speed);
-      waitingForServe = false;
-      sfxServe?.play(ball.pos);
-  }
-
-  function addScore(leftScored)
-  {
-      if (leftScored) scoreL++;
-      else scoreR++;
-
-      sfxScore?.play();
-      addScreenShake(.3, .21);
-      bgFlash = 1;
-      bgFlashColor = leftScored ? COLOR_L : COLOR_R;
-      if (leftScored) leftScoreFlash = 1;
-      else rightScoreFlash = 1;
-      lastHitter = 0;
-      ballTrail.length = 0;
-
-      // win at 10
-      if (scoreL >= 10 || scoreR >= 10)
-      {
-          gameOver = true;
-          ball.vel = vec2(0,0);
-          waitingForServe = true;
-          return;
-      }
-
-      // Next serve goes toward the player who just conceded
-      resetRound(leftScored ? false : true);
-  }
-
-  ///////////////////////////////////////////////////////////////////////////////////////////////
-  // LittleJS Callbacks
-
-  function gameInit()
-  {
-      // fixed canvas for consistent feel
-      setCanvasFixedSize(vec2(1280, 720));
-
-      // camera centered; choose scale so field fits nicely
-      setCameraPos(vec2(0, 0));
-      cameraScale = 32;
-
-      // Sounds (simple, punchy)
-      sfxPaddle = new SoundGenerator({ volume:.7, frequency:520, release:.07, shapeCurve:1.8, randomness:.08 });
-      sfxWall   = new SoundGenerator({ volume:.55, frequency:880, release:.06, shapeCurve:1.2, randomness:.04 });
-      sfxServe  = new SoundGenerator({ volume:.55, frequency:320, release:.12, slide:.35, shapeCurve:1.6, randomness:.06 });
-      sfxScore  = new SoundGenerator({ volume:1,  frequency:220, attack:0, release:.35, slide:-1.1, pitchJump:660, pitchJumpTime:.08, shapeCurve:1.3, randomness:.02 });
-
-      resetRound(true);
-      buildMenus();
-      showMenu('title');
-  }
-
-  function startGame()
-  {
-      scoreL = scoreR = 0;
-      resetRound(true);
-      setPlaying(true);
-      clearSubmenuStack();
-      hideAllMenus();
-  }
-
-  function buildMenus()
-  {
-      if (typeof createMenu !== 'function') return;
-
-      installAutoPause();
-
-      createTitleMenu({
-          title: 'PONG',
-          subtitle: '',
-          onPlay: startGame,
-          revealOnClick: false,
-      });
-
-      createPauseMenu({
-          onRestart: startGame,
-          onQuit:    quitToTitle,
-      });
-
-      installDefaultToolbar();
-  }
-
-  function gameUpdate()
-  {
-      if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
-      if (!isPlaying()) return;
-
-      // Reset camera to origin each frame so the gameFx screen-shake plugin
-      // (between gameUpdate and gameUpdatePost) can nudge cameraPos cleanly.
-      setCameraPos(vec2(0, 0));
-
-      if (keyWasPressed('KeyR'))
-      {
-          scoreL = scoreR = 0;
-          resetRound(true);
-      }
-
-      if (keyWasPressed('KeyT'))
-          aiRight = !aiRight;
-
-      if (keyWasPressed('Space') || mouseWasPressed(0))
-      {
-          if (gameOver)
-          {
-              scoreL = scoreR = 0;
-              resetRound(true);
-          }
-          serve();
-      }
-
-      // Paddle input — mouse takes priority, keyboard still works
-      const keyDir = keyDirection().y;
-      if (keyDir)
-          left.pos.y += keyDir * paddleSpeed * timeDelta;
-      else
-          left.pos.y = mousePos.y;
-      clampPaddleY(left);
-
-      if (!aiRight)
-      {
-          right.pos.y += keyDirection().y * paddleSpeed * timeDelta;
-      }
-      else
-      {
-          // AI with prediction and imperfection
-          if (waitingForServe || gameOver)
-          {
-              // Drift to center when waiting
-              aiTargetY = 0;
-          }
-          else if (ball.vel.x > 0)
-          {
-              // Ball coming toward AI - predict intercept
-              const now = time;
-              if (now - aiLastUpdate > aiReactionDelay)
-              {
-                  aiLastUpdate = now;
-                  aiPredictedY = predictBallY(right.pos.x);
-                  // Add some error to make AI beatable
-                  aiPredictedY += rand(-aiErrorMargin, aiErrorMargin);
-                  aiPredictedY += ball.vel.y * aiPredictionNoise;
-              }
-              aiTargetY = aiPredictedY;
-          }
-          else
-          {
-              // Ball going away - return toward center
-              aiTargetY = ball.pos.y * 0.3;
-          }
-          
-          // Move toward target
-          const diff = aiTargetY - right.pos.y;
-          const dir = Math.sign(diff);
-          const move = Math.min(Math.abs(diff), aiSpeed * timeDelta);
-          right.pos.y += dir * move;
-      }
-      clampPaddleY(right);
-
-      // Ball update
-      if (waitingForServe || gameOver)
-          return;
-
-      ball.pos = ball.pos.add(ball.vel.scale(timeDelta));
-
-      // Wall bounce
-      const yLimit = halfField.y - ballSize.y/2;
-      if (ball.pos.y > yLimit)
-      {
-          ball.pos.y = yLimit;
-          ball.vel.y = -Math.abs(ball.vel.y);
-          sfxWall?.play(ball.pos);
-          spawnHitBurst(ball.pos, ballTintColor());
-          addScreenShake(.06, .05);
-      }
-      else if (ball.pos.y < -yLimit)
-      {
-          ball.pos.y = -yLimit;
-          ball.vel.y = Math.abs(ball.vel.y);
-          sfxWall?.play(ball.pos);
-          spawnHitBurst(ball.pos, ballTintColor());
-          addScreenShake(.06, .05);
-      }
-
-      // Left paddle
-      if (ball.vel.x < 0 && aabbOverlap(ball.pos, ballSize, left.pos, paddleSize))
-      {
-          ball.pos.x = left.pos.x + (paddleSize.x + ballSize.x) * .5;
-          ball.vel.x = Math.abs(ball.vel.x);
-
-          const offset = clamp((ball.pos.y - left.pos.y) / (paddleSize.y * .5), -1, 1);
-          ball.vel.y += offset * 8;
-
-          const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
-          ball.vel = ball.vel.normalize(speed);
-          sfxPaddle?.play(ball.pos);
-
-          lastHitter = -1;
-          leftFlash = 1;
-          addScreenShake(.10, .1);
-          spawnHitBurst(ball.pos, COLOR_L);
-      }
-
-      // Right paddle
-      if (ball.vel.x > 0 && aabbOverlap(ball.pos, ballSize, right.pos, paddleSize))
-      {
-          ball.pos.x = right.pos.x - (paddleSize.x + ballSize.x) * .5;
-          ball.vel.x = -Math.abs(ball.vel.x);
-
-          const offset = clamp((ball.pos.y - right.pos.y) / (paddleSize.y * .5), -1, 1);
-          ball.vel.y += offset * 8;
-
-          const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
-          ball.vel = ball.vel.normalize(speed);
-          sfxPaddle?.play(ball.pos);
-
-          lastHitter = 1;
-          rightFlash = 1;
-          addScreenShake(.10, .1);
-          spawnHitBurst(ball.pos, COLOR_R);
-      }
-
-      // Scoring
-      if (ball.pos.x < -halfField.x - 2)
-          addScore(false);
-      else if (ball.pos.x > halfField.x + 2)
-          addScore(true);
-  }
-
-  function gameUpdatePost()
-  {
-      // cameraPos is centered in gameUpdate; gameFx screen-shake plugin nudges it.
-      leftFlash       = max(0, leftFlash       - timeDelta * 4);
-      rightFlash      = max(0, rightFlash      - timeDelta * 4);
-      leftScoreFlash  = max(0, leftScoreFlash  - timeDelta * 1.2);
-      rightScoreFlash = max(0, rightScoreFlash - timeDelta * 1.2);
-      bgFlash         = max(0, bgFlash         - timeDelta * 1.8);
-
-      if (!waitingForServe && !gameOver)
-      {
-          ballTrail.push({ pos: ball.pos.copy(), color: ballTintColor() });
-          if (ballTrail.length > TRAIL_LEN)
-              ballTrail.shift();
-      }
-      else if (ballTrail.length)
-          ballTrail.length = 0;
-  }
-
-  function gameRender()
-  {
-      // background
-      drawRect(vec2(0, 0), vec2(200), rgb(.08,.08,.08));
-
-      // playfield (tinted briefly toward scoring team on a score)
-      const fieldBase = rgb(.12, .12, .12);
-      const fieldCol  = bgFlash > 0
-          ? colorLerp(fieldBase, bgFlashColor, bgFlash * .5)
-          : fieldBase;
-      drawRect(vec2(0, 0), fieldSize, fieldCol);
-
-      // center dashed line
-      const dashCount = 18;
-      for (let i=0; i<dashCount; i++)
-      {
-          const t = (i/(dashCount-1))*2 - 1;
-          const y = t * (halfField.y - 1);
-          drawRect(vec2(0, y), vec2(.35, .7), rgb(.85,.85,.85));
-      }
-
-      // ball trail (additive-feeling: older = smaller, more transparent)
-      for (let i = 0; i < ballTrail.length; ++i)
-      {
-          const t = ballTrail[i];
-          const k = (i + 1) / (ballTrail.length + 1);
-          const c = new Color(t.color.r, t.color.g, t.color.b, k * .55);
-          drawRect(t.pos, ballSize.scale(k * .9), c);
-      }
-
-      // paddles — flash to team color on hit, white at rest
-      const leftCol  = colorLerp(rgb(.95,.95,.95), COLOR_L, leftFlash);
-      const rightCol = colorLerp(rgb(.95,.95,.95), COLOR_R, rightFlash);
-      drawRect(left.pos,  paddleSize, leftCol);
-      drawRect(right.pos, paddleSize, rightCol);
-
-      // ball — glow halo (sized with speed, color of last hitter)
-      const speedT = clamp((ball.vel.length() - 14) / (maxBallSpeed - 14), 0, 1);
-      const haloCol = ballTintColor();
-      drawRect(
-          ball.pos,
-          ballSize.scale(1.6 + speedT * 1.4),
-          new Color(haloCol.r, haloCol.g, haloCol.b, .18 + speedT * .25),
-      );
-      drawRect(ball.pos, ballSize, rgb(1, 1, 1));
-
-      // top/bottom border lines (subtle)
-      drawRect(vec2(0, halfField.y + .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
-      drawRect(vec2(0,-halfField.y - .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
-  }
-
-  function gameRenderPost()
-  {
-      // score — split so each half pulses & tints with its team color on a score
-      const cx     = mainCanvasSize.x / 2;
-      const lSize  = 80 * (1 + leftScoreFlash  * .6);
-      const rSize  = 80 * (1 + rightScoreFlash * .6);
-      const lTxtC  = colorLerp(hsl(0, 0, 1), COLOR_L, leftScoreFlash);
-      const rTxtC  = colorLerp(hsl(0, 0, 1), COLOR_R, rightScoreFlash);
-      drawTextScreen(`${scoreL}`, vec2(cx - 90, 60), lSize, lTxtC, 6, hsl(0,0,0));
-      drawTextScreen(`${scoreR}`, vec2(cx + 90, 60), rSize, rTxtC, 6, hsl(0,0,0));
-
-      // hints
-      const lines = [];
-
-      // status message
-      if (gameOver)
-      {
-          const winner = scoreL > scoreR ? 'Left Wins!' : 'Right Wins!';
-          lines.unshift(winner);
-          lines.unshift('');
-          lines.unshift('Game Over');
-      }
-
-      const x = mainCanvasSize.x/2;
-      let y = mainCanvasSize.y - 120;
-      for (const s of lines)
-      {
-          drawTextScreen(s, vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0));
-          y += 28;
-      }
-  }
-
-  // Startup LittleJS Engine
-  engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
-  </script>
+    // Pong State
+
+    const fieldSize = vec2(40, 22);          // world units
+    const halfField = fieldSize.scale(.5);
+
+    const paddleSize = vec2(1.1, 5.2);
+    const ballSize   = vec2(1.0, 1.0);
+
+    const paddleSpeed = 18;
+    const aiSpeed     = 15;
+
+    const maxBallSpeed = 30;
+
+    let left = { pos: vec2(-halfField.x + 2.2, 0) };
+    let right = { pos: vec2( halfField.x - 2.2, 0) };
+
+    let ball = { pos: vec2(0,0), vel: vec2(0,0) };
+
+    let scoreL = 0;
+    let scoreR = 0;
+
+    let waitingForServe = true;
+    let gameOver = false;
+    let aiRight = true; // press T to toggle
+
+    // AI configuration
+    const aiReactionDelay = 0.15;   // seconds before AI reacts to ball direction change
+    const aiErrorMargin = 1.5;      // random offset to make AI imperfect
+    const aiPredictionNoise = 0.12; // noise in ball trajectory prediction
+    let aiTargetY = 0;              // where AI wants to move
+    let aiLastUpdate = 0;           // time of last prediction update
+    let aiPredictedY = 0;           // predicted ball Y at paddle
+
+    // Sounds
+    let sfxPaddle, sfxWall, sfxScore, sfxServe;
+
+    // FX state
+    const COLOR_L = hsl(.50, .9, .65);   // cyan (left team)
+    const COLOR_R = hsl(.95, .9, .65);   // magenta (right team)
+    const TRAIL_LEN = 14;
+
+    let leftFlash = 0, rightFlash = 0;
+    let leftScoreFlash = 0, rightScoreFlash = 0;
+    let bgFlash = 0, bgFlashColor = COLOR_L;
+    let lastHitter = 0;                  // -1 left, +1 right, 0 none
+    let ballTrail = [];                  // {pos, color}
+
+    function ballTintColor()
+    {
+            if (lastHitter < 0) return COLOR_L;
+            if (lastHitter > 0) return COLOR_R;
+            return hsl(0, 0, 1);
+    }
+
+    function colorLerp(a, b, k)
+    {
+            return new Color(lerp(a.r, b.r, k), lerp(a.g, b.g, k), lerp(a.b, b.b, k), 1);
+    }
+
+    function spawnHitBurst(pos, color)
+    {
+            new ParticleEmitter(
+                    pos, 0,                       // pos, angle
+                    vec2(.1),                     // emitSize
+                    .06,                          // emitTime
+                    400,                          // emitRate
+                    PI,                           // emitConeAngle (full burst)
+                    undefined,
+                    color, color,
+                    new Color(color.r, color.g, color.b, 0),
+                    new Color(color.r, color.g, color.b, 0),
+                    .55,                          // particleTime
+                    .35, .05,                     // sizeStart, sizeEnd
+                    .5,                           // speed
+                    0, .9, 1, 0,                  // angleSpeed, damping, angleDamping, gravityScale
+                    PI, .1, .6,                   // particleConeAngle, fadeRate, randomness
+                    false, true,                  // collideTiles, additive
+            );
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Helpers
+
+    function aabbOverlap(posA, sizeA, posB, sizeB)
+    {
+            return Math.abs(posA.x - posB.x) < (sizeA.x + sizeB.x) * .5 &&
+                          Math.abs(posA.y - posB.y) < (sizeA.y + sizeB.y) * .5;
+    }
+
+    function clampPaddleY(p)
+    {
+            const limit = halfField.y - paddleSize.y/2;
+            p.pos.y = clamp(p.pos.y, -limit, limit);
+    }
+
+    // Predict where ball will be when it reaches a given x position
+    function predictBallY(targetX)
+    {
+            if (ball.vel.x === 0) return 0;
+            
+            let simPos = ball.pos.copy();
+            let simVel = ball.vel.copy();
+            const yLimit = halfField.y - ballSize.y/2;
+            const maxSteps = 500;
+            
+            for (let i = 0; i < maxSteps; i++)
+            {
+                    // Step simulation
+                    const dt = 0.016; // ~60fps step
+                    simPos = simPos.add(simVel.scale(dt));
+                    
+                    // Wall bounces
+                    if (simPos.y > yLimit) { simPos.y = yLimit; simVel.y = -Math.abs(simVel.y); }
+                    if (simPos.y < -yLimit) { simPos.y = -yLimit; simVel.y = Math.abs(simVel.y); }
+                    
+                    // Check if reached target x
+                    if ((simVel.x > 0 && simPos.x >= targetX) || (simVel.x < 0 && simPos.x <= targetX))
+                            return simPos.y;
+            }
+            return 0;
+    }
+
+    function resetRound(servingToRight)
+    {
+            ball.pos = vec2(0, 0);
+            ball.vel = vec2(0, 0);
+            waitingForServe = true;
+            gameOver = false;
+
+            // tiny nudge so it doesn't always serve dead-center
+            left.pos.y = 0;
+            right.pos.y = 0;
+
+            // store who serves next on the ball object
+            ball._serveDir = servingToRight ? 1 : -1;
+    }
+
+    function serve()
+    {
+            if (!waitingForServe || gameOver)
+                    return;
+
+            // Serve direction: +x goes right, -x goes left
+            const dirX = ball._serveDir ?? (randBool() ? 1 : -1);
+            const angle = rand(-.25, .25); // slight vertical variance
+            const speed = 14;
+            ball.vel = vec2(dirX, angle).normalize(speed);
+            waitingForServe = false;
+            sfxServe?.play(ball.pos);
+    }
+
+    function addScore(leftScored)
+    {
+            if (leftScored) scoreL++;
+            else scoreR++;
+
+            sfxScore?.play();
+            addScreenShake(.3, .21);
+            bgFlash = 1;
+            bgFlashColor = leftScored ? COLOR_L : COLOR_R;
+            if (leftScored) leftScoreFlash = 1;
+            else rightScoreFlash = 1;
+            lastHitter = 0;
+            ballTrail.length = 0;
+
+            // win at 10
+            if (scoreL >= 10 || scoreR >= 10)
+            {
+                    gameOver = true;
+                    ball.vel = vec2(0,0);
+                    waitingForServe = true;
+                    return;
+            }
+
+            // Next serve goes toward the player who just conceded
+            resetRound(leftScored ? false : true);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // LittleJS Callbacks
+
+    function gameInit()
+    {
+            // fixed canvas for consistent feel
+            setCanvasFixedSize(vec2(1280, 720));
+
+            // camera centered; choose scale so field fits nicely
+            setCameraPos(vec2(0, 0));
+            cameraScale = 32;
+
+            // Sounds (simple, punchy)
+            sfxPaddle = new SoundGenerator({ volume:.7, frequency:520, release:.07, shapeCurve:1.8, randomness:.08 });
+            sfxWall   = new SoundGenerator({ volume:.55, frequency:880, release:.06, shapeCurve:1.2, randomness:.04 });
+            sfxServe  = new SoundGenerator({ volume:.55, frequency:320, release:.12, slide:.35, shapeCurve:1.6, randomness:.06 });
+            sfxScore  = new SoundGenerator({ volume:1,  frequency:220, attack:0, release:.35, slide:-1.1, pitchJump:660, pitchJumpTime:.08, shapeCurve:1.3, randomness:.02 });
+
+            resetRound(true);
+            buildMenus();
+            showMenu('title');
+    }
+
+    function startGame()
+    {
+            scoreL = scoreR = 0;
+            resetRound(true);
+            setPlaying(true);
+            clearSubmenuStack();
+            hideAllMenus();
+    }
+
+    function buildMenus()
+    {
+            if (typeof createMenu !== 'function') return;
+
+            installAutoPause();
+
+            createTitleMenu({
+                    title: 'PONG',
+                    subtitle: '',
+                    onPlay: startGame,
+                    revealOnClick: false,
+            });
+
+            createPauseMenu({
+                    onRestart: startGame,
+                    onQuit:    quitToTitle,
+            });
+
+            installDefaultToolbar();
+    }
+
+    function gameUpdate()
+    {
+            if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
+            if (!isPlaying()) return;
+
+            // Reset camera to origin each frame so the gameFx screen-shake plugin
+            // (between gameUpdate and gameUpdatePost) can nudge cameraPos cleanly.
+            setCameraPos(vec2(0, 0));
+
+            if (keyWasPressed('KeyR'))
+            {
+                    scoreL = scoreR = 0;
+                    resetRound(true);
+            }
+
+            if (keyWasPressed('KeyT'))
+                    aiRight = !aiRight;
+
+            if (keyWasPressed('Space') || mouseWasPressed(0))
+            {
+                    if (gameOver)
+                    {
+                            scoreL = scoreR = 0;
+                            resetRound(true);
+                    }
+                    serve();
+            }
+
+            // Paddle input — mouse takes priority, keyboard still works
+            const keyDir = keyDirection().y;
+            if (keyDir)
+                    left.pos.y += keyDir * paddleSpeed * timeDelta;
+            else
+                    left.pos.y = mousePos.y;
+            clampPaddleY(left);
+
+            if (!aiRight)
+            {
+                    right.pos.y += keyDirection().y * paddleSpeed * timeDelta;
+            }
+            else
+            {
+                    // AI with prediction and imperfection
+                    if (waitingForServe || gameOver)
+                    {
+                            // Drift to center when waiting
+                            aiTargetY = 0;
+                    }
+                    else if (ball.vel.x > 0)
+                    {
+                            // Ball coming toward AI - predict intercept
+                            const now = time;
+                            if (now - aiLastUpdate > aiReactionDelay)
+                            {
+                                    aiLastUpdate = now;
+                                    aiPredictedY = predictBallY(right.pos.x);
+                                    // Add some error to make AI beatable
+                                    aiPredictedY += rand(-aiErrorMargin, aiErrorMargin);
+                                    aiPredictedY += ball.vel.y * aiPredictionNoise;
+                            }
+                            aiTargetY = aiPredictedY;
+                    }
+                    else
+                    {
+                            // Ball going away - return toward center
+                            aiTargetY = ball.pos.y * 0.3;
+                    }
+                    
+                    // Move toward target
+                    const diff = aiTargetY - right.pos.y;
+                    const dir = Math.sign(diff);
+                    const move = Math.min(Math.abs(diff), aiSpeed * timeDelta);
+                    right.pos.y += dir * move;
+            }
+            clampPaddleY(right);
+
+            // Ball update
+            if (waitingForServe || gameOver)
+                    return;
+
+            ball.pos = ball.pos.add(ball.vel.scale(timeDelta));
+
+            // Wall bounce
+            const yLimit = halfField.y - ballSize.y/2;
+            if (ball.pos.y > yLimit)
+            {
+                    ball.pos.y = yLimit;
+                    ball.vel.y = -Math.abs(ball.vel.y);
+                    sfxWall?.play(ball.pos);
+                    spawnHitBurst(ball.pos, ballTintColor());
+                    addScreenShake(.06, .05);
+            }
+            else if (ball.pos.y < -yLimit)
+            {
+                    ball.pos.y = -yLimit;
+                    ball.vel.y = Math.abs(ball.vel.y);
+                    sfxWall?.play(ball.pos);
+                    spawnHitBurst(ball.pos, ballTintColor());
+                    addScreenShake(.06, .05);
+            }
+
+            // Left paddle
+            if (ball.vel.x < 0 && aabbOverlap(ball.pos, ballSize, left.pos, paddleSize))
+            {
+                    ball.pos.x = left.pos.x + (paddleSize.x + ballSize.x) * .5;
+                    ball.vel.x = Math.abs(ball.vel.x);
+
+                    const offset = clamp((ball.pos.y - left.pos.y) / (paddleSize.y * .5), -1, 1);
+                    ball.vel.y += offset * 8;
+
+                    const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
+                    ball.vel = ball.vel.normalize(speed);
+                    sfxPaddle?.play(ball.pos);
+
+                    lastHitter = -1;
+                    leftFlash = 1;
+                    addScreenShake(.10, .1);
+                    spawnHitBurst(ball.pos, COLOR_L);
+            }
+
+            // Right paddle
+            if (ball.vel.x > 0 && aabbOverlap(ball.pos, ballSize, right.pos, paddleSize))
+            {
+                    ball.pos.x = right.pos.x - (paddleSize.x + ballSize.x) * .5;
+                    ball.vel.x = -Math.abs(ball.vel.x);
+
+                    const offset = clamp((ball.pos.y - right.pos.y) / (paddleSize.y * .5), -1, 1);
+                    ball.vel.y += offset * 8;
+
+                    const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
+                    ball.vel = ball.vel.normalize(speed);
+                    sfxPaddle?.play(ball.pos);
+
+                    lastHitter = 1;
+                    rightFlash = 1;
+                    addScreenShake(.10, .1);
+                    spawnHitBurst(ball.pos, COLOR_R);
+            }
+
+            // Scoring
+            if (ball.pos.x < -halfField.x - 2)
+                    addScore(false);
+            else if (ball.pos.x > halfField.x + 2)
+                    addScore(true);
+    }
+
+    function gameUpdatePost()
+    {
+            // cameraPos is centered in gameUpdate; gameFx screen-shake plugin nudges it.
+            leftFlash       = max(0, leftFlash       - timeDelta * 4);
+            rightFlash      = max(0, rightFlash      - timeDelta * 4);
+            leftScoreFlash  = max(0, leftScoreFlash  - timeDelta * 1.2);
+            rightScoreFlash = max(0, rightScoreFlash - timeDelta * 1.2);
+            bgFlash         = max(0, bgFlash         - timeDelta * 1.8);
+
+            if (!waitingForServe && !gameOver)
+            {
+                    ballTrail.push({ pos: ball.pos.copy(), color: ballTintColor() });
+                    if (ballTrail.length > TRAIL_LEN)
+                            ballTrail.shift();
+            }
+            else if (ballTrail.length)
+                    ballTrail.length = 0;
+    }
+
+    function gameRender()
+    {
+            // background
+            drawRect(vec2(0, 0), vec2(200), rgb(.08,.08,.08));
+
+            // playfield (tinted briefly toward scoring team on a score)
+            const fieldBase = rgb(.12, .12, .12);
+            const fieldCol  = bgFlash > 0
+                    ? colorLerp(fieldBase, bgFlashColor, bgFlash * .5)
+                    : fieldBase;
+            drawRect(vec2(0, 0), fieldSize, fieldCol);
+
+            // center dashed line
+            const dashCount = 18;
+            for (let i=0; i<dashCount; i++)
+            {
+                    const t = (i/(dashCount-1))*2 - 1;
+                    const y = t * (halfField.y - 1);
+                    drawRect(vec2(0, y), vec2(.35, .7), rgb(.85,.85,.85));
+            }
+
+            // ball trail (additive-feeling: older = smaller, more transparent)
+            for (let i = 0; i < ballTrail.length; ++i)
+            {
+                    const t = ballTrail[i];
+                    const k = (i + 1) / (ballTrail.length + 1);
+                    const c = new Color(t.color.r, t.color.g, t.color.b, k * .55);
+                    drawRect(t.pos, ballSize.scale(k * .9), c);
+            }
+
+            // paddles — flash to team color on hit, white at rest
+            const leftCol  = colorLerp(rgb(.95,.95,.95), COLOR_L, leftFlash);
+            const rightCol = colorLerp(rgb(.95,.95,.95), COLOR_R, rightFlash);
+            drawRect(left.pos,  paddleSize, leftCol);
+            drawRect(right.pos, paddleSize, rightCol);
+
+            // ball — glow halo (sized with speed, color of last hitter)
+            const speedT = clamp((ball.vel.length() - 14) / (maxBallSpeed - 14), 0, 1);
+            const haloCol = ballTintColor();
+            drawRect(
+                    ball.pos,
+                    ballSize.scale(1.6 + speedT * 1.4),
+                    new Color(haloCol.r, haloCol.g, haloCol.b, .18 + speedT * .25),
+            );
+            drawRect(ball.pos, ballSize, rgb(1, 1, 1));
+
+            // top/bottom border lines (subtle)
+            drawRect(vec2(0, halfField.y + .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
+            drawRect(vec2(0,-halfField.y - .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
+    }
+
+    function gameRenderPost()
+    {
+            // score — split so each half pulses & tints with its team color on a score
+            const cx     = mainCanvasSize.x / 2;
+            const lSize  = 80 * (1 + leftScoreFlash  * .6);
+            const rSize  = 80 * (1 + rightScoreFlash * .6);
+            const lTxtC  = colorLerp(hsl(0, 0, 1), COLOR_L, leftScoreFlash);
+            const rTxtC  = colorLerp(hsl(0, 0, 1), COLOR_R, rightScoreFlash);
+            drawTextScreen(`${scoreL}`, vec2(cx - 90, 60), lSize, lTxtC, 6, hsl(0,0,0));
+            drawTextScreen(`${scoreR}`, vec2(cx + 90, 60), rSize, rTxtC, 6, hsl(0,0,0));
+
+            // hints
+            const lines = [];
+
+            // status message
+            if (gameOver)
+            {
+                    const winner = scoreL > scoreR ? 'Left Wins!' : 'Right Wins!';
+                    lines.unshift(winner);
+                    lines.unshift('');
+                    lines.unshift('Game Over');
+            }
+
+            const x = mainCanvasSize.x/2;
+            let y = mainCanvasSize.y - 120;
+            for (const s of lines)
+            {
+                    drawTextScreen(s, vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0));
+                    y += 28;
+            }
+    }
+
+    // Startup LittleJS Engine
+    engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+    </script>
 </body>
 </html>

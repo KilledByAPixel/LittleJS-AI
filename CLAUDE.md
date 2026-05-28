@@ -6,6 +6,7 @@ Core goals
 - Work in short iterations. After each step, suggest the next small step.
 
 Project constraints
+- Indent with 4 spaces. Never 2 spaces, never tabs. Applies to all code in this repo (HTML, CSS, JS, templates, games/). When editing an existing file, match the surrounding style only if it's already 4-space; if you find a file using 2-space, convert it.
 - One self-contained HTML file per prototype. No build step, no bundler.
 - Start from templates/game.html (or templates/boardGame.html for grid games, templates/box2dGame.html for Box2D physics, templates/menuGame.html for prototypes with title/pause/options menus). Also read other templates as reference for features the prototype needs — templates/uiGame.html for canvas-drawn menus/sliders/dialogs (UISystemPlugin), templates/textureGame.html for procedural sprites, templates/tweakableGame.html for live value tweaking.
 - Write each new prototype as its own .html file in games/ (named after the game).
