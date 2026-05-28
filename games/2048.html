@@ -37,7 +37,6 @@ let animT = 0;                // remaining slide time; input is locked while > 0
 let pendingSpawn = false;
 
 let score = 0;
-let best = 0;
 let gameOver = false;
 let won = false;
 let continueAfterWin = false;
@@ -61,8 +60,6 @@ function gameInit()
 {
     saveDataInit('2048');
     canvasClearColor = hsl(0, 0, .08);
-
-    best = getSaveData().bestScore ?? 0;
 
     sMove  = new SoundGenerator({frequency: 260, release: .06, volume: .7, randomness: .02});
     sMerge = new SoundGenerator({frequency: 190, pitchJump: 320, pitchJumpTime: .02, release: .14, volume: .9, randomness: .02});
@@ -141,7 +138,7 @@ function showLoseDialog()
     showConfirmDialog({
         title:    'GAME OVER',
         icon:     '💥',
-        message:  'Score: ' + score + '\nBest: ' + best,
+        message:  'Score: ' + score + '\nBest: ' + getBestScore(),
         yesLabel: 'NEW GAME',
         noLabel:  'QUIT',
         onYes: () => { newGame(); },
@@ -331,8 +328,7 @@ function applyMove(dir)
     if (mergedRef.merged) sMerge.play();
     else sMove.play();
 
-    best = max(best, score);
-    saveData({bestScore: best});
+    submitBestScore(score);
 }
 
 function updateAnimations()
@@ -513,6 +509,7 @@ function gameRenderPost()
 
     const x = 28;
     drawTextScreen('Score ' + score,          vec2(x, 56),  56, hsl(.12, .7, .9), 6, hsl(0, 0, 0), 'left');
+    const best = getBestScore();
     if (best)
         drawTextScreen('Best ' + best, vec2(x, 100), 28, hsl(0, 0, 1),     4, hsl(0, 0, 0), 'left');
 }

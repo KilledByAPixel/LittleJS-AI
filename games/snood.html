@@ -77,7 +77,6 @@ let aimAngle;
 let projectile; // {pos, vel, colorIndex}
 let currentColorIndex, nextColorIndex;
 let score, shots, gameOver, gameWin;
-let bestScore = 0;
 let descendOffset;    // continuous descent offset (rolls over into addRow at ROW_STEP_Y)
 let incomingRow;      // next row that's queued to become row 0 at the next rollover
 let gridParity;       // toggles every addRow so existing bubbles keep their hex xOff after a row shift
@@ -560,10 +559,7 @@ function startNewGame()
 
 function showGameOverDialog()
 {
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore});
-    }
+    submitBestScore(score);
     // Surface a menus.js dialog so pause-callback drives `paused` for us.
     showAlertDialog({
         title: gameWin ? 'YOU WIN!' : 'GAME OVER',
@@ -582,7 +578,6 @@ function showGameOverDialog()
 function gameInit()
 {
     saveDataInit('snood');
-    bestScore = getSaveData().bestScore ?? 0;
     // called once after the engine starts up
     //setCanvasMaxSize(vec2(1280, 720));
     // Canvas clear matches the panel tint so any area outside the play rectangle

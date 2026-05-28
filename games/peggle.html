@@ -33,7 +33,6 @@ let pegs, bucket, activeBall;
 let particles, scorePops, stars, trail;
 let score, ballsRemaining, orangeLeft, comboCount, maxCombo;
 let win, gameOver;
-let bestScore = 0;
 let endDialogShown;  // prevents re-triggering the game-over dialog
 let slowMoT;         // real-time seconds remaining of slow-mo
 
@@ -45,7 +44,6 @@ let sfxShoot, sfxPeg, sfxOrange, sfxPower, sfxBucket, sfxLose, sfxWin;
 function gameInit()
 {
     saveDataInit('peggle');
-    bestScore = getSaveData().bestScore ?? 0;
     cameraScale = 26;
     cameraPos = vec2(0, 0);
     gravity = vec2(0, 0); // ball gravity is applied manually
@@ -403,7 +401,7 @@ function loseBall()
     {
         win = false;
         gameOver = true;
-        if (score > bestScore) { bestScore = score; saveData({bestScore}); }
+        submitBestScore(score);
     }
 }
 
@@ -489,7 +487,7 @@ function stepBall(dt)
                     win = true;
                     gameOver = true;
                     sfxWin.play();
-                    if (score > bestScore) { bestScore = score; saveData({bestScore}); }
+                    submitBestScore(score);
                 }
             }
             else

@@ -80,7 +80,6 @@ let leftFlipper, rightFlipper;
 let bumpers = [];
 let slingshots = [];
 let score = 0;
-let highScore = 0;
 let ballsLeft = 3;
 let gameOver = false;
 let launchCharge = 0;
@@ -316,10 +315,7 @@ function loseBall()
     if (ballsLeft <= 0)
     {
         gameOver = true;
-        if (score > highScore) {
-            highScore = score;
-            saveData({bestScore: highScore});
-        }
+        submitBestScore(score);
     }
     else
     {
@@ -341,7 +337,6 @@ function resetGame()
 async function gameInit()
 {
     saveDataInit('pinball');
-    highScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(720, 1080));
     cameraPos = vec2(0, PLAY_H/2);
 
@@ -468,8 +463,9 @@ function gameRenderPost()
 {
     drawTextScreen('SCORE: ' + score, vec2(mainCanvasSize.x/2, 40), 30, WHITE, 4, BLACK);
     drawTextScreen('BALLS: ' + ballsLeft, vec2(80, 40), 22, WHITE, 3, BLACK);
-    if (highScore)
-        drawTextScreen('HI: ' + highScore, vec2(mainCanvasSize.x - 100, 40), 22, hsl(0.15, 1, 0.7), 3, BLACK);
+    const hi = getBestScore();
+    if (hi)
+        drawTextScreen('HI: ' + hi, vec2(mainCanvasSize.x - 100, 40), 22, hsl(0.15, 1, 0.7), 3, BLACK);
 
     if (gameOver)
     {

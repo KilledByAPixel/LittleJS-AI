@@ -51,7 +51,6 @@ let board = [];
 let virusCount = 0;
 let initialVirusCount = 0;
 let score = 0;
-let bestScore = 0;
 let level = 1;
 
 let active = null;        // {x,y,o,cA,cB}
@@ -628,10 +627,7 @@ function setState(s)
     if (s === 'win') { sfxWin.play(); level++; }
     if (s === 'gameover') sfxLose.play();
     if (s === 'win' || s === 'gameover') {
-        if (score > bestScore) {
-            bestScore = score;
-            saveData({bestScore});
-        }
+        submitBestScore(score);
     }
 }
 
@@ -673,7 +669,6 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('drMario');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(780, 720));
     setCameraScale(32);
     setCameraPos(vec2(0,0));

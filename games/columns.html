@@ -28,7 +28,6 @@
  let piece, nextPiece;
  let fallCounter = 0;
  let score = 0;
- let bestScore = 0;
  let level = 1;
  let combo = 0;
  let gameOver = false;
@@ -230,10 +229,7 @@
  {
      if (gameOver) return;
      gameOver = true;
-     if (score > bestScore) {
-         bestScore = score;
-         saveData({bestScore});
-     }
+     submitBestScore(score);
      sfxGameOver.play();
      // surface a game-over dialog via menus.js
      showAlertDialog({
@@ -687,7 +683,6 @@
  function gameInit()
  {
      saveDataInit('columns');
-     bestScore = getSaveData().bestScore ?? 0;
      setCanvasFixedSize(vec2(960, 540));
      setShowSplashScreen(false);
      setCameraScale(36);

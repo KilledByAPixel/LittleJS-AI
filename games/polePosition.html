@@ -49,7 +49,6 @@ let speed = 0;
 let playerX = 0;     // lateral offset in world units
 let playerVX = 0;    // lateral velocity
 let score = 0;
-let bestScore = 0;
 let lap = 0;
 let timeLeftFrames = 60 * 60; // 60 seconds at 60 fps
 let crashTimer = 0;
@@ -135,7 +134,6 @@ function resetGame()
 function gameInit()
 {
     saveDataInit('polePosition');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(CANVAS_SIZE);
     buildTrack();
 
@@ -310,10 +308,7 @@ function gameUpdate()
     {
         state = 'timeup';
         speed = 0;
-        if (score > bestScore) {
-            bestScore = score;
-            saveData({bestScore: bestScore|0});
-        }
+        submitBestScore(score|0);
         return;
     }
 

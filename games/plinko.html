@@ -53,7 +53,6 @@ const BALL_COLORS    = [
 ///////////////////////////////////////////////////////////////////////////////
 // Game state
 let score          = 0;
-let bestScore      = 0;
 let dropCount      = 0;
 let aimX           = 0;
 let dropCooldown   = new Timer();
@@ -296,11 +295,7 @@ function checkScoring()
     }
 
     // best score persistence
-    if (score > bestScore)
-    {
-        bestScore = score;
-        saveData({bestScore});
-    }
+    submitBestScore(score);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -353,7 +348,6 @@ function resetGame()
 async function gameInit()
 {
     saveDataInit('plinko');
-    bestScore = getSaveData().bestScore ?? 0;
     // Box2D first — every body needs the world to exist.
     await box2dInit();
 
@@ -381,7 +375,7 @@ async function gameInit()
         revealOnClick: false,
         canReveal: () => !isPlaying(),
         itemsBefore: [
-            {type:'label', id:'bestLabel', text:'Best: ' + bestScore},
+            {type:'label', id:'bestLabel', text:'Best: ' + getBestScore()},
         ],
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
@@ -390,7 +384,7 @@ async function gameInit()
         onShow: () =>
         {
             const lbl = getMenu('title').getItem('bestLabel');
-            lbl && lbl.setLabel('Best: ' + bestScore);
+            lbl && lbl.setLabel('Best: ' + getBestScore());
         },
     });
 
@@ -404,8 +398,7 @@ async function gameInit()
                     message: 'Erase your best score?',
                     onYes: () =>
                     {
-                        bestScore = 0;
-                        saveData({bestScore: 0});
+                        resetBestScore();
                         const lbl = getMenu('title').getItem('bestLabel');
                         lbl && lbl.setLabel('Best: 0');
                     },
@@ -544,7 +537,7 @@ function gameRenderPost()
         drawTextScreen('SCORE  ' + score,
             vec2(mainCanvasSize.x/2, 50), 50,
             hsl(.13, 1, .7), 5, hsl(0, 0, 0));
-        drawTextScreen('BEST  ' + bestScore,
+        drawTextScreen('BEST  ' + getBestScore(),
             vec2(mainCanvasSize.x/2, 95), 24,
             hsl(0, 0, .85), 3, hsl(0, 0, 0));
         drawTextScreen('BALLS  ' + dropCount,

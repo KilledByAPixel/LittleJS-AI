@@ -46,13 +46,7 @@ let eggs = [];
 let platforms = [];
 let particles = [];
 let score = 0;
-let bestScore = 0;
-function saveBestScore() {
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore});
-    }
-}
+function saveBestScore() { submitBestScore(score); }
 let lives = 3;
 let wave = 0;
 let gameState = 'title'; // title, playing, gameover, victory
@@ -577,7 +571,6 @@ function createPlatforms()
 function gameInit()
 {
     saveDataInit('joust');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(LEVEL_WIDTH / 2, LEVEL_HEIGHT / 2);
     

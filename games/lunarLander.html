@@ -45,7 +45,6 @@ const CAMERA_ZOOM_OUT_DIST = 18;   // start zooming in inside this distance
 let player, landingPad;
 let gameState = 0; // 0=playing, 1=landed, 2=crashed
 let score = 0;
-let bestScore = 0;
 let messageTimer = new Timer();
 let camTarget = vec2();
 let camScale = CAMERA_SCALE_FAR;
@@ -273,10 +272,7 @@ class Player extends EngineObject
 
                 // score: more fuel + faster landing
                 score = (this.fuel*10|0) + (max(0, 100 - this.velocity.length()*1000)|0);
-                if (score > bestScore) {
-                    bestScore = score;
-                    saveData({bestScore});
-                }
+                submitBestScore(score);
                 messageTimer.set(999);
                 return true;
             }
@@ -369,7 +365,6 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('lunarLander');
-    bestScore = getSaveData().bestScore ?? 0;
     // called once after the engine starts up
     resetGame();
     buildMenus();

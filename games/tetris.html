@@ -131,7 +131,6 @@ const KICKS = [vec2(0,0), vec2(-1,0), vec2(1,0), vec2(0,1), vec2(-2,0), vec2(2,0
 
 let gameState = 'menu'; // 'menu' or 'playing'
 let gameMode = 'vs';    // 'single' or 'vs'
-let bestScore = 0;      // single-player high score (persisted)
 
 // Menu background animation (canvas-drawn, behind the DOM menu panel)
 let menuBgPieces = [];
@@ -1398,8 +1397,6 @@ async function gameInit()
     sGarbage = new SoundGenerator({frequency:90,  release:.14, noise:.1, volume:.45, slide:.15});
     sSelect = new SoundGenerator({frequency:440, release:.08, volume:.3});
 
-    bestScore = getSaveData().bestScore ?? 0;
-
     setSoundVolume(.8);
     // Title draws an animated TETRIS word over falling blocks — keep the
     // engine unpaused while the title is up so the attract animation plays.
@@ -1469,7 +1466,7 @@ function buildMenus()
         revealOnClick: false,
         canReveal: () => gameState === 'menu',
         itemsBefore: [
-            {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
+            {type:'label', id:'bestLabel', text:`BEST ${getBestScore()}`},
         ],
         items: [
             {type:'button', label:'VS AI',       onClick: () => startGame('vs')},
@@ -1480,7 +1477,7 @@ function buildMenus()
         onShow: () =>
         {
             const m = getMenu('title');
-            if (m) m.getItem('bestLabel')?.setLabel(`BEST ${bestScore}`);
+            if (m) m.getItem('bestLabel')?.setLabel(`BEST ${getBestScore()}`);
         },
     });
 
@@ -1530,7 +1527,7 @@ function buildMenus()
             if (showScore)
             {
                 m.getItem('finalScore')?.setLabel(`SCORE  ${players[0].score}`);
-                m.getItem('bestScore')?.setLabel(`BEST   ${bestScore}`);
+                m.getItem('bestScore')?.setLabel(`BEST   ${getBestScore()}`);
             }
         },
         items: [
@@ -1754,11 +1751,8 @@ function gameUpdate()
         if (!gameOverShowing)
         {
             // Best score: only count human-driven single-player runs.
-            if (gameMode === 'single' && human.score > bestScore)
-            {
-                bestScore = human.score;
-                saveData({bestScore});
-            }
+            if (gameMode === 'single')
+                submitBestScore(human.score);
             if (typeof showMenu === 'function') showMenu('gameOver');
         }
         return;

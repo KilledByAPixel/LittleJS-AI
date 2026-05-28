@@ -52,7 +52,6 @@ let player;
 let scrollSpeed = 0;
 let score = 0;
 let distance = 0;
-let bestScore = 0;
 let gameTime = 0;
 let gameState = 'playing'; // 'playing', 'crashed'
 let gameStarted = false;
@@ -214,10 +213,7 @@ class Player
         if (this.crashed) return;
         this.crashed = true;
         gameState = 'crashed';
-        if (score > bestScore) {
-            bestScore = score;
-            saveData({bestScore});
-        }
+        submitBestScore(score);
         sfxCrash && sfxCrash.play(this.pos);
 
         // crash particles
@@ -573,7 +569,6 @@ function resetGame()
 async function gameInit()
 {
     saveDataInit('skiing');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(1440, 900));
     cameraPos = vec2(0, 0);
 

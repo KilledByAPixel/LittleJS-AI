@@ -76,7 +76,6 @@
   let centipedes;         // Array<CentipedeChain>
   let segmentLookup;      // Map<key, {chain, index}>
   let score, lives, level;
-  let bestScore = 0;
   let gameOver, gameWon, winTimer;
   let spider;             // current Spider instance or null
   let spiderSpawnTimer;   // seconds until next spider
@@ -1052,8 +1051,6 @@
       buildSpriteAtlas();
       await useAtlasImage('centipede.png');
 
-      bestScore = getSaveData().bestScore ?? 0;
-
       setSoundVolume(.8);
       installAutoPause();
 
@@ -1083,7 +1080,7 @@
           revealOnClick: false,
           canReveal: () => !isPlaying(),
           itemsBefore: [
-              {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
+              {type:'label', id:'bestLabel', text:`BEST ${getBestScore()}`},
           ],
           items: [
               {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
@@ -1091,7 +1088,7 @@
           ],
           onShow: () => {
               const m = getMenu('title');
-              if (m) m.getItem('bestLabel')?.setLabel(`BEST ${bestScore}`);
+              if (m) m.getItem('bestLabel')?.setLabel(`BEST ${getBestScore()}`);
           },
       });
 
@@ -1127,7 +1124,7 @@
               const m = getMenu('gameOver');
               if (!m) return;
               m.getItem('finalScore')?.setLabel(`SCORE  ${score}`);
-              m.getItem('bestScore')?.setLabel(`BEST   ${bestScore}`);
+              m.getItem('bestScore')?.setLabel(`BEST   ${getBestScore()}`);
               m.getItem('levelReached')?.setLabel(`LEVEL  ${level}`);
           },
           items: [
@@ -1178,11 +1175,7 @@
           gameOverHoldTimer -= timeDelta;
           if (gameOverHoldTimer <= 0)
           {
-              if (score > bestScore)
-              {
-                  bestScore = score;
-                  saveData({bestScore});
-              }
+              submitBestScore(score);
               if (typeof showMenu === 'function') showMenu('gameOver');
           }
       }

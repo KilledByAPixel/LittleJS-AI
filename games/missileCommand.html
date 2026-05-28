@@ -55,7 +55,6 @@ let fliers = [];
 let flierCooldown = 5;
 
 let score = 0;
-let bestScore = 0;
 let waveIndex = 1;
 let missilesToSpawn = 0;
 let smartBombsToSpawn = 0;
@@ -1069,8 +1068,6 @@ function gameInit()
   sBonusCity = new SoundGenerator({volume:.7, frequency:660, attack:0, release:.4, shapeCurve:1.6, pitchJump:540, pitchJumpTime:.05});
   sBonusTick = new SoundGenerator({volume:.45, frequency:780, attack:0, release:.06, shapeCurve:1.6});
 
-  bestScore = getSaveData().bestScore ?? 0;
-
   installAutoPause();
 
   buildMenus();
@@ -1102,7 +1099,7 @@ function buildMenus()
     revealOnClick: false,
     canReveal: () => !isPlaying(),
     itemsBefore: [
-      {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
+      {type:'label', id:'bestLabel', text:`BEST ${getBestScore()}`},
     ],
     items: [
       {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
@@ -1111,7 +1108,7 @@ function buildMenus()
     onShow: () =>
     {
       const m = getMenu('title');
-      if (m) m.getItem('bestLabel')?.setLabel(`BEST ${bestScore}`);
+      if (m) m.getItem('bestLabel')?.setLabel(`BEST ${getBestScore()}`);
     },
   });
 
@@ -1151,7 +1148,7 @@ function buildMenus()
       if (m)
       {
         m.getItem('finalScore')?.setLabel(`SCORE  ${score}`);
-        m.getItem('bestScore')?.setLabel(`BEST   ${bestScore}`);
+        m.getItem('bestScore')?.setLabel(`BEST   ${getBestScore()}`);
         m.getItem('waveReached')?.setLabel(`WAVE   ${waveIndex}`);
       }
     },
@@ -1332,11 +1329,7 @@ function gameUpdate()
   {
     gameOver = true;
     gameOverHoldTimer = 1.6;
-    if (score > bestScore)
-    {
-      bestScore = score;
-      saveData({bestScore});
-    }
+    submitBestScore(score);
   }
 }
 

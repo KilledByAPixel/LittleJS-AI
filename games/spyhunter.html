@@ -103,7 +103,6 @@ let oilSlicks = [];
 let smokeScreens = [];
 
 let score = 0;
-let bestScore = 0;
 let distance = 0;
 let gameOver = false;
 let scoreMultiplier = 1;
@@ -784,10 +783,7 @@ function triggerGameOver()
 {
     if (gameOver) return;
     gameOver = true;
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore: bestScore|0});
-    }
+    submitBestScore(score|0);
     if (!player) return;
 
     // sustained fire/sparks for ~0.6s
@@ -1085,7 +1081,6 @@ function runSanityTests()
 async function gameInit()
 {
     saveDataInit('spyhunter');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(1280, 720));
     runSanityTests();
     resetGame();

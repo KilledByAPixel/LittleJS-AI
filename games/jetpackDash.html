@@ -104,18 +104,11 @@ let hasShield = false;
 let shieldInvuln = 0;        // seconds of post-break invuln remaining
 
 // persistence
-let bestDistance = 0;
 let totalCoins = 0;
 
 function loadProgress()
 {
-    bestDistance = getSaveData().bestScore ?? 0;
-    totalCoins   = getSaveData().coins     ?? 0;
-}
-
-function saveProgress()
-{
-    saveData({bestScore: bestDistance, coins: totalCoins});
+    totalCoins = getSaveData().coins ?? 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -904,8 +897,8 @@ async function gameInit()
         onShow: () =>
         {
             const lbl = getMenu('title').getItem('bestLabel');
-            if (lbl && lbl.setLabel) lbl.setLabel('Best: ' + bestDistance + ' M');
-            else if (lbl && lbl.setValue) lbl.setValue('Best: ' + bestDistance + ' M');
+            if (lbl && lbl.setLabel) lbl.setLabel('Best: ' + getBestScore() + ' M');
+            else if (lbl && lbl.setValue) lbl.setValue('Best: ' + getBestScore() + ' M');
         },
     });
 
@@ -1001,14 +994,14 @@ function gameUpdate()
         if (deathTimer > 1)
         {
             deathTimer = -999;  // prevent re-trigger
-            if (distance > bestDistance) bestDistance = distance;
+            submitBestScore(distance);
             totalCoins += coins;
-            saveProgress();
+            saveData({coins: totalCoins});
             showAlertDialog({
                 title: 'CRASHED',
                 message: 'Distance: ' + distance + ' M\n' +
                          'Coins: '    + coins    + '\n' +
-                         'Best: '     + bestDistance + ' M\n' +
+                         'Best: '     + getBestScore() + ' M\n' +
                          'Lifetime: ' + totalCoins + ' coins',
                 onOk: quitToTitleWithCleanup,
             });
@@ -1065,7 +1058,7 @@ function gameRenderPost()
             vec2(pad, 30), 22, hsl(0,0,1), 3, hsl(0,0,0), 'left');
         drawTextScreen('COINS: ' + coins,
             vec2(pad, 58), 22, hsl(.13,1,.6), 3, hsl(0,0,0), 'left');
-        drawTextScreen('BEST: ' + bestDistance + ' M',
+        drawTextScreen('BEST: ' + getBestScore() + ' M',
             vec2(pad, 86), 18, hsl(0,0,.7), 3, hsl(0,0,0), 'left');
         if (hasShield)
             drawTextScreen('SHIELD',

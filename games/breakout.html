@@ -103,7 +103,6 @@ const SLOW_DURATION = 10;
 const SLOW_FACTOR = 0.65;
 
 // menu / session state
-let highScore = 0;
 
 // game state
 let paddlePos, paddleSize;
@@ -620,7 +619,7 @@ function quitToTitleWithCleanup()
         // Reset for attract-mode rendering — a frozen world, not a black canvas.
         resetGame();
         const t = getMenu('title');
-        if (t) t.getItem('bestLabel')?.setLabel(`Best: ${highScore}`);
+        if (t) t.getItem('bestLabel')?.setLabel(`Best: ${getBestScore()}`);
     });
 }
 
@@ -637,8 +636,6 @@ async function gameInit()
     sfxPower  = new SoundGenerator({ volume: .75, frequency: 740, release: .12, pitchJump: 260, pitchJumpTime: .03, shapeCurve: 1.1 });
     sfxLaser  = new SoundGenerator({ volume: .55, frequency: 980, release: .06, slide: 1.5, shapeCurve: 1.8 });
 
-    highScore = getSaveData().bestScore ?? 0;
-
     // One callback drives `paused` for every menu (including dialogs).
     installAutoPause();
 
@@ -649,7 +646,7 @@ async function gameInit()
         revealOnClick: false,
         canReveal: () => !isPlaying(),
         itemsBefore: [
-            {type:'label', id:'bestLabel', text:`Best: ${highScore}`},
+            {type:'label', id:'bestLabel', text:`Best: ${getBestScore()}`},
         ],
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
@@ -956,16 +953,11 @@ function updateBalls(dt)
             state = 'lose';
             setPlaying(false);
 
-            const isNewBest = score > highScore;
-            if (isNewBest)
-            {
-                highScore = score;
-                saveData({bestScore: highScore});
-            }
+            const isNewBest = submitBestScore(score);
 
             const msg = isNewBest
                 ? `New best! ${score}`
-                : `Final score: ${score}\nBest: ${highScore}`;
+                : `Final score: ${score}\nBest: ${getBestScore()}`;
             showAlertDialog({
                 title: 'GAME OVER',
                 icon: '💥',

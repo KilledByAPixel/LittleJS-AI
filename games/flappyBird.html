@@ -117,7 +117,6 @@ const STATE_PLAY  = 1;
 const STATE_DEAD  = 2;
 let state;
 let score;
-let bestScore;
 
 // menu / session state
 let birdPos;
@@ -147,16 +146,6 @@ function clampGapY(y)
     const minY = floorY + gapSize/2 + pad;
     const maxY = ceilY  - gapSize/2 - pad;
     return clamp(y, minY, maxY);
-}
-
-function loadBestScore()
-{
-    return getSaveData().bestScore ?? 0;
-}
-
-function saveBestScore(v)
-{
-    saveData({bestScore: v});
 }
 
 function resetRun(toReady=true)
@@ -205,8 +194,7 @@ function killBird()
     // burst of particles on hit
     emitBurst(14, 6);
 
-    bestScore = max(bestScore, score);
-    saveBestScore(bestScore);
+    submitBestScore(score);
 }
 
 function emitParticle(pos, vel, life, size, color)
@@ -624,7 +612,6 @@ async function gameInit()
 
     runSelfTests();
 
-    bestScore = loadBestScore();
     resetRun(true);
     initScenery();
 
@@ -768,7 +755,6 @@ function gameUpdate()
                 p.passed = true;
                 score++;
                 sfxScore.play();
-                bestScore = max(bestScore, score);
             }
 
             const gapTop = p.gapY + gapSize/2;
@@ -990,7 +976,7 @@ function gameRenderPost()
     drawTextScreen('' + score, vec2(mainCanvasSize.x/2, 60), 72, hsl(0,0,1), 6, hsl(0,0,0));
 
     // best
-    drawTextScreen('BEST ' + bestScore, vec2(mainCanvasSize.x - 140, 26), 28, hsl(0,0,1), 4, hsl(0,0,0));
+    drawTextScreen('BEST ' + max(score, getBestScore()), vec2(mainCanvasSize.x - 140, 26), 28, hsl(0,0,1), 4, hsl(0,0,0));
 
     // prompts
     if (state === STATE_DEAD)

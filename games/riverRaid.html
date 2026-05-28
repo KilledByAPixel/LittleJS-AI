@@ -47,7 +47,6 @@ let objects, bullets;
 let playerPos, playerVelX, playerAngle;
 let speed;
 let score;
-let bestScore = 0;
 let fuel;
 let gameOver, gameOverReason;
 let flashTimer;
@@ -193,10 +192,7 @@ function crash(reason)
     if (gameOver) return;
     gameOver = true;
     gameOverReason = reason;
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore: bestScore|0});
-    }
+    submitBestScore(score|0);
     flashTimer = 30;
     sExplode && sExplode.play();
 }
@@ -220,7 +216,6 @@ function shoot()
 function gameInit()
 {
     saveDataInit('riverRaid');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(960, 540));
     cameraScale = 32;
 

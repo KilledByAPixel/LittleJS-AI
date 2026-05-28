@@ -57,7 +57,7 @@ const bomberFlipProb = w => 0.005 + (w - 1) * 0.002;     // chance/frame of reve
 const bucketHalfW    = w => max(1.2, 2.8 - (w - 1) * 0.15);
 
 // State
-let score, highScore, wave, lives, bucketsAwarded;
+let score, wave, lives, bucketsAwarded;
 let bucketX, bucketTargetX;
 let bomber;          // {x, vx, dropTimer, laughTimer}
 let bombs;           // [{pos, vel, fuse}]
@@ -216,12 +216,9 @@ function checkWaveClear() {
 
 function showGameOver() {
     gameOverShown = true;
-    if (score > highScore) {
-        highScore = score;
-        saveData({bestScore: highScore});
-    }
+    submitBestScore(score);
     const summary = getMenu('gameover').getItem('summary');
-    summary.setLabel(`SCORE  ${score}\nBEST  ${highScore}\nWAVE  ${wave}`);
+    summary.setLabel(`SCORE  ${score}\nBEST  ${getBestScore()}\nWAVE  ${wave}`);
     showMenu('gameover');
 }
 
@@ -648,8 +645,6 @@ async function gameInit() {
     windowSeeds = [];
     for (let i = 0; i < 9 * 7; i++) windowSeeds.push(rand(0, 5));
 
-    highScore = getSaveData().bestScore ?? 0;
-
     // ---- menus ----
     createOptionsMenu();
 
@@ -695,8 +690,8 @@ async function gameInit() {
         onPlay: () => { startGame(); },
         canReveal: () => !isPlaying(),
         itemsBefore: [
-            { type: 'label', id: 'bestLabel', text: `BEST: ${highScore}`,
-              onUpdate: el => { el.textContent = `BEST: ${highScore}`; } },
+            { type: 'label', id: 'bestLabel', text: `BEST: ${getBestScore()}`,
+              onUpdate: el => { el.textContent = `BEST: ${getBestScore()}`; } },
         ],
         items: [
             { type: 'button', label: 'OPTIONS', onClick: () => pushMenu('options') },
@@ -826,7 +821,7 @@ function gameRenderPost() {
     const cx = mainCanvasSize.x / 2;
     drawTextScreen(`SCORE  ${score}`,
         vec2(24, 36), 32, hsl(0, 0, 1), 5, hsl(0, 0, 0), 'left');
-    drawTextScreen(`BEST  ${highScore}`,
+    drawTextScreen(`BEST  ${getBestScore()}`,
         vec2(24, 72), 20, hsl(0, 0, .8), 4, hsl(0, 0, 0), 'left');
 
     drawTextScreen(`WAVE ${wave}`,

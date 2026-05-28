@@ -84,7 +84,6 @@ const sFire    = new SoundGenerator({frequency: 300, pitchJump: 1600, pitchJumpT
 // game ends once that ball is at rest.
 let gamePhase    = 'title';   // 'title' | 'playing' | 'buzzer' | 'gameover'
 let score        = 0;
-let bestScore    = 0;
 let timeLeft     = TIME_LIMIT;
 let streak       = 0;
 let onFire       = false;
@@ -333,15 +332,11 @@ function endGame()
     gamePhase = 'gameover';
     aiming = false;
     chargeT = 0;
-    if (score > bestScore)
-    {
-        bestScore = score;
-        saveData({bestScore});
-    }
+    submitBestScore(score);
     // surface game-over menu (refresh its labels first)
     const m = getMenu('gameover');
     m.getItem('finalScore').setLabel(`SCORE: ${score}`);
-    m.getItem('bestScore').setLabel(`BEST:  ${bestScore}`);
+    m.getItem('bestScore').setLabel(`BEST:  ${getBestScore()}`);
     showMenu('gameover');
 }
 
@@ -381,8 +376,6 @@ async function gameInit()
     // Title has its own attract-mode behind the menu — leave it animating.
     installAutoPause(() => gamePhase === 'playing');
 
-    bestScore = getSaveData().bestScore ?? 0;
-
     const sound_select   = new Sound([.4,,720,,,.02,2,.07,-5,-33,,,,,,,,.25]);
     const sound_activate = new Sound([.6,,90,.01,,.05,1,2.5,40,,,,,,,,,.5]);
     setMenuSounds({
@@ -399,12 +392,12 @@ async function gameInit()
         revealOnClick: false,
         canReveal: () => gamePhase !== 'playing',
         itemsBefore: [
-            {type:'label', id:'bestLabel', text:`Best: ${bestScore}`},
+            {type:'label', id:'bestLabel', text:`Best: ${getBestScore()}`},
         ],
         onShow: () =>
         {
             const m = getMenu('title');
-            m.getItem('bestLabel').setLabel(`Best: ${bestScore}`);
+            m.getItem('bestLabel').setLabel(`Best: ${getBestScore()}`);
         },
         onPlay: () => startGame(),
         items: [
@@ -422,11 +415,7 @@ async function gameInit()
             {
                 showConfirmDialog({
                     message: 'Reset best score?',
-                    onYes: () =>
-                    {
-                        bestScore = 0;
-                        saveData({bestScore: 0});
-                    },
+                    onYes: () => resetBestScore(),
                 });
             }},
         ],

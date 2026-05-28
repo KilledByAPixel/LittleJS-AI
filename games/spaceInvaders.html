@@ -45,7 +45,6 @@ let barriers = [];
 let ufo = null;
 
 let score = 0;
-let hiScore = 0;
 let lives = 3;
 let playerShotsFired = 0; // total player shots; drives arcade-style UFO scoring
 let nextBonusLife = 1000;
@@ -808,7 +807,6 @@ function gameInit()
     setCameraPos(levelSize.scale(.5));
     cameraScale = 16; // pixels per world unit
 
-    hiScore = getSaveData().bestScore ?? 0;
 
     setSoundVolume(.8);
     // Title screen runs an attract-mode demo (animated wave / falling
@@ -850,7 +848,7 @@ function buildMenus()
         revealOnClick: false,
         canReveal: () => titleScreen,
         itemsBefore: [
-            {type:'label', id:'hiLabel', text:`HI-SCORE ${hiScore}`},
+            {type:'label', id:'hiLabel', text:`HI-SCORE ${getBestScore()}`},
         ],
         items: [
             {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
@@ -858,7 +856,7 @@ function buildMenus()
         ],
         onShow: () => {
             const m = getMenu('title');
-            if (m) m.getItem('hiLabel')?.setLabel(`HI-SCORE ${hiScore}`);
+            if (m) m.getItem('hiLabel')?.setLabel(`HI-SCORE ${getBestScore()}`);
         },
     });
 
@@ -894,7 +892,7 @@ function buildMenus()
             const m = getMenu('gameOver');
             if (!m) return;
             m.getItem('finalScore')?.setLabel(`SCORE     ${score}`);
-            m.getItem('hiScore')?.setLabel(   `HI-SCORE  ${hiScore}`);
+            m.getItem('hiScore')?.setLabel(   `HI-SCORE  ${getBestScore()}`);
             m.getItem('levelReached')?.setLabel(`LEVEL    ${currentLevel}`);
         },
         items: [
@@ -967,11 +965,7 @@ function gameUpdate()
     // Surface gameOver menu once the on-canvas delay (gameOverTimer) elapses.
     if (gameOver && gameOverTimer <= 0 && !endMenuShowing)
     {
-        if (score > hiScore)
-        {
-            hiScore = score;
-            saveData({bestScore: hiScore});
-        }
+        submitBestScore(score);
         if (typeof showMenu === 'function') showMenu('gameOver');
         return;
     }
@@ -1024,7 +1018,6 @@ function gameUpdate()
         spawnSpriteExplosion(a.pos, a.currentBitmap, SPRITE_PIXEL, a.color);
         score += a.pointValue;
         a.destroy();
-        hiScore = max(hiScore, score);
         checkBonusLife();
         sfxAlienDeath.play(a.pos);
     }
@@ -1115,7 +1108,7 @@ function gameRenderPost()
     
     // HI-SCORE on top right only
     drawTextScreen('HI-SCORE', vec2(mainCanvasSize.x - 100, hudY), 26, color);
-    drawTextScreen(String(hiScore).padStart(4, '0'), vec2(mainCanvasSize.x - 100, hudY + 32), 26, rgb(.95,.95,.95));
+    drawTextScreen(String(max(score, getBestScore())).padStart(4, '0'), vec2(mainCanvasSize.x - 100, hudY + 32), 26, rgb(.95,.95,.95));
     
     // Lives indicator with ship icons at bottom - below the green line
     const livesY = mainCanvasSize.y - 18;
@@ -1431,8 +1424,7 @@ function updateCollisions()
         {
             b.destroy();
             score += ufoPointsFor(b.shotIndex);
-            hiScore = max(hiScore, score);
-            checkBonusLife();
+                checkBonusLife();
             spawnSpriteExplosion(ufo.pos, SPRITE_UFO, SPRITE_PIXEL, rgb(.95,.25,.25), 1.4);
             ufo.destroy();
             sfxExplode.play(ufo.pos);
@@ -1449,8 +1441,7 @@ function updateCollisions()
             spawnSpriteExplosion(a.pos, a.currentBitmap, SPRITE_PIXEL, a.color);
             score += a.pointValue;
             a.destroy();
-            hiScore = max(hiScore, score);
-            checkBonusLife();
+                checkBonusLife();
             sfxAlienDeath.play(a.pos);
             break;
         }

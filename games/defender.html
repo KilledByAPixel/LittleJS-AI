@@ -42,7 +42,6 @@ const EXTRA_LIFE_EVERY = 10000;
 ///////////////////////////////////////////////////////////////////////////////
 // Game state
 let score, lives, smartBombs, wave, nextExtra;
-let bestScore = 0;
 let gameOver;
 let humansAlive, planetDestroyed, mutantWavesLeft;
 let player;
@@ -1052,10 +1051,7 @@ function doGameOver()
     if (gameOver) return;
     gameOver = true;
     setPlaying(false);
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore});
-    }
+    submitBestScore(score);
     showAlertDialog({
         title: 'GAME OVER',
         icon: '💥',
@@ -1167,7 +1163,6 @@ function enemyHitsPlayer()
 async function gameInit()
 {
     saveDataInit('defender');
-    bestScore = getSaveData().bestScore ?? 0;
     initSounds();
     setSoundVolume(.6);
     // Only pause when a menu surfaces during gameplay. Title-screen menus

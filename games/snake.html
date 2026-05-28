@@ -35,7 +35,7 @@ const deathFreezeTime   = .55; // brief freeze before game-over menu surfaces
 let snake, dir, nextDir;
 let food, poison;
 let grow;
-let score, best;
+let score;
 let alive;
 let stepTimer, stepInterval;
 
@@ -208,11 +208,7 @@ function die()
     deathFreezeTimer = deathFreezeTime;
     snakeFlashTimer = .4;
 
-    if (score > best)
-    {
-        best = score;
-        saveData({bestScore: best});
-    }
+    submitBestScore(score);
 }
 
 function eatFood()
@@ -372,7 +368,7 @@ function buildMenus()
 
 function showGameOverMenu()
 {
-    const newBest = score >= best && score > 0;
+    const newBest = score >= getBestScore() && score > 0;
     // Destroy any prior instance so labels are current
     const prev = getMenu('gameover');
     if (prev) prev.destroy();
@@ -384,7 +380,7 @@ function showGameOverMenu()
         initialItemId: 'again',
         items: [
             {type:'label', text: `Score: ${score}`},
-            {type:'label', text: newBest ? `New Best!` : `Best: ${best}`},
+            {type:'label', text: newBest ? `New Best!` : `Best: ${getBestScore()}`},
             {type:'separator'},
             {type:'button', id:'again', label:'PLAY AGAIN', onClick: startNewRun},
             {type:'button', label:'TITLE', onClick: quitToTitle},
@@ -401,8 +397,6 @@ async function gameInit()
     setCanvasFixedSize(vec2(1280, 720));
     cameraScale = 34;
     cameraPos = vec2(0,0);
-
-    best = getSaveData().bestScore ?? 0;
 
     // sounds (constructed after engine init so audio context can resume on gesture)
     sEat    = new SoundGenerator({volume:.7, frequency:520, release:.06, shapeCurve:1.2, pitchJump:120, pitchJumpTime:.02});
@@ -572,7 +566,7 @@ function gameRenderPost()
     const popScale = scorePopTimer > 0 ? 1 + .35 * (scorePopTimer / .35) : 1;
     const scoreSize = 44 * popScale;
     drawTextScreen(`${score}`, vec2(cx, 60), scoreSize, hsl(.33,.9,.85), 5, hsl(0,0,0));
-    drawTextScreen(`BEST  ${best}`, vec2(cx, 100), 20, hsl(0,0,1,.75), 3, hsl(0,0,0,.8));
+    drawTextScreen(`BEST  ${getBestScore()}`, vec2(cx, 100), 20, hsl(0,0,1,.75), 3, hsl(0,0,0,.8));
 
     // touch / first-time hint (only while score is low)
     if (alive && score < 2)

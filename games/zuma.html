@@ -68,7 +68,6 @@ let nextShotColor = 0;
 let loadedShotColor = 0;
 let aimDir = vec2(1, 0);       // unit vector — pointing right at startup
 let score = 0;
-let bestScore = 0;
 let gameOverPending = false;
 let currentCombo = 0;          // resets on shoot, increments per pop event
 let floatingTexts = [];        // [{pos, vel, text, color, age, life, size}]
@@ -455,10 +454,7 @@ function endGame(won)
 {
     if (gameOverPending) return;
     gameOverPending = true;
-    if (score > bestScore) {
-        bestScore = score;
-        saveData({bestScore: bestScore|0});
-    }
+    submitBestScore(score|0);
     if (!won) sound_lose.play();
     showAlertDialog({
         title: won ? 'CLEARED!' : 'GAME OVER',
@@ -496,7 +492,6 @@ function swapShot()
 async function gameInit()
 {
     saveDataInit('zuma');
-    bestScore = getSaveData().bestScore ?? 0;
     canvasClearColor = new Color().setHex('#0a0418');
 
     buildPath();

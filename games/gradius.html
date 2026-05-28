@@ -57,7 +57,6 @@ let particles = [];
 let stars = [];
 
 let score = 0;
-let bestScore = 0;
 let lives = 3;
 let gameState = 'playing'; // 'playing', 'gameover', 'win'
 
@@ -413,10 +412,7 @@ function damagePlayer()
     {
         player.alive = false;
         gameState = 'gameover';
-        if (score > bestScore) {
-            bestScore = score;
-            saveData({bestScore});
-        }
+        submitBestScore(score);
         return;
     }
 
@@ -1208,7 +1204,6 @@ function buildMenus()
 async function gameInit()
 {
     saveDataInit('gradius');
-    bestScore = getSaveData().bestScore ?? 0;
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(0, 0);
 

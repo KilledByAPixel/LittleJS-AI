@@ -63,7 +63,7 @@ const tileTypeCount = tileColors.length;
 ///////////////////////////////////////////////////////////////////////////////
 // State
 
-let level, levelSize, levelFall, fallTimer, dragStartPos, comboCount, score, bestScore;
+let level, levelSize, levelFall, fallTimer, dragStartPos, comboCount, score;
 // When the player initiates a swap, the two tiles slide past each other before
 // the level data is actually swapped. If the swap doesn't produce a match the
 // animation reverses and they slide back. {a, b, t, reversing} or null.
@@ -202,8 +202,6 @@ async function gameInit()
     gravity = vec2(0, -.004);
     canvasClearColor = backgroundColor;
 
-    bestScore = getSaveData().bestScore ?? 0;
-
     // Populate the board now so the title screen has gems behind it.
     gameReset();
 
@@ -214,7 +212,7 @@ async function gameInit()
         title: 'MATCH 3',
         subtitle: 'Swap adjacent gems to line up 3+ in a row',
         itemsBefore: [
-            {type:'label', id:'bestLabel', text:'Best: ' + bestScore},
+            {type:'label', id:'bestLabel', text:'Best: ' + getBestScore()},
         ],
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
@@ -223,7 +221,7 @@ async function gameInit()
         // Show the title immediately instead of waiting for a click. Audio
         // is still gated by browser policy until the first user interaction.
         revealOnClick: false,
-        onShow: () => getMenu('title').getItem('bestLabel').setLabel('Best: ' + bestScore),
+        onShow: () => getMenu('title').getItem('bestLabel').setLabel('Best: ' + getBestScore()),
         onPlay: () => { gameReset(); setPlaying(true); },
     });
 
@@ -414,11 +412,7 @@ function gameUpdate()
         }
     }
 
-    if (score > bestScore)
-    {
-        bestScore = score;
-        saveData({bestScore});
-    }
+    submitBestScore(score);
 
     if (keyWasPressed('KeyR'))
         gameReset();
