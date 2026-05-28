@@ -371,15 +371,32 @@ function createTitleMenu(config)
         canReveal:     null,
         onShow:        null,
         onHide:        null,
+        showBest:      false,
+        formatBest:    null,           // n => string; defaults to 'Best: ' + n
     }, config);
 
-    // run user onPlay first, then auto-hide so consumers don't have to call
-    // hideMenu(id) themselves in every play handler
     const playFn = () =>
     {
         if (cfg.onPlay) cfg.onPlay();
         hideMenu(cfg.id);
     };
+
+    const bestId = 'bestLabel';
+    const fmtBest = cfg.formatBest || (n => 'Best: ' + n);
+
+    const itemsBefore = cfg.showBest
+        ? [...cfg.itemsBefore, {type:'label', id: bestId, text: fmtBest(getBestScore())}]
+        : cfg.itemsBefore;
+
+    // Chain caller-supplied onShow with the Best-label auto-refresh.
+    const onShow = (cfg.showBest || cfg.onShow) ? () => {
+        if (cfg.onShow) cfg.onShow();
+        if (cfg.showBest) {
+            const m = getMenu(cfg.id);
+            const lbl = m && m.getItem(bestId);
+            if (lbl) lbl.setLabel(fmtBest(getBestScore()));
+        }
+    } : null;
 
     const menu = createMenu({
         id:           cfg.id,
@@ -387,10 +404,10 @@ function createTitleMenu(config)
         subtitle:     cfg.subtitle,
         dismissable:  false,
         onStart:      playFn,
-        onShow:       cfg.onShow,
+        onShow,
         onHide:       cfg.onHide,
         items: [
-            ...cfg.itemsBefore,
+            ...itemsBefore,
             {type:'button', id:'play', label: cfg.playLabel, onClick: playFn},
             ...cfg.items,
         ],
