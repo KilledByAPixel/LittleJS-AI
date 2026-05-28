@@ -482,15 +482,21 @@ function gameRender()
 
             if (isFlag)
             {
-                // simple flag: triangle + pole
-                drawLine(pos.add(vec2(-.2,-.25)), pos.add(vec2(-.2,.25)), .08, hsl(.08,.7,.55));
-                // drawPoly API can vary; draw a triangle using drawLine instead
-                const p0 = pos.add(vec2(-.2,.15));
-                const p1 = pos.add(vec2(.25,0));
-                const p2 = pos.add(vec2(-.2,-.2));
-                drawLine(p0, p1, .08, hsl(0,.75,.55));
-                drawLine(p1, p2, .08, hsl(0,.75,.55));
-                drawLine(p2, p0, .08, hsl(0,.75,.55));
+                // Classic minesweeper flag: black pole + base, filled red pennant.
+                const poleX = -.12;
+                const dark  = hsl(0,0,.08);
+                const red   = hsl(.01,.85,.55);
+                // pole
+                drawLine(pos.add(vec2(poleX,-.3)), pos.add(vec2(poleX,.32)), .07, dark);
+                // base (small black trapezoid drawn as a poly so it has a tapered top)
+                drawPoly([
+                    vec2(-.28,-.32), vec2(.28,-.32),
+                    vec2(.16,-.22),  vec2(-.16,-.22),
+                ], dark, 0, dark, pos);
+                // pennant — filled right-triangle pointing right off the pole top
+                drawPoly([
+                    vec2(poleX,.32), vec2(.28,.14), vec2(poleX,-.04),
+                ], red, .04, hsl(0,.6,.25), pos);
             }
         }
         else
