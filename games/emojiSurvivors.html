@@ -95,7 +95,7 @@ class Player extends EngineObject
         this.invulnTimer = 0;
         // multipliers populated by recomputeMultipliers() — passives mutate these
         this.dmgMult        = 1;
-        this.cooldownMult   = 1;
+        this.fireRateMult   = 1;
         this.areaMult       = 1;
         this.projSpeedMult  = 1;
         this.magnetMult     = 1;
@@ -173,10 +173,8 @@ const ENEMY_TYPES = [
                                       splitInto: 'ant', splitCount: 3},
     {key:'duck',    sprite:'duck',    hp: 2,  dmg: 6,  speed: 2.2, xpDrop: 1, size: .85},
     {key:'ghost',   sprite:'ghost',   hp: 3,  dmg: 8,  speed: 1.6, xpDrop: 1, size: .9},
-    {key:'fireImp', sprite:'fireImp', hp: 4,  dmg: 8,  speed: 1.6, xpDrop: 2, size: .85,
-                                      weakness: 'water'},
-    {key:'iceImp',  sprite:'iceImp',  hp: 4,  dmg: 8,  speed: 1.2, xpDrop: 2, size: .85,
-                                      weakness: 'fire'},
+    {key:'fireImp', sprite:'fireImp', hp: 4,  dmg: 8,  speed: 1.6, xpDrop: 2, size: .85},
+    {key:'iceImp',  sprite:'iceImp',  hp: 4,  dmg: 8,  speed: 1.2, xpDrop: 2, size: .85},
 ];
 
 // Elite variants — color-coded by additive glow + stat multipliers.
@@ -272,17 +270,25 @@ class Chest extends EngineObject
         else
         {
             // fallback — grant 3 random upgrades like a triple level-up
+            let applied = 0;
             for (let i = 0; i < 3; ++i)
             {
                 const choices = buildUpgradeChoices();
                 if (!choices.length) break;
                 choices[randInt(choices.length)].apply();
+                ++applied;
             }
-            if (typeof showMenuToast === 'function')
+            if (applied === 0)
+            {
+                // fully maxed build — fall through to the consolation prize
+                grantMaxBuildReward();
+            }
+            else if (typeof showMenuToast === 'function')
             {
                 showMenuToast({icon: '🎁', title: 'Chest!',
-                               text: '+3 upgrades', duration: 2.5,
-                               position: 'bottom-right'});
+                               text: '+' + applied + ' upgrade' +
+                                     (applied === 1 ? '' : 's'),
+                               duration: 2.5, position: 'bottom-right'});
             }
         }
         // fireworks burst — radial chainFlashes for the reward moment
@@ -592,10 +598,8 @@ class Enemy extends EngineObject
         super.destroy();
     }
 
-    takeDamage(amount, element)
+    takeDamage(amount)
     {
-        if (element && element === this.type.weakness)
-            amount *= 2;
         this.hp -= amount;
         this.hitFlashTimer = .08;
         // throttle damage numbers — multiple weapons hitting the same enemy
@@ -611,7 +615,7 @@ class Enemy extends EngineObject
 
 class Projectile extends EngineObject
 {
-    constructor(pos, dir, speed, damage, lifetime, sprite, piercing = false, onHit = null, element = null)
+    constructor(pos, dir, speed, damage, lifetime, sprite, piercing = false, onHit = null)
     {
         super(pos, vec2(.6), sprite);
         this.velocity = dir.normalize(speed / 60);
@@ -619,7 +623,6 @@ class Projectile extends EngineObject
         this.lifetime = lifetime;
         this.piercing = piercing;
         this.onHit    = onHit;
-        this.element  = element;
         this.hitSet   = new Set();
         this.damping = 1;
         this.friction = 1;
@@ -650,7 +653,7 @@ class Projectile extends EngineObject
             if (this.hitSet.has(e)) continue;
             if (isOverlapping(this.pos, this.size, e.pos, e.size))
             {
-                e.takeDamage(this.damage, this.element);
+                e.takeDamage(this.damage);
                 if (this.onHit) this.onHit(e);
                 this.hitSet.add(e);
                 if (!this.piercing) { this.destroy(); return; }
@@ -707,7 +710,8 @@ class EnemyProjectile extends EngineObject
         }
 
         // player contact — respects invuln, same gate as Enemy contact
-        if (player.invulnTimer <= 0 &&
+        // (also skipped in AI test mode so the AI never bleeds to wizard bolts)
+        if (player.invulnTimer <= 0 && !playerAI &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.damage;
@@ -788,7 +792,7 @@ class StarTossWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.4 / player.cooldownMult;
+        this.cooldown = 1.4 / player.fireRateMult;
 
         const target = nearestEnemy(player.pos, 14 * player.areaMult);
         if (!target) return;
@@ -988,7 +992,7 @@ class FishOrbitWeapon
 
     update()
     {
-        this.angle += 4 * player.cooldownMult / 60;  // faster spin with Stopwatch
+        this.angle += 4 * player.fireRateMult / 60;  // faster spin with Stopwatch
 
         const radius = 2.5 * player.areaMult;
         const orbSize = .7 * player.areaMult;
@@ -1043,7 +1047,7 @@ class HeartDrainWeapon
 
     update()
     {
-        this.angle += 3 * player.cooldownMult / 60;
+        this.angle += 3 * player.fireRateMult / 60;
 
         const radius = 2.0 * player.areaMult;
         const heartSize = .65 * player.areaMult;
@@ -1082,7 +1086,7 @@ class HeartDrainWeapon
         {
             const a = this.angle + i * 2 * PI / count;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(heartSize), sprites.heart, WHITE, a + time);
+            drawTile(pos, vec2(heartSize), sprites.heartDrain, WHITE, a + time);
         }
     }
 }
@@ -1169,7 +1173,7 @@ class ChainLightningWeapon
         const range = 8 * player.areaMult;
         const first = nearestEnemy(player.pos, range);
         if (!first) return;
-        this.cooldown = max(.4, 2.0 - this.level * .2) / player.cooldownMult;
+        this.cooldown = max(.4, 2.0 - this.level * .2) / player.fireRateMult;
 
         const hops = this.level + 1;
         const chainRange = 5 * player.areaMult;
@@ -1226,10 +1230,10 @@ class FireballWeapon
         new Projectile(player.pos.copy(), dir,
                        12 * player.projSpeedMult,
                        this.damage() * player.dmgMult,
-                       1.2, sprites.fireball, false, null, 'fire');
+                       1.2, sprites.fireball);
         // Lv1 = .7s between shots, Lv5 = .14s. Faster than VS's whip but
         // we don't auto-aim a swing — single projectile per shot.
-        this.cooldown = (.7 / this.level) / player.cooldownMult;
+        this.cooldown = (.7 / this.level) / player.fireRateMult;
     }
 }
 
@@ -1264,7 +1268,7 @@ class PizzaTossWeapon
 
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.1 / player.cooldownMult;
+        this.cooldown = 1.1 / player.fireRateMult;
 
         // fan-shot — one slice at level 1, three at level 3, five at level 5
         const slices = 1 + (this.level - 1) + player.extraProjectiles;
@@ -1294,7 +1298,7 @@ class IceCubeWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.5 / player.cooldownMult;
+        this.cooldown = 1.5 / player.fireRateMult;
 
         // fire `level` ice cubes at random enemies within range; freezes on hit
         const range = 11 * player.areaMult;
@@ -1308,7 +1312,7 @@ class IceCubeWeapon
             candidates.splice(idx, 1);
             const dir = target.pos.subtract(player.pos);
             new Projectile(player.pos.copy(), dir, speed, dmg, 1.0,
-                sprites.ice, false, e => { e.frozenTimer = 1.5; }, 'water');
+                sprites.ice, false, e => { e.frozenTimer = 1.5; });
         }
     }
 }
@@ -1324,7 +1328,7 @@ class BombWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 2.6 / player.cooldownMult;
+        this.cooldown = 2.6 / player.fireRateMult;
         new Bomb(player.pos.copy(),
                  this.damage() * player.dmgMult,
                  this.radius() * player.areaMult);
@@ -1346,7 +1350,7 @@ class WaterSplashWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = 1.1 / player.cooldownMult;
+        this.cooldown = 1.1 / player.fireRateMult;
 
         const range = 9 * player.areaMult;
         const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
@@ -1357,7 +1361,7 @@ class WaterSplashWeapon
             const idx = randInt(candidates.length);
             const target = candidates[idx];
             candidates.splice(idx, 1);
-            target.takeDamage(dmg, 'water');
+            target.takeDamage(dmg);
             target.slowTimer = 2.0;
             // visual splash line via chainFlashes (color-tinted blue)
             chainFlashes.push({
@@ -1392,7 +1396,7 @@ class SpicyPizzaWeapon
             this.facing = player.velocity.normalize();
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = .9 / player.cooldownMult;
+        this.cooldown = .9 / player.fireRateMult;
 
         // wider, denser fan that burns on hit
         const slices = 7 + player.extraProjectiles, spread = .55;
@@ -1409,8 +1413,7 @@ class SpicyPizzaWeapon
                 e => {
                     e.burnTimer = 1.5;
                     if (6 > e.burnDps) e.burnDps = 6;
-                },
-                'fire');
+                });
             proj.angleVelocity = pizzaSpinRate * 1.4;
         }
     }
@@ -1428,7 +1431,7 @@ class FishStormWeapon
 
     update()
     {
-        this.angle += 6 * player.cooldownMult / 60;
+        this.angle += 6 * player.fireRateMult / 60;
         const radius = 4 * player.areaMult;
         const orbSize = 1.1 * player.areaMult;
         const dmg = this.damage() * player.dmgMult;
@@ -1461,7 +1464,7 @@ class FishStormWeapon
         {
             const a = this.angle + i * 2 * PI / orbits;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(orbSize), sprites.fish, WHITE, a + time);
+            drawTile(pos, vec2(orbSize), sprites.shark, WHITE, a + time);
         }
     }
 }
@@ -1480,7 +1483,7 @@ class ThunderstormWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = .5 / player.cooldownMult;
+        this.cooldown = .5 / player.fireRateMult;
 
         // strike up to 5 random enemies in a wide radius — no chain, all
         // simultaneous, like the screen got hit by a sudden storm
@@ -1525,12 +1528,12 @@ class BlizzardWeapon
         this.cooldown -= 1 / 60;
         if (this.cooldown <= 0)
         {
-            this.cooldown = 1.0 / player.cooldownMult;
+            this.cooldown = 1.0 / player.fireRateMult;
             const dmg = this.damage() * player.dmgMult;
             for (const e of enemies)
             {
                 if (e.pos.distance(player.pos) < auraRadius)
-                    e.takeDamage(dmg, 'water');
+                    e.takeDamage(dmg);
             }
         }
     }
@@ -1565,7 +1568,7 @@ class HeartSpiralWeapon
 
     update()
     {
-        this.angle += 4 * player.cooldownMult / 60;
+        this.angle += 4 * player.fireRateMult / 60;
         const radius = 3.5 * player.areaMult;
         const heartSize = .9 * player.areaMult;
         const dmg = this.damage() * player.dmgMult;
@@ -1600,7 +1603,7 @@ class HeartSpiralWeapon
         {
             const a = this.angle + i * 2 * PI / orbits;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(heartSize), sprites.heart, WHITE, a + time);
+            drawTile(pos, vec2(heartSize), sprites.heartSpiral, WHITE, a + time);
         }
     }
 }
@@ -1619,7 +1622,7 @@ class StarStormWeapon
     {
         this.cooldown -= 1 / 60;
         if (this.cooldown > 0) return;
-        this.cooldown = .7 / player.cooldownMult;
+        this.cooldown = .7 / player.fireRateMult;
 
         const target = nearestEnemy(player.pos, 14 * player.areaMult);
         if (!target) return;
@@ -1635,25 +1638,282 @@ class StarStormWeapon
             const ang = baseAng + lerp(-spread, spread, t);
             const d = vec2().setAngle(ang, 1);
             const proj = new Projectile(player.pos.copy(), d, speed, dmg,
-                .9, sprites.starToss, true);
+                .9, sprites.star, true);
             proj.angleVelocity = 8;
         }
+    }
+}
+
+// Comet — homing meteor with AOE on impact. Re-acquires target if its
+// original prey dies before contact so it never wastes a shot.
+class CometProjectile extends EngineObject
+{
+    constructor(pos, target, damage)
+    {
+        super(pos, vec2(.8), sprites.comet);
+        this.target = target;
+        this.damage = damage;
+        this.life = 2.5;
+        this.damping = 1;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.angleVelocity = 4;
+        this.setCollision(false, false, false, false);
+        this.speedPerFrame = 18 * player.projSpeedMult / 60;
+    }
+
+    update()
+    {
+        super.update();
+        this.renderOrder = -this.pos.y;
+        this.life -= 1 / 60;
+        if (this.life <= 0) { this.destroy(); return; }
+
+        if (!this.target || this.target.destroyed)
+            this.target = nearestEnemy(this.pos, 25);
+        if (!this.target) return;
+
+        const toTarget = this.target.pos.subtract(this.pos);
+        if (toTarget.length() < 1.0)
+        {
+            const aoeR = 2.5 * player.areaMult;
+            for (const e of enemies)
+                if (e.pos.distance(this.pos) < aoeR)
+                    e.takeDamage(this.damage);
+            const rays = 8;
+            const flameColor = new Color(1, .55, .2, 1);
+            for (let i = 0; i < rays; ++i)
+            {
+                const a = i * 2 * PI / rays;
+                const tip = this.pos.add(vec2().setAngle(a, aoeR));
+                chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .25,
+                                   color: flameColor});
+            }
+            this.destroy();
+            return;
+        }
+        this.velocity = toTarget.normalize(this.speedPerFrame);
+    }
+}
+
+class CometWeapon
+{
+    constructor()
+    {
+        this.level = 5; this.evolved = true; this.name = 'Comet';
+        this.cooldown = 0;
+    }
+    levelUp() {}
+    damage() { return 12; }
+
+    update()
+    {
+        this.cooldown -= 1 / 60;
+        if (this.cooldown > 0) return;
+        this.cooldown = .6 / player.fireRateMult;
+
+        // 3 nearest enemies — pick distinct targets so the volley spreads
+        const range = 20 * player.areaMult;
+        const used = new Set();
+        const targets = [];
+        for (let i = 0; i < 3; ++i)
+        {
+            let best = null, bestD = range;
+            for (const e of enemies)
+            {
+                if (used.has(e)) continue;
+                const d = player.pos.distance(e.pos);
+                if (d < bestD) { best = e; bestD = d; }
+            }
+            if (!best) break;
+            used.add(best);
+            targets.push(best);
+        }
+        if (targets.length === 0) return;
+        const dmg = this.damage() * player.dmgMult;
+        for (const t of targets)
+            new CometProjectile(player.pos.copy(), t, dmg);
+    }
+}
+
+// Nuke — bigger Bomb that drops a lingering damage field after blast.
+// NukeField is a ground decal that ticks 4x/sec for 2s within its radius.
+class NukeField extends EngineObject
+{
+    constructor(pos, damagePerTick, radius)
+    {
+        super(pos, vec2(radius * 2), sprites.circle);
+        this.damagePerTick = damagePerTick;
+        this.fieldRadius = radius;
+        this.life = 2.0;
+        this.lifeMax = 2.0;
+        this.tickTimer = 0;
+        this.damping = 1;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.setCollision(false, false, false, false);
+        this.velocity = vec2();
+    }
+
+    update()
+    {
+        super.update();
+        // sit below entities so it reads as a ground hazard
+        this.renderOrder = -this.pos.y - 500;
+        this.life -= 1 / 60;
+        if (this.life <= 0) { this.destroy(); return; }
+        this.tickTimer -= 1 / 60;
+        if (this.tickTimer <= 0)
+        {
+            this.tickTimer = .25;
+            for (const e of enemies)
+                if (e.pos.distance(this.pos) < this.fieldRadius)
+                    e.takeDamage(this.damagePerTick);
+        }
+    }
+
+    render()
+    {
+        const t = this.life / this.lifeMax;
+        const pulse = .5 + .5 * sin(time * 6);
+        const alpha = t * (.35 + .25 * pulse);
+        drawTile(this.pos, this.size, sprites.circle,
+                 new Color(.55, .95, .25, alpha));
+    }
+}
+
+class NukeBomb extends EngineObject
+{
+    constructor(pos, damage, radius)
+    {
+        super(pos, vec2(1.4), sprites.nuke);
+        this.damageAmount = damage;
+        this.radius = radius;
+        this.fuse = 1.2;
+        this.damping = 1;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.setCollision(false, false, false, false);
+        this.velocity = vec2();
+        this.additive = null;
+    }
+
+    update()
+    {
+        super.update();
+        this.renderOrder = -this.pos.y;
+        this.fuse -= 1 / 60;
+        const pulseRate = lerp(20, 6, clamp(this.fuse / 1.2, 0, 1));
+        const pulse = sin(time * pulseRate) * .5 + .5;
+        this.additive = new Color(.25 * pulse, .65 * pulse, .15 * pulse, 0);
+
+        if (this.fuse <= 0)
+        {
+            for (const e of enemies)
+                if (e.pos.distance(this.pos) < this.radius)
+                    e.takeDamage(this.damageAmount);
+            const rays = 24;
+            const greenGlow = new Color(.7, 1, .3, 1);
+            for (let i = 0; i < rays; ++i)
+            {
+                const a = i * 2 * PI / rays;
+                const tip = this.pos.add(vec2().setAngle(a, this.radius));
+                chainFlashes.push({a: this.pos.copy(), b: tip, t: time + .4,
+                                   color: greenGlow});
+            }
+            // lingering field — half blast damage spread across 8 ticks
+            new NukeField(this.pos.copy(), this.damageAmount / 16, this.radius);
+            this.destroy();
+        }
+    }
+
+    render()
+    {
+        drawEmoji(this.pos, this.size, sprites.nuke, null, this.additive);
+    }
+}
+
+class NukeWeapon
+{
+    constructor()
+    {
+        this.level = 5; this.evolved = true; this.name = 'Nuke';
+        this.cooldown = 0;
+    }
+    levelUp() {}
+    damage() { return 40; }
+    radius() { return 6.0; }
+
+    update()
+    {
+        this.cooldown -= 1 / 60;
+        if (this.cooldown > 0) return;
+        this.cooldown = 2.4 / player.fireRateMult;
+        new NukeBomb(player.pos.copy(),
+                     this.damage() * player.dmgMult,
+                     this.radius() * player.areaMult);
+    }
+}
+
+// Tsunami — wide piercing wave that slows everything it touches.
+class TsunamiWeapon
+{
+    constructor()
+    {
+        this.level = 5; this.evolved = true; this.name = 'Tsunami';
+        this.cooldown = 0; this.facing = vec2(1, 0);
+    }
+    levelUp() {}
+    damage() { return 10; }
+
+    update()
+    {
+        if (player.velocity.length() > .005)
+            this.facing = player.velocity.normalize();
+        else
+        {
+            const target = nearestEnemy(player.pos, 30);
+            if (target)
+                this.facing = target.pos.subtract(player.pos).normalize();
+        }
+        this.cooldown -= 1 / 60;
+        if (this.cooldown > 0) return;
+        this.cooldown = 1.4 / player.fireRateMult;
+
+        const dmg = this.damage() * player.dmgMult;
+        const speed = 10 * player.projSpeedMult;
+        const proj = new Projectile(player.pos.copy(), this.facing, speed, dmg,
+            2.5, sprites.tsunami, true,
+            e => { e.slowTimer = 2.5; });
+        proj.size = vec2(2.6 * player.areaMult, 1.8 * player.areaMult);
+        // rotate the upright wave glyph so its crest faces travel direction
+        proj.angle = this.facing.angle() - PI / 2;
+        proj.angleVelocity = 0;
     }
 }
 
 const EVOLUTIONS = {
     PizzaToss:      {passive: 'Flex',      name: 'Spicy Pizza',  emoji: '🌶️',
                      ctor: () => new SpicyPizzaWeapon()},
-    FishOrbit:      {passive: 'Magnifier', name: 'Fish Storm',   emoji: '🐟',
+    FishOrbit:      {passive: 'Rocket',    name: 'Fish Storm',   emoji: '🦈',
                      ctor: () => new FishStormWeapon()},
     ChainLightning: {passive: 'Stopwatch', name: 'Thunderstorm', emoji: '🌩️',
                      ctor: () => new ThunderstormWeapon()},
-    IceCube:        {passive: 'Stopwatch', name: 'Blizzard',     emoji: '❄️',
+    IceCube:        {passive: 'Magnifier', name: 'Blizzard',     emoji: '❄️',
                      ctor: () => new BlizzardWeapon()},
     HeartDrain:     {passive: 'Snack',     name: 'Heart Spiral', emoji: '💖',
                      ctor: () => new HeartSpiralWeapon()},
-    StarToss:       {passive: 'Rocket',    name: 'Star Storm',   emoji: '⭐',
+    StarToss:       {passive: 'Plus One',  name: 'Star Storm',   emoji: '🌟',
                      ctor: () => new StarStormWeapon()},
+    Fireball:       {passive: 'Sneaker',   name: 'Comet',        emoji: '☄️',
+                     ctor: () => new CometWeapon()},
+    Bomb:           {passive: 'Magnet',    name: 'Nuke',         emoji: '☢️',
+                     ctor: () => new NukeWeapon()},
+    WaterSplash:    {passive: 'Heart',     name: 'Tsunami',      emoji: '🌊',
+                     ctor: () => new TsunamiWeapon()},
 };
 
 function findAvailableEvolution()
@@ -1745,11 +2005,11 @@ class Passive
 }
 
 class FlexPassive       extends Passive { constructor(){ super('Flex',        '💪'); } apply(){ player.dmgMult        *= 1 + this.level * .18; } }
-class StopwatchPassive  extends Passive { constructor(){ super('Stopwatch',   '⏱️'); } apply(){ player.cooldownMult   *= 1 + this.level * .14; } }
+class StopwatchPassive  extends Passive { constructor(){ super('Stopwatch',   '⏱️'); } apply(){ player.fireRateMult   *= 1 + this.level * .14; } }
 class MagnifierPassive  extends Passive { constructor(){ super('Magnifier',   '🔍'); } apply(){ player.areaMult       *= 1 + this.level * .12; } }
 class RocketPassive     extends Passive { constructor(){ super('Rocket',      '🚀'); } apply(){ player.projSpeedMult  *= 1 + this.level * .14; } }
 class MagnetPassive     extends Passive { constructor(){ super('Magnet',      '🧲'); } apply(){ player.magnetMult     *= 1 + this.level * .30; } }
-class HeartPassive      extends Passive { constructor(){ super('Heart',       '❤️'); } apply(){ player.maxHpMult      *= 1 + this.level * .20; } }
+class HeartPassive      extends Passive { constructor(){ super('Heart',       '🫀'); } apply(){ player.maxHpMult      *= 1 + this.level * .20; } }
 class SneakerPassive    extends Passive { constructor(){ super('Sneaker',     '👟'); } apply(){ player.moveSpeedMult  *= 1 + this.level * .10; } }
 class SproutPassive     extends Passive { constructor(){ super('Sprout',      '🌱'); } apply(){ player.xpGainMult     *= 1 + this.level * .12; } }
 class PlusOnePassive    extends Passive { constructor(){ super('Plus One',    '➕'); } apply(){ player.extraProjectiles += this.level; } }
@@ -1776,7 +2036,7 @@ function recomputeMultipliers()
 {
     if (!player) return;
     const prevMaxHp = player.maxHp;
-    player.dmgMult = player.cooldownMult = player.areaMult = 1;
+    player.dmgMult = player.fireRateMult = player.areaMult = 1;
     player.projSpeedMult = player.magnetMult = 1;
     player.maxHpMult = player.moveSpeedMult = player.xpGainMult = 1;
     player.extraProjectiles = 0;
@@ -1792,7 +2052,7 @@ function recomputeMultipliers()
     player.dmgMult       *= 1 + powerUps.might    * .05;
     player.maxHpMult     *= 1 + powerUps.heart    * .10;
     player.moveSpeedMult *= 1 + powerUps.speed    * .05;
-    player.cooldownMult  *= 1 + powerUps.cooldown * .05;
+    player.fireRateMult  *= 1 + powerUps.cooldown * .05;
     player.magnetMult    *= 1 + powerUps.magnet   * .20;
     player.xpGainMult    *= 1 + powerUps.growth   * .08;
     // mystery-pickup temporary damage boost (decays in Player.update)
@@ -1965,7 +2225,7 @@ const HEROES = [
         spriteKey:'heroCat',    stats:{moveSpeedMult: 1.2, maxHpMult: .85},
         blurb:'Quick on its paws, fragile'},
     {key:'bot',    emoji:'🤖', name:'Bot',     weapon:'ChainLightning',
-        spriteKey:'heroBot',    stats:{cooldownMult: 1.15, projSpeedMult: 1.15},
+        spriteKey:'heroBot',    stats:{fireRateMult: 1.15, projSpeedMult: 1.15},
         blurb:'Fires fast, projectiles fly fast'},
 ];
 
@@ -2023,7 +2283,9 @@ function startRun(hero)
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
             obj instanceof Pickup || obj instanceof Bomb ||
-            obj instanceof Chest || obj instanceof StarToss)
+            obj instanceof Chest || obj instanceof StarToss ||
+            obj instanceof CometProjectile || obj instanceof NukeBomb ||
+            obj instanceof NukeField)
             obj.destroy();
     }
     chainFlashes.length = 0;
@@ -2249,6 +2511,14 @@ async function gameInit()
     sprites.evilWizard  = drawToTexture(37, paintEmoji('🧙'), 'an evil wizard');
     sprites.megaSnake   = drawToTexture(38, paintEmoji('🐍'), 'a large green snake');
     sprites.ghost       = drawToTexture(39, paintEmoji('👻'), 'a pale ghost');
+
+    // weapon glyphs distinct from the base/pickup forms
+    sprites.heartDrain  = drawToTexture(40, paintEmoji('💞'), 'revolving pink hearts');
+    sprites.shark       = drawToTexture(41, paintEmoji('🦈'), 'a grey shark');
+    sprites.comet       = drawToTexture(42, paintEmoji('☄️'), 'a fiery comet');
+    sprites.nuke        = drawToTexture(43, paintEmoji('☢️'), 'a radioactive trefoil');
+    sprites.tsunami     = drawToTexture(44, paintEmoji('🌊'), 'a cresting blue wave');
+    sprites.heartSpiral = drawToTexture(45, paintEmoji('💖'), 'a sparkling pink heart');
 
     // ground / decor 32-35 — trees scattered across the arena, mountains line the edges
     sprites.tree1     = drawToTexture(32, paintEmoji('🌳'), 'a deciduous tree');
@@ -2503,13 +2773,45 @@ function emojiForWeapon(name)
     if (name === 'Bomb')           return '💣';
     if (name === 'WaterSplash')    return '💧';
     if (name === 'StarToss')       return '⭐';
-    if (name === 'HeartDrain')     return '❤️';
+    if (name === 'HeartDrain')     return '💞';
     return '?';
+}
+
+// Fan weapons — the only ones Plus One affects. Used to gate Plus One offers
+// so a player with no fan weapon never gets a dead-pick option.
+const FAN_WEAPONS = new Set(['PizzaToss', 'SpicyPizza', 'StarToss', 'StarStorm']);
+
+function ownsFanWeapon()
+{
+    if (!player || !player.weapons) return false;
+    for (const w of player.weapons)
+        if (FAN_WEAPONS.has(w.constructor.name.replace(/Weapon$/, '')))
+            return true;
+    return false;
+}
+
+// Fired when no upgrade choice exists — keeps late-game level-ups and
+// recipe-less chests from feeling dead. Heal 15 HP + 3 coins is small
+// but visible.
+function grantMaxBuildReward()
+{
+    if (!player) return;
+    player.hp = min(player.maxHp, player.hp + 15);
+    coinsRun += 3;
+    coins    += 3;
+    saveMetaState();
+    if (typeof showMenuToast === 'function')
+    {
+        showMenuToast({icon: '🎁', title: 'MAX BUILD',
+                       text: '+15 HP   +3💰',
+                       duration: 2.5, position: 'bottom-right'});
+    }
 }
 
 function buildUpgradeChoices()
 {
     const choices = [];
+    const hasFan = ownsFanWeapon();
 
     // Level-up existing weapons that aren't capped
     for (const w of player.weapons)
@@ -2538,16 +2840,16 @@ function buildUpgradeChoices()
         }
     }
 
-    // Level-up existing passives that aren't capped
+    // Level-up existing passives that aren't capped. Plus One is suppressed
+    // when no fan weapon is owned (it only affects fan-shot weapons).
     for (const p of player.passives)
     {
-        if (p.level < 5)
-        {
-            choices.push({
-                label: p.emoji + ' ' + p.name + ' → Lv ' + (p.level + 1),
-                apply: () => { p.levelUp(); recomputeMultipliers(); },
-            });
-        }
+        if (p.level >= 5) continue;
+        if (p.name === 'Plus One' && !hasFan) continue;
+        choices.push({
+            label: p.emoji + ' ' + p.name + ' → Lv ' + (p.level + 1),
+            apply: () => { p.levelUp(); recomputeMultipliers(); },
+        });
     }
     // Unlock new passives (cap at 5 owned)
     if (player.passives.length < 5)
@@ -2556,6 +2858,7 @@ function buildUpgradeChoices()
         for (const name of ALL_PASSIVES)
         {
             if (haveP.has(name)) continue;
+            if (name === 'Plus One' && !hasFan) continue;
             const proto = makePassiveByName(name);
             choices.push({
                 label: proto.emoji + ' Unlock ' + proto.name + ' (Lv 1)',
@@ -2580,6 +2883,16 @@ function buildUpgradeChoices()
 function showLevelUpMenu()
 {
     const choices = buildUpgradeChoices();
+    // Max build — nothing useful to offer. Grant the consolation reward
+    // and keep draining queued level-ups so the player isn't stuck.
+    if (choices.length === 0)
+    {
+        grantMaxBuildReward();
+        player.pendingLevelUps--;
+        if (player.pendingLevelUps > 0)
+            requestAnimationFrame(showLevelUpMenu);
+        return;
+    }
     const existing = getMenu('levelup');
     if (existing) existing.destroy();
 
@@ -2635,7 +2948,9 @@ function goToTitle()
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
             obj instanceof Pickup || obj instanceof Bomb ||
-            obj instanceof Chest || obj instanceof StarToss)
+            obj instanceof Chest || obj instanceof StarToss ||
+            obj instanceof CometProjectile || obj instanceof NukeBomb ||
+            obj instanceof NukeField)
             obj.destroy();
     }
     chainFlashes.length = 0;
@@ -2724,12 +3039,13 @@ function gameUpdate()
     {
         if (playerAI)
         {
-            // pick a random offered choice for each queued level-up
+            // pick a random offered choice for each queued level-up;
+            // max-build queues drain into the consolation reward.
             while (player.pendingLevelUps > 0)
             {
                 const choices = buildUpgradeChoices();
-                if (choices.length === 0) { player.pendingLevelUps = 0; break; }
-                choices[randInt(choices.length)].apply();
+                if (choices.length === 0) grantMaxBuildReward();
+                else choices[randInt(choices.length)].apply();
                 player.pendingLevelUps--;
             }
         }
