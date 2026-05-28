@@ -1232,7 +1232,7 @@ class FishOrbitWeapon
         {
             const a = this.angle + i * 2 * PI / orbCount;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(orbSize), sprites.fish, WHITE, a + time);
+            drawTile(pos, vec2(orbSize), sprites.fish, WHITE, a + 2*time);
         }
     }
 }
@@ -1291,7 +1291,7 @@ class HeartDrainWeapon
         {
             const a = this.angle + i * 2 * PI / count;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(heartSize), sprites.heartDrain, WHITE, a + time);
+            drawTile(pos, vec2(heartSize), sprites.heartDrain, WHITE, a + 2*time);
         }
     }
 }
@@ -1672,7 +1672,7 @@ class FishStormWeapon
         {
             const a = this.angle + i * 2 * PI / orbits;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(orbSize), sprites.shark, WHITE, a + time);
+            drawTile(pos, vec2(orbSize), sprites.shark, WHITE, a + 2*time);
         }
     }
 }
@@ -1811,7 +1811,7 @@ class HeartSpiralWeapon
         {
             const a = this.angle + i * 2 * PI / orbits;
             const pos = player.pos.add(vec2().setAngle(a, radius));
-            drawTile(pos, vec2(heartSize), sprites.heartSpiral, WHITE, a + time);
+            drawTile(pos, vec2(heartSize), sprites.heartSpiral, WHITE, a + 2*time);
         }
     }
 }
