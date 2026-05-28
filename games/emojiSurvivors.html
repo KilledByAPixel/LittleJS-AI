@@ -834,6 +834,7 @@ class Projectile extends EngineObject
         this.velocity = dir.normalize(speed / 60);
         this.damage   = damage;
         this.lifetime = lifetime;
+        this.lifetimeMax = lifetime;   // kept so render can fade over last 10%
         this.piercing = piercing;
         this.onHit    = onHit;
         this.hitSet   = new Set();
@@ -876,6 +877,12 @@ class Projectile extends EngineObject
         // a bit before the visibility check (otherwise a trail's leading
         // ghost would flicker on/off at the edge).
         if (!isOnScreen(this.pos, this.size.scale(3))) return;
+        // Rapid fade-out over the last 10% of life so the projectile (and
+        // its trail) doesn't just vanish. Sprite + every trail ghost get
+        // multiplied by the same fade factor so the streak collapses to
+        // zero in lockstep.
+        const lifeFrac = this.lifetimeMax ? this.lifetime / this.lifetimeMax : 1;
+        const fade = lifeFrac < .2 ? max(0, lifeFrac * 5) : 1;
         // Draw ghost copies of recent positions, oldest (lowest alpha) first,
         // then the current position at full alpha last. Gives a motion trail
         // without needing a particle system. Honors `mirror` so direction-
@@ -885,11 +892,12 @@ class Projectile extends EngineObject
         for (let i = 0; i < n; ++i)
         {
             const g = this.trail[i];
-            const alpha = (i + 1) / (n + 2) * .55;
+            const alpha = (i + 1) / (n + 2) * .55 * fade;
             drawTile(g.pos, this.size, this.tileInfo,
                      new Color(1, 1, 1, alpha), g.angle, mirror);
         }
-        drawTile(this.pos, this.size, this.tileInfo, WHITE, this.angle, mirror);
+        drawTile(this.pos, this.size, this.tileInfo,
+                 new Color(1, 1, 1, fade), this.angle, mirror);
     }
 }
 
@@ -1609,7 +1617,7 @@ class DaggerSlashWeapon
     damage()  { return 5 + this.level * 2; }
     // ~4–5× the dagger's own size (which matches the player). Grows modestly
     // with level so higher-level Smiley reaches a bit farther forward.
-    range()   { return 5.0 + (this.level - 1) * .25; }   // 5.0 → 6.0 wu
+    range()   { return 8.0 + (this.level - 1) * .25; }   // 5.0 → 6.0 wu
 
     update()
     {
