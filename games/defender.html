@@ -50,7 +50,6 @@ let terrain;             // array of terrain heights along world X
 let stars;               // pre-generated starfield: [{x, y, b, s, phase}, ...]
 let baiterTimer;
 let bombFlash;           // 0..1 white flash after smart bomb
-let shakeTimer;
 let spawnTimer;          // staggered spawns at wave start
 let pendingSpawns;       // queue of enemies to spawn
 
@@ -312,7 +311,7 @@ class Player
         spark(this.pos, 40, hsl(.55, .8, .7), .6, 1.2);
         spark(this.pos, 20, hsl(.13, 1, .7), .8, 1.0);
         sfxExplode.play();
-        shakeTimer.set(.4);
+        addScreenShake(.5, .4);
         if (this.holding)
         {
             this.holding.heldBy = null;
@@ -893,7 +892,7 @@ function doSmartBomb()
     smartBombs--;
     bombFlash = 1;
     sfxBomb.play();
-    shakeTimer.set(.5);
+    addScreenShake(.5, .5);
     const halfView = getCameraSize().x / 2 + 2;
     for (const e of enemies)
     {
@@ -1033,7 +1032,6 @@ function startGame()
     particles = [];
     pendingSpawns = [];
     bombFlash = 0;
-    shakeTimer = new Timer();
     spawnTimer = new Timer();
     baiterTimer = new Timer();
     gameOver = false;
@@ -1081,7 +1079,6 @@ function startAttractMode()
     particles = [];
     pendingSpawns = [];
     bombFlash = 0;
-    shakeTimer = new Timer();
     spawnTimer = new Timer();
     baiterTimer = new Timer();
     setPlaying(false);
@@ -1296,11 +1293,10 @@ function gameUpdate()
     }
 
     bombFlash = max(0, bombFlash - .04);
-}
 
-///////////////////////////////////////////////////////////////////////////////
-function gameUpdatePost()
-{
+    // Camera follow — run here (not gameUpdatePost) so the gameFx screen-shake
+    // plugin (which runs between gameUpdate and gameUpdatePost) can nudge
+    // cameraPos without being overwritten.
     let camX, camY;
     if (player)
     {
@@ -1318,13 +1314,6 @@ function gameUpdatePost()
         // Attract mode: slow continuous pan, also unwrapped for parallax
         camX = cameraPos.x + .05;
         camY = 2;
-    }
-    if (shakeTimer.active())
-    {
-        const s = shakeTimer.getPercent();
-        const m = (1 - s) * .5;
-        camX += rand(-m, m);
-        camY += rand(-m, m);
     }
     cameraPos = vec2(camX, camY);
 }

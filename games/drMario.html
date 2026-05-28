@@ -77,12 +77,6 @@ let postClearPause = 0;
 // particles
 let particles = [];
 
-// shake
-let shake = vec2(0,0);
-let shakeTime = 0;
-let shakeDur = .001;
-let shakeKind = 'drop';
-
 // flash for "you can't spawn" style indicators (unused for now)
 const sfxMove     = new SoundGenerator({volume:.22, frequency:520, release:.03, randomness:.02});
 const sfxRotate   = new SoundGenerator({volume:.35, frequency:720, release:.05, slide:-.4, randomness:.03});
@@ -227,7 +221,7 @@ function hardDrop()
     while (tryMove(0,1,true)) drops++;
     if (drops) sfxHardDrop.play();
     score += drops * 2;
-    startShake('drop', .28);
+    addScreenShake(.55, .28);
     lockActive();
 }
 
@@ -448,7 +442,7 @@ function startClearAnim(toClearSet)
 
     if (activeChain > 1) sfxChain.play();
     else sfxClear.play();
-    startShake('chain', .18 + activeChain*.06);
+    addScreenShake(.35, .18 + activeChain*.06);
 }
 
 function stepClearAnim(dt)
@@ -543,33 +537,6 @@ function renderParticles()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
-// Screen shake
-
-function startShake(kind, duration)
-{
-    shakeKind = kind;
-    shakeDur = duration;
-    shakeTime = duration;
-}
-
-function updateShake(dt)
-{
-    if (shakeTime <= 0) { shake = vec2(0,0); return; }
-    shakeTime -= dt;
-    const t = clamp(shakeTime / shakeDur, 0, 1);
-    if (shakeKind === 'drop')
-    {
-        const i = t * t;
-        shake = vec2(rand(-.3,.3)*i, -.55*i);
-    }
-    else
-    {
-        const i = t;
-        shake = vec2(Math.sin(time*60)*.35*i, rand(-.15,.15)*i);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////////
 // New game
 
 function newGame()
@@ -581,8 +548,6 @@ function newGame()
     clearAnim = null;
     postClearPause = 0;
     activeChain = 0;
-    shake = vec2(0,0);
-    shakeTime = 0;
 
     // scaled by level
     const virusTarget = clamp(8 + level*3, 8, GRID_W*Math.floor(GRID_H*.55));
@@ -684,8 +649,10 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
     if (!isPlaying()) return;
 
+    // Reset camera so the gameFx screen-shake plugin (after gameUpdate) can nudge.
+    setCameraPos(vec2(0, 0));
+
     updateParticles(timeDelta);
-    updateShake(timeDelta);
 
     if (keyWasPressed('KeyR'))
         newGame();
@@ -776,8 +743,8 @@ function gameUpdate()
 ///////////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    // camera follows shake for a juicy feel
-    setCameraPos(shake);
+    // cameraPos base is reset to origin at the top of gameUpdate so the gameFx
+    // screen-shake plugin (between gameUpdate and gameUpdatePost) can nudge it.
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

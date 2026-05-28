@@ -71,7 +71,7 @@ let waveSpawnTimer;  // seconds until next bomb in current wave
 let waveStartDelay;  // seconds before first bomb of wave
 let waveClearTimer;  // seconds remaining until next wave starts (0 = not waiting)
 let missFreezeTimer; // brief pause after a miss
-let shakeFrames, shakeAmount;
+let missShakeTimer = 0; // remaining seconds of post-miss shake (gates game-over dialog)
 let waveBannerText, waveBannerTimer;
 
 // Sounds
@@ -79,8 +79,6 @@ let sfxCatch, sfxMiss, sfxFuse, sfxClear, sfxBucketUp, sfxStep;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HELPERS
-
-function startShake(frames, amount) { shakeFrames = frames; shakeAmount = amount; }
 
 // color = [h, s, l] — stored as components so we can re-emit each frame with
 // fading alpha (hsl(...) returns a Color object that doesn't keep its inputs).
@@ -175,7 +173,8 @@ function catchBomb(b) {
 
 function missBomb(missedBomb) {
     lives--;
-    startShake(28, 0.7);
+    addScreenShake(0.7, 28/60);
+    missShakeTimer = 28/60;
     sfxMiss?.play(undefined, 0.95);
     missFreezeTimer = 0.9;
 
@@ -735,7 +734,7 @@ async function gameInit() {
     gameOverShown = false;
     waveSpawnTimer = 0; waveStartDelay = 0; waveClearTimer = 0; missFreezeTimer = 0;
     bombsSpawned = bombsCaught = bombsInWave = 0;
-    shakeFrames = 0; shakeAmount = 0;
+    missShakeTimer = 0;
 
     showMenu('title');
 }
@@ -743,12 +742,17 @@ async function gameInit() {
 function gameUpdate() {
     if (bindPauseKey({ when: () => isPlaying() && lives > 0 })) return;
 
+    // Reset camera each frame so the gameFx screen-shake plugin (which adds
+    // to cameraPos after gameUpdate) can nudge cleanly.
+    setCameraPos(vec2(0, 0));
+
     const dt = 1/60;     // LittleJS fixed-step
     if (waveBannerTimer > 0) waveBannerTimer -= dt;
+    if (missShakeTimer > 0) missShakeTimer = max(0, missShakeTimer - dt);
 
     if (!isPlaying()) {
         // Game over modal surfacing — wait until shake settles.
-        if (lives <= 0 && !gameOverShown && shakeFrames <= 0 && particles.length < 5) {
+        if (lives <= 0 && !gameOverShown && missShakeTimer <= 0 && particles.length < 5) {
             showGameOver();
         }
         // Still tick particles/bomber for visual life on title/attract.
@@ -792,15 +796,8 @@ function gameUpdatePost() {
     // phones, ultrawide, etc.). Field uses ~26w x ~28h of world units
     // (taller side fits bomber's head + sky margin).
     cameraScale = Math.min(mainCanvasSize.x / 26, mainCanvasSize.y / 28);
-
-    let cam = vec2(0, 0);
-    if (shakeFrames > 0) {
-        shakeFrames--;
-        const t = shakeFrames / 28;
-        const a = shakeAmount * t;
-        cam = vec2(rand(-a, a), rand(-a, a));
-    }
-    setCameraPos(cam);
+    // Screen-shake is applied by the gameFx engine plugin (between gameUpdate
+    // and gameUpdatePost); cameraPos base is reset at the top of gameUpdate.
 }
 
 function gameRender() {

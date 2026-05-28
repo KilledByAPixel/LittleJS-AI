@@ -104,17 +104,10 @@ const MAX_SHELLS         = 20;
 let gruntsKilledThisWave = 0;   // arcade: each kill nudges ROBSPD toward RMXSPD for remaining grunts
 let hulkTargetCursor = 0;       // round-robin index into humans[] for hulk target assignment (arcade GTARG)
 
-// JUICE: screen shake (offsets cameraPos before render), flash overlays, wave transitions
-let shakeTimer = 0;
-let shakeMag = 0;
+// JUICE: flash overlays, wave transitions (screen shake via gameFx addScreenShake)
 let whiteFlashTimer = 0;
 let waveClearTimer = 0;       // frames since wave clear (drives the celebration banner)
 let waveStartSweep = 0;       // frames since wave started (drives the perimeter sweep)
-function triggerShake(mag, dur)
-{
-    shakeTimer = max(shakeTimer, dur);
-    shakeMag   = max(shakeMag, mag);
-}
 
 // Background drift particles (filling the dead space outside the arena)
 const driftStars = [];
@@ -823,7 +816,7 @@ class Brain extends KillableEnemy
                 enemies.push(new Prog(this.possessing.pos.copy(), this.possessing.type));
                 burst(this.possessing.pos, 30, rgb(1, .3, .9));
                 sfxReprogram.play(this.possessing.pos);
-                triggerShake(.1, 12);   // brain conversion punch
+                addScreenShake(.1, .2);   // brain conversion punch
                 this.possessing.destroy();
                 this.possessing = null;
             }
@@ -1266,7 +1259,7 @@ class TankShell extends EngineObject
             if (--this.bouncesLeft < 0) { this.destroy(); return; }
             sfxHit.play(this.pos);
             burst(this.pos, 6, rgb(1, .5, .2));
-            triggerShake(.06, 6);   // tiny shake on shell bounce
+            addScreenShake(.06, .1);   // tiny shake on shell bounce
         }
     }
     render()
@@ -2073,7 +2066,7 @@ class Player extends EngineObject
         burst(this.pos, 90, rgb(.4,.9,1));
         ringBurst(this.pos, rgb(.6, 1, 1), 24);
         whiteFlashTimer = 8;
-        triggerShake(.5, 35);
+        addScreenShake(.5, .58);
         this.lives--;
         if (this.lives < 0)
         {
@@ -2336,7 +2329,7 @@ function resetGame()
     enforcerCount = sparkCount = cruiseMissileCount = tankCount = shellCount = 0;
     gruntsKilledThisWave = 0;
     // Reset juice effect timers so they don't leak across sessions
-    shakeTimer = shakeMag = whiteFlashTimer = waveClearTimer = waveStartSweep = warpInHideTimer = 0;
+    whiteFlashTimer = waveClearTimer = waveStartSweep = warpInHideTimer = 0;
     cameraPos = vec2(0);
 
     player = new Player();
@@ -2581,6 +2574,10 @@ function gameUpdate()
     // Keep the arena fitting the canvas as the window resizes
     fitCameraToArena();
 
+    // Reset camera to arena center each frame so the gameFx screen-shake
+    // plugin (which adds to cameraPos after gameUpdate) can nudge cleanly.
+    cameraPos = vec2(0);
+
     // DEBUG: N advances to the next wave — also skips the GET READY pause
     if (isPlaying() && !gameOver && keyWasPressed('KeyN'))
     {
@@ -2680,17 +2677,6 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    // === SCREEN SHAKE === apply offset to cameraPos before drawing
-    if (shakeTimer > 0)
-    {
-        const decay = shakeTimer / 30;
-        const m = shakeMag * decay;
-        cameraPos = vec2(rand(-m, m), rand(-m, m));
-        shakeTimer--;
-        if (shakeTimer === 0) { shakeMag = 0; cameraPos = vec2(0); }
-    }
-    else
-        cameraPos = vec2(0);
 
     drawRect(cameraPos, vec2(200), rgb(.03,.03,.04));
 

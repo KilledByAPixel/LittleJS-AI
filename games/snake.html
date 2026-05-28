@@ -41,9 +41,6 @@ let stepTimer, stepInterval;
 
 // juice
 let particles;       // array of {pos, vel, life, lifeMax, size, color}
-let shakeTimer;      // remaining seconds of screen shake
-let shakeAmp;        // intensity of current shake
-let renderShake;     // applied each frame in render
 let foodPulseTimer;  // ticks up from 0; used to pulse food size
 let scorePopTimer;   // brief score-bump animation
 let growPulseTimer;  // brief snake-grow flash
@@ -123,21 +120,12 @@ function resetGame()
     poison = 0;
 
     particles = [];
-    shakeTimer = 0;
-    shakeAmp = 0;
-    renderShake = vec2(0,0);
     foodPulseTimer = 0;
     scorePopTimer = 0;
     growPulseTimer = 0;
     deathFreezeTimer = 0;
     snakeFlashTimer = 0;
     foodSpawnTimer = .25;
-}
-
-function startScreenShake(amp, time)
-{
-    shakeAmp = max(shakeAmp, amp);
-    shakeTimer = max(shakeTimer, time);
 }
 
 function spawnParticles(worldPos, color, count, speedMin, speedMax, life=.6)
@@ -177,18 +165,8 @@ function renderParticles()
         const t = clamp(p.life / p.lifeMax, 0, 1);
         const c = p.color.copy();
         c.a *= t;
-        drawRect(p.pos.add(renderShake), vec2(p.size * (.6 + .4*t)), c);
+        drawRect(p.pos, vec2(p.size * (.6 + .4*t)), c);
     }
-}
-
-function updateScreenShake(dt)
-{
-    if (shakeTimer <= 0) { renderShake = vec2(0,0); return; }
-    shakeTimer -= dt;
-    const t = max(shakeTimer, 0) / .35;
-    const amp = shakeAmp * t * t;
-    renderShake = vec2(rand(-amp, amp), rand(-amp, amp));
-    if (shakeTimer <= 0) { shakeAmp = 0; renderShake = vec2(0,0); }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,7 +182,7 @@ function die()
     const headWorld = cellToWorld(snake[0]);
     spawnParticles(headWorld, hsl(.33, .9, .6), 26, 4, 11, .8);
     spawnParticles(headWorld, hsl(0,    .9, .6),  8, 2,  6, .55);
-    startScreenShake(.55, .35);
+    addScreenShake(.55, .35);
     deathFreezeTimer = deathFreezeTime;
     snakeFlashTimer = .4;
 
@@ -221,7 +199,7 @@ function eatFood()
     const fp = cellToWorld(food);
     spawnParticles(fp, hsl(.12, 1, .6), 14, 3, 8, .5);
     spawnParticles(fp, hsl(.04, 1, .6),  4, 2, 5, .4);
-    startScreenShake(.10, .12);
+    addScreenShake(.10, .12);
     scorePopTimer  = .35;
     growPulseTimer = .25;
     foodSpawnTimer = .25;
@@ -248,7 +226,7 @@ function hitPoison()
 
     const pp = cellToWorld(poison);
     spawnParticles(pp, hsl(.78, 1, .7), 16, 3, 8, .55);
-    startScreenShake(.20, .18);
+    addScreenShake(.20, .18);
     poison = randEmptyCell();
 }
 
@@ -423,6 +401,10 @@ function gameUpdate()
     // Pause shortcut — only while a run is in progress (otherwise title owns Esc)
     if (bindPauseKey({when: () => isPlaying() && alive})) return;
 
+    // Reset camera to origin each frame so the gameFx screen-shake plugin
+    // (which adds to cameraPos after gameUpdate) can nudge cleanly.
+    cameraPos = vec2(0, 0);
+
     handleInput();
 
     // animation timers
@@ -433,7 +415,6 @@ function gameUpdate()
     if (snakeFlashTimer> 0) snakeFlashTimer-= timeDelta;
 
     updateParticles(timeDelta);
-    updateScreenShake(timeDelta);
 
     if (!alive)
     {
@@ -459,7 +440,8 @@ function gameUpdate()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    cameraPos = vec2(0,0);
+    // cameraPos is reset to origin at the top of gameUpdate so the gameFx
+    // screen-shake plugin (between gameUpdate and gameUpdatePost) can nudge it.
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -468,12 +450,12 @@ function gameRender()
     // background
     drawRectGradient(cameraPos, getCameraSize(), hsl(0,0,.06), hsl(0,0,.12));
 
-    // playfield (with shake offset)
-    const off = renderShake;
+    // playfield — anchored at world origin (cameraPos shake from the gameFx
+    // plugin moves all world-space drawing together).
     const fieldSize = vec2(gridW*cellSize, gridH*cellSize);
-    drawRect(cameraPos.add(off), fieldSize.add(vec2(.6)), hsl(.33,.4,.18));
-    drawRect(cameraPos.add(off), fieldSize.add(vec2(.4)), hsl(0,0,.2));
-    drawRect(cameraPos.add(off), fieldSize, hsl(0,0,.08));
+    drawRect(vec2(0, 0), fieldSize.add(vec2(.6)), hsl(.33,.4,.18));
+    drawRect(vec2(0, 0), fieldSize.add(vec2(.4)), hsl(0,0,.2));
+    drawRect(vec2(0, 0), fieldSize, hsl(0,0,.08));
 
     // subtle grid lines
     {
@@ -481,14 +463,14 @@ function gameRender()
         const halfH = gridH/2;
         const col = hsl(0,0,.2,.30);
         for (let x=-halfW; x<=halfW; ++x)
-            drawLine(vec2(x,-halfH).add(off), vec2(x,halfH).add(off), .03, col);
+            drawLine(vec2(x,-halfH), vec2(x,halfH), .03, col);
         for (let y=-halfH; y<=halfH; ++y)
-            drawLine(vec2(-halfW,y).add(off), vec2(halfW,y).add(off), .03, col);
+            drawLine(vec2(-halfW,y), vec2(halfW,y), .03, col);
     }
 
     // food (pulsing) with grow-in animation
     {
-        const p = cellToWorld(food).add(off);
+        const p = cellToWorld(food);
         const pulse = .75 + Math.sin(foodPulseTimer * 6) * .06;
         const grow = foodSpawnTimer > 0 ? clamp(1 - foodSpawnTimer/.25, 0, 1) : 1;
         const size = pulse * (.4 + .6*grow);
@@ -502,7 +484,7 @@ function gameRender()
     // poison
     if (poison)
     {
-        const p = cellToWorld(poison).add(off);
+        const p = cellToWorld(poison);
         const pulse = .72 + Math.sin(foodPulseTimer * 4 + 1.7) * .05;
         drawCircle(p, pulse + .25, hsl(.78, 1, .55, .20));
         drawCircle(p, pulse,       hsl(.78, 1, .60));
@@ -515,7 +497,7 @@ function gameRender()
     for (let i=snake.length; i--;)
     {
         const c = snake[i];
-        const p = cellToWorld(c).add(off);
+        const p = cellToWorld(c);
         const t = i / max(1, snake.length-1);
 
         let col;

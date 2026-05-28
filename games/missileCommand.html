@@ -80,7 +80,6 @@ let stars = [];
 let shootingStars = [];
 let mountains = [];
 let moonPos = vec2();
-let shakeTime = 0, shakeMag = 0, shakeTimeMax = 1;
 
 // ------------------------------------------------------------
 // Shape generation
@@ -374,19 +373,6 @@ function drawParticles()
   }
 }
 
-// ------------------------------------------------------------
-// Shake
-// ------------------------------------------------------------
-
-function addShake(t, m)
-{
-  if (m * t > shakeMag * shakeTime || t > shakeTime)
-  {
-    shakeTime = Math.max(t, shakeTime);
-    shakeMag = Math.max(m, shakeMag);
-    shakeTimeMax = Math.max(shakeTimeMax, t);
-  }
-}
 
 // ------------------------------------------------------------
 // Game logic
@@ -423,7 +409,6 @@ function newGame()
   particles.length = 0;
   fliers.length = 0;
   flierCooldown = 5;
-  shakeTime = 0; shakeMag = 0; shakeTimeMax = 1;
   tally = null;
 
   score = 0;
@@ -794,7 +779,7 @@ function addExplosion(pos, friendly)
   if (pos.y < groundHeight + 1.5)
     emitGroundDust(pos, 10);
 
-  addShake(friendly ? .15 : .25, friendly ? .08 : .18);
+  addScreenShake(friendly ? .15 : .25, friendly ? .08 : .18);
 
   (friendly ? sBoom : sCityHit) && (friendly ? sBoom : sCityHit).play();
 }
@@ -845,7 +830,7 @@ function resolveEnemyImpact(pos)
       for (let i = 0; i < 8; i++)
         emitDebris(c.pos.add(vec2(rand(-.4,.4), rand(.2, c.shape.mainH))),
                    hsl(.13, .9, .75), 1);
-      addShake(.45, .4);
+      addScreenShake(.45, .4);
       return;
     }
   }
@@ -859,7 +844,7 @@ function resolveEnemyImpact(pos)
       b.flash = .35;
       addExplosion(b.pos, false);
       emitDebris(b.pos, hsl(.5, .25, .55), 18);
-      addShake(.4, .35);
+      addScreenShake(.4, .35);
       return;
     }
   }
@@ -1174,6 +1159,10 @@ function buildMenus()
 
 function gameUpdate()
 {
+  // Reset camera to playfield center each frame so the gameFx screen-shake
+  // plugin (between gameUpdate and gameUpdatePost) can nudge cameraPos.
+  setCameraPos(levelSize.scale(.5));
+
   // Pause hotkey: Esc or gamepad Start. Gated on isPlaying so it doesn't fire
   // from the title screen.
   const gameOverShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
@@ -1335,16 +1324,8 @@ function gameUpdate()
 
 function gameUpdatePost()
 {
-  let offset = vec2();
-  if (shakeTime > 0)
-  {
-    shakeTime -= timeDelta;
-    const ramp = clamp(shakeTime / shakeTimeMax, 0, 1);
-    const amp = shakeMag * ramp;
-    offset = vec2(rand(-1, 1) * amp, rand(-1, 1) * amp);
-    if (shakeTime <= 0) { shakeMag = 0; shakeTimeMax = 1; }
-  }
-  setCameraPos(levelSize.scale(.5).add(offset));
+  // cameraPos is centered in gameUpdate so the gameFx screen-shake plugin
+  // (between gameUpdate and gameUpdatePost) can nudge it.
 }
 
 // ------------------------------------------------------------

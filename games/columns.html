@@ -36,8 +36,6 @@
 
  // visual feedback (don't affect gameplay timing)
  let particles = [];
- let screenShake = vec2(0, 0);
- let screenShakeTime = 0;
  let clearFlashTimer = 0;
  let lastChainCount = 0;
  let chainPopTimer = 0;
@@ -121,8 +119,6 @@
      clearFlashTimer = 0;
      chainPopTimer = 0;
      lastChainCount = 0;
-     screenShake = vec2(0,0);
-     screenShakeTime = 0;
      nextPiece = makePiece();
      spawnPiece();
  }
@@ -175,7 +171,7 @@
      let moved = false;
      while (tryMove(0, -1)) moved = true;
      // tiny screen shake on hard drop
-     startShake(0.18);
+     addScreenShake(0.15, 0.18);
      lockPiece();
      return moved;
  }
@@ -213,7 +209,7 @@
          lastChainCount = totalChain;
          chainPopTimer = 0.8;
          clearFlashTimer = 0.18;
-         startShake(0.25 + totalChain * 0.05);
+         addScreenShake(0.35, 0.25 + totalChain * 0.05);
      }
 
      // update level — detect level changes for level-up sfx
@@ -363,24 +359,7 @@
  ///////////////////////////////////////////////////////////////////////////////
  // VISUAL EFFECTS
 
- function startShake(duration)
- {
-     screenShakeTime = Math.max(screenShakeTime, duration);
- }
-
- function updateShake(dt)
- {
-     if (screenShakeTime <= 0) { screenShake = vec2(0,0); return; }
-     screenShakeTime -= dt;
-     const t = Math.max(0, screenShakeTime / 0.3);
-     const intensity = t * t;
-     screenShake = vec2(
-         frand(-0.35, 0.35) * intensity,
-         frand(-0.35, 0.35) * intensity,
-     );
- }
-
- function spawnClearParticles(cellX, cellY, colorIndex)
+function spawnClearParticles(cellX, cellY, colorIndex)
  {
      const baseColor = JEWEL_COLORS[colorIndex];
      const pos = vec2(cellX + .5, cellY + .5);
@@ -500,19 +479,18 @@
 
  function drawBoard()
  {
-     const shake = isPlaying() ? screenShake : vec2(0,0);
-
      // board frame (outer ring + inner well — same pattern as tetris reference)
-     const boardCenter = vec2(COLS/2, ROWS/2).add(shake);
+     // Screen shake is applied to cameraPos by the gameFx plugin.
+     const boardCenter = vec2(COLS/2, ROWS/2);
      drawRect(boardCenter, vec2(COLS+0.5, ROWS+0.5), rgb(.18,.18,.22));
      drawRect(boardCenter, vec2(COLS+0.18, ROWS+0.18), rgb(.05,.05,.07));
      drawRect(boardCenter, vec2(COLS, ROWS), rgb(.08,.08,.10));
 
      // subtle grid lines
      for (let x=1; x<COLS; x++)
-         drawLine(vec2(x,0).add(shake), vec2(x,ROWS).add(shake), .03, rgb(.15,.15,.18));
+         drawLine(vec2(x,0), vec2(x,ROWS), .03, rgb(.15,.15,.18));
      for (let y=1; y<ROWS; y++)
-         drawLine(vec2(0,y).add(shake), vec2(COLS,y).add(shake), .03, rgb(.15,.15,.18));
+         drawLine(vec2(0,y), vec2(COLS,y), .03, rgb(.15,.15,.18));
 
      // landed jewels
      for (let x=0; x<COLS; x++)
@@ -520,7 +498,7 @@
      {
          const v = grid[x][y];
          if (v === EMPTY) continue;
-         drawJewel(vec2(x+.5, y+.5).add(shake), v, 1);
+         drawJewel(vec2(x+.5, y+.5), v, 1);
      }
 
      if (!piece || gameOver) return;
@@ -533,7 +511,7 @@
          {
              const y = gy + i;
              if (y >= 0 && y < ROWS)
-                 drawJewel(vec2(piece.x+.5, y+.5).add(shake), piece.c[i], 0.28, .82);
+                 drawJewel(vec2(piece.x+.5, y+.5), piece.c[i], 0.28, .82);
          }
      }
 
@@ -542,7 +520,7 @@
      {
          const y = piece.y + i;
          if (y >= 0 && y < ROWS)
-             drawJewel(vec2(piece.x+.5, y+.5).add(shake), piece.c[i], 1);
+             drawJewel(vec2(piece.x+.5, y+.5), piece.c[i], 1);
      }
 
      // clear flash overlay (whole playfield brief flash)
@@ -705,10 +683,16 @@
      // Esc / gamepad Start surfaces the pause menu when actually playing.
      if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
+     // Reset camera each frame so the gameFx screen-shake plugin (between
+     // gameUpdate and gameUpdatePost) can nudge cameraPos cleanly.
+     {
+         const totalW = COLS + 0.6 + PANEL_W;
+         setCameraPos(vec2(totalW/2, ROWS/2));
+     }
+
      // tick particle/shake/flash visuals even when not playing (so they
      // finish during the brief moment a clear pops before next frame)
      updateParticles(timeDelta);
-     updateShake(timeDelta);
      if (clearFlashTimer > 0) clearFlashTimer -= timeDelta;
      if (chainPopTimer  > 0) chainPopTimer  -= timeDelta;
 
@@ -759,9 +743,8 @@
 
  function gameUpdatePost()
  {
-     // center camera to include board + right panel
-     const totalW = COLS + 0.6 + PANEL_W;
-     setCameraPos(vec2(totalW/2, ROWS/2));
+     // cameraPos is centered in gameUpdate so the gameFx screen-shake plugin
+     // (between gameUpdate and gameUpdatePost) can nudge it.
  }
 
  function gameRender()

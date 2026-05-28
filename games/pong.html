@@ -63,14 +63,11 @@ showEngineVersion = false; // Hide engine version console display
   const COLOR_R = hsl(.95, .9, .65);   // magenta (right team)
   const TRAIL_LEN = 14;
 
-  let shake = 0;
   let leftFlash = 0, rightFlash = 0;
   let leftScoreFlash = 0, rightScoreFlash = 0;
   let bgFlash = 0, bgFlashColor = COLOR_L;
   let lastHitter = 0;                  // -1 left, +1 right, 0 none
   let ballTrail = [];                  // {pos, color}
-
-  function addShake(a) { shake = max(shake, a); }
 
   function ballTintColor()
   {
@@ -182,7 +179,7 @@ showEngineVersion = false; // Hide engine version console display
       else scoreR++;
 
       sfxScore?.play();
-      addShake(.3);
+      addScreenShake(.3, .21);
       bgFlash = 1;
       bgFlashColor = leftScored ? COLOR_L : COLOR_R;
       if (leftScored) leftScoreFlash = 1;
@@ -260,6 +257,10 @@ showEngineVersion = false; // Hide engine version console display
   {
       if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
       if (!isPlaying()) return;
+
+      // Reset camera to origin each frame so the gameFx screen-shake plugin
+      // (between gameUpdate and gameUpdatePost) can nudge cameraPos cleanly.
+      setCameraPos(vec2(0, 0));
 
       if (keyWasPressed('KeyR'))
       {
@@ -342,7 +343,7 @@ showEngineVersion = false; // Hide engine version console display
           ball.vel.y = -Math.abs(ball.vel.y);
           sfxWall?.play(ball.pos);
           spawnHitBurst(ball.pos, ballTintColor());
-          addShake(.06);
+          addScreenShake(.06, .05);
       }
       else if (ball.pos.y < -yLimit)
       {
@@ -350,7 +351,7 @@ showEngineVersion = false; // Hide engine version console display
           ball.vel.y = Math.abs(ball.vel.y);
           sfxWall?.play(ball.pos);
           spawnHitBurst(ball.pos, ballTintColor());
-          addShake(.06);
+          addScreenShake(.06, .05);
       }
 
       // Left paddle
@@ -368,7 +369,7 @@ showEngineVersion = false; // Hide engine version console display
 
           lastHitter = -1;
           leftFlash = 1;
-          addShake(.10);
+          addScreenShake(.10, .1);
           spawnHitBurst(ball.pos, COLOR_L);
       }
 
@@ -387,7 +388,7 @@ showEngineVersion = false; // Hide engine version console display
 
           lastHitter = 1;
           rightFlash = 1;
-          addShake(.10);
+          addScreenShake(.10, .1);
           spawnHitBurst(ball.pos, COLOR_R);
       }
 
@@ -400,15 +401,7 @@ showEngineVersion = false; // Hide engine version console display
 
   function gameUpdatePost()
   {
-      // keep camera stable, then add shake offset on top
-      let cam = vec2(0, 0);
-      if (shake > 0)
-      {
-          cam = cam.add(vec2(rand(-1, 1), rand(-1, 1)).scale(shake));
-          shake = max(0, shake - timeDelta * 1.4);
-      }
-      setCameraPos(cam);
-
+      // cameraPos is centered in gameUpdate; gameFx screen-shake plugin nudges it.
       leftFlash       = max(0, leftFlash       - timeDelta * 4);
       rightFlash      = max(0, rightFlash      - timeDelta * 4);
       leftScoreFlash  = max(0, leftScoreFlash  - timeDelta * 1.2);

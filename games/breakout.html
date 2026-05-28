@@ -124,8 +124,6 @@ let combo = 0; // count of consecutive brick breaks; reset to 0 on paddle/lost
 let floatTexts = []; // {pos, vel, text, color, life, maxLife}
 
 let shatter = [];        // {pos, size, color, life, maxLife}
-let screenShake = 0;     // current magnitude
-let shakeEnabled = true; // toggled via options (Task 7)
 let paddleFlash = 0;     // 0..1, decays
 const BALL_TRAIL_LEN = 8;
 
@@ -437,12 +435,6 @@ function spawnPowerupFromBrick(brick)
     });
 }
 
-function addShake(amount)
-{
-    if (shakeEnabled)
-        screenShake = max(screenShake, amount);
-}
-
 function addShatter(brick)
 {
     shatter.push({
@@ -472,7 +464,7 @@ function damageBrick(brick)
 
     brick.alive = false;
     addShatter(brick);
-    addShake(.05);
+    addScreenShake(.05, .1);
 
     const c = brick.color;
     new ParticleEmitter(
@@ -599,7 +591,6 @@ function resetGame()
     state = 'serve';
     ballSpeed = BALL_BASE_SPEED;
     combo = 0;
-    screenShake = 0;
 
     resetPaddle();
     resetRunState();
@@ -661,7 +652,7 @@ async function gameInit()
         extraItems: [
             {type:'checkbox', id:'shake', label:'SCREEN SHAKE', value:true,
                 persist:'shake',
-                onChange: v => shakeEnabled = v},
+                onChange: v => setScreenShakeEnabled(v)},
         ],
     });
 
@@ -699,6 +690,10 @@ function gameUpdate()
 {
     const dt = timeDelta;
 
+    // Reset camera to playfield center each frame so the gameFx screen-shake
+    // plugin (which adds to cameraPos after gameUpdate) can nudge cleanly.
+    cameraPos = levelSize.scale(.5);
+
     if (!isPlaying())
         return;
 
@@ -731,8 +726,9 @@ function gameUpdate()
     if (fireballTimer > 0) fireballTimer = max(0, fireballTimer - dt);
     if (slowTimer     > 0) slowTimer     = max(0, slowTimer     - dt);
 
-    // Tick visual decay regardless of state, so screenShake/paddleFlash/
-    // shatter/floatTexts keep fading even while serving or just after death.
+    // Tick visual decay regardless of state, so paddleFlash/shatter/floatTexts
+    // keep fading even while serving or just after death. (Screen shake decay
+    // is handled by the gameFx engine plugin.)
     updateFloatTexts(dt);
     updateJuice(dt);
 
@@ -786,9 +782,6 @@ function updateFloatTexts(dt)
 
 function updateJuice(dt)
 {
-    if (screenShake > 0)
-        screenShake = max(0, screenShake - dt * 1.5);
-
     if (paddleFlash > 0)
         paddleFlash = max(0, paddleFlash - dt * 6);
 
@@ -818,7 +811,7 @@ function updatePowerups(dt)
         {
             applyPowerup(p.type);
             if (p.type !== '1')
-                addShake(.10);
+                addScreenShake(.10, .15);
             powerups.splice(i, 1);
         }
     }
@@ -946,7 +939,7 @@ function updateBalls(dt)
         lives--;
         combo = 0;
         sfxLose.play();
-        addShake(.15);
+        addScreenShake(.15, .2);
 
         if (lives <= 0)
         {
@@ -971,10 +964,6 @@ function updateBalls(dt)
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    cameraPos = levelSize.scale(.5);
-    if (screenShake > 0 && !paused)
-        cameraPos = cameraPos.add(vec2(rand(-1, 1), rand(-1, 1)).scale(screenShake));
-
     const fit = min(mainCanvasSize.x / levelSize.x, mainCanvasSize.y / levelSize.y);
     cameraScale = fit * .95;
 }
