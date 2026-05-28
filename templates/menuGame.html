@@ -51,11 +51,10 @@ const playerSize = vec2(2, 2);
 // this, alert dialogs leave paused=false, letting gameUpdate run on the same
 // frame as a menu Esc and re-open pause on top of the surfaced menu.
 
-// Tracks whether the game proper has started (vs sitting on the title
-// menu). Gameplay code in gameUpdate / gameRender gates on this. The
+// Gameplay code in gameUpdate / gameRender gates on isPlaying() from menus.js
+// (replaces the old per-game let isPlaying / setPlaying boilerplate). The
 // toolbar is always visible — installDefaultToolbar grays the hamburger
 // when the title menu is on top.
-let isPlaying = false;
 
 async function gameInit()
 {
@@ -90,7 +89,7 @@ async function gameInit()
     // not playing" state — the only ways out are the action buttons.
     // onStart wires gamepad Start to launch PLAY directly without the
     // player having to navigate to the PLAY item first.
-    const playFromTitle = () => { isPlaying = true; titleMenu.hide(); };
+    const playFromTitle = () => { setPlaying(true); titleMenu.hide(); };
     const titleMenu = createMenu({
         id: 'title',
         title: 'MENU DEMO',
@@ -220,7 +219,7 @@ async function gameInit()
                     {
                         clearSubmenuStack();
                         hideAllMenus();
-                        isPlaying = false;
+                        setPlaying(false);
                         showMenu('title');
                     },
                 });
@@ -245,7 +244,7 @@ function gameUpdate()
     // isPlaying so the shortcut never fires before the player has clicked
     // PLAY (when title is up, gameUpdate is paused anyway, so this is
     // defensive — but also makes the intent obvious to readers).
-    if (isPlaying && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    if (isPlaying() && (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         playMenuSound('activate');
         showMenu('pause');
@@ -255,7 +254,7 @@ function gameUpdate()
         inputClearKey(9, 1, false, true, false);
     }
 
-    if (isPlaying)
+    if (isPlaying())
     {
         const dir = keyDirection();
         playerPos = playerPos.add(dir.scale(.2));
@@ -270,7 +269,7 @@ function gameRender()
 {
     // Draw gameplay content only while actually playing — the pre-play
     // / post-quit "title screen" state shows just the prompt below.
-    if (isPlaying)
+    if (isPlaying())
         drawRect(playerPos, playerSize, hsl(.13, 1, .6));
 }
 
@@ -279,7 +278,7 @@ function gameRenderPost()
     // "Menu System Demo" header — title-screen banner only. Hide once
     // the player is actually playing. The title menu is always up when
     // !isPlaying, so no "click to play" prompt is needed.
-    if (!isPlaying)
+    if (!isPlaying())
         drawTextScreen('Menu System Demo', vec2(mainCanvasSize.x/2, 150),
             32, hsl(0, 0, 1), 4, hsl(0, 0, 0));
 }

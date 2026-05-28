@@ -5,7 +5,7 @@
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1779932166044"></script>
 <script src="menus.js?1779932166044"></script>
-<script src="soundGenerator.js?1779932166044"></script>
+<script src="gameFx.js?1779932166044"></script>
 <script src="textureGenerator.js?1779932166044"></script>
 <script src="tweakables.js?1779932166044"></script>
 <script>
@@ -42,9 +42,7 @@ let board = [];
 let currentPlayer = PLAYER_1;
 let hoverCell = null;
 
-// isPlaying controls HUD visibility + pause-hotkey gating;
 // gameMode picks between the two play modes (set in startGame).
-let isPlaying = false;
 let gameMode = 'pvp'; // 'pvp' | 'ai'
 
 let sfxPlace;
@@ -113,13 +111,6 @@ function aiMove()
 
 ///////////////////////////////////////////////////////////////////////////////
 // GAME FLOW
-
-function setPlaying(p)
-{
-    isPlaying = p;
-    const hud = getToolbar('hud');
-    if (hud) p ? hud.show() : hud.hide();
-}
 
 function startGame(mode)
 {
@@ -245,9 +236,9 @@ async function gameInit()
 function gameUpdate()
 {
     // Esc / gamepad Start → pause. Safely no-ops when a menu is already up.
-    if (bindPauseKey({when: () => isPlaying})) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyR')) initBoard();
 
@@ -311,7 +302,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying)
+    if (isPlaying())
     {
         drawTextScreen('R: Restart',
             vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 30), 22,
