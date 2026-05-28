@@ -600,15 +600,11 @@ function startGame()
     sfxStart && sfxStart.play();
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
     // Reset back to fresh start state so the title backdrop shows what
     // the run looks like at the top of the slope, frozen behind the menu.
-    resetGame();
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(resetGame);
 }
 
 function buildMenus()
@@ -626,7 +622,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: startGame,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
     });
 
     installDefaultToolbar();

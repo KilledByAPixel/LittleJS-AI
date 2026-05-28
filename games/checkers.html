@@ -950,7 +950,7 @@ async function gameInit()
     // ----- pause menu -----
     createPauseMenu({
         onRestart: () => { initBoard(); aiThinkTimer = 0; },
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
         extraItems: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -967,15 +967,9 @@ async function gameInit()
 
 
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    aiGeneration++;
-    aiSearching = false;
-    aiProgress = '';
-    setPlaying(false);
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(() => { aiGeneration++; aiSearching = false; aiProgress = ''; });
 }
 
 function startGame(mode)

@@ -719,13 +719,9 @@ function startGame()
     setPlaying(true);
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    clearSubmenuStack();
-    hideAllMenus();
-    setPlaying(false);
-    resetWorld();
-    showMenu('title');
+    quitToTitle(resetWorld);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -826,7 +822,7 @@ async function gameInit()
 
     // ----- PAUSE -----
     createPauseMenu({
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         extraItems: [
             {type: 'button', id: 'options', label: 'OPTIONS', onClick: () => pushMenu('options')},
         ],

@@ -833,12 +833,9 @@ function startGame()
     resetGame();
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
-    if (typeof hideAllMenus === 'function') hideAllMenus();
-    goToTitleScreen();
-    if (typeof showMenu === 'function') showMenu('title');
+    quitToTitle(goToTitleScreen);
 }
 
 function buildMenus()
@@ -885,7 +882,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: startGame,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
         extraItems: [
             {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -906,7 +903,7 @@ function buildMenus()
             {type:'label', id:'levelReached', text:'LEVEL     0'},
             {type:'separator'},
             {type:'button', label:'PLAY AGAIN',    onClick: () => { hideMenu('gameOver'); startGame(); }},
-            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitleWithCleanup},
         ],
     });
 

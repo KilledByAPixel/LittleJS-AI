@@ -563,20 +563,20 @@ function startGame(diff)
     hideAllMenus();
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
-    gameOver = 0;
-    planets.length = 0;
-    fleets.length = 0;
-    dragSource = dragTarget = null;
-    dragPercent = .5;
-    sendPreset = 3;
-    aiTimer = 0;
-    selectedPlanet = null;
-    initStarfield();
-    explosionEffects.length = 0;
-    showMenu('title');
+    quitToTitle(() => {
+        gameOver = 0;
+        planets.length = 0;
+        fleets.length = 0;
+        dragSource = dragTarget = null;
+        dragPercent = .5;
+        sendPreset = 3;
+        aiTimer = 0;
+        selectedPlanet = null;
+        initStarfield();
+        explosionEffects.length = 0;
+    });
 }
 
 function resetGame()
@@ -975,7 +975,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: () => { resetGame(); gameTimer = 0; },
-        onQuit:    () => quitToTitle(),
+        onQuit:    () => quitToTitleWithCleanup(),
     });
 
     installDefaultToolbar();
@@ -1007,7 +1007,7 @@ function gameUpdate()
     if (gameOver)
     {
         if (keyWasPressed('Space') || mouseWasPressed(0))
-            quitToTitle();
+            quitToTitleWithCleanup();
         updateStarfield(timeDelta);
         return;
     }

@@ -235,14 +235,6 @@ showEngineVersion = false; // Hide engine version console display
       hideAllMenus();
   }
 
-  function quitToTitle()
-  {
-      setPlaying(false);
-      clearSubmenuStack();
-      hideAllMenus();
-      showMenu('title');
-  }
-
   function buildMenus()
   {
       if (typeof createMenu !== 'function') return;

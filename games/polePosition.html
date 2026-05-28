@@ -164,15 +164,11 @@ function startGame()
     hideAllMenus();
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
     // Reset to fresh start state so the title backdrop shows what the
     // game looks like at the start of a run (paused behind the menu).
-    resetGame();
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(resetGame);
 }
 
 function buildMenus()
@@ -190,7 +186,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: startGame,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
     });
 
     installDefaultToolbar();

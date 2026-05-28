@@ -309,13 +309,9 @@ function registerMissIfNoMakeWithin(ball)
 //------------------------------------------------------------------------------
 // game flow
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    clearSubmenuStack();
-    hideAllMenus();
-    gamePhase = 'title';
-    balls.length = 0;
-    showMenu('title');
+    quitToTitle(() => { gamePhase = 'title'; balls.length = 0; });
 }
 
 function startGame()
@@ -453,7 +449,7 @@ async function gameInit()
 
     // ----- pause menu -----
     createPauseMenu({
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         quitLabel: 'QUIT',
         extraItems: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},

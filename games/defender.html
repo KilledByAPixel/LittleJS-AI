@@ -1070,12 +1070,9 @@ function doGameOver()
     });
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    clearSubmenuStack();
-    hideAllMenus();
-    startAttractMode();
-    showMenu('title');
+    quitToTitle(startAttractMode);
 }
 
 // Attract mode — title-screen backdrop. Same world simulation, no player,
@@ -1228,7 +1225,7 @@ async function gameInit()
     });
 
     createPauseMenu({
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         extraItems: [
             {type:'button', label:'CONTROLS', onClick: () => pushMenu('controls')},
             {type:'button', label:'OPTIONS',  onClick: () => pushMenu('options')},

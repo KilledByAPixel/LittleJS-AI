@@ -614,20 +614,14 @@ function startNewGame()
     setPlaying(true);
 }
 
-function backToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
-    clearSubmenuStack();
-    hideAllMenus();
-    // Reset for attract-mode rendering — a frozen world, not a black canvas.
-    resetGame();
-    setPlaying(false);
-    const t = getMenu('title');
-    if (t)
-    {
-        t.getItem('bestLabel')?.setLabel(`Best: ${highScore}`);
-        showMenu('title');
-    }
+    quitToTitle(() => {
+        // Reset for attract-mode rendering — a frozen world, not a black canvas.
+        resetGame();
+        const t = getMenu('title');
+        if (t) t.getItem('bestLabel')?.setLabel(`Best: ${highScore}`);
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -688,7 +682,7 @@ async function gameInit()
     });
 
     createPauseMenu({
-        onQuit: backToTitle,
+        onQuit: quitToTitleWithCleanup,
         extraItems: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -976,7 +970,7 @@ function updateBalls(dt)
                 title: 'GAME OVER',
                 icon: '💥',
                 message: msg,
-                onOk: backToTitle,
+                onOk: quitToTitleWithCleanup,
             });
             return;
         }

@@ -184,16 +184,14 @@ function killPlayer()
     }
 }
 
-function returnToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
-    engineObjectsDestroy();
-    player = undefined;
-    // reset camera to the start-of-level preview view
-    cameraPos = vec2(-playerStartScreenX, ceilingY / 2);
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(() => {
+        engineObjectsDestroy();
+        player = undefined;
+        // reset camera to the start-of-level preview view
+        cameraPos = vec2(-playerStartScreenX, ceilingY / 2);
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -928,7 +926,7 @@ async function gameInit()
 
     // ----- pause menu (initialItemId defaults selection to RESUME) -----
     createPauseMenu({
-        onQuit: returnToTitle,
+        onQuit: quitToTitleWithCleanup,
     });
 
     // ----- HUD toolbar (always visible; grays the hamburger over title) -----
@@ -1012,7 +1010,7 @@ function gameUpdate()
                          'Coins: '    + coins    + '\n' +
                          'Best: '     + bestDistance + ' M\n' +
                          'Lifetime: ' + totalCoins + ' coins',
-                onOk: returnToTitle,
+                onOk: quitToTitleWithCleanup,
             });
         }
     }

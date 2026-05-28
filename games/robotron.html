@@ -2390,26 +2390,23 @@ function startGame()
     setPlaying(true);
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
-    if (typeof hideAllMenus === 'function') hideAllMenus();
-    setPlaying(false);
-
-    engineObjectsDestroy(true);
-    bullets = []; enemyBullets = [];
-    clearAllEnemies(); clearAllElectrodes(); clearAllHumans();
-    particles = []; floaters = [];
-    player = null;
-    gameOver = false;
-    gameOverTimer = 0;
-    waveActive = false;
-    score = 0;
-    gameWave = 1;
-    interWaveTimer = 0;
-    respawnTimer = 0;
-    spawnAttractDecoration();
-    if (typeof showMenu === 'function') showMenu('title');
+    quitToTitle(() => {
+        engineObjectsDestroy(true);
+        bullets = []; enemyBullets = [];
+        clearAllEnemies(); clearAllElectrodes(); clearAllHumans();
+        particles = []; floaters = [];
+        player = null;
+        gameOver = false;
+        gameOverTimer = 0;
+        waveActive = false;
+        score = 0;
+        gameWave = 1;
+        interWaveTimer = 0;
+        respawnTimer = 0;
+        spawnAttractDecoration();
+    });
 }
 
 function buildMenus()
@@ -2464,7 +2461,7 @@ function buildMenus()
 
     // Pause menu
     createPauseMenu({
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         extraItems: [
             {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -2495,7 +2492,7 @@ function buildMenus()
                 hideMenu('gameOver');
                 startGame();
             }},
-            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitleWithCleanup},
         ],
     });
 

@@ -219,18 +219,16 @@ function startGame()
     setPlaying(true);
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    clearAll();
-    score = 0;
-    lives = 3;
-    level = 1;
-    gameOver = false;
-    setPlaying(false);
-    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
-    if (typeof hideAllMenus === 'function') hideAllMenus();
-    spawnAttractField();
-    if (typeof showMenu === 'function') showMenu('title');
+    quitToTitle(() => {
+        clearAll();
+        score = 0;
+        lives = 3;
+        level = 1;
+        gameOver = false;
+        spawnAttractField();
+    });
 }
 
 // Title-screen attract: a few rocks tumbling behind the menu
@@ -898,7 +896,7 @@ function buildMenus()
     });
 
     createPauseMenu({
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         extraItems: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -928,7 +926,7 @@ function buildMenus()
                 hideMenu('gameOver');
                 startGame();
             }},
-            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitleWithCleanup},
         ],
     });
 

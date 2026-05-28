@@ -52,13 +52,9 @@ let sMove, sMerge, sSpawn, sLose, sWin;
 
 
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    clearSubmenuStack();
-    hideAllMenus();
-    newGame();
-    setPlaying(false);
-    showMenu('title');
+    quitToTitle(newGame);
 }
 
 function gameInit()
@@ -97,7 +93,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: newGame,
-        onQuit: quitToTitle,
+        onQuit: quitToTitleWithCleanup,
         restartLabel: 'NEW GAME',
         extraItems: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},

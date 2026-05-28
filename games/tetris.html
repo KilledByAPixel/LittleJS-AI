@@ -1507,7 +1507,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: doRestart,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
         extraItems: [
             {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -1543,7 +1543,7 @@ function buildMenus()
                 hideMenu('gameOver');
                 doRestart();
             }},
-            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitleWithCleanup},
         ],
     });
 
@@ -1562,14 +1562,13 @@ function gameOverBannerText()
     return hKO && aKO ? 'DOUBLE KO' : hKO ? 'YOU LOSE' : 'YOU WIN';
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
-    if (typeof hideAllMenus === 'function') hideAllMenus();
-    gameState = 'menu';
-    applyCanvasSize();
-    spawnMenuBackground();
-    if (typeof showMenu === 'function') showMenu('title');
+    quitToTitle(() => {
+        gameState = 'menu';
+        applyCanvasSize();
+        spawnMenuBackground();
+    });
 }
 
 function doRestart()

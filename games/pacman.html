@@ -127,15 +127,9 @@ function startGame()
     setPlaying(true);
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
-    if (typeof hideAllMenus === 'function') hideAllMenus();
-    resetRun(true);
-    score = 0;
-    lives = 3;
-    setPlaying(false);
-    if (typeof showMenu === 'function') showMenu('title');
+    quitToTitle(() => { resetRun(true); score = 0; lives = 3; });
 }
 
 function buildMenus()
@@ -183,7 +177,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: startGame,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
         extraItems: [
             {type:'button', id:'options', label:'OPTIONS', onClick: () => pushMenu('options')},
         ],
@@ -211,7 +205,7 @@ function buildMenus()
                 hideMenu('gameOver');
                 startGame();
             }},
-            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitle},
+            {type:'button', label:'QUIT TO TITLE', onClick: quitToTitleWithCleanup},
         ],
     });
 

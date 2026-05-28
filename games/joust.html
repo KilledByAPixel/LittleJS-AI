@@ -618,13 +618,9 @@ function startGame()
     hideAllMenus();
 }
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    setPlaying(false);
-    gameState = 'title';
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(() => { gameState = 'title'; });
 }
 
 function buildMenus()
@@ -642,7 +638,7 @@ function buildMenus()
 
     createPauseMenu({
         onRestart: startGame,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
     });
 
     installDefaultToolbar();
@@ -657,7 +653,7 @@ function gameUpdate()
     {
         if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
         {
-            quitToTitle();
+            quitToTitleWithCleanup();
         }
         return;
     }

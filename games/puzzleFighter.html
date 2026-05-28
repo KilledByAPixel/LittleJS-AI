@@ -2333,14 +2333,13 @@ let chosenDifficulty = 'normal';
 let chosenP1Char = CHARACTERS[0];
 let chosenP2Char = CHARACTERS[1];
 
-function quitToTitle()
+function quitToTitleWithCleanup()
 {
-    matchState = 'title';
-    currentMatch = null;
-    p1Board = null; p2Board = null;
-    clearSubmenuStack();
-    hideAllMenus();
-    showMenu('title');
+    quitToTitle(() => {
+        matchState = 'title';
+        currentMatch = null;
+        p1Board = null; p2Board = null;
+    });
 }
 
 function buildCharacterItems(onPick)
@@ -2434,7 +2433,7 @@ function setupMenus()
 
     createPauseMenu({
         onRestart: startMatchFromSelection,
-        onQuit:    quitToTitle,
+        onQuit:    quitToTitleWithCleanup,
     });
 
     createMenu({
@@ -2445,7 +2444,7 @@ function setupMenus()
             { type:'label', id:'roundresult', text:'' },
             { type:'button', label:'REMATCH',          onClick: () => { hideMenu('roundover'); startMatchFromSelection(); } },
             { type:'button', label:'CHARACTER SELECT', onClick: () => { hideMenu('roundover'); matchState = 'title'; showMenu('p1select'); } },
-            { type:'button', label:'QUIT TO TITLE',    onClick: () => quitToTitle() },
+            { type:'button', label:'QUIT TO TITLE',    onClick: () => quitToTitleWithCleanup() },
         ],
     });
 
