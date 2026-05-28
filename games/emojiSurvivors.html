@@ -34,8 +34,12 @@ touchGamepadEnable = false;
 // Vampire Survivors-style auto-battler with emoji sprites.
 // See docs/superpowers/specs/2026-05-26-emoji-survivors-design.md
 
-const ARENA_MIN_X = -60, ARENA_MAX_X = 60;
-const ARENA_MIN_Y = -40, ARENA_MAX_Y = 40;
+// Arena ~3× the original footprint so the camera-follows-player feel
+// is real exploration, not just a slightly bigger room. Spawn (within
+// ~20 wu of player) and despawn (past ~50 wu) are already player-
+// relative so they don't need any change.
+const ARENA_MIN_X = -150, ARENA_MAX_X = 150;
+const ARENA_MIN_Y = -100, ARENA_MAX_Y = 100;
 
 const sprites = {};
 
@@ -104,6 +108,10 @@ class Player extends EngineObject
         this.xpGainMult     = 1;
         this.extraProjectiles = 0;
         this.heartMult        = 1;
+        this.coinGainMult     = 1;
+        // Run-scoped set of choice keys the player has banished. Filtered
+        // out of buildUpgradeChoices so banished options never reappear.
+        this.banishedUpgrades = new Set();
     }
 
     update()
@@ -321,11 +329,14 @@ class Enemy extends EngineObject
         const baseSz = type.size != null ? type.size : 1.0;
         const sz = baseSz * (elite ? elite.sizeMult : 1);
         super(pos, vec2(sz), sprites[type.sprite]);
+        // Curse Mode multiplies enemy HP and speed; XP/coin gain on the
+        // player side already compensates via recomputeMultipliers.
+        const curseFactor = 1 + curseLevel * .5;
         this.type     = type;
-        this.hp       = type.hp * (elite ? elite.hpMult : 1);
+        this.hp       = type.hp * (elite ? elite.hpMult : 1) * curseFactor;
         this.maxHp    = this.hp;
         this.dmg      = type.dmg * (elite ? elite.dmgMult : 1);
-        this.speed    = type.speed * (elite ? elite.speedMult : 1);
+        this.speed    = type.speed * (elite ? elite.speedMult : 1) * curseFactor;
         this.xpDrop   = type.xpDrop * (elite ? elite.xpMult : 1);
         this.isElite  = !!elite;
         this.eliteKey = eliteKey;
@@ -586,7 +597,7 @@ class Enemy extends EngineObject
                 else if (roll < .085)
                     new Pickup(this.pos.copy(), sprites.heart, 'heart', 20);
                 else if (roll < .585)
-                    new Pickup(this.pos.copy(), sprites.gem, 'gem', this.xpDrop);
+                    dropGem(this.pos.copy(), this.xpDrop, this.isElite);
                 // else: no drop (~41.5% of kills)
             }
         }
@@ -876,9 +887,9 @@ function toastBuff(icon, title, text)
 
 class Pickup extends EngineObject
 {
-    constructor(pos, sprite, kind, value)
+    constructor(pos, sprite, kind, value, sizeMult = 1)
     {
-        super(pos, vec2(.6), sprite);
+        super(pos, vec2(.6 * sizeMult), sprite);
         this.kind  = kind;   // 'gem', 'heart', or 'coin'
         this.value = value;
         this.damping = .98;
@@ -950,8 +961,9 @@ class Pickup extends EngineObject
             }
             else if (this.kind === 'coin')
             {
-                coinsRun += this.value;
-                coins += this.value;
+                const gain = max(1, Math.round(this.value * player.coinGainMult));
+                coinsRun += gain;
+                coins    += gain;
                 playPickupSound(sounds.coin, this.pos);
                 // Persist immediately so a tab close mid-run never costs
                 // the player coins they actually grabbed.
@@ -972,10 +984,23 @@ function nearestEnemy(fromPos, maxDist)
     let best = null, bestD = maxDist;
     for (const e of enemies)
     {
+        if (e.isBreakable) continue;   // auto-aim ignores crates / barrels
         const d = fromPos.distance(e.pos);
         if (d < bestD) { best = e; bestD = d; }
     }
     return best;
+}
+
+// Tiered XP gem drop — small/medium/large by xpDrop, with elites always
+// scoring large. Value is unchanged; only the visual + render size change
+// so the player can SEE which kills are worth crossing the swarm for.
+function dropGem(pos, xpDrop, isElite)
+{
+    if (isElite || xpDrop >= 5)
+        return new Pickup(pos, sprites.gemLarge,  'gem', xpDrop, 1.9);
+    if (xpDrop >= 2)
+        return new Pickup(pos, sprites.gemMedium, 'gem', xpDrop, 1.4);
+    return     new Pickup(pos, sprites.gem,       'gem', xpDrop, 1.0);
 }
 
 class FishOrbitWeapon
@@ -1190,6 +1215,7 @@ class ChainLightningWeapon
             let best = null, bestD = chainRange;
             for (const e of enemies)
             {
+                if (e.isBreakable) continue;   // chain shouldn't waste a hop on a crate
                 if (hit.has(e)) continue;
                 const d = from.distance(e.pos);
                 if (d < bestD) { best = e; bestD = d; }
@@ -1302,7 +1328,7 @@ class IceCubeWeapon
 
         // fire `level` ice cubes at random enemies within range; freezes on hit
         const range = 11 * player.areaMult;
-        const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
+        const candidates = enemies.filter(e => !e.isBreakable && e.pos.distance(player.pos) < range);
         const dmg = this.damage() * player.dmgMult;
         const speed = 14 * player.projSpeedMult;
         for (let i = 0; i < this.level && candidates.length > 0; ++i)
@@ -1353,7 +1379,7 @@ class WaterSplashWeapon
         this.cooldown = 1.1 / player.fireRateMult;
 
         const range = 9 * player.areaMult;
-        const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
+        const candidates = enemies.filter(e => !e.isBreakable && e.pos.distance(player.pos) < range);
         const dmg = this.damage() * player.dmgMult;
         const blue = new Color(.35, .65, 1, 1);
         for (let i = 0; i < this.level && candidates.length > 0; ++i)
@@ -1488,7 +1514,7 @@ class ThunderstormWeapon
         // strike up to 5 random enemies in a wide radius — no chain, all
         // simultaneous, like the screen got hit by a sudden storm
         const range = 14 * player.areaMult;
-        const candidates = enemies.filter(e => e.pos.distance(player.pos) < range);
+        const candidates = enemies.filter(e => !e.isBreakable && e.pos.distance(player.pos) < range);
         const dmg = this.damage() * player.dmgMult;
         const strikes = min(5, candidates.length);
         for (let i = 0; i < strikes; ++i)
@@ -1722,6 +1748,7 @@ class CometWeapon
             let best = null, bestD = range;
             for (const e of enemies)
             {
+                if (e.isBreakable) continue;
                 if (used.has(e)) continue;
                 const d = player.pos.distance(e.pos);
                 if (d < bestD) { best = e; bestD = d; }
@@ -1986,6 +2013,150 @@ class Bomb extends EngineObject
     }
 }
 
+// Persistent destructibles scattered across the map — 📦 crates (common, coin
+// drops) and 🛢️ barrels (rare, gold-glow, premium drops). Pre-spawned at run
+// start, no respawn. Slotted into the `enemies` array so projectiles and AOE
+// weapons can damage them with no per-weapon plumbing; target-acquisition
+// helpers (nearestEnemy etc.) skip them so auto-aim never wastes a shot.
+const breakables = [];
+
+class Breakable extends EngineObject
+{
+    constructor(pos, isBarrel)
+    {
+        super(pos, vec2(isBarrel ? 1.1 : 1.0),
+              isBarrel ? sprites.barrel : sprites.crate);
+        this.hp = isBarrel ? 25 : 10;
+        this.maxHp = this.hp;
+        this.isBarrel = isBarrel;
+        this.isBreakable = true;
+        this.dmg = 0;
+        this.damping = 1;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.setCollision(false, false, false, false);
+        this.hitFlashTimer = 0;
+        this.bobPhase = rand(2 * PI);
+        // Fake type so any defensive read of .type.key (none today outside
+        // Enemy.render, which Breakable overrides) gets a benign value.
+        this.type = {key: 'breakable'};
+        enemies.push(this);
+        breakables.push(this);
+    }
+
+    update()
+    {
+        super.update();
+        this.renderOrder = -this.pos.y;
+        // Walk-into break — the player can shoulder-check a crate. Each
+        // overlap frame chips off some HP; the player crosses too quickly
+        // for this to feel like a wall.
+        if (isOverlapping(this.pos, this.size, player.pos, player.size))
+            this.takeDamage(5);
+    }
+
+    render()
+    {
+        let additive = null;
+        if (this.isBarrel)
+        {
+            // gold breathe so the rare drop reads as "go out of your way"
+            const pulse = .5 + .5 * sin(time * 3.5 + this.bobPhase);
+            additive = new Color(.55 * pulse, .42 * pulse, 0, 0);
+        }
+        if (this.hitFlashTimer > 0)
+        {
+            this.hitFlashTimer -= 1 / 60;
+            additive = new Color(.85, .85, .85, 0);
+        }
+        drawEmoji(this.pos, this.size, this.tileInfo, WHITE, additive);
+    }
+
+    takeDamage(amount)
+    {
+        this.hp -= amount;
+        this.hitFlashTimer = .08;
+        if (this.hp <= 0) this.destroy();
+    }
+
+    destroy()
+    {
+        const i = enemies.indexOf(this);
+        if (i >= 0) enemies.splice(i, 1);
+        const j = breakables.indexOf(this);
+        if (j >= 0) breakables.splice(j, 1);
+        if (this.hp <= 0)
+        {
+            if (this.isBarrel)
+            {
+                // Premium roll — big gem, mystery clover, or a coin pile.
+                const roll = rand();
+                if (roll < .35)
+                    new Pickup(this.pos.copy(), sprites.gemLarge, 'gem', 8, 1.9);
+                else if (roll < .55)
+                    new Pickup(this.pos.copy(), sprites.clover, 'mystery', 0);
+                else
+                {
+                    for (let k = 0; k < 8; ++k)
+                    {
+                        const off = vec2().setAngle(rand(2 * PI), rand(.3, 1.1));
+                        new Pickup(this.pos.add(off), sprites.coin, 'coin', 5);
+                    }
+                }
+            }
+            else
+            {
+                // Common roll — mostly coins, occasional heart or screen-clear.
+                const roll = rand();
+                if (roll < .04)
+                    new Pickup(this.pos.copy(), sprites.clover, 'mystery', 0);
+                else if (roll < .18)
+                    new Pickup(this.pos.copy(), sprites.heart, 'heart', 20);
+                else
+                {
+                    const n = 1 + randInt(3);
+                    for (let k = 0; k < n; ++k)
+                    {
+                        const off = vec2().setAngle(rand(2 * PI), rand(.2, .7));
+                        new Pickup(this.pos.add(off), sprites.coin, 'coin', 2);
+                    }
+                }
+            }
+            if (sounds.chest && sounds.chest.play) sounds.chest.play(this.pos);
+        }
+        super.destroy();
+    }
+}
+
+function preSpawnBreakables()
+{
+    const totalCrates  = 30;
+    const totalBarrels = 12;
+    const playerSafeRadiusSq = 36;   // keep a 6 wu clearing around (0,0)
+    for (let i = 0; i < totalCrates + totalBarrels; ++i)
+    {
+        const isBarrel = i >= totalCrates;
+        let pos;
+        for (let tries = 0; tries < 6; ++tries)
+        {
+            pos = vec2(rand(ARENA_MIN_X + 2, ARENA_MAX_X - 2),
+                       rand(ARENA_MIN_Y + 2, ARENA_MAX_Y - 2));
+            if (pos.lengthSquared() > playerSafeRadiusSq) break;
+        }
+        new Breakable(pos, isBarrel);
+    }
+}
+
+// Used by the spawner cap check — breakables share `enemies` so they have
+// to be filtered out of the live-enemy count.
+function countLiveEnemies()
+{
+    let n = 0;
+    for (const e of enemies) if (!e.isBreakable) ++n;
+    return n;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PASSIVES — in-run stat upgrades. Each passive caps at 5 levels and applies
 // its bonus by multiplying the relevant player.*Mult field. recomputeMultipliers
@@ -2041,6 +2212,7 @@ function recomputeMultipliers()
     player.maxHpMult = player.moveSpeedMult = player.xpGainMult = 1;
     player.extraProjectiles = 0;
     player.heartMult = 1;
+    player.coinGainMult = 1;
     for (const p of player.passives) p.apply();
     // hero bonuses applied on top of passives
     if (currentHero && currentHero.stats)
@@ -2055,6 +2227,11 @@ function recomputeMultipliers()
     player.fireRateMult  *= 1 + powerUps.cooldown * .05;
     player.magnetMult    *= 1 + powerUps.magnet   * .20;
     player.xpGainMult    *= 1 + powerUps.growth   * .08;
+    player.coinGainMult  *= 1 + powerUps.greed    * .10;
+    // Curse Mode — harder enemies, but XP and coin gain scale to match.
+    const curseFactor = 1 + curseLevel * .5;
+    player.xpGainMult   *= curseFactor;
+    player.coinGainMult *= curseFactor;
     // mystery-pickup temporary damage boost (decays in Player.update)
     if (player.damageBoostTimer > 0) player.dmgMult *= 2;
     // grant the player any new max HP from a fresh Heart pickup
@@ -2146,21 +2323,23 @@ function updateSpawner()
     // (lifetime of the page). Using `time` here was the restart bug —
     // after a death-restart, time was huge → interval at minimum →
     // 15-enemy burst on frame 1 = instant mob.
+    // Curse Mode shortens the interval (more spawns per second).
+    const curseFactor = 1 + curseLevel * .5;
     spawner.interval = lerp(enemySpawnIntervalBase, 0.35,
-                            min(elapsedTime / 180, 1));
+                            min(elapsedTime / 180, 1)) / curseFactor;
 
     spawner.timer -= 1 / 60;
     if (spawner.timer > 0) return;
     spawner.timer = spawner.interval;
 
-    if (enemies.length >= ENEMY_CAP) return;
+    if (countLiveEnemies() >= ENEMY_CAP) return;
 
     // Burst spawning — 1 enemy/tick early, +1 every 60s of elapsed run
     // time, caps at 4. With the .35s late-game interval, peak is ~11/sec.
     const burst = min(1 + Math.floor(elapsedTime / 60), 4);
     for (let n = 0; n < burst; ++n)
     {
-        if (enemies.length >= ENEMY_CAP) break;
+        if (countLiveEnemies() >= ENEMY_CAP) break;
         const type = pickWeightedType(elapsedTime);
         let pos;
         for (let tries = 0; tries < 4; ++tries)
@@ -2232,6 +2411,8 @@ const HEROES = [
 let currentHero = HEROES[0];
 let coins = 0;          // lifetime persistent
 let bestTime = 0;       // lifetime longest survival
+let firstVictory = false;  // unlocks Curse Mode on the title screen
+let curseLevel = 0;     // 0 = off, 1 = +50%, 2 = +100% (HP/speed/spawn ↔ XP/coin)
 
 // Permanent power-ups — spent at the title-screen shop with 💰 coins.
 // Effects apply on every future run via recomputeMultipliers. Caps at
@@ -2243,16 +2424,19 @@ const POWER_UPS = [
     {key:'cooldown', emoji:'⏱️', name:'Haste',     desc:'+5% fire rate'},
     {key:'magnet',   emoji:'🧲', name:'Magnetism', desc:'+20% pickup radius'},
     {key:'growth',   emoji:'🌱', name:'Growth',    desc:'+8% XP gain'},
+    {key:'greed',    emoji:'💰', name:'Greed',     desc:'+10% coin gain'},
 ];
 const powerUps = {might: 0, heart: 0, speed: 0,
-                  cooldown: 0, magnet: 0, growth: 0};
+                  cooldown: 0, magnet: 0, growth: 0, greed: 0};
 function powerUpCost(level) { return 50 + level * 50; }    // 50/100/150/200/250
 
 function loadMetaState()
 {
     const data = getSaveData();
-    coins    = data.coins    ?? 0;
-    bestTime = data.bestTime ?? 0;
+    coins        = data.coins        ?? 0;
+    bestTime     = data.bestTime     ?? 0;
+    firstVictory = data.firstVictory ?? false;
+    curseLevel   = data.curseLevel   ?? 0;
     if (data.powerUps)
         for (const k in powerUps)
             if (typeof data.powerUps[k] === 'number')
@@ -2261,7 +2445,7 @@ function loadMetaState()
 
 function saveMetaState()
 {
-    saveData({coins, bestTime, powerUps});
+    saveData({coins, bestTime, firstVictory, curseLevel, powerUps});
 }
 
 function applyHero(hero)
@@ -2279,13 +2463,14 @@ function startRun(hero)
     // with the hero's chosen weapon instead of the default fireball.
     for (const e of enemies.slice()) e.destroy();
     enemies.length = 0;
+    breakables.length = 0;
     for (const obj of engineObjects.slice())
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
             obj instanceof Pickup || obj instanceof Bomb ||
             obj instanceof Chest || obj instanceof StarToss ||
             obj instanceof CometProjectile || obj instanceof NukeBomb ||
-            obj instanceof NukeField)
+            obj instanceof NukeField || obj instanceof Breakable)
             obj.destroy();
     }
     chainFlashes.length = 0;
@@ -2308,6 +2493,12 @@ function startRun(hero)
     player.weapons = [makeWeaponByName(hero.weapon)];
     player.passives = [];
     recomputeMultipliers();
+
+    // Scatter the breakable props across the arena. Must run after the
+    // teardown loop above (so a restart starts from a clean board) and
+    // after player creation (so the safe-radius check has a player at
+    // origin to keep away from).
+    preSpawnBreakables();
 
     setPlaying(true);
     hideAllMenus();
@@ -2357,6 +2548,7 @@ function aiDirection()
     let emergency = false;
     for (const e of enemies)
     {
+        if (e.isBreakable) continue;   // a nearby crate is loot, not an emergency
         if (e.pos.distanceSquared(player.pos) < AI_EMERGENCY_DIST_SQ)
         { emergency = true; break; }
     }
@@ -2373,6 +2565,7 @@ function aiDirection()
         let closestEnemy = null, closestEnemyDist = Infinity;
         for (const e of enemies)
         {
+            if (e.isBreakable) continue;
             const away = player.pos.subtract(e.pos);
             const d = away.length();
             if (d < closestEnemyDist) { closestEnemyDist = d; closestEnemy = e; }
@@ -2520,6 +2713,23 @@ async function gameInit()
     sprites.tsunami     = drawToTexture(44, paintEmoji('🌊'), 'a cresting blue wave');
     sprites.heartSpiral = drawToTexture(45, paintEmoji('💖'), 'a sparkling pink heart');
 
+    // Tiered XP gems — same 💎 glyph baked at three hues so big gems pop in
+    // a crowded field. The base 💎 (sprites.gem) stays as the small tier.
+    sprites.gemMedium = drawToTexture(46, ctx =>
+    {
+        ctx.filter = 'hue-rotate(40deg) saturate(1.3)';
+        paintEmoji('💎')(ctx);
+    }, 'a warm-tinted diamond gem');
+    sprites.gemLarge = drawToTexture(47, ctx =>
+    {
+        ctx.filter = 'hue-rotate(180deg)';
+        paintEmoji('💎')(ctx);
+    }, 'a hue-shifted diamond gem');
+
+    // Breakables — 📦 crate (common) and 🛢️ barrel (rare, gold-glow).
+    sprites.crate     = drawToTexture(48, paintEmoji('📦'), 'a wooden crate');
+    sprites.barrel    = drawToTexture(49, paintEmoji('🛢️'), 'an oil barrel');
+
     // ground / decor 32-35 — trees scattered across the arena, mountains line the edges
     sprites.tree1     = drawToTexture(32, paintEmoji('🌳'), 'a deciduous tree');
     sprites.tree2     = drawToTexture(33, paintEmoji('🌲'), 'an evergreen pine tree');
@@ -2568,6 +2778,12 @@ async function gameInit()
             const coinsLabel = m.getItem('coinsLabel');
             if (best) best.setLabel('🏆 Best: ' + formatTime(bestTime));
             if (coinsLabel) coinsLabel.setLabel('💰 Total Coins: ' + coins);
+            const curseBtn = m.getItem('curseBtn');
+            if (curseBtn)
+            {
+                curseBtn.setVisible(firstVictory);
+                curseBtn.setLabel('💀 Curse: ' + curseLabel(curseLevel));
+            }
         },
         items: [
             {type: 'label',     id: 'bestLabel',  text: '🏆 Best: 0:00'},
@@ -2575,6 +2791,9 @@ async function gameInit()
             {type: 'separator'},
             {type: 'button',    label: 'PLAY',    onClick: () => pushMenu('heroSelect')},
             {type: 'button',    label: 'SHOP',    onClick: () => pushMenu('shop')},
+            {type: 'button',    id: 'curseBtn',
+                                label: '💀 Curse: OFF',
+                                onClick: cycleCurse},
             {type: 'button',    label: 'ABOUT',   onClick: () => pushMenu('about')},
         ],
     });
@@ -2811,14 +3030,17 @@ function buildUpgradeChoices()
 {
     const choices = [];
     const hasFan = ownsFanWeapon();
+    const banished = (player && player.banishedUpgrades) || new Set();
 
     // Level-up existing weapons that aren't capped
     for (const w of player.weapons)
     {
         if (w.level < 5)
         {
+            const baseKey = w.constructor.name.replace(/Weapon$/, '');
             choices.push({
-                label: emojiForWeapon(w.constructor.name.replace(/Weapon$/, '')) +
+                key: 'wlvl:' + baseKey,
+                label: emojiForWeapon(baseKey) +
                        ' ' + w.name + ' → Lv ' + (w.level + 1),
                 apply: () => w.levelUp(),
             });
@@ -2833,6 +3055,7 @@ function buildUpgradeChoices()
         {
             if (have.has(name)) continue;
             choices.push({
+                key: 'wnew:' + name,
                 label: emojiForWeapon(name) + ' Unlock ' + name + ' (Lv 1)',
                 apply: () => player.weapons.push(makeWeaponByName(name)),
             });
@@ -2846,6 +3069,7 @@ function buildUpgradeChoices()
         if (p.level >= 5) continue;
         if (p.name === 'Plus One' && !hasFan) continue;
         choices.push({
+            key: 'plvl:' + p.name,
             label: p.emoji + ' ' + p.name + ' → Lv ' + (p.level + 1),
             apply: () => { p.levelUp(); recomputeMultipliers(); },
         });
@@ -2860,6 +3084,7 @@ function buildUpgradeChoices()
             if (name === 'Plus One' && !hasFan) continue;
             const proto = makePassiveByName(name);
             choices.push({
+                key: 'pnew:' + name,
                 label: proto.emoji + ' Unlock ' + proto.name + ' (Lv 1)',
                 apply: () =>
                 {
@@ -2870,21 +3095,63 @@ function buildUpgradeChoices()
         }
     }
 
+    // Strip banished choices before picking.
+    const live = choices.filter(c => !banished.has(c.key));
+
     // Random shuffle and pick up to 3
-    for (let i = choices.length - 1; i > 0; --i)
+    for (let i = live.length - 1; i > 0; --i)
     {
         const j = randInt(i + 1);
-        [choices[i], choices[j]] = [choices[j], choices[i]];
+        [live[i], live[j]] = [live[j], live[i]];
     }
-    return choices.slice(0, 3);
+    return live.slice(0, 3);
+}
+
+// Per-level-up state. Reroll counter scales cost; banish-mode flag turns the
+// three choice rows into "tap to remove" targets. Both reset when a fresh
+// level-up enters showLevelUpMenu (not on rebuild).
+let levelUpRerolls   = 0;
+let levelUpBanishMode = false;
+let levelUpChoices    = [];
+
+const REROLL_BASE_COST  = 10;
+const BANISH_COST       = 20;
+const SKIP_XP_FRACTION  = .2;   // +20% of next-level XP
+
+function levelUpRerollCost() { return REROLL_BASE_COST + levelUpRerolls * REROLL_BASE_COST; }
+
+// Finish handling the current pending level-up — close the menu and either
+// show the next queued one or stop.
+function finishLevelUp()
+{
+    const m = getMenu('levelup');
+    if (m) { hideMenu('levelup'); m.destroy(); }
+    levelUpBanishMode = false;
+    player.pendingLevelUps--;
+    if (player.pendingLevelUps > 0)
+        requestAnimationFrame(showLevelUpMenu);
+}
+
+// Re-pull choices from the world (post-banish or post-reroll) and either
+// rebuild the menu or fall through to the max-build reward if nothing's left.
+function refreshLevelUpChoices()
+{
+    levelUpChoices = buildUpgradeChoices();
+    if (levelUpChoices.length === 0)
+    {
+        grantMaxBuildReward();
+        finishLevelUp();
+        return;
+    }
+    rebuildLevelUpMenu();
 }
 
 function showLevelUpMenu()
 {
-    const choices = buildUpgradeChoices();
-    // Max build — nothing useful to offer. Grant the consolation reward
-    // and keep draining queued level-ups so the player isn't stuck.
-    if (choices.length === 0)
+    levelUpRerolls = 0;
+    levelUpBanishMode = false;
+    levelUpChoices = buildUpgradeChoices();
+    if (levelUpChoices.length === 0)
     {
         grantMaxBuildReward();
         player.pendingLevelUps--;
@@ -2892,31 +3159,120 @@ function showLevelUpMenu()
             requestAnimationFrame(showLevelUpMenu);
         return;
     }
+    rebuildLevelUpMenu();
+}
+
+function rebuildLevelUpMenu()
+{
     const existing = getMenu('levelup');
     if (existing) existing.destroy();
+
+    const subtitleBase = 'Lv ' + player.level + '   💰 ' + coins;
+    const subtitle = levelUpBanishMode
+        ? subtitleBase + '\n🚫 Pick which choice to banish'
+        : subtitleBase;
+
+    const choiceItems = levelUpChoices.map((c, i) => ({
+        type: 'button',
+        id: 'choice-' + i,
+        label: levelUpBanishMode ? '🚫 ' + c.label : c.label,
+        onClick: () => onLevelUpChoiceClick(i),
+    }));
+
+    const rerollCost = levelUpRerollCost();
+    const rerollLabel = '🔄 Reroll  ' + rerollCost + '💰';
+    const banishLabel = levelUpBanishMode
+        ? '🚫 CANCEL BANISH'
+        : '🚫 Banish  ' + BANISH_COST + '💰';
+    const skipLabel = '⏭️  Skip  (+20% XP)';
 
     createMenu({
         id: 'levelup',
         title: 'LEVEL UP',
-        subtitle: 'Lv ' + player.level,
+        subtitle,
         dismissable: false,
-        items: choices.map(c => ({
-            type: 'button',
-            label: c.label,
-            onClick: () =>
-            {
-                c.apply();
-                hideMenu('levelup');
-                getMenu('levelup').destroy();
-                player.pendingLevelUps--;
-                if (player.pendingLevelUps > 0)
-                {
-                    requestAnimationFrame(showLevelUpMenu);
-                }
-            },
-        })),
+        items: [
+            ...choiceItems,
+            {type: 'separator'},
+            {type: 'button', id: 'reroll', label: rerollLabel, onClick: onLevelUpReroll},
+            {type: 'button', id: 'banish', label: banishLabel, onClick: onLevelUpBanish},
+            {type: 'button', id: 'skip',   label: skipLabel,   onClick: onLevelUpSkip},
+        ],
     });
+
+    // Disable affordance gates — reroll/banish grey out when you can't pay.
+    // Skip is always free, banish-cancel doesn't cost anything either.
+    const m = getMenu('levelup');
+    if (m)
+    {
+        const r = m.getItem('reroll');
+        if (r) r.setDisabled(coins < rerollCost || levelUpBanishMode);
+        const b = m.getItem('banish');
+        if (b) b.setDisabled(!levelUpBanishMode && coins < BANISH_COST);
+        const s = m.getItem('skip');
+        if (s) s.setDisabled(levelUpBanishMode);
+    }
     showMenu('levelup');
+}
+
+function onLevelUpChoiceClick(i)
+{
+    const c = levelUpChoices[i];
+    if (!c) return;
+    if (levelUpBanishMode)
+    {
+        // Spend 20💰 and add to the run-scoped banish set; redraw.
+        if (coins < BANISH_COST) return;
+        coins -= BANISH_COST;
+        saveMetaState();
+        player.banishedUpgrades.add(c.key);
+        levelUpBanishMode = false;
+        refreshLevelUpChoices();
+        return;
+    }
+    c.apply();
+    finishLevelUp();
+}
+
+function onLevelUpReroll()
+{
+    if (levelUpBanishMode) return;
+    const cost = levelUpRerollCost();
+    if (coins < cost) return;
+    coins -= cost;
+    saveMetaState();
+    ++levelUpRerolls;
+    refreshLevelUpChoices();
+}
+
+function onLevelUpBanish()
+{
+    if (levelUpBanishMode)
+    {
+        // Cancel — no charge yet, no banish recorded.
+        levelUpBanishMode = false;
+        rebuildLevelUpMenu();
+        return;
+    }
+    if (coins < BANISH_COST) return;
+    levelUpBanishMode = true;
+    rebuildLevelUpMenu();
+}
+
+function onLevelUpSkip()
+{
+    if (levelUpBanishMode) return;
+    // Grant a partial chunk toward the next level's XP. Cap below the
+    // threshold so we don't cascade a fresh level-up out of skipping.
+    const needed = xpToNext(player.level);
+    player.xp = min(needed - 1, player.xp + Math.floor(needed * SKIP_XP_FRACTION));
+    if (typeof showMenuToast === 'function')
+    {
+        showMenuToast({icon: '⏭️', title: 'SKIPPED',
+                       text: '+' + Math.floor(needed * SKIP_XP_FRACTION) + ' XP',
+                       duration: 2, position: 'bottom-right'});
+    }
+    finishLevelUp();
 }
 
 function endRun()
@@ -2924,6 +3280,26 @@ function endRun()
     // commit run results to persistent meta state
     if (elapsedTime > bestTime) bestTime = elapsedTime;
     saveMetaState();
+}
+
+// Curse Mode helpers — tier 0/1/2 maps to OFF / +50% / +100%. The label
+// is shown on the title button; cycleCurse advances and persists.
+function curseLabel(level)
+{
+    if (level <= 0) return 'OFF';
+    if (level === 1) return '+50%';
+    return '+100%';
+}
+function cycleCurse()
+{
+    curseLevel = (curseLevel + 1) % 3;
+    saveMetaState();
+    const m = getMenu('title');
+    if (m)
+    {
+        const btn = m.getItem('curseBtn');
+        if (btn) btn.setLabel('💀 Curse: ' + curseLabel(curseLevel));
+    }
 }
 
 function restartGame()
@@ -2943,13 +3319,14 @@ function goToTitle()
     // pick a different hero or just inspect their stats.
     for (const e of enemies.slice()) e.destroy();
     enemies.length = 0;
+    breakables.length = 0;
     for (const obj of engineObjects.slice())
     {
         if (obj === player || obj instanceof Enemy || obj instanceof Projectile ||
             obj instanceof Pickup || obj instanceof Bomb ||
             obj instanceof Chest || obj instanceof StarToss ||
             obj instanceof CometProjectile || obj instanceof NukeBomb ||
-            obj instanceof NukeField)
+            obj instanceof NukeField || obj instanceof Breakable)
             obj.destroy();
     }
     chainFlashes.length = 0;
@@ -3004,6 +3381,12 @@ function showGameOverMenu()
 function showVictoryMenu()
 {
     endRun();
+    // First Reaper kill ever — unlock Curse Mode on the title screen.
+    if (!firstVictory)
+    {
+        firstVictory = true;
+        saveMetaState();
+    }
     if (sounds.victory && sounds.victory.play) sounds.victory.play();
     const existing = getMenu('victory');
     if (existing) existing.destroy();
