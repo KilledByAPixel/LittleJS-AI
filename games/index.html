@@ -524,6 +524,11 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    /* Cap the box at 2 lines so overflow:hidden actually clips line 3.
+       Without this, flex:1 on .desc grows the box tall enough to render the
+       third line even though the ellipsis was already added at line 2. */
+    flex: 0 0 auto;
+    max-height: calc(2 * 1.35em);
   }
 
   /* About blurb at the bottom of the welcome screen */
