@@ -109,14 +109,13 @@ let totalCoins = 0;
 
 function loadProgress()
 {
-    bestDistance = parseInt(localStorage.getItem('jetpackDash_best')   || '0', 10) || 0;
-    totalCoins   = parseInt(localStorage.getItem('jetpackDash_coins') || '0', 10) || 0;
+    bestDistance = getSaveData().bestScore ?? 0;
+    totalCoins   = getSaveData().coins     ?? 0;
 }
 
 function saveProgress()
 {
-    localStorage.setItem('jetpackDash_best',  String(bestDistance));
-    localStorage.setItem('jetpackDash_coins', String(totalCoins));
+    saveData({bestScore: bestDistance, coins: totalCoins});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -783,6 +782,7 @@ function setPlaying(p)
 
 async function gameInit()
 {
+    saveDataInit('jetpackDash');
     loadProgress();
 
     // ----- procedural sprite atlas (textureGenerator) -----
