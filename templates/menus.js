@@ -1236,6 +1236,43 @@ function saveData(patch)
     writeSaveData(_saveName, _gameSaveData);
 }
 
+// ============================================================================
+// Best score — extracted from the same 4-line ritual that lived in 36 games.
+// Stored under the `bestScore` key inside the per-game save blob, so games
+// that were already calling saveData({bestScore: ...}) read/write the exact
+// same value with these helpers — no migration of saved data needed.
+// ============================================================================
+
+function getBestScore()
+{
+    const data = getSaveData();
+    return (data && typeof data.bestScore === 'number') ? data.bestScore : 0;
+}
+
+function setBestScore(n)
+{
+    saveData({bestScore: n});
+}
+
+// Returns true if `n` beat the stored best and was written.
+// Pass {lowerIsBetter:true} for golf-style scoring.
+function submitBestScore(n, opts)
+{
+    const lower = opts && opts.lowerIsBetter;
+    const current = getBestScore();
+    const isBetter = current === 0
+        ? true                                    // first score always wins
+        : (lower ? n < current : n > current);
+    if (!isBetter) return false;
+    setBestScore(n);
+    return true;
+}
+
+function resetBestScore()
+{
+    setBestScore(0);
+}
+
 // Internal helper for the global blob. Mute is the only consumer today;
 // add more if/when other site-wide prefs (master volume, fullscreen) move
 // here. Lazily inits if saveDataInit wasn't called so mute still works
