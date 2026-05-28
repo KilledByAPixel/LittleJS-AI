@@ -755,8 +755,8 @@
 // tags:     descriptive chips on the card.
 // top:      1..N — appears in the "Top Picks" row at that rank. Unset = not featured.
 // scoreKey: dotted path into the per-game save blob. e.g. 'tetris.bestScore'
-//           reads localStorage['tetris'] as JSON and returns the .bestScore
-//           field. Plain literal keys (e.g. for unmigrated games) also work.
+//           reads the 'tetris' save and returns its .bestScore field.
+//           Plain literal keys (for unmigrated games) also work.
 const GAMES = [
   { file:'2048.html',           name:'2048', emoji:'🔢',            category:'puzzle',  desc:'Slide numbered tiles to combine matching pairs.', scoreKey:'2048.bestScore',          tags:['puzzle','grid'] },
   { file:'asteroids.html',      name:'Asteroids', emoji:'🌑',       category:'shooter', desc:'Rotate-and-thrust shooter — blast drifting space rocks.', scoreKey:'asteroids.bestScore', tags:['arcade','shooter'], top:10 },
@@ -857,9 +857,8 @@ let activeCategory = 'all'; // sidebar filter
 // Locale-aware number formatter for high-score badges ("1,234,567").
 const numFmt = new Intl.NumberFormat();
 
-// Read a game's high score from localStorage. Supports both:
-//   scoreKey:'pool.bestShots'        → reads localStorage['pool.bestShots'] as a literal key
-//                                       (for unmigrated games that still use raw literal keys)
+// Read a game's high score. Supports both:
+//   scoreKey:'somegame.bestField'    → for unmigrated games, reads localStorage[scoreKey] literally
 //   scoreKey:'robotron.bestScore'    → tries the literal key first; if absent, walks dotted
 //                                       prefixes looking for a key whose JSON payload contains
 //                                       the remaining path (here: key 'robotron',
