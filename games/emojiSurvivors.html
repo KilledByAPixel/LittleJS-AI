@@ -102,6 +102,8 @@ class Player extends EngineObject
         this.maxHpMult      = 1;
         this.moveSpeedMult  = 1;
         this.xpGainMult     = 1;
+        this.extraProjectiles = 0;
+        this.heartMult        = 1;
     }
 
     update()
@@ -790,7 +792,7 @@ class StarTossWeapon
         const baseAng = dirToTarget.angle();
 
         // Small fan — 1 at Lv1 up to 5 at Lv5, ±.18 rad spread (≈10°)
-        const count = this.level;
+        const count = this.level + player.extraProjectiles;
         const spread = count === 1 ? 0 : .18;
         const dmg = this.damage() * player.dmgMult;
         const speed = 10 * player.projSpeedMult;
@@ -935,7 +937,7 @@ class Pickup extends EngineObject
             }
             else if (this.kind === 'heart')
             {
-                player.hp = min(player.maxHp, player.hp + this.value);
+                player.hp = min(player.maxHp, player.hp + this.value * player.heartMult);
                 if (sounds.heart && sounds.heart.play) sounds.heart.play(this.pos);
             }
             else if (this.kind === 'coin')
@@ -1202,7 +1204,7 @@ class PizzaTossWeapon
         this.cooldown = 1.1 / player.cooldownMult;
 
         // fan-shot — one slice at level 1, three at level 3, five at level 5
-        const slices = 1 + (this.level - 1);
+        const slices = 1 + (this.level - 1) + player.extraProjectiles;
         const spread = slices === 1 ? 0 : .35;
         const baseAng = this.facing.angle();
         const dmg = this.damage() * player.dmgMult;
@@ -1330,7 +1332,7 @@ class SpicyPizzaWeapon
         this.cooldown = .9 / player.cooldownMult;
 
         // wider, denser fan that burns on hit
-        const slices = 7, spread = .55;
+        const slices = 7 + player.extraProjectiles, spread = .55;
         const baseAng = this.facing.angle();
         const dmg = this.damage() * player.dmgMult;
         const speed = 13 * player.projSpeedMult;
@@ -1595,8 +1597,10 @@ class MagnetPassive     extends Passive { constructor(){ super('Magnet',      '�
 class HeartPassive      extends Passive { constructor(){ super('Heart',       '❤️'); } apply(){ player.maxHpMult      *= 1 + this.level * .20; } }
 class SneakerPassive    extends Passive { constructor(){ super('Sneaker',     '👟'); } apply(){ player.moveSpeedMult  *= 1 + this.level * .10; } }
 class SproutPassive     extends Passive { constructor(){ super('Sprout',      '🌱'); } apply(){ player.xpGainMult     *= 1 + this.level * .12; } }
+class PlusOnePassive    extends Passive { constructor(){ super('Plus One',    '➕'); } apply(){ player.extraProjectiles += this.level; } }
+class SnackPassive      extends Passive { constructor(){ super('Snack',       '🍗'); } apply(){ player.heartMult      *= 1 + this.level * .25; } }
 
-const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout'];
+const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout','PlusOne','Snack'];
 
 function makePassiveByName(name)
 {
@@ -1608,6 +1612,8 @@ function makePassiveByName(name)
     if (name === 'Heart')      return new HeartPassive();
     if (name === 'Sneaker')    return new SneakerPassive();
     if (name === 'Sprout')     return new SproutPassive();
+    if (name === 'PlusOne')    return new PlusOnePassive();
+    if (name === 'Snack')      return new SnackPassive();
     return null;
 }
 
@@ -1618,6 +1624,8 @@ function recomputeMultipliers()
     player.dmgMult = player.cooldownMult = player.areaMult = 1;
     player.projSpeedMult = player.magnetMult = 1;
     player.maxHpMult = player.moveSpeedMult = player.xpGainMult = 1;
+    player.extraProjectiles = 0;
+    player.heartMult = 1;
     for (const p of player.passives) p.apply();
     // hero bonuses applied on top of passives
     if (currentHero && currentHero.stats)
