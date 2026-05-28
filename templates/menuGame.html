@@ -215,13 +215,7 @@ async function gameInit()
             {
                 showConfirmDialog({
                     message: 'Quit to title?',
-                    onYes: () =>
-                    {
-                        clearSubmenuStack();
-                        hideAllMenus();
-                        setPlaying(false);
-                        showMenu('title');
-                    },
+                    onYes: () => quitToTitle(),
                 });
             }},
         ],
