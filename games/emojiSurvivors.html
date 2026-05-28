@@ -538,8 +538,10 @@ class Enemy extends EngineObject
         super.destroy();
     }
 
-    takeDamage(amount)
+    takeDamage(amount, element)
     {
+        if (element && element === this.type.weakness)
+            amount *= 2;
         this.hp -= amount;
         this.hitFlashTimer = .08;
         // throttle damage numbers — multiple weapons hitting the same enemy
@@ -555,7 +557,7 @@ class Enemy extends EngineObject
 
 class Projectile extends EngineObject
 {
-    constructor(pos, dir, speed, damage, lifetime, sprite, piercing = false, onHit = null)
+    constructor(pos, dir, speed, damage, lifetime, sprite, piercing = false, onHit = null, element = null)
     {
         super(pos, vec2(.6), sprite);
         this.velocity = dir.normalize(speed / 60);
@@ -563,6 +565,7 @@ class Projectile extends EngineObject
         this.lifetime = lifetime;
         this.piercing = piercing;
         this.onHit    = onHit;
+        this.element  = element;
         this.hitSet   = new Set();
         this.damping = 1;
         this.friction = 1;
@@ -593,7 +596,7 @@ class Projectile extends EngineObject
             if (this.hitSet.has(e)) continue;
             if (isOverlapping(this.pos, this.size, e.pos, e.size))
             {
-                e.takeDamage(this.damage);
+                e.takeDamage(this.damage, this.element);
                 if (this.onHit) this.onHit(e);
                 this.hitSet.add(e);
                 if (!this.piercing) { this.destroy(); return; }
@@ -1067,7 +1070,7 @@ class FireballWeapon
         new Projectile(player.pos.copy(), dir,
                        12 * player.projSpeedMult,
                        this.damage() * player.dmgMult,
-                       1.2, sprites.fireball);
+                       1.2, sprites.fireball, false, null, 'fire');
         // Lv1 = .7s between shots, Lv5 = .14s. Faster than VS's whip but
         // we don't auto-aim a swing — single projectile per shot.
         this.cooldown = (.7 / this.level) / player.cooldownMult;
@@ -1149,7 +1152,7 @@ class IceCubeWeapon
             candidates.splice(idx, 1);
             const dir = target.pos.subtract(player.pos);
             new Projectile(player.pos.copy(), dir, speed, dmg, 1.0,
-                sprites.ice, false, e => { e.frozenTimer = 1.5; });
+                sprites.ice, false, e => { e.frozenTimer = 1.5; }, 'water');
         }
     }
 }
@@ -1198,7 +1201,7 @@ class WaterSplashWeapon
             const idx = randInt(candidates.length);
             const target = candidates[idx];
             candidates.splice(idx, 1);
-            target.takeDamage(dmg);
+            target.takeDamage(dmg, 'water');
             target.slowTimer = 2.0;
             // visual splash line via chainFlashes (color-tinted blue)
             chainFlashes.push({
@@ -1250,7 +1253,8 @@ class SpicyPizzaWeapon
                 e => {
                     e.burnTimer = 1.5;
                     if (6 > e.burnDps) e.burnDps = 6;
-                });
+                },
+                'fire');
             proj.angleVelocity = pizzaSpinRate * 1.4;
         }
     }
@@ -1370,7 +1374,7 @@ class BlizzardWeapon
             for (const e of enemies)
             {
                 if (e.pos.distance(player.pos) < auraRadius)
-                    e.takeDamage(dmg);
+                    e.takeDamage(dmg, 'water');
             }
         }
     }
