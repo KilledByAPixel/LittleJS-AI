@@ -1709,7 +1709,6 @@ const HEROES = [
 let currentHero = HEROES[0];
 let coins = 0;          // lifetime persistent
 let bestTime = 0;       // lifetime longest survival
-const STORAGE_KEY = 'emojiSurvivors.v1';
 
 // Permanent power-ups — spent at the title-screen shop with 💰 coins.
 // Effects apply on every future run via recomputeMultipliers. Caps at
@@ -1728,29 +1727,18 @@ function powerUpCost(level) { return 50 + level * 50; }    // 50/100/150/200/250
 
 function loadMetaState()
 {
-    try
-    {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        coins = data.coins || 0;
-        bestTime = data.bestTime || 0;
-        if (data.powerUps)
-            for (const k in powerUps)
-                if (typeof data.powerUps[k] === 'number')
-                    powerUps[k] = data.powerUps[k];
-    }
-    catch (e) { /* ignore */ }
+    const data = getSaveData();
+    coins    = data.coins    ?? 0;
+    bestTime = data.bestTime ?? 0;
+    if (data.powerUps)
+        for (const k in powerUps)
+            if (typeof data.powerUps[k] === 'number')
+                powerUps[k] = data.powerUps[k];
 }
 
 function saveMetaState()
 {
-    try
-    {
-        localStorage.setItem(STORAGE_KEY,
-            JSON.stringify({coins, bestTime, powerUps}));
-    }
-    catch (e) { /* localStorage may be disabled */ }
+    saveData({coins, bestTime, powerUps});
 }
 
 function applyHero(hero)
