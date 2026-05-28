@@ -712,13 +712,16 @@ function createPauseMenu(opts)
 function createOptionsMenu(opts)
 {
     opts = Object.assign({
-        id:          'options',
-        title:       'OPTIONS',
-        volume:      true,
-        volumeLabel: 'VOLUME',
-        persistKey:  'volume',
-        extraItems:  [],
-        backLabel:   'BACK',
+        id:            'options',
+        title:         'OPTIONS',
+        volume:        true,
+        volumeLabel:   'VOLUME',
+        persistKey:    'volume',
+        extraItems:    [],
+        backLabel:     'BACK',
+        showResetBest: false,
+        resetBestLabel:   'RESET BEST',
+        resetBestMessage: 'Reset best score?',
     }, opts || {});
 
     const items = [];
@@ -747,6 +750,17 @@ function createOptionsMenu(opts)
     }
 
     items.push(...opts.extraItems);
+
+    if (opts.showResetBest)
+    {
+        items.push({type:'separator'});
+        items.push({type:'button', label: opts.resetBestLabel,
+            onClick: () => showConfirmDialog({
+                message: opts.resetBestMessage,
+                onYes: () => resetBestScore(),
+            })});
+    }
+
     items.push({type:'separator'});
     items.push({type:'button', label: opts.backLabel,
         onClick: () => hideMenu(opts.id)});
