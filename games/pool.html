@@ -94,9 +94,8 @@ let wheelPower = 0;      // wheel-driven power offset added on top of mouse drag
 let sinking = [];        // visual-only sink animations — physics already destroyed; see updateSinking
 const SINK_TIME = .5;    // seconds to lerp from contact point to pocket center
 
-// Best (lowest) shot count to clear the table, persisted across sessions.
-const BEST_KEY = 'pool.bestShots';
-let bestShots = +localStorage.getItem(BEST_KEY) || 0;
+// Best (lowest) shot count to clear the table.
+let bestShots = 0;
 let newBestThisRound = false;
 
 // strike animation — windup (tip travels toward ball) then follow-through.
@@ -652,6 +651,9 @@ function startPlay()
 
 async function gameInit()
 {
+    saveDataInit('pool');
+    bestShots = getSaveData().bestShots ?? 0;
+
     await box2dInit();
 
     // Pre-render all 16 ball sprites into the texture atlas. Tile index = ball number.
@@ -928,7 +930,7 @@ function updateSinking()
         if (!bestShots || shots < bestShots)
         {
             bestShots = shots;
-            localStorage.setItem(BEST_KEY, bestShots);
+            saveData({bestShots});
             newBestThisRound = true;
         }
         sfxWin.play();
