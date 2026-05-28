@@ -200,6 +200,9 @@ const BOSS_SCHEDULE = [
     {time: 480, key: 'clownKing',  sprite: 'clown',  name: 'Clown King',
         hp: 900, dmg: 25, speed: 1.5, size: 3.5, xpDrop: 0,
         splitInto: 'clown', splitCount: 4},
+    {time: 600, key: 'evilWizard', sprite: 'evilWizard', name: 'Evil Wizard',
+        hp: 600, dmg: 18, speed: 1.2, size: 3.0, xpDrop: 0,
+        shootEvery: 2.0, shootSprite: 'bolt'},
 ];
 
 const bossesSpawned = new Set();
@@ -341,6 +344,7 @@ class Enemy extends EngineObject
         // integrated rotation for entities that roll (skull) — advances with
         // velocity.x so a ball moving right rolls clockwise, left rolls CCW.
         this.rollAngle = 0;
+        this.shootTimer = 0;
     }
 
     render()
@@ -446,6 +450,20 @@ class Enemy extends EngineObject
                 if (dir.length() > .01) dir = dir.normalize();
             }
             this.velocity = stepLen > 0 ? dir.scale(stepLen) : vec2();
+        }
+
+        // Boss ranged attack — fires an EnemyProjectile every `shootEvery` seconds.
+        if (this.bossDef && this.bossDef.shootEvery)
+        {
+            this.shootTimer -= 1 / 60;
+            if (this.shootTimer <= 0)
+            {
+                this.shootTimer = this.bossDef.shootEvery;
+                const dir = player.pos.subtract(this.pos);
+                if (dir.length() > .1)
+                    new EnemyProjectile(this.pos.copy(), dir, 5, this.dmg, 4,
+                                        sprites[this.bossDef.shootSprite]);
+            }
         }
 
         super.update();
@@ -639,6 +657,49 @@ class Projectile extends EngineObject
                      new Color(1, 1, 1, alpha), g.angle);
         }
         drawTile(this.pos, this.size, this.tileInfo, WHITE, this.angle);
+    }
+}
+
+class EnemyProjectile extends EngineObject
+{
+    constructor(pos, dir, speed, damage, lifetime, sprite)
+    {
+        super(pos, vec2(.7), sprite);
+        this.velocity = dir.normalize(speed / 60);
+        this.damage   = damage;
+        this.lifetime = lifetime;
+        this.damping = 1;
+        this.friction = 1;
+        this.gravityScale = 0;
+        this.angle = 0;
+        this.angleVelocity = 6;   // visible spin
+        this.setCollision(false, false, false, false);
+    }
+
+    update()
+    {
+        super.update();
+        this.renderOrder = -this.pos.y;
+        this.lifetime -= 1 / 60;
+        if (this.lifetime <= 0) { this.destroy(); return; }
+
+        // arena despawn so a stray shot off-screen doesn't linger
+        if (this.pos.x < ARENA_MIN_X - 2 || this.pos.x > ARENA_MAX_X + 2 ||
+            this.pos.y < ARENA_MIN_Y - 2 || this.pos.y > ARENA_MAX_Y + 2)
+        {
+            this.destroy();
+            return;
+        }
+
+        // player contact — respects invuln, same gate as Enemy contact
+        if (player.invulnTimer <= 0 &&
+            isOverlapping(this.pos, this.size, player.pos, player.size))
+        {
+            player.hp -= this.damage;
+            player.hurtTimer = .25;
+            if (sounds.hurt && sounds.hurt.play) sounds.hurt.play(this.pos);
+            this.destroy();
+        }
     }
 }
 
