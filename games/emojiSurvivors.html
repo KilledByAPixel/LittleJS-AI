@@ -162,13 +162,19 @@ class Player extends EngineObject
 }
 
 const ENEMY_TYPES = [
-    {key:'ant',    sprite:'ant',    hp: 1,  dmg: 3,  speed: 1.0, xpDrop: 1, size: .55},
-    {key:'zombie', sprite:'zombie', hp: 3,  dmg: 10, speed: 1.5, xpDrop: 1, size: 1.0},
-    {key:'bat',    sprite:'bat',    hp: 1,  dmg: 5,  speed: 4.0, xpDrop: 1, size: .85},
-    {key:'snail',  sprite:'snail',  hp: 25, dmg: 5,  speed: .7,  xpDrop: 5, size: 1.2},
-    {key:'skull',  sprite:'skull',  hp: 8,  dmg: 15, speed: 1.2, xpDrop: 3, size: 1.0},
-    {key:'clown',  sprite:'clown',  hp: 5,  dmg: 8,  speed: 1.8, xpDrop: 2, size: 1.0,
-                                    splitInto: 'ant', splitCount: 3},
+    {key:'ant',     sprite:'ant',     hp: 1,  dmg: 3,  speed: 1.0, xpDrop: 1, size: .55},
+    {key:'zombie',  sprite:'zombie',  hp: 3,  dmg: 10, speed: 1.5, xpDrop: 1, size: 1.0},
+    {key:'bat',     sprite:'bat',     hp: 1,  dmg: 5,  speed: 4.0, xpDrop: 1, size: .85},
+    {key:'snail',   sprite:'snail',   hp: 25, dmg: 5,  speed: .7,  xpDrop: 5, size: 1.2},
+    {key:'skull',   sprite:'skull',   hp: 8,  dmg: 15, speed: 1.2, xpDrop: 3, size: 1.0},
+    {key:'clown',   sprite:'clown',   hp: 5,  dmg: 8,  speed: 1.8, xpDrop: 2, size: 1.0,
+                                      splitInto: 'ant', splitCount: 3},
+    {key:'duck',    sprite:'duck',    hp: 2,  dmg: 6,  speed: 2.2, xpDrop: 1, size: .85},
+    {key:'ghost',   sprite:'ghost',   hp: 3,  dmg: 8,  speed: 1.6, xpDrop: 1, size: .9},
+    {key:'fireImp', sprite:'fireImp', hp: 4,  dmg: 8,  speed: 1.6, xpDrop: 2, size: .85,
+                                      weakness: 'water'},
+    {key:'iceImp',  sprite:'iceImp',  hp: 4,  dmg: 8,  speed: 1.2, xpDrop: 2, size: .85,
+                                      weakness: 'fire'},
 ];
 
 // Elite variants — color-coded by additive glow + stat multipliers.
@@ -361,15 +367,22 @@ class Enemy extends EngineObject
             const k = this.type.key;
             const ph = this.bobPhase;
             if (k === 'zombie') renderAngle = sin(time * 5  + ph) * .14;
-            else if (k === 'bat')    renderPos = this.pos.add(vec2(0, sin(time * 7 + ph) * .18));
-            else if (k === 'ant')    renderAngle = sin(time * 12 + ph) * .12;
-            else if (k === 'snail')  renderAngle = sin(time * 2  + ph) * .05;
-            else if (k === 'skull')  renderAngle = this.rollAngle;
-            else if (k === 'clown')  renderAngle = sin(time * 8  + ph) * .18;
-            else if (k === 'reaper') renderAngle = sin(time * 3  + ph) * .1;
+            else if (k === 'bat')      renderPos = this.pos.add(vec2(0, sin(time * 7 + ph) * .18));
+            else if (k === 'ant')      renderAngle = sin(time * 12 + ph) * .12;
+            else if (k === 'snail')    renderAngle = sin(time * 2  + ph) * .05;
+            else if (k === 'skull')    renderAngle = this.rollAngle;
+            else if (k === 'clown')    renderAngle = sin(time * 8  + ph) * .18;
+            else if (k === 'reaper')   renderAngle = sin(time * 3  + ph) * .1;
+            else if (k === 'duck')     renderAngle = sin(time * 6  + ph) * .15;
+            else if (k === 'ghost')    renderPos = this.pos.add(vec2(0, sin(time * 2.5 + ph) * .12));
+            else if (k === 'fireImp')  renderAngle = sin(time * 10 + ph) * .1;
+            else if (k === 'iceImp')   renderAngle = sin(time * 3  + ph) * .08;
         }
 
-        drawEmoji(renderPos, this.size, this.tileInfo, tint, additive, renderAngle);
+        let finalTint = tint;
+        if (this.type.key === 'ghost' && finalTint === WHITE)
+            finalTint = new Color(1, 1, 1, .7);
+        drawEmoji(renderPos, this.size, this.tileInfo, finalTint, additive, renderAngle);
     }
 
     update()
@@ -424,7 +437,15 @@ class Enemy extends EngineObject
             const contactDist = (this.size.x + player.size.x) * .4;
             const usableDist = max(0, dist - contactDist);
             const stepLen = min(targetStep, usableDist);
-            this.velocity = stepLen > 0 ? toPlayer.normalize(stepLen) : vec2();
+            let dir = toPlayer.normalize();
+            if (this.type.key === 'duck')
+            {
+                const perp = vec2(-dir.y, dir.x);
+                const wobble = sin(time * 4 + this.bobPhase) * .8;
+                dir = dir.add(perp.scale(wobble));
+                if (dir.length() > .01) dir = dir.normalize();
+            }
+            this.velocity = stepLen > 0 ? dir.scale(stepLen) : vec2();
         }
 
         super.update();
@@ -1561,11 +1582,14 @@ const spawner = {
 //   [ant, zombie, bat, snail, skull, clown]
 function enemyMixForTime(seconds)
 {
-    if (seconds < 15)  return [.60, .40,   0,   0,   0,   0];
-    if (seconds < 40)  return [.40, .30, .30,   0,   0,   0];
-    if (seconds < 80)  return [.30, .25, .25, .10, .10,   0];
-    if (seconds < 150) return [.25, .20, .20, .15, .10, .10];
-    return                    [.20, .15, .20, .20, .10, .15];
+    // weights aligned with ENEMY_TYPES:
+    //   ant, zombie, bat, snail, skull, clown, duck, ghost, fireImp, iceImp
+    if (seconds < 15)  return [.60, .40,   0,   0,   0,   0,   0,   0,   0,   0];
+    if (seconds < 40)  return [.40, .30, .30,   0,   0,   0,   0,   0,   0,   0];
+    if (seconds < 80)  return [.25, .25, .20, .10, .10,   0, .10,   0,   0,   0];
+    if (seconds < 150) return [.20, .15, .15, .10, .10, .10, .10, .10,   0,   0];
+    if (seconds < 300) return [.10, .10, .15, .10, .10, .10, .10, .10, .075, .075];
+    return                    [.05, .05, .10, .15, .10, .15, .10, .10, .10, .10];
 }
 
 function pickWeightedType(elapsed)
