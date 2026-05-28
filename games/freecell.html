@@ -245,6 +245,7 @@ function setPlaying(p)
 
 async function gameInit()
 {
+    saveDataInit('freecell');
     setupLayout();
     initCardAtlas();
 
@@ -254,8 +255,8 @@ async function gameInit()
     let savedSnap = null;
     try
     {
-        const raw = localStorage['freecell.saveState'];
-        if (raw) savedSnap = JSON.parse(raw);
+        const raw = getSaveData().saveState;
+        if (raw) savedSnap = raw;
     }
     catch (e) { /* localStorage blocked or corrupt JSON — non-fatal */ }
 
@@ -317,10 +318,10 @@ async function gameInit()
 
     // ----- options menu -----
     createOptionsMenu({
-        persistKey: 'freecell.volume',
+        persistKey: 'volume',
         extraItems: [
             {type:'checkbox', id:'hints', label:'HINTS', value: true,
-                persist: 'freecell.hints',
+                persist: 'hints',
                 onChange: v => { hintsEnabled = v; }},
         ],
     });
@@ -611,8 +612,8 @@ function saveState()
     stateUndo.push(snapshot());
     if (stateUndo.length > 500) stateUndo.shift();   // cap memory
     stateRedo = [];
-    try { localStorage['freecell.saveState'] = JSON.stringify(stateUndo[stateUndo.length - 1]); }
-    catch (e) { /* localStorage full / blocked — non-fatal */ }
+    try { saveData({saveState: stateUndo[stateUndo.length - 1]}); }
+    catch (e) { /* non-fatal */ }
 }
 
 function loadState(snap)
