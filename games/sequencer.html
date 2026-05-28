@@ -45,7 +45,6 @@ let currentStep = 0, stepTime = 0, tempo = 240;
 let isPlaying = false, eraseMode = false;
 let currentSlot = 0;
 
-const STORAGE_KEY = 'ljs_sequencer_v1';
 let saveTimer = 0;
 function scheduleSave()
 {
@@ -63,21 +62,18 @@ function saveState()
         if (sequencer[idx]) cells.push(`${track},${step}`);
     }
     const blob = { version:1, tempo, cells, customSounds };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(blob)); }
+    try { saveData({state: blob}); }
     catch (e) { console.warn('sequencer: saveState failed', e); }
 }
 function loadState()
 {
-    let blob;
     try
     {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return null;
-        blob = JSON.parse(raw);
+        const blob = getSaveData().state;
+        if (!blob || blob.version !== 1) return null;
+        return blob;
     }
-    catch (e) { console.warn('sequencer: loadState parse failed', e); return null; }
-    if (!blob || blob.version !== 1) return null;
-    return blob;
+    catch (e) { console.warn('sequencer: loadState failed', e); return null; }
 }
 
 const sound_piano = new Sound([.3,0,220,,.1]);
@@ -335,7 +331,7 @@ function buildControlsMenu()
                 onChange: v => applyTempo(v)},
             {type:'slider', id:'volume', label:'VOLUME', title:'Volume',
                 min: 0, max: 1, step: 0.05, value: soundVolume,
-                persist: 'seqVolume',
+                persist: 'volume',
                 onChange: v => setSoundVolume(v)},
         ],
     });
@@ -352,6 +348,7 @@ function clearAllCells()
 
 function gameInit()
 {
+    saveDataInit('sequencer');
     new UISystemPlugin;
     uiSystem.defaultCornerRadius = 8;
     uiSystem.defaultShadowColor = BLACK;
