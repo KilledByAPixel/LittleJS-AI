@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS Robotron</title>
+<title>LittleJS Robo Rescue</title>
 <meta charset=utf-8>
 </head><body>
 <script src="../dist/littlejs.js?1779932166044"></script>
@@ -2751,18 +2751,18 @@ function gameRenderPost()
         const titleSize = 100 + Math.sin(t * 2) * 4;
 
         // Chromatic color halos (offset R/G/B layers)
-        drawTextScreen('ROBOTRON', vec2(cx + 10 + wobbleX*.4, cy),
+        drawTextScreen('ROBO RESCUE', vec2(cx + 10 + wobbleX*.4, cy),
             titleSize, rgb(1, .12, .2, .55));
-        drawTextScreen('ROBOTRON', vec2(cx - 10 - wobbleX*.4, cy),
+        drawTextScreen('ROBO RESCUE', vec2(cx - 10 - wobbleX*.4, cy),
             titleSize, rgb(.15, .85, 1, .55));
-        drawTextScreen('ROBOTRON', vec2(cx, cy + 8 + wobbleY*.4),
+        drawTextScreen('ROBO RESCUE', vec2(cx, cy + 8 + wobbleY*.4),
             titleSize, rgb(1, .9, .15, .45));
-        drawTextScreen('ROBOTRON', vec2(cx, cy - 8 - wobbleY*.4),
+        drawTextScreen('ROBO RESCUE', vec2(cx, cy - 8 - wobbleY*.4),
             titleSize, rgb(.7, .25, 1, .45));
 
         // Main color-cycling layer (rainbow hue drift) on top
         const hue = (t * .12) % 1;
-        drawTextScreen('ROBOTRON', vec2(cx, cy + wobbleY),
+        drawTextScreen('ROBO RESCUE', vec2(cx, cy + wobbleY),
             titleSize, hsl(hue, .85, .75), 9, rgb(0,0,0));
 
         // 2048 subtitle — counter-cycling hue, just below the title

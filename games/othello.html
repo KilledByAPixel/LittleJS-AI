@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS Othello</title>
+<title>LittleJS Reversi</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body style="background:#000">
@@ -815,7 +815,7 @@ async function gameInit()
     // ----- title menu -----
     createMenu({
         id: 'title',
-        title: 'OTHELLO',
+        title: 'REVERSI',
         dismissable: false,
         onStart: () => startGame('ai'),
         items: [
@@ -847,7 +847,7 @@ async function gameInit()
         title: 'ABOUT',
         onHide: popMenu,
         items: [
-            {type:'text', text:'Othello (Reversi) — sandwich opponent discs between two of yours ' +
+            {type:'text', text:'Reversi — sandwich opponent discs between two of yours ' +
                 'to flip them. Most discs at the end wins. Includes a watchable AI-vs-AI mode.'},
             {type:'separator'},
             {type:'button', label:'BACK', onClick: () => hideMenu('about')},

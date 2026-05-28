@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS Breakout</title>
+<title>LittleJS Brickout</title>
 <meta charset="utf-8">
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1779932166044"></script>
@@ -631,7 +631,7 @@ async function gameInit()
 
     createTitleMenu({
         id: 'title',
-        title: 'BREAKOUT',
+        title: 'BRICKOUT',
         subtitle: 'Clear all 5 levels, then loop with rising speed',
         revealOnClick: false,
         canReveal: () => !isPlaying(),
@@ -658,7 +658,7 @@ async function gameInit()
         title: 'ABOUT',
         onHide: popMenu,
         items: [
-            {type:'text', text:'A LittleJS breakout.\n\nMove the paddle with the mouse or A/D. ' +
+            {type:'text', text:'A LittleJS brickout.\n\nMove the paddle with the mouse or A/D. ' +
                 'Click or Space to launch, fire lasers, and release sticky balls.\n\n' +
                 'Powerups: 🏓 Wide · 🔱 Multi · 🧲 Sticky · 🔫 Laser · 🔥 Fire · 🐌 Slow · ❤️ 1UP.'},
             {type:'separator'},

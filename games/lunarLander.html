@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS Lunar Lander</title>
+<title>LittleJS Moon Lander</title>
 <meta charset=utf-8>
 </head><body style="background:#000">
 <script src="../dist/littlejs.js?1779932166044"></script>
@@ -347,7 +347,7 @@ function buildMenus()
     installAutoPause();
 
     createTitleMenu({
-        title: 'LUNAR LANDER',
+        title: 'MOON LANDER',
         subtitle: '',
         onPlay: startGame,
         revealOnClick: false,
@@ -447,7 +447,7 @@ function gameRenderPost()
     const ang = player && !player.destroyed ? abs(player.angle) : 0;
 
     const text =
-        `LUNAR LANDER\n`+
+        `MOON LANDER\n`+
         `Fuel: ${fuel.toFixed(0)}\n`+
         `Speed: ${vel.toFixed(3)}\n`+
         `Tilt: ${(ang*180/PI).toFixed(1)}°`;

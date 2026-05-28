@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>LittleJS Dr. Mario</title>
+<title>LittleJS Dr. Pill</title>
 <meta charset=utf-8>
 </head><body>
 <script src="../dist/littlejs.js?1779932166044"></script>
@@ -616,7 +616,7 @@ function buildMenus()
     installAutoPause();
 
     createTitleMenu({
-        title: 'DR MARIO',
+        title: 'DR. PILL',
         subtitle: '',
         onPlay: startGame,
         revealOnClick: false,
@@ -846,7 +846,7 @@ function gameRenderPost()
     const top = 38;
     const centerX = mainCanvasSize.x/2;
 
-    drawTextScreen('DR. MARIO', vec2(centerX, top), 42, hsl(0.58,0.30,0.90), 5, hsl(0,0,0));
+    drawTextScreen('DR. PILL', vec2(centerX, top), 42, hsl(0.58,0.30,0.90), 5, hsl(0,0,0));
 
     const info = 'Arrows/A-D move  |  Down soft drop  |  Up/X rot CW  |  Z rot CCW  |  Space hard drop  |  R restart';
     drawTextScreen(info, vec2(centerX, mainCanvasSize.y - 30), 16, hsl(0,0,.8), 3, hsl(0,0,0));

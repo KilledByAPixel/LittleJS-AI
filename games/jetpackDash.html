@@ -1,5 +1,5 @@
 <!DOCTYPE html><head>
-<title>Jetpack Dash</title>
+<title>Jetdash</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -885,7 +885,7 @@ async function gameInit()
     const playFromTitle = () => { titleMenu.hide(); startRun(); };
     const titleMenu = createMenu({
         id: 'title',
-        title: 'JETPACK DASH',
+        title: 'JETDASH',
         dismissable: true,
         onStart: playFromTitle,
         items: [
@@ -908,7 +908,7 @@ async function gameInit()
         title: 'ABOUT',
         onHide: popMenu,
         items: [
-            {type:'label', text:'Jetpack Dash'},
+            {type:'label', text:'Jetdash'},
             {type:'text', text:'Hold MOUSE / SPACE / UP / A to thrust. ' +
                 'Release to fall. Don\'t hit zappers, missiles, lasers, ceiling, or floor. ' +
                 'Collect coins. Shield bubbles absorb one hit.\n\nBuilt with LittleJS.'},
