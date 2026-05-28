@@ -579,7 +579,7 @@ function spawnEnemyMissile(smart)
 function maybeSplitMirv(m)
 {
   if (!m.mirv || !m.alive) return;
-  if (m.pos.y > levelSize.y * 0.55) return;
+  if (m.pos.y > levelSize.y * 0.6) return;
   m.mirv = false;
   m.split = true;
   m.children = 2 + randInt(2);
@@ -1582,21 +1582,19 @@ function drawMissiles()
 
   for (const m of enemyMissiles)
   {
-    if (m.split)
+    if (m.split || m.mirv)
     {
-      drawLine(m.start, m.pos, m.w * 3.8, hsl(.88, .8, .5, .22));
-      drawLine(m.start, m.pos, m.w * 1.7, hsl(.88, .9, .6, .55));
-      continue;
-    }
-    if (m.mirv)
-    {
-      drawLine(m.start, m.pos, m.w * 3.8, hsl(.88, 1, .55, .32));
-      drawLine(m.start, m.pos, m.w * 1.7, hsl(.88, .95, .7));
-      const pulse = .85 + .15 * Math.sin(time * 10 + m.pulsePhase);
-      drawCircle(m.pos, .50 * pulse, hsl(0, 0, 1, .35));
-      drawCircle(m.pos, .32, hsl(.88, 1, .7));
-      drawCircle(m.pos, .20, hsl(.88, 1, .85));
-      drawCircle(m.pos, .10, hsl(0, 0, 1));
+      drawLine(m.start, m.pos, m.w * 4.8, hsl(.88, 1, .55, .32));
+      drawLine(m.start, m.pos, m.w * 1.7, hsl(.88, .95, .9));
+      
+      if (m.mirv)
+      {
+        const pulse = .85 + .15 * Math.sin(time * 10 + m.pulsePhase);
+        drawCircle(m.pos, .50 * pulse, hsl(0, 0, 1, .35));
+        drawCircle(m.pos, .32, hsl(.88, 1, .7));
+        drawCircle(m.pos, .20, hsl(.88, 1, .85));
+        drawCircle(m.pos, .10, hsl(0, 0, 1));
+      }
       continue;
     }
     drawLine(m.start, m.pos, m.w * 2.4, hsl(pal.enemyHue, 1, .55, .2));
@@ -1656,10 +1654,10 @@ function drawFliers()
     }
     else
     {
+      drawLine(p, p.add(vec2(-.6, .5)), .1, hsl(.55, .1, .6));
+      drawLine(p, p.add(vec2( .6, .5)), .1, hsl(.55, .1, .6));
       drawCircle(p, .55, hsl(.13, .15, .7));
       drawCircle(p, .35, hsl(.55, .25, .55));
-      drawLine(p.add(vec2(-.4, .25)), p.add(vec2(-.7, .55)), .05, hsl(.55, .1, .6));
-      drawLine(p.add(vec2( .4, .25)), p.add(vec2( .7, .55)), .05, hsl(.55, .1, .6));
       const blink = .5 + .5 * Math.sin(time * 6 + f.phase);
       drawCircle(p, .1, hsl(.13, 1, .8, .5 + .5 * blink));
     }
