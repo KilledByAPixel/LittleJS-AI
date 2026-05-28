@@ -1601,6 +1601,53 @@ class HeartSpiralWeapon
     }
 }
 
+class StarStormWeapon
+{
+    constructor()
+    {
+        this.level = 5; this.evolved = true; this.name = 'Star Storm';
+        this.cooldown = 0; this.hitMap = new Map();
+    }
+    levelUp() {}
+    damage() { return 10; }
+
+    update()
+    {
+        this.cooldown -= 1 / 60;
+        if (this.cooldown > 0)
+        {
+            this._purgeHitMap();
+            return;
+        }
+        this.cooldown = .7 / player.cooldownMult;
+
+        const target = nearestEnemy(player.pos, 14 * player.areaMult);
+        if (!target) return;
+        const baseAng = target.pos.subtract(player.pos).angle();
+
+        const count = 5 + player.extraProjectiles;
+        const spread = .45;
+        const dmg = this.damage() * player.dmgMult;
+        const speed = 14 * player.projSpeedMult;
+        for (let i = 0; i < count; ++i)
+        {
+            const t = count === 1 ? .5 : i / (count - 1);
+            const ang = baseAng + lerp(-spread, spread, t);
+            const d = vec2().setAngle(ang, 1);
+            const proj = new Projectile(player.pos.copy(), d, speed, dmg,
+                .9, sprites.starToss, true);
+            proj.angleVelocity = 8;
+        }
+    }
+
+    _purgeHitMap()
+    {
+        const now = time;
+        for (const [e, t] of this.hitMap)
+            if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
+    }
+}
+
 const EVOLUTIONS = {
     PizzaToss:      {passive: 'Flex',      name: 'Spicy Pizza',  emoji: '🌶️',
                      ctor: () => new SpicyPizzaWeapon()},
@@ -1612,6 +1659,8 @@ const EVOLUTIONS = {
                      ctor: () => new BlizzardWeapon()},
     HeartDrain:     {passive: 'Snack',     name: 'Heart Spiral', emoji: '💖',
                      ctor: () => new HeartSpiralWeapon()},
+    StarToss:       {passive: 'Rocket',    name: 'Star Storm',   emoji: '⭐',
+                     ctor: () => new StarStormWeapon()},
 };
 
 function findAvailableEvolution()
