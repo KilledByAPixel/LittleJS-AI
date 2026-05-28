@@ -565,6 +565,19 @@ function drawCourt()
     drawLine(vec2(SPAWN_POS.x - 1.5, FLOOR_Y + .04), vec2(SPAWN_POS.x + 1.5, FLOOR_Y + .04), .14, COLOR_LINE);
 }
 
+// Vertical dashed red line rising from the floor at the drag center, length =
+// MAX_DRAG. Lets the player gauge the radius distance against the ground.
+function drawDragRadiusGuide()
+{
+    const x = DRAG_CENTER.x + MAX_DRAG;
+    const yBase = FLOOR_Y - 4;
+    const yTop  = FLOOR_Y + .02;
+    const dashLen = .3, gapLen = .4, step = dashLen + gapLen;
+    const color = WHITE;
+    for (let y = yTop; y>yBase; y -= step)
+        drawLine(vec2(x, y), vec2(x, max(y - dashLen, yBase)), .3, color);
+}
+
 function drawHoopAssembly()
 {
     const h = getHoopCenter();
@@ -659,6 +672,7 @@ function gameRender()
 
     drawCourt();
     drawHoopAssembly();
+    drawDragRadiusGuide();
 
     // rack ball animates in after each shot, landing on the floor.
     if (gamePhase === 'playing')
