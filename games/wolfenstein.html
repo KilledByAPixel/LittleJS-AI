@@ -735,6 +735,7 @@ function quitToTitle()
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
+    saveDataInit('wolfenstein');
     // A* pathfinder over the level grid. Only true floor cells ('.') are
     // walkable — walls, exits, lamps, and barrels all block. Built once;
     // findPath re-reads isWalkable on each call so resetWorld doesn't need
@@ -801,13 +802,13 @@ async function gameInit()
 
     // ----- OPTIONS -----
     createOptionsMenu({
-        persistKey: 'wolfenstein.volume',
+        persistKey: 'volume',
         extraItems: [
             {type: 'slider',   id: 'sens', label: 'LOOK SPEED',  value: 1.0, min: .25, max: 4,
-                persist: 'wolfenstein.sens',
+                persist: 'sens',
                 onChange: v => mouseSensitivity = v * .004},
             {type: 'checkbox', id: 'invert', label: 'INVERT X',  value: false,
-                persist: 'wolfenstein.invertX',
+                persist: 'invertX',
                 onChange: v => invertX = v},
         ],
     });
