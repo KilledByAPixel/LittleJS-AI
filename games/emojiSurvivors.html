@@ -878,16 +878,18 @@ class Projectile extends EngineObject
         if (!isOnScreen(this.pos, this.size.scale(3))) return;
         // Draw ghost copies of recent positions, oldest (lowest alpha) first,
         // then the current position at full alpha last. Gives a motion trail
-        // without needing a particle system.
+        // without needing a particle system. Honors `mirror` so direction-
+        // mirrored projectiles (e.g. left-thrown dagger) flip horizontally.
+        const mirror = !!this.mirror;
         const n = this.trail.length;
         for (let i = 0; i < n; ++i)
         {
             const g = this.trail[i];
             const alpha = (i + 1) / (n + 2) * .55;
             drawTile(g.pos, this.size, this.tileInfo,
-                     new Color(1, 1, 1, alpha), g.angle);
+                     new Color(1, 1, 1, alpha), g.angle, mirror);
         }
-        drawTile(this.pos, this.size, this.tileInfo, WHITE, this.angle);
+        drawTile(this.pos, this.size, this.tileInfo, WHITE, this.angle, mirror);
     }
 }
 
@@ -1621,9 +1623,10 @@ class DaggerSlashWeapon
         if (this.cooldown > 0) return;
         this.cooldown = .9 / player.fireRateMult;
 
-        // Slow, deliberate throw so the spin reads. Lifetime = range / speed
-        // gives an exact stop-at-range without per-frame distance checks.
-        const speed = 6 * player.projSpeedMult;        // wu/sec, slow on purpose
+        // Throw speed bumped 2× per playtest — was hard to see the spin and
+        // felt too lazy at 6 wu/sec. Lifetime = range / speed gives an exact
+        // stop-at-range without per-frame distance checks.
+        const speed = 12 * player.projSpeedMult;       // wu/sec
         const range = this.range() * player.areaMult;
         const dmg   = this.damage() * player.dmgMult;
         const dir   = vec2(this.facing, 0);
@@ -1634,9 +1637,14 @@ class DaggerSlashWeapon
         // collision uses this.size for AABB checks, so a larger size also
         // gives the slash a more forgiving hitbox.
         proj.size = vec2(1.2);
-        // Spin direction mirrors the throw — facing right ⇒ clockwise (positive
-        // in LittleJS), facing left ⇒ counter-clockwise. ~2 turns / sec.
-        proj.angleVelocity = this.facing * 4 * PI;
+        // Mirror the sprite for left-facing throws so the dagger's blade
+        // visually points the way it's flying instead of always up-right.
+        proj.mirror = this.facing < 0;
+        // angleVelocity is PER-FRAME in LittleJS (engine line
+        // `angle += angleVelocity *= angleDamping`), so 2 turns/sec at 60fps
+        // is 4π / 60 rad/frame ≈ .209. Sign mirrors the throw direction so
+        // right-throws spin clockwise, left-throws counter-clockwise.
+        proj.angleVelocity = this.facing * 4 * PI / 60;
     }
 }
 
@@ -3932,9 +3940,10 @@ function showGameOverMenu()
     const existing = getMenu('gameover');
     if (existing) existing.destroy();
     const items = buildResultsItems(isNewBest);
-    items.push({type: 'button', label: 'RESTART', onClick: restartGame});
-    items.push({type: 'separator'});
-    items.push({type: 'button', label: 'TITLE',   onClick: goToTitle});
+    // Single button — back to title so the player goes through the
+    // hero / stage selection flow again rather than instant-restarting on
+    // the same hero. Keeps the run-setup deliberate.
+    items.push({type: 'button', label: 'BACK TO TITLE', onClick: goToTitle});
     createMenu({
         id: 'gameover',
         title: 'YOU DIED',
