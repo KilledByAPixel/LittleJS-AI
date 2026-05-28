@@ -229,18 +229,12 @@
  {
      if (gameOver) return;
      gameOver = true;
-     submitBestScore(score);
      sfxGameOver.play();
      // surface a game-over dialog via menus.js
-     showAlertDialog({
-         title: 'GAME OVER',
-         icon: '💎',
-         message: 'Score: ' + score + '\nLevel: ' + level,
-         okLabel: 'PLAY AGAIN',
-         onOk: () =>
-         {
-             restartGame();
-         },
+     showGameOverDialog({
+         score,
+         extraLines: ['Level: ' + level],
+         onContinue: () => restartGame(),
      });
  }
 

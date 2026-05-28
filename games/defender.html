@@ -1051,18 +1051,10 @@ function doGameOver()
     if (gameOver) return;
     gameOver = true;
     setPlaying(false);
-    submitBestScore(score);
-    showAlertDialog({
-        title: 'GAME OVER',
-        icon: '💥',
-        message: `Final score: ${score}\nWave reached: ${wave}`,
-        onOk: () =>
-        {
-            clearSubmenuStack();
-            hideAllMenus();
-            startAttractMode();
-            showMenu('title');
-        },
+    showGameOverDialog({
+        score,
+        extraLines: ['Wave reached: ' + wave],
+        onContinue: quitToTitleWithCleanup,
     });
 }
 

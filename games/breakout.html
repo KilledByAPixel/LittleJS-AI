@@ -953,16 +953,9 @@ function updateBalls(dt)
             state = 'lose';
             setPlaying(false);
 
-            const isNewBest = submitBestScore(score);
-
-            const msg = isNewBest
-                ? `New best! ${score}`
-                : `Final score: ${score}\nBest: ${getBestScore()}`;
-            showAlertDialog({
-                title: 'GAME OVER',
-                icon: '💥',
-                message: msg,
-                onOk: quitToTitleWithCleanup,
+            showGameOverDialog({
+                score,
+                onContinue: quitToTitleWithCleanup,
             });
             return;
         }

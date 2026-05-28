@@ -994,16 +994,16 @@ function gameUpdate()
         if (deathTimer > 1)
         {
             deathTimer = -999;  // prevent re-trigger
-            submitBestScore(distance);
             totalCoins += coins;
             saveData({coins: totalCoins});
-            showAlertDialog({
-                title: 'CRASHED',
-                message: 'Distance: ' + distance + ' M\n' +
-                         'Coins: '    + coins    + '\n' +
-                         'Best: '     + getBestScore() + ' M\n' +
-                         'Lifetime: ' + totalCoins + ' coins',
-                onOk: quitToTitleWithCleanup,
+            showGameOverDialog({
+                score: distance,
+                format: n => 'Distance: ' + n + ' M',
+                extraLines: [
+                    'Coins: ' + coins,
+                    'Lifetime: ' + totalCoins + ' coins',
+                ],
+                onContinue: quitToTitleWithCleanup,
             });
         }
     }

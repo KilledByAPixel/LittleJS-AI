@@ -378,7 +378,7 @@ function resolveAfterPlacement(r, c, impactPos)
         gameWin = true;
         gameOver = true;
         sWin.play();
-        showGameOverDialog();
+        endGame();
     }
 }
 
@@ -423,7 +423,7 @@ function triggerLose()
     gameOver = true;
     gameWin = false;
     sLose.play();
-    showGameOverDialog();
+    endGame();
 }
 
 function shoot()
@@ -557,21 +557,13 @@ function startNewGame()
     hideAllMenus();
 }
 
-function showGameOverDialog()
+function endGame()
 {
-    submitBestScore(score);
     // Surface a menus.js dialog so pause-callback drives `paused` for us.
-    showAlertDialog({
-        title: gameWin ? 'YOU WIN!' : 'GAME OVER',
-        icon:  gameWin ? '🏆' : '💥',
-        message: 'Score: ' + score + '\nShots: ' + shots,
-        okLabel: 'OK',
-        onOk: () =>
-        {
-            // Kick back to the title menu so the player can choose to play again.
-            setPlaying(false);
-            showMenu('title');
-        },
+    showGameOverDialog({
+        won: gameWin,
+        score,
+        extraLines: ['Shots: ' + shots],
     });
 }
 
