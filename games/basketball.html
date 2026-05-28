@@ -79,7 +79,10 @@ const sFire    = new SoundGenerator({frequency: 300, pitchJump: 1600, pitchJumpT
 //------------------------------------------------------------------------------
 // state
 
-let gamePhase    = 'title';   // 'title' | 'playing' | 'gameover'
+// 'buzzer' is a grace period after time runs out — the clock reads 0:00 but
+// any ball already in the air still gets to land (and possibly score). The
+// game ends once that ball is at rest.
+let gamePhase    = 'title';   // 'title' | 'playing' | 'buzzer' | 'gameover'
 let score        = 0;
 let bestScore    = 0;
 let timeLeft     = TIME_LIMIT;
@@ -90,6 +93,10 @@ let aiming       = false;
 let chargeT      = 0;
 let rackAnim     = null;   // {t} while a ball is animating onto the pedestal; null = ball is resting on pedestal
 let hoopOffsetX  = 0;
+// Standalone accumulator for the hoop's sin-wave phase. Mirrors elapsed game
+// time during 'playing', then keeps advancing during 'buzzer' so the hoop
+// doesn't freeze mid-sweep while a buzzer-beater is in the air.
+let hoopElapsed  = 0;
 
 //------------------------------------------------------------------------------
 // hoop / scoring geometry
@@ -330,7 +337,6 @@ function endGame()
     gamePhase = 'gameover';
     aiming = false;
     chargeT = 0;
-    sBuzzer.play();
     if (score > bestScore)
     {
         bestScore = score;
@@ -348,13 +354,24 @@ function endGame()
 
 function updateHoopMotion()
 {
-    if (gamePhase !== 'playing') { hoopOffsetX = 0; return; }
-    const elapsed = TIME_LIMIT - timeLeft;
+    // Keep the hoop animating during 'buzzer' too — otherwise a ball already
+    // in flight aimed at the moving hoop would suddenly target empty air.
+    if (gamePhase !== 'playing' && gamePhase !== 'buzzer')
+    {
+        hoopOffsetX = 0;
+        hoopElapsed = 0;
+        return;
+    }
+    // Mirror elapsed game time while playing; once the clock hits zero, keep
+    // the phase advancing on its own so the sin wave keeps sweeping at the
+    // max-tempo settings instead of locking at one position.
+    if (gamePhase === 'playing') hoopElapsed = TIME_LIMIT - timeLeft;
+    else hoopElapsed += timeDelta;
     // Continuous ramp: slow gentle drift at the start, fast wide sweeps by the end.
-    const t = clamp(elapsed / TIME_LIMIT, 0, 1);
+    const t = clamp(hoopElapsed / TIME_LIMIT, 0, 1);
     const amp  = 1.2 + t * 1.8;   // 1.2 → 3.0
     const freq = 0.7 + t * 1.2;   // 0.7 → 1.9
-    hoopOffsetX = Math.sin(elapsed * freq) * amp;
+    hoopOffsetX = Math.sin(hoopElapsed * freq) * amp;
 }
 
 //------------------------------------------------------------------------------
@@ -485,6 +502,13 @@ function gameUpdate()
     for (const b of balls) if (b.dead) registerMissIfNoMakeWithin(b);
     balls = balls.filter(b => !b.dead);
 
+    if (gamePhase === 'buzzer')
+    {
+        // Time's up — wait for any in-flight ball to finish its arc, then end.
+        if (balls.length === 0) endGame();
+        return;
+    }
+
     if (gamePhase === 'playing')
     {
         // pause hotkey
@@ -492,7 +516,18 @@ function gameUpdate()
 
         // timer
         timeLeft = max(0, timeLeft - timeDelta);
-        if (timeLeft <= 0) { endGame(); return; }
+        if (timeLeft <= 0)
+        {
+            sBuzzer.play();
+            aiming = false;
+            chargeT = 0;
+            rackAnim = null;
+            // If a shot is still in the air, give it a chance to land
+            // (buzzer-beater rule). Otherwise end immediately.
+            if (balls.length > 0) { gamePhase = 'buzzer'; return; }
+            endGame();
+            return;
+        }
 
         // tick the rack-in animation
         if (rackAnim)
@@ -716,7 +751,7 @@ function gameRenderPost()
 {
     const c = mainCanvasSize;
 
-    if (gamePhase === 'playing')
+    if (gamePhase === 'playing' || gamePhase === 'buzzer')
     {
         // score (top center)
         drawTextScreen(`${score}`, vec2(c.x/2, 56), 60, hsl(0,0,1), 4, hsl(0,0,0));
@@ -734,7 +769,8 @@ function gameRenderPost()
             drawTextScreen(label, vec2(80, 56), 32, col, 3, hsl(0,0,0));
         }
 
-        drawPowerMeter();
+        // Power meter only while you can still shoot — hide it during buzzer.
+        if (gamePhase === 'playing') drawPowerMeter();
     }
     else if (gamePhase === 'title')
     {
