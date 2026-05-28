@@ -250,15 +250,11 @@ async function gameInit()
     initCardAtlas();
 
     // Read any in-progress saved game BEFORE newGame() — newGame calls
-    // saveState() at the end which overwrites localStorage with the
+    // saveState() at the end which overwrites the save data with the
     // fresh-deal snapshot, so we'd otherwise lose the previous session.
     let savedSnap = null;
-    try
-    {
-        const raw = getSaveData().saveState;
-        if (raw) savedSnap = raw;
-    }
-    catch (e) { /* localStorage blocked or corrupt JSON — non-fatal */ }
+    const raw = getSaveData().saveState;
+    if (raw) savedSnap = raw;
 
     newGame();
 
@@ -269,7 +265,7 @@ async function gameInit()
             newGame();          // saved game was already finished — deal fresh
         else
         {
-            // Restore in-memory state AND re-write localStorage (newGame
+            // Restore in-memory state AND re-write the save data (newGame
             // just clobbered it with the fresh-deal snapshot).
             stateUndo = [];
             stateRedo = [];
