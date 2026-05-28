@@ -68,7 +68,6 @@ let selectedSquare = null;       // {row, col} | null — currently-selected own
 let legalMovesForSelected = [];  // pre-filtered legal moves from selectedSquare
 let promotingMove = null;        // {from, to} stashed while promotion dialog is up
 let hoverSquare = null;
-let isPlaying = false;
 let gameMode = 'pvp';            // 'pvp' | 'ai' | 'aivai' — set on startGame
 let difficulty = 'medium';       // 'easy' | 'medium' | 'hard' — loaded in gameInit
 let aiThinkTimer = 0;
@@ -940,7 +939,7 @@ function drawBoard()
     }
 
     // Check indicator (red glow on king square)
-    if (isPlaying && !gameOver) {
+    if (isPlaying() && !gameOver) {
         const king = findKing(board, currentPlayer);
         if (king && isInCheck(board, currentPlayer, getCurrentState())) {
             drawRect(getSquareWorldPos(king.row, king.col), vec2(SQUARE_SIZE), rgb(1, 0.2, 0.2, 0.45));
@@ -948,12 +947,12 @@ function drawBoard()
     }
 
     // Selected square highlight
-    if (isPlaying && selectedSquare) {
+    if (isPlaying() && selectedSquare) {
         drawRect(getSquareWorldPos(selectedSquare.row, selectedSquare.col), vec2(SQUARE_SIZE), rgb(0.4, 0.9, 0.4, 0.4));
     }
 
     // Legal-move destination dots
-    if (isPlaying && legalMovesForSelected.length > 0) {
+    if (isPlaying() && legalMovesForSelected.length > 0) {
         for (const m of legalMovesForSelected) {
             const pos = getSquareWorldPos(m.to.row, m.to.col);
             const target = board[m.to.row][m.to.col];
@@ -1107,10 +1106,7 @@ function refreshDifficultyUI()
     title?.getItem('aiVsAi')?.setLabel(`AI VS AI · ${upper}`);
 }
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function startGame(mode)
 {
@@ -1233,8 +1229,8 @@ async function gameInit()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyR')) { initBoard(); aiThinkTimer = 0; }
     if (keyWasPressed('KeyU')) undoMove();
@@ -1314,7 +1310,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying) drawUI();
+    if (isPlaying()) drawUI();
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);

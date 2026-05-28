@@ -1668,7 +1668,6 @@ let killCount = 0;
 let coinsRun = 0;       // coins earned in the current run
 let gameOver = false;
 let gameOverFrameCount = 0;
-let isPlaying = false;  // false on title / hero-select; true during a run
 
 
 // Sound effects bag — populated in gameInit so the user-gesture audio gate
@@ -1784,7 +1783,7 @@ function startRun(hero)
     player.passives = [];
     recomputeMultipliers();
 
-    isPlaying = true;
+    setPlaying(true);
     hideAllMenus();
 }
 
@@ -2147,7 +2146,7 @@ async function gameInit()
         // If a hero pick is in flight, startRun() set isPlaying=true and is
         // about to hideAllMenus() — re-showing title here would clobber the
         // run before it starts.
-        onHide: () => { if (!isPlaying) popMenu(); },
+        onHide: () => { if (!isPlaying()) popMenu(); },
         items: HEROES.map(h => ({
             type: 'button',
             label: h.emoji + '  ' + h.name + ' — ' + h.blurb,
@@ -2376,7 +2375,7 @@ function goToTitle()
     gameOver = false;
     gameOverFrameCount = 0;
     elapsedTime = 0;
-    isPlaying = false;
+    setPlaying(false);
 
     // Reset the title backdrop to the default wizard hero.
     currentHero = HEROES[0];
@@ -2443,7 +2442,7 @@ function gameUpdate()
     // Per the menus.js helper docs, call this every frame (per-frame poll)
     // and early-return when it fires — menus.js auto-pauses via the
     // setMenuVisibilityCallback wiring already in place.
-    if (bindPauseKey({when: () => isPlaying && !gameOver && !runVictory}))
+    if (bindPauseKey({when: () => isPlaying() && !gameOver && !runVictory}))
         return;
 
     elapsedTime += 1 / 60;

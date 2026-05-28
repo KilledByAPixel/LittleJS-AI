@@ -12,7 +12,6 @@
 debugWatermark = false;      // Hide debug watermark in corner
 showEngineVersion = false;   // Hide engine version console display
 paused = false;              // Start unpaused
-let isPlaying = false;
 
 // engine settings, customize if necessary
 gravity = vec2(0, 0);        // No gravity
@@ -420,14 +419,14 @@ function resetGame()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -457,8 +456,8 @@ function buildMenus()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     if (inBattle)
         return updateBattle();

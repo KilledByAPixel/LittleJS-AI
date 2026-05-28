@@ -227,7 +227,6 @@ function newGame()
 // HUD toolbar is only meaningful during gameplay. Tracked separately
 // because "in a menu" doesn't tell us whether the game has started yet
 // (title screen is also a menu, but the HUD shouldn't be available there).
-let isPlaying = false;
 let cardStacks  = [];
 let handStack   = null;
 let pickupOrigin = null;
@@ -238,10 +237,7 @@ let lastClick = { card: null, time: -1 };
 let stateUndo = [];
 let stateRedo = [];
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 async function gameInit()
 {
@@ -304,7 +300,7 @@ async function gameInit()
         id: 'title',
         title: 'FREECELL',
         onPlay: playFromTitle,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         revealOnClick: false,
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
@@ -648,8 +644,8 @@ function redoState()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({ when: () => isPlaying && !won })) return;
-    if (!isPlaying || won) return;
+    if (bindPauseKey({ when: () => isPlaying() && !won })) return;
+    if (!isPlaying() || won) return;
 
     if (mouseWasPressed(0) && handStack.isEmpty())
     {
@@ -774,7 +770,7 @@ function gameUpdatePost()
     // Cursor feedback: open hand over a pickable card, closed hand while
     // dragging, default otherwise. setCursor is a LittleJS built-in.
     let cursor = 'default';
-    if (isPlaying && !won)
+    if (isPlaying() && !won)
     {
         if (!handStack.isEmpty())
             cursor = 'grabbing';
@@ -797,7 +793,7 @@ function gameRender()
     //   green = "this is a legal drop target" (dragging)
     const HOVER_TINT = new Color(0.55, 0.8, 1.0, 0.4);
     const DROP_TINT  = new Color(0.3, 1.0, 0.4, 0.4);
-    const hoverSet   = (handStack.isEmpty() && isPlaying && !won)
+    const hoverSet   = (handStack.isEmpty() && isPlaying() && !won)
         ? new Set(pickableTail(stackUnderPoint(mousePos))) : null;
     const dropTops   = new Set();
     if (hintsEnabled && !handStack.isEmpty())

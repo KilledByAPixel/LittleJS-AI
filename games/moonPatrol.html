@@ -11,7 +11,6 @@
 // engine settings
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
-let isPlaying = false;
 
 // ---------------------------------------------------------------------------
 // SoundGenerator
@@ -544,14 +543,14 @@ function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -581,8 +580,8 @@ function buildMenus()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameState})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameState})) return;
+    if (!isPlaying()) return;
 
     // restart on death
     if (gameState && keyWasPressed('Enter'))

@@ -81,7 +81,6 @@
   let spider;             // current Spider instance or null
   let spiderSpawnTimer;   // seconds until next spider
   let nextBonusLifeAt;    // score threshold for next free life
-  let isPlaying = false;
   let gameOverHoldTimer = 0; // seconds before the GAME OVER menu surfaces
 
   // bottom-zone state: once the centipede touches the player area, reinforcement heads start spawning from the top-right
@@ -514,7 +513,7 @@
 
           // restart hotkey during gameplay only — game-over no longer restarts
           // on click/Enter/Space; the gameOver menu handles that.
-          if (isPlaying && !gameOver && !gameWon && keyWasPressed('KeyR'))
+          if (isPlaying() && !gameOver && !gameWon && keyWasPressed('KeyR'))
               startGame();
       }
 
@@ -1065,7 +1064,7 @@
   function startGame()
   {
       resetGame();
-      isPlaying = true;
+      setPlaying(true);
   }
 
   function quitToTitle()
@@ -1073,7 +1072,7 @@
       if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
       if (typeof hideAllMenus === 'function') hideAllMenus();
       resetGame();
-      isPlaying = false;
+      setPlaying(false);
       if (typeof showMenu === 'function') showMenu('title');
   }
 
@@ -1086,7 +1085,7 @@
           subtitle: 'Shoot the centipede',
           onPlay: startGame,
           revealOnClick: false,
-          canReveal: () => !isPlaying,
+          canReveal: () => !isPlaying(),
           itemsBefore: [
               {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
           ],
@@ -1155,7 +1154,7 @@
   {
       // Pause hotkey: Esc / gamepad Start. Skipped if gameOver menu is up.
       const endMenuShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
-      if (isPlaying && !endMenuShowing &&
+      if (isPlaying() && !endMenuShowing &&
           (keyWasPressed('Escape') || gamepadWasPressed(9)))
       {
           if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -1176,7 +1175,7 @@
 
       // Attract mode: nothing animates on the title (no centipedes spawned yet),
       // and the game-over menu surfaces after a brief on-canvas hold.
-      if (!isPlaying) return;
+      if (!isPlaying()) return;
 
       if (gameOver && !endMenuShowing)
       {
@@ -1308,7 +1307,7 @@
 
   function gameRenderPost()
   {
-      if (!isPlaying) return; // title screen — menu owns the display
+      if (!isPlaying()) return; // title screen — menu owns the display
 
       // HUD
       const left = 18;

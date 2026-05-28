@@ -52,7 +52,6 @@ const BALL_COLORS    = [
 
 ///////////////////////////////////////////////////////////////////////////////
 // Game state
-let isPlaying      = false;
 let score          = 0;
 let bestScore      = 0;
 let dropCount      = 0;
@@ -348,10 +347,7 @@ function resetGame()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
@@ -383,7 +379,7 @@ async function gameInit()
         subtitle: 'Drop. Bounce. Score.',
         onPlay: playFromTitle,
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             {type:'label', id:'bestLabel', text:'Best: ' + bestScore},
         ],
@@ -467,9 +463,9 @@ async function gameInit()
 function gameUpdate()
 {
     // Pause on Esc / Start
-    if (bindPauseKey({when: () => isPlaying})) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // Aim follows the mouse X by default; arrow / A-D keys override and
     // nudge it (last input wins).
@@ -497,7 +493,7 @@ function gameRender()
     drawRectGradient(vec2(0, 0), vec2(BOARD_WIDTH, BOARD_HEIGHT),
         hsl(.62, .5, .15), hsl(.7, .6, .05));
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // Slot floor — colored bands matching SLOT_COLORS, with flashing pulse.
     const slotWidth = BOARD_WIDTH / SLOT_COUNT;
@@ -542,7 +538,7 @@ function gameRenderPost()
     // Score popups & particle pops.
     drawPops();
 
-    if (isPlaying)
+    if (isPlaying())
     {
         // Score HUD
         drawTextScreen('SCORE  ' + score,

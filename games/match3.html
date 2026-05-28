@@ -68,7 +68,6 @@ let level, levelSize, levelFall, fallTimer, dragStartPos, comboCount, score, bes
 // the level data is actually swapped. If the swap doesn't produce a match the
 // animation reverses and they slide back. {a, b, t, reversing} or null.
 let swapAnim = null;
-let isPlaying = false;
 const gemSprites = []; // TileInfo per gem type, filled in gameInit
 
 const getTile = (pos)=> level[pos.x + pos.y * levelSize.x];
@@ -225,7 +224,7 @@ async function gameInit()
         // is still gated by browser policy until the first user interaction.
         revealOnClick: false,
         onShow: () => getMenu('title').getItem('bestLabel').setLabel('Best: ' + bestScore),
-        onPlay: () => { gameReset(); isPlaying = true; },
+        onPlay: () => { gameReset(); setPlaying(true); },
     });
 
     createOptionsMenu();
@@ -250,7 +249,7 @@ async function gameInit()
         {
             clearSubmenuStack();
             hideAllMenus();
-            isPlaying = false;
+            setPlaying(false);
             // Reset before showing title so the menu backdrop
             // doesn't reveal a half-cleared board mid-cascade.
             gameReset();
@@ -301,8 +300,8 @@ function gameReset()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (!isPlaying) return;
-    if (bindPauseKey({when: () => isPlaying})) return;
+    if (!isPlaying()) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
 
     // Swap animation: visuals slide first, level data swaps at the end. If no
     // match results, the data swap is undone and a reverse animation plays.
@@ -488,7 +487,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
     // Centered below the board, in the score-line padding (arenaSize adds
     // 2 world units below the grid). Anchored to the board so it stays in
     // the right place if gridSize changes.

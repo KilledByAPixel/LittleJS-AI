@@ -34,14 +34,10 @@ let particles, scorePops, stars, trail;
 let score, ballsRemaining, orangeLeft, comboCount, maxCombo;
 let win, gameOver;
 let bestScore = 0;
-let isPlaying;       // false while title is up
 let endDialogShown;  // prevents re-triggering the game-over dialog
 let slowMoT;         // real-time seconds remaining of slow-mo
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 let sfxShoot, sfxPeg, sfxOrange, sfxPower, sfxBucket, sfxLose, sfxWin;
 
@@ -248,7 +244,7 @@ function showEndDialog()
 function gameUpdate()
 {
     // Esc / Start opens pause menu mid-game
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
     updateInput();
 
@@ -378,7 +374,7 @@ function updateInput()
     ang = clamp(ang, minAng, maxAng);
     aimDir = vec2(Math.cos(ang), Math.sin(ang));
 
-    if (!isPlaying || gameOver) return;
+    if (!isPlaying() || gameOver) return;
     if ((mouseWasPressed(0) || keyWasPressed('Space')) && !activeBall && ballsRemaining > 0)
         shootBall();
 }
@@ -626,7 +622,7 @@ function gameRender()
     drawCircle(cannonPos, .6,  hsl(.06, .5, .25));
 
     // Aim guide
-    if (isPlaying && !gameOver && ballsRemaining > 0 && !activeBall)
+    if (isPlaying() && !gameOver && ballsRemaining > 0 && !activeBall)
     {
         const start = cannonPos.add(aimDir.scale(2.1));
         for (let i = 0; i < 6; i++)
@@ -649,7 +645,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     const cx = mainCanvasSize.x / 2;
     const top = 38;

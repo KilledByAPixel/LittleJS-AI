@@ -13,7 +13,6 @@ debugWatermark = false;
 showEngineVersion = false;
 paused = false;
 setDebugKey('Backquote');
-let isPlaying = false;
 
 gravity = vec2(0, -30);
 cameraScale = 24;
@@ -365,14 +364,14 @@ async function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -401,8 +400,8 @@ function buildMenus()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
+    if (!isPlaying()) return;
 
     if (gameOver)
     {

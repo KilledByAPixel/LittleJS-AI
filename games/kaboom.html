@@ -66,11 +66,11 @@ let starField;       // stable star positions for the night sky
 let treeField;       // foreground trees/bushes on the sides of the building
 let windowSeeds;     // stable blink seeds for windows
 let bombsSpawned, bombsCaught, bombsInWave;
+let gameOverShown;
 let waveSpawnTimer;  // seconds until next bomb in current wave
 let waveStartDelay;  // seconds before first bomb of wave
 let waveClearTimer;  // seconds remaining until next wave starts (0 = not waiting)
 let missFreezeTimer; // brief pause after a miss
-let isPlaying, gameOverShown;
 let shakeFrames, shakeAmount;
 let waveBannerText, waveBannerTimer;
 
@@ -115,7 +115,7 @@ function startGame() {
     bombs = [];
     particles = [];
     bomber = { x: -BOMBER_RANGE * 0.5, vx: bomberSpeed(1), dropTimer: 0, laughTimer: 0 };
-    isPlaying = true;
+    setPlaying(true);
     gameOverShown = false;
     waveBannerText = '';
     waveBannerTimer = 0;
@@ -195,7 +195,7 @@ function missBomb(missedBomb) {
     bombs = [];
 
     if (lives <= 0) {
-        isPlaying = false;
+        setPlaying(false);
         // Defer the game-over dialog until the explosion settles so the
         // player sees the shake before the modal eats the screen.
         gameOverShown = false;
@@ -444,11 +444,11 @@ function drawBomber() {
     // On the title screen, paused = true so gameUpdate doesn't run and
     // bomber.x is frozen. Drive a slow sinusoidal pace from `timeReal`
     // (advances through pause) so the attract-mode backdrop stays alive.
-    const onTitle = !isPlaying && lives > 0;
+    const onTitle = !isPlaying() && lives > 0;
     const titlePhase = timeReal * 0.45;
     const x = onTitle ? Math.sin(titlePhase) * BOMBER_RANGE * 0.65 : bomber.x;
     const y = ROOF_Y;
-    const moving = isPlaying && waveClearTimer <= 0 && waveStartDelay <= 0;
+    const moving = isPlaying() && waveClearTimer <= 0 && waveStartDelay <= 0;
     const facing = onTitle
         ? (Math.cos(titlePhase) >= 0 ? 1 : -1)
         : (bomber.vx >= 0 ? 1 : -1);
@@ -497,7 +497,7 @@ function drawBomber() {
 
     // Pile of remaining bombs in his off-hand — shrinks as he drops them.
     // On title (attract), show a full pile so he looks menacing.
-    const remainingBombs = isPlaying
+    const remainingBombs = isPlaying()
         ? max(0, bombsInWave - bombsSpawned)
         : (onTitle ? 5 : 0);
     drawBombPile(holdHand.x, holdHand.y + 0.22, min(remainingBombs, 5));
@@ -674,7 +674,7 @@ async function gameInit() {
         onQuit: () => {
             clearSubmenuStack();
             hideAllMenus();
-            isPlaying = false;
+            setPlaying(false);
             gameOverShown = false;
             // Reset visuals so title attract loop is clean.
             bombs = []; particles = [];
@@ -693,7 +693,7 @@ async function gameInit() {
         subtitle: 'Catch the Mad Bomber’s bombs',
         revealOnClick: false,
         onPlay: () => { startGame(); },
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             { type: 'label', id: 'bestLabel', text: `BEST: ${highScore}`,
               onUpdate: el => { el.textContent = `BEST: ${highScore}`; } },
@@ -736,7 +736,7 @@ async function gameInit() {
     lives = 3; wave = 1; bucketX = 0; bucketTargetX = 0;
     bomber = { x: -BOMBER_RANGE * 0.5, vx: bomberSpeed(1), dropTimer: 0, laughTimer: 0 };
     bucketsAwarded = 0;
-    isPlaying = false;
+    setPlaying(false);
     gameOverShown = false;
     waveSpawnTimer = 0; waveStartDelay = 0; waveClearTimer = 0; missFreezeTimer = 0;
     bombsSpawned = bombsCaught = bombsInWave = 0;
@@ -746,12 +746,12 @@ async function gameInit() {
 }
 
 function gameUpdate() {
-    if (bindPauseKey({ when: () => isPlaying && lives > 0 })) return;
+    if (bindPauseKey({ when: () => isPlaying() && lives > 0 })) return;
 
     const dt = 1/60;     // LittleJS fixed-step
     if (waveBannerTimer > 0) waveBannerTimer -= dt;
 
-    if (!isPlaying) {
+    if (!isPlaying()) {
         // Game over modal surfacing — wait until shake settles.
         if (lives <= 0 && !gameOverShown && shakeFrames <= 0 && particles.length < 5) {
             showGameOver();
@@ -821,7 +821,7 @@ function gameRender() {
 
 function gameRenderPost() {
     // HUD only when actually playing.
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     const cx = mainCanvasSize.x / 2;
     drawTextScreen(`SCORE  ${score}`,

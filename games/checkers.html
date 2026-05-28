@@ -47,7 +47,6 @@ let redCount = 12;
 let blackCount = 12;
 let gameMode = 'pvp'; // 'pvp' | 'ai' | 'aivai'
 let difficulty = 'hard'; // 'easy' | 'medium' | 'hard' — loaded in gameInit
-let isPlaying = false;
 let selectedCell = null;
 let allPlayerMoves = [];   // all legal moves for currentPlayer
 let pieceValidMoves = [];  // legal moves starting from selectedCell
@@ -730,7 +729,7 @@ function drawBoard()
     }
 
     // Selected piece highlight (gameplay only)
-    if (isPlaying && selectedCell)
+    if (isPlaying() && selectedCell)
     {
         const pos = getCellWorldPos(selectedCell.row, selectedCell.col);
         const pulse = 1 + Math.sin(time * 5) * 0.08;
@@ -738,7 +737,7 @@ function drawBoard()
     }
 
     // Valid move indicators for selected piece (gameplay only)
-    if (isPlaying && selectedCell && !gameOver)
+    if (isPlaying() && selectedCell && !gameOver)
     {
         for (const m of pieceValidMoves)
         {
@@ -749,7 +748,7 @@ function drawBoard()
     }
 
     // Hint: pulse pieces that have legal moves when nothing selected (gameplay only)
-    if (isPlaying && !selectedCell && !gameOver && !movingPiece &&
+    if (isPlaying() && !selectedCell && !gameOver && !movingPiece &&
         (gameMode === 'pvp' || (gameMode === 'ai' && currentPlayer === PLAYER_HUMAN)))
     {
         const hintAlpha = 0.3 + Math.sin(time * 4) * 0.15;
@@ -966,10 +965,7 @@ async function gameInit()
     refreshDifficultyUI();
 }
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function quitToTitle()
 {
@@ -993,8 +989,8 @@ function startGame(mode)
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     // Advance move animation
     if (movingPiece)
@@ -1102,7 +1098,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying) drawUI();
+    if (isPlaying()) drawUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

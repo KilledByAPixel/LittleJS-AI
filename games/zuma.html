@@ -69,7 +69,6 @@ let loadedShotColor = 0;
 let aimDir = vec2(1, 0);       // unit vector — pointing right at startup
 let score = 0;
 let bestScore = 0;
-let isPlaying = false;
 let gameOverPending = false;
 let currentCombo = 0;          // resets on shoot, increments per pop event
 let floatingTexts = [];        // [{pos, vel, text, color, age, life, size}]
@@ -493,7 +492,6 @@ function swapShot()
 
 ///////////////////////////////////////////////////////////////////////////////
 // Menus
-let setPlaying;
 
 async function gameInit()
 {
@@ -514,17 +512,11 @@ async function gameInit()
     sound_click = new SoundGenerator({frequency: 750, attack: 0,    release: .05, shapeCurve: 1, volume: .4});
     sound_lose  = new SoundGenerator({frequency: 180, attack: 0,    release: .8,  shapeCurve: 1, slide: -2,  noise: .1,  volume: .9});
 
-    let _isPlaying = false;
-    setPlaying = (p) => {
-        _isPlaying = p;
-        isPlaying = p;
-    };
-
     createTitleMenu({
         title: 'ZUMA',
         subtitle: 'Shoot the spiral. Match 3+ to pop.',
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         onPlay: () => { newGame(); setPlaying(true); },
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
@@ -579,8 +571,8 @@ function gameUpdate()
 {
     fitCameraToCanvas();
 
-    if (bindPauseKey({when: () => isPlaying && !gameOverPending})) return;
-    if (!isPlaying || gameOverPending) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOverPending})) return;
+    if (!isPlaying() || gameOverPending) return;
 
     // Aim
     if (mousePos.lengthSquared() > 0.0001) aimDir = mousePos.normalize();
@@ -686,7 +678,7 @@ function gameRender()
     for (const s of shots) drawBall(s.pos, s.colorIdx);
 
     // Turret + aim — only meaningful during gameplay.
-    if (isPlaying || gameOverPending)
+    if (isPlaying() || gameOverPending)
     {
         drawCircle(vec2(0, 0), PLAYER_RADIUS * 2 + .25, hsl(0, 0, 0));
         drawCircle(vec2(0, 0), PLAYER_RADIUS * 2,       hsl(.13, .8, .35));
@@ -738,7 +730,7 @@ function gameRenderPost()
         );
     }
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     drawTextScreen('SCORE  ' + score,
         vec2(20, 30), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');

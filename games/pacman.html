@@ -79,7 +79,6 @@ let bestScore = 0;
 let lives = 3;
 let win = false;
 let gameOver = false;
-let isPlaying = false;
 let endHoldTimer = 0; // frames before win/gameOver menu surfaces
 
 let powerTimer = 0;
@@ -125,7 +124,7 @@ function startGame()
     resetRun(true);
     score = 0;
     lives = 3;
-    isPlaying = true;
+    setPlaying(true);
 }
 
 function quitToTitle()
@@ -135,7 +134,7 @@ function quitToTitle()
     resetRun(true);
     score = 0;
     lives = 3;
-    isPlaying = false;
+    setPlaying(false);
     if (typeof showMenu === 'function') showMenu('title');
 }
 
@@ -148,7 +147,7 @@ function buildMenus()
         subtitle: 'Eat all the dots',
         onPlay: startGame,
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
         ],
@@ -227,7 +226,7 @@ function gameUpdate()
 {
     // Pause hotkey: Esc / gamepad Start. Skipped if game-over menu already up.
     const endMenuShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
-    if (isPlaying && !endMenuShowing &&
+    if (isPlaying() && !endMenuShowing &&
         (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -237,9 +236,9 @@ function gameUpdate()
         return;
     }
 
-    if (!isPlaying) return; // title screen: maze sits frozen behind the menu
+    if (!isPlaying()) return; // title screen: maze sits frozen behind the menu
 
-    if (isPlaying && !win && !gameOver && keyWasPressed('KeyR'))
+    if (isPlaying() && !win && !gameOver && keyWasPressed('KeyR'))
         return startGame();
 
     if (win || gameOver)
@@ -358,14 +357,14 @@ function gameRender()
 
     // arcade-style "READY!" banner shown at game start and after each death
     // Placed in the open corridor just below the ghost house (one tile tall)
-    if (isPlaying && readyTimer > 0)
+    if (isPlaying() && readyTimer > 0)
         drawText('READY!', vec2(gridW/2, 13.5), 1.0, rgb(1, .92, 0), .05, rgb(0,0,0));
 }
 
 // -----------------------------------------------------------------------------
 function gameRenderPost()
 {
-    if (!isPlaying) return; // title screen — menu owns the display
+    if (!isPlaying()) return; // title screen — menu owns the display
 
     // HUD strip
     drawRect(vec2(mainCanvasSize.x/2, 28), vec2(mainCanvasSize.x, 56), hsl(0,0,0,.55), 0, false, true);

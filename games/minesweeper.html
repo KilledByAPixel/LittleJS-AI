@@ -44,7 +44,6 @@ let revealAll = false;
 let revealedCount = 0;
 let startTime = 0;
 let endTime = 0;
-let isPlaying = false;
 let newBest = false;
 
 // Best-time storage — one entry per tracked difficulty inside the per-game
@@ -322,7 +321,7 @@ async function gameInit()
         difficulty = id;
         setDifficulty(w, h, m);
         resetGame();
-        isPlaying = true;
+        setPlaying(true);
         hideMenu('title');
     };
 
@@ -376,7 +375,7 @@ async function gameInit()
         {
             clearSubmenuStack();
             hideAllMenus();
-            isPlaying = false;
+            setPlaying(false);
             showMenu('title');
         },
     });
@@ -390,8 +389,8 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     // restart
     if (keyWasPressed('KeyR'))
@@ -459,7 +458,7 @@ function gameRender()
 
     // hover highlight
     const c = pickCellFromMouse();
-    if (c && isPlaying && !gameOver && !gameWon)
+    if (c && isPlaying() && !gameOver && !gameWon)
         drawRect(cellCenter(c.x,c.y), vec2(cellSize).scale(.98), hsl(.12,.2,.35,.35));
 
     // draw cells
@@ -528,7 +527,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     const flagsUsed = flagged.reduce((a,b)=>a+b,0);
     const minesLeft = max(0, mineCount - flagsUsed);

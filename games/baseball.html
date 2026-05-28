@@ -61,7 +61,6 @@ let swingTimer = new Timer();
 let swingConnected = false;
 
 // menu / session state
-let isPlaying = false;
 
 // Particles
 const puffs = [];
@@ -385,14 +384,14 @@ function resetSession()
 function startGame()
 {
     resetSession();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -447,8 +446,8 @@ async function gameInit()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('Space') || mouseWasPressed(0)) trySwing();
     if (keyWasPressed('Enter')) startPitch();

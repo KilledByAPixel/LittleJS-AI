@@ -64,7 +64,6 @@ let betweenWaves = false;
 let betweenWavesTimer = 0;
 let tally = null;
 let gameOver = false;
-let isPlaying = false;
 let gameOverHoldTimer = 0; // seconds before the GAME OVER menu surfaces
 
 let nextBonusCityScore = 10000;
@@ -413,7 +412,7 @@ function resetWaveState(newWaveIndex)
 
   flierCooldown = 5;
   smartBombsToSpawn = clamp(waveIndex - 4, 0, 5) | 0;
-  if (isPlaying)
+  if (isPlaying())
     sWave && sWave.play();
 }
 
@@ -1078,13 +1077,13 @@ function gameInit()
 
   // Attract mode: build a layout (cities, mountains, stars) but don't spawn waves.
   newGame();
-  isPlaying = false;
+  setPlaying(false);
 }
 
 function startGame()
 {
   newGame();
-  isPlaying = true;
+  setPlaying(true);
 }
 
 function quitToTitle()
@@ -1092,7 +1091,7 @@ function quitToTitle()
   if (typeof clearSubmenuStack === 'function') clearSubmenuStack();
   if (typeof hideAllMenus === 'function') hideAllMenus();
   newGame();
-  isPlaying = false;
+  setPlaying(false);
   if (typeof showMenu === 'function') showMenu('title');
 }
 
@@ -1105,7 +1104,7 @@ function buildMenus()
     subtitle: 'Defend the cities',
     onPlay: startGame,
     revealOnClick: false,
-    canReveal: () => !isPlaying,
+    canReveal: () => !isPlaying(),
     itemsBefore: [
       {type:'label', id:'bestLabel', text:`BEST ${bestScore}`},
     ],
@@ -1185,7 +1184,7 @@ function gameUpdate()
   // Pause hotkey: Esc or gamepad Start. Gated on isPlaying so it doesn't fire
   // from the title screen.
   const gameOverShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
-  if (isPlaying && !gameOverShowing &&
+  if (isPlaying() && !gameOverShowing &&
       (keyWasPressed('Escape') || gamepadWasPressed(9)))
   {
     if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -1196,17 +1195,17 @@ function gameUpdate()
   }
 
   // Attract mode: stars + shooting stars keep moving, but no gameplay.
-  if (!isPlaying)
+  if (!isPlaying())
   {
     maybeSpawnShootingStar();
     updateParticles();
     return;
   }
 
-  if (isPlaying && !gameOver && keyWasPressed('KeyR'))
+  if (isPlaying() && !gameOver && keyWasPressed('KeyR'))
     return startGame();
 
-  if (isPlaying && !gameOver && keyWasPressed('KeyT'))
+  if (isPlaying() && !gameOver && keyWasPressed('KeyT'))
     aiMode = !aiMode;
 
   if (!gameOver && !betweenWaves && !tally && mouseWasPressed(0))
@@ -1767,13 +1766,13 @@ function gameRender()
   drawFliers();
   drawExplosions();
   drawParticles();
-  if (isPlaying)
+  if (isPlaying())
     drawCrosshair();
 }
 
 function gameRenderPost()
 {
-  if (!isPlaying) return; // title screen — menu owns the display
+  if (!isPlaying()) return; // title screen — menu owns the display
 
   const pad = 14;
   const topLeft = vec2(pad, pad+14);
@@ -1801,7 +1800,7 @@ function gameRenderPost()
                    vec2(cx, 156), 26, hsl(.12,.1,.95), 4, hsl(0,0,0,.6));
   }
 
-  if (bonusCityToast > 0 && isPlaying)
+  if (bonusCityToast > 0 && isPlaying())
   {
     const a = Math.min(1, bonusCityToast * 2);
     drawTextScreen('BONUS CITY!', vec2(mainCanvasSize.x/2, 210),

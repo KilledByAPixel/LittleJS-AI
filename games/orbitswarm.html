@@ -541,7 +541,6 @@ let planets = [];
 let fleets = [];
 
 let gameOver = 0;
-let isPlaying = false;
 let gameTimer = 0;  // tracks play time in seconds
 
 let dragSource = null;
@@ -558,7 +557,7 @@ function startGame(diff)
 {
     if (diff) difficulty = diff;
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     gameTimer = 0;
     clearSubmenuStack();
     hideAllMenus();
@@ -566,7 +565,7 @@ function startGame(diff)
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     gameOver = 0;
     planets.length = 0;
     fleets.length = 0;
@@ -943,7 +942,7 @@ function buildMenus()
 
     // Only pause for in-game menus (pause/dialog). The title menu sits over
     // the animated starfield + planet decor and shouldn't freeze them.
-    installAutoPause(() => isPlaying);
+    installAutoPause(() => isPlaying());
 
     createTitleMenu({
         title: '',     // canvas draws ORBITSWARM
@@ -984,9 +983,9 @@ function buildMenus()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
-    if (!isPlaying)
+    if (!isPlaying())
     {
         updateStarfield(timeDelta);
         return;
@@ -1101,7 +1100,7 @@ function gameRender()
 {
     renderStarfield();
 
-    if (!isPlaying)
+    if (!isPlaying())
     {
         drawTitleDecor();
         return;
@@ -1166,7 +1165,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (!isPlaying)
+    if (!isPlaying())
     {
         const cx = mainCanvasSize.x/2;
         const cy = mainCanvasSize.y/2;

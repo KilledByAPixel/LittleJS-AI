@@ -55,7 +55,6 @@ const PLACE_DURATION = 0.25;
 
 // UI
 let hoverCell = null;
-let isPlaying = false;
 
 // Sounds
 let sfxPlaceWhite, sfxPlaceBlack, sfxWin, sfxLose, sfxSelect;
@@ -658,7 +657,7 @@ function drawBoard()
     }
     
     // Valid move indicators (gameplay only — keep them off the title board)
-    if (isPlaying && !gameOver && validMoves.length > 0)
+    if (isPlaying() && !gameOver && validMoves.length > 0)
     {
         for (const move of validMoves)
         {
@@ -894,10 +893,7 @@ function refreshDifficultyUI()
     title?.getItem('aiVsAi')?.setLabel(`AI VS AI · ${upper}`);
 }
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function quitToTitle()
 {
@@ -921,8 +917,8 @@ function startGame(mode)
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
     
     // Update flip animations
     for (let i = flippingDiscs.length - 1; i >= 0; i--)
@@ -1009,7 +1005,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying) drawUI();
+    if (isPlaying()) drawUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

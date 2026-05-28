@@ -34,7 +34,6 @@ let endX = 0;
 let particles = [];
 
 // menu / session state
-let isPlaying = false;
 
 // Sounds
 let sJump, sDie, sWin;
@@ -404,14 +403,14 @@ function startGame()
 {
     buildLevel();
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -464,8 +463,8 @@ function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && state === 'play'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
+    if (!isPlaying()) return;
 
     // called every frame at 60 frames per second
     if (state !== 'play')

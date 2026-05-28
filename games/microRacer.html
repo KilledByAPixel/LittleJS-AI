@@ -13,7 +13,6 @@
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
-let isPlaying = false;
 
 gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
@@ -725,14 +724,14 @@ function startGame()
 {
     trackSeed = Math.floor(Math.random() * 1e9);
     setupRace();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -761,8 +760,8 @@ function buildMenus()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !raceFinished})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !raceFinished})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyN'))
     {

@@ -55,7 +55,6 @@ let whiteCaptures = 0;  // stones white has captured (black stones removed)
 let previousBoardHash = null; // board state before the opponent's last move
 let boardHashBeforeMove = null; // scratch used during move processing
 
-let isPlaying = false;
 let gameMode  = 'pvp'; // 'pvp' | 'ai' | 'aivai'
 let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' — loaded in gameInit
 
@@ -391,7 +390,7 @@ function findBestAIMove(opts = {})
 
 function makeMove(row, col)
 {
-    if (gameOver || !isPlaying) return false;
+    if (gameOver || !isPlaying()) return false;
     if (!isInBounds(row, col)) return false;
 
     const { newBoard, captured } = applyMoveAndCaptures(
@@ -537,7 +536,7 @@ function drawBoard()
     }
 
     // Hover ghost stone (semi-transparent, only when legal).
-    if (isPlaying && !gameOver && hoverIntersection)
+    if (isPlaying() && !gameOver && hoverIntersection)
     {
         const { row, col } = hoverIntersection;
         if (board[row][col] === STONE_EMPTY
@@ -645,10 +644,7 @@ function drawUI()
 ///////////////////////////////////////////////////////////////////////////////
 // GAME FLOW
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function startGame(mode)
 {
@@ -776,8 +772,8 @@ async function gameInit()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     // Placement pop animation.
     if (placingStone)
@@ -847,7 +843,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying) drawUI();
+    if (isPlaying()) drawUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -56,7 +56,6 @@ let bestScore = 0;
 let gameTime = 0;
 let gameState = 'playing'; // 'playing', 'crashed'
 let gameStarted = false;
-let isPlaying = false;
 
 let obstacles = [];  // {pos, size, type: 'tree'|'rock'|'bump'|'ramp'}
 let gates = [];      // {pos, leftX, rightX, passed, missed}
@@ -595,7 +594,7 @@ async function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
     sfxStart && sfxStart.play();
@@ -603,7 +602,7 @@ function startGame()
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     // Reset back to fresh start state so the title backdrop shows what
     // the run looks like at the top of the slope, frozen behind the menu.
     resetGame();
@@ -635,8 +634,8 @@ function buildMenus()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && gameState !== 'crashed'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && gameState !== 'crashed'})) return;
+    if (!isPlaying()) return;
 
     if (gameState === 'crashed')
     {
@@ -689,7 +688,7 @@ function gameRender()
 function gameRenderPost()
 {
     // No HUD while the title (or any menu) is up — backdrop sits frozen.
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // HUD - top left
     const speed = player.vel.length();

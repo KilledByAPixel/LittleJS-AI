@@ -46,7 +46,6 @@ showEngineVersion = false; // Hide engine version console display
   let waitingForServe = true;
   let gameOver = false;
   let aiRight = true; // press T to toggle
-  let isPlaying = false;
 
   // AI configuration
   const aiReactionDelay = 0.15;   // seconds before AI reacts to ball direction change
@@ -231,14 +230,14 @@ showEngineVersion = false; // Hide engine version console display
   {
       scoreL = scoreR = 0;
       resetRound(true);
-      isPlaying = true;
+      setPlaying(true);
       clearSubmenuStack();
       hideAllMenus();
   }
 
   function quitToTitle()
   {
-      isPlaying = false;
+      setPlaying(false);
       clearSubmenuStack();
       hideAllMenus();
       showMenu('title');
@@ -267,8 +266,8 @@ showEngineVersion = false; // Hide engine version console display
 
   function gameUpdate()
   {
-      if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
-      if (!isPlaying) return;
+      if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
+      if (!isPlaying()) return;
 
       if (keyWasPressed('KeyR'))
       {

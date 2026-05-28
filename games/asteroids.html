@@ -87,7 +87,6 @@ let lives = 3;
 let level = 1;
 let gameOver = false;
 let nextExtraLifeAt = 10000;
-let isPlaying = false;             // true once the player hits PLAY (menu gates this)
 let gameOverTimer = new Timer;     // delays the GAME OVER menu surfacing
 
 let respawnTimer = new Timer();
@@ -247,10 +246,7 @@ function spawnAttractField()
     }
 }
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function spawnShip(centered=false)
 {
@@ -866,7 +862,7 @@ function buildMenus()
         subtitle: 'A LittleJS prototype',
         onPlay: startGame,
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             {type:'label', id:'bestLabel', text:`BEST ${best}`},
         ],
@@ -945,7 +941,7 @@ function buildMenus()
 function gameUpdate()
 {
     // Pause hotkey: Esc or Start. Gated on isPlaying so it doesn't fire from title.
-    if (isPlaying && !gameOver &&
+    if (isPlaying() && !gameOver &&
         (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -956,7 +952,7 @@ function gameUpdate()
     }
 
     // Attract mode: rocks keep tumbling, but no gameplay logic
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // Game over: brief on-canvas hold, then surface the menu
     if (gameOver)
@@ -1154,7 +1150,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (!isPlaying) return; // title screen \u2014 menu owns the display
+    if (!isPlaying()) return; // title screen \u2014 menu owns the display
 
     // HUD
     const hud = `SCORE  ${score}\nLIVES  ${Math.max(0,lives)}   LEVEL  ${level}`;

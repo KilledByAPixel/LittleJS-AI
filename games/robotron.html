@@ -85,7 +85,6 @@ let warpInSfxDelay = 0;         // frames until queued warp-in sfx fires (lands 
 let gruntStepTimer = 0;         // frames until next grunt march sfx pulse
 let gruntStepBeat  = 0;         // alternates 0/1 each step → two-pitch boom-boom march
 let gameOverTimer = 0;          // frames after death before the GAME OVER menu surfaces
-let isPlaying = false;          // true once the player hits PLAY (menu system gates state)
 let humanRescueBonus = humanRescueStart;
 let nextBonusLifeAt = bonusLifeInterval;
 
@@ -623,7 +622,7 @@ class Grunt extends KillableEnemy
     {
         if (this.destroyed) return;
         // Arcade: each grunt kill decrements ROBSPD by 1 (clamped at RMXSPD) — survivors get faster
-        if (isPlaying) gruntsKilledThisWave++;
+        if (isPlaying()) gruntsKilledThisWave++;
         super.destroy();
     }
     getSpeed()
@@ -640,7 +639,7 @@ class Grunt extends KillableEnemy
     update()
     {
         if (gameOver) return;
-        if (isPlaying && (playerControlLocked || !player)) return;
+        if (isPlaying() && (playerControlLocked || !player)) return;
         this.marchPhase += .25;
         if (Math.sin(this.marchPhase) > -.2)
         {
@@ -717,7 +716,7 @@ class Hulk extends EngineObject
     {
         // Refresh target if the assigned human died. Falls back to player (PLOBJ in arcade).
         if (this.target && this.target.destroyed) this.target = this.pickTarget();
-        const tgt = this.target || (isPlaying ? player : null);
+        const tgt = this.target || (isPlaying() ? player : null);
         if (!tgt) { this.marchDir = vec2(0); return; }
 
         // Alternate X/Y axis (arcade HNDY/HNDX path). Noise ±2 world units ≈ arcade ±16 px.
@@ -742,7 +741,7 @@ class Hulk extends EngineObject
     update()
     {
         if (gameOver) return;
-        if (isPlaying && playerControlLocked) return;
+        if (isPlaying() && playerControlLocked) return;
         this.marchTimer--;
         if (this.marchTimer <= 0)
         {
@@ -752,7 +751,7 @@ class Hulk extends EngineObject
         this.pos = this.pos.add(this.knockback);
         this.knockback = this.knockback.scale(.82);
         // HLKSPD scaling: wave 1 (HLKSPD=8) → 1.0×, late waves (HLKSPD=5) → 1.6×
-        const hMul = isPlaying ? (8 / getWaveTuning(gameWave).hulkDelay) : 1;
+        const hMul = isPlaying() ? (8 / getWaveTuning(gameWave).hulkDelay) : 1;
         this.pos = this.pos.add(this.marchDir.scale(this.speed * hMul));
         this.pos = clampToArena(this.pos, .75);
         this.walkPhase += this.speed * 4;
@@ -1493,7 +1492,7 @@ class Human extends EngineObject
         if (gameOver) return;
         // In gameplay, freeze during GET READY / pauses. In attract mode (no
         // gameplay yet) skip those gates so humans wander on the title screen.
-        if (isPlaying && (playerControlLocked || !waveActive)) return;
+        if (isPlaying() && (playerControlLocked || !waveActive)) return;
 
         // Drop stale possession reference if the brain was killed mid-grab
         if (this.possessedBy && this.possessedBy.destroyed)
@@ -1507,7 +1506,7 @@ class Human extends EngineObject
         }
         let runDir = null;
         // Attract mode: don't react to enemies — just wander randomly so nobody traps them
-        if (isPlaying)
+        if (isPlaying())
         {
             // run from hulks and brains (anything that wants to kill/take them).
             // Only Brains trigger the startled white-flicker — hulks wander aimlessly so
@@ -2383,10 +2382,7 @@ function runSelfTests()
 ///////////////////////////////////////////////////////////////////////////////
 // Menu integration
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function startGame()
 {
@@ -2425,7 +2421,7 @@ function buildMenus()
         title: '',
         onPlay: startGame,
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             {type:'label', id:'bestLabel', text:'BEST 0'},
         ],
@@ -2594,18 +2590,18 @@ function gameUpdate()
     fitCameraToArena();
 
     // DEBUG: N advances to the next wave — also skips the GET READY pause
-    if (isPlaying && !gameOver && keyWasPressed('KeyN'))
+    if (isPlaying() && !gameOver && keyWasPressed('KeyN'))
     {
         if (waveActive)     endWave();            // current wave -> jump to GET READY
         else                interWaveTimer = 0;   // GET READY -> start next wave immediately
     }
 
     // Quick restart: R resets the whole run (back to wave 1, fresh lives)
-    if (isPlaying && keyWasPressed('KeyR'))
+    if (isPlaying() && keyWasPressed('KeyR'))
         startGame();
 
     // Pause hotkey — only meaningful when actually playing
-    if (isPlaying && !gameOver &&
+    if (isPlaying() && !gameOver &&
         (keyWasPressed('Escape') || (typeof gamepadWasPressed === 'function' && gamepadWasPressed(9))))
     {
         if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -2625,7 +2621,7 @@ function gameUpdate()
     if (warpInSfxDelay > 0 && --warpInSfxDelay === 0) sfxWarpIn.play(vec2(0));
 
     // Title screen: nothing else to do
-    if (!isPlaying) { cleanupLists(); return; }
+    if (!isPlaying()) { cleanupLists(); return; }
 
     if (gameOver)
     {
@@ -2672,7 +2668,7 @@ function gameUpdate()
 function gameUpdatePost()
 {
     // Skip all collision processing during attract mode (hulks shouldn't kill the demo family, etc.)
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     applyPlayerBulletHits();
     applyElectrodeCollisions();
@@ -2776,7 +2772,7 @@ function gameRenderPost()
     const W = mainCanvasSize.x, H = mainCanvasSize.y;
 
     // Pre-play canvas: chromatic multi-layer title always visible behind/around the menu
-    if (!isPlaying)
+    if (!isPlaying())
     {
         const t = time;
         const cx = W / 2;

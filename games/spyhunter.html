@@ -106,7 +106,6 @@ let score = 0;
 let bestScore = 0;
 let distance = 0;
 let gameOver = false;
-let isPlaying = false;
 let scoreMultiplier = 1;
 let killsForMultBonus = 0;
 let killsForOil = 0;
@@ -1097,14 +1096,14 @@ async function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -1134,8 +1133,8 @@ function buildMenus()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyR'))
         resetGame();

@@ -43,8 +43,8 @@ const EXTRA_LIFE_EVERY = 10000;
 // Game state
 let score, lives, smartBombs, wave, nextExtra;
 let bestScore = 0;
+let gameOver;
 let humansAlive, planetDestroyed, mutantWavesLeft;
-let isPlaying, gameOver;
 let player;
 let enemies, bullets, humans, particles;
 let terrain;             // array of terrain heights along world X
@@ -1038,7 +1038,7 @@ function startGame()
     spawnTimer = new Timer();
     baiterTimer = new Timer();
     gameOver = false;
-    isPlaying = true;
+    setPlaying(true);
     genTerrain();
     for (let i = 0; i < HUMAN_COUNT; i++)
         humans.push(new Human(rand(0, WORLD_W)));
@@ -1051,7 +1051,7 @@ function doGameOver()
 {
     if (gameOver) return;
     gameOver = true;
-    isPlaying = false;
+    setPlaying(false);
     if (score > bestScore) {
         bestScore = score;
         saveData({bestScore});
@@ -1099,7 +1099,7 @@ function startAttractMode()
     shakeTimer = new Timer();
     spawnTimer = new Timer();
     baiterTimer = new Timer();
-    isPlaying = false;
+    setPlaying(false);
     gameOver = false;
     player = null;
     genTerrain();
@@ -1246,7 +1246,7 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (isPlaying && bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (isPlaying() && bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
     // Player input + simulation (only while actually playing)
     if (player) player.update();
@@ -1275,7 +1275,7 @@ function gameUpdate()
     bullets = bullets.filter(b => b.life.active());
     particles = particles.filter(p => p.life.active());
 
-    if (isPlaying)
+    if (isPlaying())
     {
         // Wave / spawn logic — only during real gameplay
         if (pendingSpawns.length && !spawnTimer.active())
@@ -1599,7 +1599,7 @@ function drawHud(ctx)
 
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     const ctx = mainContext;
     drawRadar(ctx);

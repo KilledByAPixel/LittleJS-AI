@@ -86,7 +86,6 @@ let balls = [];          // numbered balls (1..15) still on table
 let pockets = [];
 let railObj;             // static body for rails
 let shots = 0;
-let isPlaying = false;
 let won = false;
 let scratchedThisShot = false;
 let inHand = false;      // true after a scratch — cue ball follows the mouse until placed
@@ -255,7 +254,7 @@ const cueRestDist = (power) => CUE_REST_DIST + power * REST_PULL_SCALE;
 
 function getCueStickPose()
 {
-    if (!isPlaying || !cueBall) return null;
+    if (!isPlaying() || !cueBall) return null;
     if (strike)
     {
         let tipDist;
@@ -609,7 +608,7 @@ function allStopped()
 
 function canShoot()
 {
-    return isPlaying && !won && cueBall && !strike && !inHand && allStopped();
+    return isPlaying() && !won && cueBall && !strike && !inHand && allStopped();
 }
 
 function getAim()
@@ -637,10 +636,7 @@ function getAim()
 ///////////////////////////////////////////////////////////////////////////////
 // menus + input
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function startPlay()
 {
@@ -754,10 +750,10 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // Esc / Start opens pause
-    if (bindPauseKey({when: () => isPlaying})) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
 
     // Auto-respawn cue ball at the head spot — skipped during ball-in-hand
     // (placement is committed manually in the inHand block below).
@@ -978,7 +974,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // Cue stick body — shadow already drawn in gameRender's pre-pass, so
     // this only paints the visible stick on top of the balls.

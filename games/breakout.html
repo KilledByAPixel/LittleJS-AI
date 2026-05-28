@@ -103,7 +103,6 @@ const SLOW_DURATION = 10;
 const SLOW_FACTOR = 0.65;
 
 // menu / session state
-let isPlaying = false;
 let highScore = 0;
 
 // game state
@@ -612,17 +611,17 @@ function resetGame()
 function startNewGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
 }
 
 function backToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     // Reset for attract-mode rendering — a frozen world, not a black canvas.
     resetGame();
-    isPlaying = false;
+    setPlaying(false);
     const t = getMenu('title');
     if (t)
     {
@@ -654,7 +653,7 @@ async function gameInit()
         title: 'BREAKOUT',
         subtitle: 'Clear all 5 levels, then loop with rising speed',
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         itemsBefore: [
             {type:'label', id:'bestLabel', text:`Best: ${highScore}`},
         ],
@@ -700,7 +699,7 @@ async function gameInit()
     // Build the attract-mode backdrop world (frozen bricks/paddle/ball
     // while the title is up), then show the title menu over it.
     resetGame();
-    isPlaying = false;
+    setPlaying(false);
     showMenu('title');
 }
 
@@ -709,10 +708,10 @@ function gameUpdate()
 {
     const dt = timeDelta;
 
-    if (!isPlaying)
+    if (!isPlaying())
         return;
 
-    if (bindPauseKey({when: () => isPlaying && state !== 'lose'}))
+    if (bindPauseKey({when: () => isPlaying() && state !== 'lose'}))
         return;
 
     if (keyWasPressed('KeyR'))
@@ -961,7 +960,7 @@ function updateBalls(dt)
         if (lives <= 0)
         {
             state = 'lose';
-            isPlaying = false;
+            setPlaying(false);
 
             const isNewBest = score > highScore;
             if (isNewBest)
@@ -1114,14 +1113,14 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (isPlaying && state === 'serve')
+    if (isPlaying() && state === 'serve')
     {
         drawTextScreen(`Click or Space to launch`,
             vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 36,
             hsl(0, 0, 1), 6, hsl(0, 0, 0));
     }
 
-    if (isPlaying)
+    if (isPlaying())
     {
         drawTextScreen(`Score ${score}`, vec2(16, 16), 28, hsl(0, 0, 1), 4, hsl(0, 0, 0), 'left');
         drawTextScreen(`Wave ${wave}  Level ${level}/${LEVELS.length}`,

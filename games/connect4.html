@@ -53,7 +53,6 @@ const DROP_SPEED = 25; // world units per second
 
 // UI
 let hoverCol = -1;
-let isPlaying = false;
 
 // Sounds
 let sfxDrop, sfxWin, sfxLose, sfxSelect;
@@ -517,7 +516,7 @@ function drawBoard()
 
     // Hover indicator at top (gameplay only — keep the bobbing ghost off the title)
     const isHumanTurn = gameMode !== 'aivai' && (gameMode === 'pvp' || currentPlayer === PLAYER_HUMAN);
-    if (isPlaying && !gameOver && hoverCol >= 0 && !droppingDisc && isHumanTurn)
+    if (isPlaying() && !gameOver && hoverCol >= 0 && !droppingDisc && isHumanTurn)
     {
         const isValid = board[ROWS - 1][hoverCol] === DISC_EMPTY;
         if (isValid)
@@ -694,10 +693,7 @@ async function gameInit()
     refreshDifficultyUI();
 }
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function quitToTitle()
 {
@@ -721,8 +717,8 @@ function startGame(mode)
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     // Update drop animation
     if (droppingDisc)
@@ -804,7 +800,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (isPlaying) drawUI();
+    if (isPlaying()) drawUI();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

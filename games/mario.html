@@ -12,7 +12,6 @@
 debugWatermark = false;
 showEngineVersion = false;
 paused = false;
-let isPlaying = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tile system
@@ -1483,14 +1482,14 @@ function respawn()
 function startGame()
 {
     respawn();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -1537,8 +1536,8 @@ function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && player && !player.dead})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && player && !player.dead})) return;
+    if (!isPlaying()) return;
     if (keyWasPressed('KeyR')) startGame();
 }
 

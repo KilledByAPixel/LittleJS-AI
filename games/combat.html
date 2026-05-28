@@ -54,7 +54,6 @@ let roundTimer = 0;
 let pausedLocal = false;
 
 // menu / session state
-let isPlaying = false;
 
 // sounds (lazy)
 let sShoot, sBounce, sHit, sBlip;
@@ -499,14 +498,14 @@ function initGameState()
 function startGame()
 {
     initGameState();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -553,8 +552,8 @@ function gameInit()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyP')) { pausedLocal = !pausedLocal; initSounds(); sBlip.play(); }
     if (keyWasPressed('KeyR')) { initGameState();           initSounds(); sBlip.play(); }

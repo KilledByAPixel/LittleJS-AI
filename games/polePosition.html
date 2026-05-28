@@ -11,7 +11,6 @@
 // engine settings
 debugWatermark = false; // Hide debug watermark in corner
 showEngineVersion = false; // Hide engine version console display
-let isPlaying = false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Pole Position (tiny playable prototype)
@@ -159,7 +158,7 @@ function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     sStart && sStart.play();
     clearSubmenuStack();
     hideAllMenus();
@@ -167,7 +166,7 @@ function startGame()
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     // Reset to fresh start state so the title backdrop shows what the
     // game looks like at the start of a run (paused behind the menu).
     resetGame();
@@ -200,8 +199,8 @@ function buildMenus()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && state === 'play'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
+    if (!isPlaying()) return;
 
     // restart on timeup
     const startPressed = keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0);
@@ -893,7 +892,7 @@ function gameRenderPost()
     const w = mainCanvasSize.x;
     const h = mainCanvasSize.y;
 
-    if (state === 'play' && isPlaying)
+    if (state === 'play' && isPlaying())
     {
         const mph = (speed / MAX_SPEED * 230) | 0;
         const t = max(0, timeLeftFrames) / 60;

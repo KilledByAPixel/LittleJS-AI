@@ -34,7 +34,6 @@
  let gameOver = false;
 
  // playing state — gates gameplay update from menu/title states
- let isPlaying = false;
 
  // visual feedback (don't affect gameplay timing)
  let particles = [];
@@ -511,7 +510,7 @@
 
  function drawBoard()
  {
-     const shake = isPlaying ? screenShake : vec2(0,0);
+     const shake = isPlaying() ? screenShake : vec2(0,0);
 
      // board frame (outer ring + inner well — same pattern as tetris reference)
      const boardCenter = vec2(COLS/2, ROWS/2).add(shake);
@@ -618,10 +617,7 @@
  ///////////////////////////////////////////////////////////////////////////////
  // MENU UI (menus.js)
 
- function setPlaying(p)
- {
-     isPlaying = p;
- }
+
 
  function quitToTitle()
  {
@@ -726,7 +722,7 @@
  {
      // gameUpdate only runs when paused=false (i.e. no menu visible).
      // Esc / gamepad Start surfaces the pause menu when actually playing.
-     if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+     if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
      // tick particle/shake/flash visuals even when not playing (so they
      // finish during the brief moment a clear pops before next frame)
@@ -735,7 +731,7 @@
      if (clearFlashTimer > 0) clearFlashTimer -= timeDelta;
      if (chainPopTimer  > 0) chainPopTimer  -= timeDelta;
 
-     if (!isPlaying || gameOver) return;
+     if (!isPlaying() || gameOver) return;
 
      // R restarts during gameplay
      if (keyWasPressed('KeyR'))

@@ -37,7 +37,6 @@ let food, poison;
 let grow;
 let score, best;
 let alive;
-let isPlaying;     // true once player has started a run (controls pause shortcut)
 let stepTimer, stepInterval;
 
 // juice
@@ -328,7 +327,7 @@ function handleInput()
 function startNewRun()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     hideAllMenus();
 }
 
@@ -336,7 +335,7 @@ function quitToTitle()
 {
     clearSubmenuStack();
     hideAllMenus();
-    isPlaying = false;
+    setPlaying(false);
     showMenu('title');
 }
 
@@ -346,7 +345,7 @@ function buildMenus()
         title: 'SNAKE',
         subtitle: 'Eat the green dots. Avoid the walls.',
         onPlay: startNewRun,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         items: [
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
             {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
@@ -425,7 +424,7 @@ async function gameInit()
     installAutoPause();
 
     // initial state — title up, no run in progress
-    isPlaying = false;
+    setPlaying(false);
     resetGame();
 
     buildMenus();
@@ -436,7 +435,7 @@ async function gameInit()
 function gameUpdate()
 {
     // Pause shortcut — only while a run is in progress (otherwise title owns Esc)
-    if (bindPauseKey({when: () => isPlaying && alive})) return;
+    if (bindPauseKey({when: () => isPlaying() && alive})) return;
 
     handleInput();
 
@@ -573,7 +572,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return; // title screen owns the canvas; menu draws its own
+    if (!isPlaying()) return; // title screen owns the canvas; menu draws its own
 
     const cx = mainCanvasSize.x/2;
 

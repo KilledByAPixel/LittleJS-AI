@@ -58,7 +58,6 @@ let wave = 0;
 let gameState = 'title'; // title, playing, gameover, victory
 let waveTimer = 0;
 let spawnQueue = 0;
-let isPlaying = false;
 
 // Sounds
 let sfxFlap, sfxJoust, sfxDie, sfxEgg, sfxSpawn, sfxWave;
@@ -613,7 +612,7 @@ function startGame()
 {
     resetGame();
     gameState = 'playing';
-    isPlaying = true;
+    setPlaying(true);
     spawnWave();
     clearSubmenuStack();
     hideAllMenus();
@@ -621,7 +620,7 @@ function startGame()
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     gameState = 'title';
     clearSubmenuStack();
     hideAllMenus();
@@ -651,8 +650,8 @@ function buildMenus()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && gameState === 'playing'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && gameState === 'playing'})) return;
+    if (!isPlaying()) return;
 
     if (gameState === 'gameover' || gameState === 'victory')
     {

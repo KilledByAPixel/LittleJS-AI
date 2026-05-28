@@ -774,11 +774,7 @@ class Player extends EngineObject
 
 // HUD toolbar is always visible now; isPlaying is still tracked because
 // gameplay code uses it for pause / input gating.
-let isPlaying = false;
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 async function gameInit()
 {
@@ -942,7 +938,7 @@ async function gameInit()
     // a "CLICK TO PLAY" prompt. attachClickToReveal stays as a safety net so
     // the menu re-opens if the player dismisses it with Esc / B.
     showMenu('title');
-    attachClickToReveal('title', () => !isPlaying);
+    attachClickToReveal('title', () => !isPlaying());
 
     // ----- tweakables panel (press ~ to toggle) -----
     tweakEngineDefaults();
@@ -974,7 +970,7 @@ async function gameInit()
 function gameUpdate()
 {
     // pause hotkey — gate so it doesn't fire from the pre-play state
-    if (isPlaying && alive &&
+    if (isPlaying() && alive &&
         (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
         playMenuSound('activate');
@@ -984,7 +980,7 @@ function gameUpdate()
         return;
     }
 
-    if (!isPlaying || !player) return;
+    if (!isPlaying() || !player) return;
 
     // camera follows the player horizontally; vertical stays centered
     cameraPos = vec2(player.pos.x - playerStartScreenX, ceilingY / 2);
@@ -1046,7 +1042,7 @@ function gameRender()
     // pre-play preview — static player at the start position so the title
     // menu sits on top of a glimpse of the level instead of an empty void.
     // Engine is paused while the menu is up, so this stays put.
-    if (!isPlaying)
+    if (!isPlaying())
         drawTile(vec2(0, ceilingY / 2), vec2(1.4, 1.6), tile(TILE_PLAYER));
 }
 
@@ -1055,7 +1051,7 @@ function gameRenderPost()
     // Pre-play / post-quit prompt — only when not playing AND no menu
     // is up (i.e. the player dismissed the title with Esc). Pulses opacity
     // so it reads as "do something". Adapts to touch devices via isTouchDevice.
-    if (!isPlaying && !isMenuVisible())
+    if (!isPlaying() && !isMenuVisible())
     {
         const prompt = isTouchDevice ? 'TOUCH TO PLAY' : 'CLICK TO PLAY';
         const a = 0.5 + 0.5 * Math.sin(time * 3);
@@ -1064,7 +1060,7 @@ function gameRenderPost()
     }
 
     // in-game HUD — distance, coins, best
-    if (isPlaying && player)
+    if (isPlaying() && player)
     {
         const pad = 14;
         drawTextScreen('DISTANCE: ' + distance + ' M',

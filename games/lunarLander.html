@@ -44,7 +44,6 @@ const CAMERA_ZOOM_OUT_DIST = 18;   // start zooming in inside this distance
 
 let player, landingPad;
 let gameState = 0; // 0=playing, 1=landed, 2=crashed
-let isPlaying = false;
 let score = 0;
 let bestScore = 0;
 let messageTimer = new Timer();
@@ -340,14 +339,14 @@ class Player extends EngineObject
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -388,8 +387,8 @@ function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameState})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameState})) return;
+    if (!isPlaying()) return;
 
     // restart
     if (keyWasPressed('KeyR'))

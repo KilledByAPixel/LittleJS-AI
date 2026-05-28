@@ -140,7 +140,6 @@ function wallTileAt(x, y)
 
 ///////////////////////////////////////////////////////////////////////////////
 // STATE
-let isPlaying = false;
 let isAlive = true;
 let playerPos = vec2(), playerAngle = 0;
 let playerHP = 100;
@@ -664,10 +663,7 @@ function paintMetalDoor(ctx)
 let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWallHit, sndPickup, sndEmpty;
 
 ///////////////////////////////////////////////////////////////////////////////
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 // Pick a random walkable (floor) tile within `radius` cells of `center`.
 // Returns the tile center in world coords, or null if none found.
@@ -792,7 +788,7 @@ async function gameInit()
         title:    'WOLFENSTEIN',
         subtitle: 'CLEAR THE GUARDS',
         revealOnClick: false,
-        canReveal: () => !isPlaying,
+        canReveal: () => !isPlaying(),
         onPlay:   startGame,
         items: [
             {type: 'button', label: 'OPTIONS', onClick: () => pushMenu('options')},
@@ -884,8 +880,8 @@ const GAMEPAD_LOOK_SPEED = .045; // rad per frame at full right-stick deflection
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && isAlive})) return;
-    if (!isPlaying || !isAlive) return;
+    if (bindPauseKey({when: () => isPlaying() && isAlive})) return;
+    if (!isPlaying() || !isAlive) return;
 
     // ---- desktop: mouse capture + fire ----
     const wantLock = mouseWasPressed(0);
@@ -1458,7 +1454,7 @@ function gameRender()
 
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
     const W = mainCanvasSize.x, H = mainCanvasSize.y;
 
     // 1st-person gun with walk-bob

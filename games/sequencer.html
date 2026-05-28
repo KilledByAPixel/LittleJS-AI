@@ -42,8 +42,8 @@ const gridOrigin = vec2(buttonSize.x * (1 - stepCount/2), buttonSize.y * (0.5 - 
 const customSlotCount = 4, drumCount = 4;
 const customSounds = [null, null, null, null];
 let currentStep = 0, stepTime = 0, tempo = 240;
-let isPlaying = false, eraseMode = false;
 let currentSlot = 0;
+let eraseMode = false;
 
 let saveTimer = 0;
 function scheduleSave()
@@ -222,7 +222,7 @@ class UISequencerButton extends UIButton
         const sat = empty ? .2 : (this.isOn ? 1 : .5);
         const lit = empty ? (this.isOn ? .3 : .1) : (this.isOn ? .5 : .15);
         this.color = this.isActiveObject() ? BLACK : hsl(this.hue, sat, lit);
-        if (isPlaying && this.step == currentStep)
+        if (isPlaying() && this.step == currentStep)
             this.color = this.color.lerp(WHITE, .5);
         super.render();
     }
@@ -391,13 +391,13 @@ function gameInit()
         direction: 'horizontal',
         items: [
             {type:'button', id:'play',
-                label: isPlaying ? '■' : '▶',
+                label: isPlaying() ? '■' : '▶',
                 title: 'Play / Stop',
                 onClick: ()=>
                 {
-                    isPlaying = !isPlaying;
+                    setPlaying(!isPlaying());
                     currentStep = stepTime = 0;
-                    getToolbar('transport').getItem('play').setLabel(isPlaying ? '■' : '▶');
+                    getToolbar('transport').getItem('play').setLabel(isPlaying() ? '■' : '▶');
                 }},
         ],
     });
@@ -432,7 +432,7 @@ function gameInit()
 
 function gameUpdate()
 {
-    if (!isPlaying)
+    if (!isPlaying())
         return;
 
     const lastStepTime = stepTime;

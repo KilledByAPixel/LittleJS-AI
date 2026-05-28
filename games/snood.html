@@ -81,7 +81,6 @@ let bestScore = 0;
 let descendOffset;    // continuous descent offset (rolls over into addRow at ROW_STEP_Y)
 let incomingRow;      // next row that's queued to become row 0 at the next rollover
 let gridParity;       // toggles every addRow so existing bubbles keep their hex xOff after a row shift
-let isPlaying = false; // gameplay vs. title-screen state
 let popFX;            // active match-pop effects (expanding fades + shards)
 let fallers;          // disconnected bubbles falling off the bottom
 
@@ -550,10 +549,7 @@ function updateFX()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function startNewGame()
 {
@@ -675,9 +671,9 @@ function gameUpdate()
     // Note: gameUpdate only runs when paused=false (no menu visible).
 
     // pause shortcut — only meaningful while actually playing
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // restart shortcut
     if (keyWasPressed('KeyR'))
@@ -874,7 +870,7 @@ function gameRenderPost()
 
     // dotted aim line — simulates the projectile path (including wall bounces)
     // so the player can see where their shot will land
-    if (!projectile && !gameOver && isPlaying)
+    if (!projectile && !gameOver && isPlaying())
         drawAimLine();
 
     // shooter + arrow-style aim

@@ -53,7 +53,6 @@ let gameOver, gameOverReason;
 let flashTimer;
 let shootCooldown;
 let cameraX;
-let isPlaying = false;
 
 // sounds
 let sShoot, sExplode, sFuel;
@@ -238,14 +237,14 @@ function gameInit()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -275,8 +274,8 @@ function buildMenus()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && !gameOver})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('Enter'))
         resetGame();

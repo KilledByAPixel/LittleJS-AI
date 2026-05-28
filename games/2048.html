@@ -42,7 +42,6 @@ let gameOver = false;
 let won = false;
 let continueAfterWin = false;
 
-let isPlaying = false;
 let winDialogShown = false;
 let loseDialogShown = false;
 
@@ -51,10 +50,7 @@ let swipeArmed = false;
 
 let sMove, sMerge, sSpawn, sLose, sWin;
 
-function setPlaying(p)
-{
-    isPlaying = p;
-}
+
 
 function quitToTitle()
 {
@@ -419,11 +415,11 @@ function readMoveInput()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying})) return;
+    if (bindPauseKey({when: () => isPlaying()})) return;
 
     updateAnimations();
 
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     if (keyWasPressed('KeyR')) newGame();
 
@@ -517,7 +513,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     const x = 28;
     drawTextScreen('Score ' + score,          vec2(x, 56),  56, hsl(.12, .7, .9), 6, hsl(0, 0, 0), 'left');

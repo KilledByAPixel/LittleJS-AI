@@ -60,7 +60,6 @@ let linkIdGen = 1;
 let state = 'play';       // play | gameover | win
 
 // menu / session state
-let isPlaying = false;
 
 // drop / lock
 let fallAcc = 0;
@@ -642,14 +641,14 @@ function setState(s)
 function startGame()
 {
     newGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -695,8 +694,8 @@ function gameInit()
 ///////////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && state === 'play'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
+    if (!isPlaying()) return;
 
     updateParticles(timeDelta);
     updateShake(timeDelta);

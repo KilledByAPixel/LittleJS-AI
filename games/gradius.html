@@ -79,7 +79,6 @@ let boss = null;
 let mouseMode = false; // true = follow mouse, false = keyboard only
 let mountains = []; // scrolling terrain
 
-let isPlaying = false;
 
 // Sounds
 let sfxShoot, sfxEnemyShoot, sfxExplosion, sfxPowerup, sfxHit, sfxBomb, sfxBoss;
@@ -1177,14 +1176,14 @@ function resetGame()
 function startGame()
 {
     resetGame();
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -1237,8 +1236,8 @@ async function gameInit()
 
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && gameState !== 'gameover'})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && gameState !== 'gameover'})) return;
+    if (!isPlaying()) return;
 
     const dt = timeDelta;
 

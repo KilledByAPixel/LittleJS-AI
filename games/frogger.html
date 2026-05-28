@@ -57,7 +57,6 @@
   let lives = 3, level = 1;
   let bestLevel = 1;
   let respawnTimer;
-  let isPlaying = false;
   let gameOver = false;
   let gameOverHoldTimer = 0; // seconds before gameOver menu surfaces
 
@@ -361,7 +360,7 @@
   function startGame() {
     gameOver = false;
     resetRun(true);
-    isPlaying = true;
+    setPlaying(true);
   }
 
   function quitToTitle() {
@@ -369,7 +368,7 @@
     if (typeof hideAllMenus === 'function') hideAllMenus();
     gameOver = false;
     resetRun(true);
-    isPlaying = false;
+    setPlaying(false);
     if (typeof showMenu === 'function') showMenu('title');
   }
 
@@ -381,7 +380,7 @@
       subtitle: 'Cross the road and the river',
       onPlay: startGame,
       revealOnClick: false,
-      canReveal: () => !isPlaying,
+      canReveal: () => !isPlaying(),
       itemsBefore: [
         {type:'label', id:'bestLabel', text:`BEST LEVEL ${bestLevel}`},
       ],
@@ -446,7 +445,7 @@
   function gameUpdate() {
     // Pause hotkey: Esc / gamepad Start. Skipped if gameOver menu is up.
     const endMenuShowing = (typeof getTopMenu === 'function') && getTopMenu()?.id === 'gameOver';
-    if (isPlaying && !endMenuShowing &&
+    if (isPlaying() && !endMenuShowing &&
         (keyWasPressed('Escape') || gamepadWasPressed(9)))
     {
       if (typeof playMenuSound === 'function') playMenuSound('activate');
@@ -456,7 +455,7 @@
       return;
     }
 
-    if (!isPlaying) {
+    if (!isPlaying()) {
       // Attract: keep cars / logs scrolling so the title screen feels alive.
       updateObstacles(cars);
       updateObstacles(logs);
@@ -798,7 +797,7 @@
     for (const c of cars) drawCar(c);
 
     // Alive player frog — disappears on death (particles play instead) and on title.
-    if (isPlaying && !gameOver && !respawnTimer.active()) {
+    if (isPlaying() && !gameOver && !respawnTimer.active()) {
       const logBump = frog.onLog ? logBumpY(frog.onLog) : 0;
       drawFrog(frog.pos.add(vec2(0, logBump)), frog.facing, frog.hopAnim);
     }
@@ -812,7 +811,7 @@
   }
 
   function gameRenderPost() {
-    if (!isPlaying) return; // title screen — menu owns the display
+    if (!isPlaying()) return; // title screen — menu owns the display
 
     // Minimal HUD: lives + level only
     drawTextScreen(`LIVES  ${Math.max(0,lives)}     LEVEL  ${level}`,

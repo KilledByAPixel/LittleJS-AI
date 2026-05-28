@@ -120,7 +120,6 @@ let score;
 let bestScore;
 
 // menu / session state
-let isPlaying = false;
 let birdPos;
 let birdVelY;
 let pipeTimer;
@@ -587,14 +586,14 @@ function startGame()
     initScenery();
     spawnPipe();
     pipes[0].x = 6;
-    isPlaying = true;
+    setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
 }
 
 function quitToTitle()
 {
-    isPlaying = false;
+    setPlaying(false);
     clearSubmenuStack();
     hideAllMenus();
     showMenu('title');
@@ -648,8 +647,8 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying && state !== STATE_DEAD})) return;
-    if (!isPlaying) return;
+    if (bindPauseKey({when: () => isPlaying() && state !== STATE_DEAD})) return;
+    if (!isPlaying()) return;
 
     const dt = timeDelta;
 
@@ -993,7 +992,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    if (!isPlaying) return;
+    if (!isPlaying()) return;
 
     // score
     drawTextScreen('' + score, vec2(mainCanvasSize.x/2, 60), 72, hsl(0,0,1), 6, hsl(0,0,0));
