@@ -1751,7 +1751,7 @@ class SproutPassive     extends Passive { constructor(){ super('Sprout',      '�
 class PlusOnePassive    extends Passive { constructor(){ super('Plus One',    '➕'); } apply(){ player.extraProjectiles += this.level; } }
 class SnackPassive      extends Passive { constructor(){ super('Snack',       '🍗'); } apply(){ player.heartMult      *= 1 + this.level * .25; } }
 
-const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout','PlusOne','Snack'];
+const ALL_PASSIVES = ['Flex','Stopwatch','Magnifier','Rocket','Magnet','Heart','Sneaker','Sprout','Plus One','Snack'];
 
 function makePassiveByName(name)
 {
@@ -1763,7 +1763,7 @@ function makePassiveByName(name)
     if (name === 'Heart')      return new HeartPassive();
     if (name === 'Sneaker')    return new SneakerPassive();
     if (name === 'Sprout')     return new SproutPassive();
-    if (name === 'PlusOne')    return new PlusOnePassive();
+    if (name === 'Plus One')    return new PlusOnePassive();
     if (name === 'Snack')      return new SnackPassive();
     return null;
 }
