@@ -888,7 +888,7 @@ class FishOrbitWeapon
 
     update()
     {
-        this.angle += 4 * player.cooldownMult / 60;
+        this.angle += 4 * player.cooldownMult / 60;  // faster spin with Stopwatch
 
         const radius = 2.5 * player.areaMult;
         const orbSize = .7 * player.areaMult;
@@ -897,6 +897,9 @@ class FishOrbitWeapon
         for (const [e, t] of this.hitMap)
             if (!e.parent && (e.destroyed || t < now - 5)) this.hitMap.delete(e);
 
+        // damage check only — drawing moved to draw() because update() runs
+        // during gameUpdate (before render). drawTile from update batches GL
+        // vertices that the next frame's enginePreRender then asserts on.
         for (let i = 0; i < this.level; ++i)
         {
             const a = this.angle + i * 2 * PI / this.level;
