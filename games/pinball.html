@@ -404,8 +404,9 @@ function gameUpdate()
                       && mousePos.y < WALL_TOP_Y;
     const leftPressed = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ') || (mouseWasPressed(0) && !inLaunchLane);
     const rightPressed = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash') || mouseWasPressed(2);
-    const leftActive = keyIsDown('ArrowLeft') || keyIsDown('KeyA') || keyIsDown('KeyZ') || (mouseIsDown(0) && !inLaunchLane);
-    const rightActive = keyIsDown('ArrowRight') || keyIsDown('KeyD') || keyIsDown('Slash') || mouseIsDown(2);
+    const dir = keyDirection();
+    const leftActive  = dir.x < 0 || keyIsDown('KeyZ')  || (mouseIsDown(0) && !inLaunchLane);
+    const rightActive = dir.x > 0 || keyIsDown('Slash') || mouseIsDown(2);
     if (leftPressed) sfxFlipper && sfxFlipper.play(leftFlipper.pos, 0.5);
     if (rightPressed) sfxFlipper && sfxFlipper.play(rightFlipper.pos, 0.5);
     leftFlipper.setMotor(leftActive);

@@ -861,17 +861,15 @@ function gameUpdate()
     else if (keyWasPressed('ArrowRight') || keyWasPressed('KeyD'))
         dx = 1;
     
-    // Also allow held keys with delay
+    // Also allow held keys with delay. Priority order (up > down > left > right)
+    // keeps movement strictly axis-aligned even if the player holds two keys.
     if (dx === 0 && dy === 0 && moveTimer <= 0)
     {
-        if (keyIsDown('ArrowUp') || keyIsDown('KeyW'))
-            dy = 1;
-        else if (keyIsDown('ArrowDown') || keyIsDown('KeyS'))
-            dy = -1;
-        else if (keyIsDown('ArrowLeft') || keyIsDown('KeyA'))
-            dx = -1;
-        else if (keyIsDown('ArrowRight') || keyIsDown('KeyD'))
-            dx = 1;
+        const dir = keyDirection();
+        if      (dir.y > 0) dy =  1;
+        else if (dir.y < 0) dy = -1;
+        else if (dir.x < 0) dx = -1;
+        else if (dir.x > 0) dx =  1;
     }
     
     if (dx !== 0 || dy !== 0)
