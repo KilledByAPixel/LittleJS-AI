@@ -1185,16 +1185,25 @@ class Pickup extends EngineObject
     }
 }
 
+// Auto-aim picker for weapons that need a single target (Fireball, Comet,
+// ChainLightning first hop, StarStorm, etc). Prefers real enemies in range;
+// falls through to the nearest breakable only when no enemy is in range, so
+// the player can clear crates during combat lulls but isn't wasting shots
+// on them while a swarm is present.
 function nearestEnemy(fromPos, maxDist)
 {
-    let best = null, bestD = maxDist;
+    let bestEnemy = null,     bestEnemyD = maxDist;
+    let bestBreakable = null, bestBreakableD = maxDist;
     for (const e of enemies)
     {
-        if (e.isBreakable) continue;   // auto-aim ignores crates / barrels
         const d = fromPos.distance(e.pos);
-        if (d < bestD) { best = e; bestD = d; }
+        if (e.isBreakable)
+        {
+            if (d < bestBreakableD) { bestBreakable = e; bestBreakableD = d; }
+        }
+        else if (d < bestEnemyD)    { bestEnemy = e;     bestEnemyD = d; }
     }
-    return best;
+    return bestEnemy || bestBreakable;
 }
 
 // Tiered XP gem drop — small/medium/large by xpDrop, with elites always
@@ -2259,11 +2268,9 @@ class Breakable extends EngineObject
     {
         super.update();
         this.renderOrder = -this.pos.y;
-        // Walk-into break — the player can shoulder-check a crate. Each
-        // overlap frame chips off some HP; the player crosses too quickly
-        // for this to feel like a wall.
-        if (isOverlapping(this.pos, this.size, player.pos, player.size))
-            this.takeDamage(5);
+        // Breakables no longer chip on player contact — only weapons damage
+        // them. Removes the "free loot just by running over a crate" path
+        // and gives auto-aim weapons a clear use during combat lulls.
     }
 
     render()
@@ -2417,7 +2424,7 @@ function spawnLavaPatches(count)
 
 function preSpawnBreakables()
 {
-    const totalCrates  = 18;       // tuned down 2026-05-28 — felt cluttered
+    const totalCrates  = 30;
     const totalBarrels = 6;
     const playerSafeRadiusSq = 36;   // keep a 6 wu clearing around (0,0)
     for (let i = 0; i < totalCrates + totalBarrels; ++i)
@@ -3094,7 +3101,7 @@ async function gameInit()
     createMenu({
         id: 'title',
         title: '🎉 EMOJI SURVIVORS 🎉',
-        subtitle: 'Survive the ☠️ Reaper at 15:00',
+        subtitle: 'Survive the ☠️ Reaper',
         dismissable: false,
         onShow: () =>
         {
