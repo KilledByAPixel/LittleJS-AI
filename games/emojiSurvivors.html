@@ -203,6 +203,8 @@ const BOSS_SCHEDULE = [
     {time: 600, key: 'evilWizard', sprite: 'evilWizard', name: 'Evil Wizard',
         hp: 600, dmg: 18, speed: 1.2, size: 3.0, xpDrop: 0,
         shootEvery: 2.0, shootSprite: 'bolt'},
+    {time: 750, key: 'megaSnake',  sprite: 'megaSnake', name: 'Mega Snake',
+        hp: 1200, dmg: 25, speed: 1.4, size: 4.0, xpDrop: 0},
 ];
 
 const bossesSpawned = new Set();
@@ -366,27 +368,34 @@ class Enemy extends EngineObject
         // it so a frozen pose is visibly static.
         let renderPos = this.pos;
         let renderAngle = 0;
+        let renderSize = this.size;
         if (this.frozenTimer <= 0)
         {
             const k = this.type.key;
             const ph = this.bobPhase;
             if (k === 'zombie') renderAngle = sin(time * 5  + ph) * .14;
-            else if (k === 'bat')      renderPos = this.pos.add(vec2(0, sin(time * 7 + ph) * .18));
-            else if (k === 'ant')      renderAngle = sin(time * 12 + ph) * .12;
-            else if (k === 'snail')    renderAngle = sin(time * 2  + ph) * .05;
-            else if (k === 'skull')    renderAngle = this.rollAngle;
-            else if (k === 'clown')    renderAngle = sin(time * 8  + ph) * .18;
-            else if (k === 'reaper')   renderAngle = sin(time * 3  + ph) * .1;
-            else if (k === 'duck')     renderAngle = sin(time * 6  + ph) * .15;
-            else if (k === 'ghost')    renderPos = this.pos.add(vec2(0, sin(time * 2.5 + ph) * .12));
-            else if (k === 'fireImp')  renderAngle = sin(time * 10 + ph) * .1;
-            else if (k === 'iceImp')   renderAngle = sin(time * 3  + ph) * .08;
+            else if (k === 'bat')       renderPos = this.pos.add(vec2(0, sin(time * 7 + ph) * .18));
+            else if (k === 'ant')       renderAngle = sin(time * 12 + ph) * .12;
+            else if (k === 'snail')     renderAngle = sin(time * 2  + ph) * .05;
+            else if (k === 'skull')     renderAngle = this.rollAngle;
+            else if (k === 'clown')     renderAngle = sin(time * 8  + ph) * .18;
+            else if (k === 'reaper')    renderAngle = sin(time * 3  + ph) * .1;
+            else if (k === 'duck')      renderAngle = sin(time * 6  + ph) * .15;
+            else if (k === 'ghost')     renderPos = this.pos.add(vec2(0, sin(time * 2.5 + ph) * .12));
+            else if (k === 'fireImp')   renderAngle = sin(time * 10 + ph) * .1;
+            else if (k === 'iceImp')    renderAngle = sin(time * 3  + ph) * .08;
+            else if (k === 'megaSnake')
+            {
+                const s = sin(time * 8 + ph) * .35;
+                renderSize = vec2(this.size.x - s, this.size.y + s);
+                renderPos = this.pos.add(vec2(0, s * .5));
+            }
         }
 
         let finalTint = tint;
         if (this.type.key === 'ghost' && finalTint === WHITE)
             finalTint = new Color(1, 1, 1, .7);
-        drawEmoji(renderPos, this.size, this.tileInfo, finalTint, additive, renderAngle);
+        drawEmoji(renderPos, renderSize, this.tileInfo, finalTint, additive, renderAngle);
     }
 
     update()
