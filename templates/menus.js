@@ -684,13 +684,17 @@ function createPauseMenu(opts)
         items.push({type:'button', id:'quit', label:opts.quitLabel,
             onClick: () =>
             {
+                // Match the RESTART pattern: hide the pause menu before firing
+                // the callback, so games whose onQuit doesn't itself call
+                // hideAllMenus() don't leave the pause panel hovering above
+                // the title menu.
                 if (opts.confirmQuit)
                     showConfirmDialog({
                         message: opts.quitMessage,
-                        onYes:   opts.onQuit,
+                        onYes:   () => { hideMenu(opts.id); opts.onQuit(); },
                     });
                 else
-                    opts.onQuit();
+                    { hideMenu(opts.id); opts.onQuit(); }
             }});
 
     return createMenu({
