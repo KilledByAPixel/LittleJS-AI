@@ -416,6 +416,11 @@ class Chest extends EngineObject
         // as the premium evolution object, clearly different from a barrel.
         drawSparkleRing(this.pos, this.size.x * .85, age, 1.55,
                         new Color(1, .95, .55, 1));
+        // Plus a few twinkles ON the sprite for extra premium polish —
+        // the ring tells you something's special, the on-sprite glints
+        // make it feel actively magical.
+        drawTwinkles(this.pos, this.size.scale(.4), 4,
+                     new Color(1, .95, .6, 1), this.spawnTime + this.angle);
     }
 }
 
@@ -434,6 +439,26 @@ function drawSparkleRing(centerPos, radius, phase, speed, color)
         const sy = centerPos.y + sin(a) * r;
         const alpha = .25 + .55 * breathe;
         drawTile(vec2(sx, sy), vec2(.22 + .08 * breathe), sprites.circle,
+                 new Color(color.r, color.g, color.b, alpha));
+    }
+}
+
+// Twinkle dots placed ON the sprite (not orbiting around it). Each dot
+// drifts slowly across the sprite area on its own lissajous curve and
+// pulses its alpha independently — reads as a few quick glints catching
+// the light, not a steady halo. Cheaper than a real particle emitter for
+// this many props.
+function drawTwinkles(centerPos, halfSize, count, color, phase)
+{
+    for (let i = 0; i < count; ++i)
+    {
+        const ph    = phase + i * 2.3;
+        const x     = centerPos.x + cos(time * .8 + ph * 1.1) * halfSize.x;
+        const y     = centerPos.y + sin(time * 1.1 + ph * 1.3) * halfSize.y;
+        const wink  = sin(time * 3 + ph);
+        const alpha = max(0, wink * .85 - .05);
+        if (alpha <= 0) continue;
+        drawTile(vec2(x, y), vec2(.18 + .06 * alpha), sprites.circle,
                  new Color(color.r, color.g, color.b, alpha));
     }
 }
@@ -1714,6 +1739,10 @@ class DaggerSlashWeapon
         // is 4π / 60 rad/frame ≈ .209. Sign mirrors the throw direction so
         // right-throws spin clockwise, left-throws counter-clockwise.
         proj.angleVelocity = this.facing * 4 * PI / 60;
+        // Inherit the player's current velocity so a dagger thrown while
+        // running gets carried along — adds momentum to the throw and
+        // makes the motion feel like it's actually leaving your hand.
+        proj.velocity = proj.velocity.add(player.velocity);
     }
 }
 
@@ -2219,6 +2248,10 @@ class AxeWeapon
         // right/up throw spins clockwise and a left/down throw counter-
         // clockwise. angleVelocity is PER-FRAME, so 2 turns/sec = 4π / 60.
         proj.angleVelocity = (sign >= 0 ? 1 : -1) * 4 * PI / 60;
+        // Inherit the player's velocity — same momentum carry as the
+        // dagger. Lets you fling an axe forward extra hard by sprinting
+        // into the throw.
+        proj.velocity = proj.velocity.add(player.velocity);
     }
 }
 
@@ -2312,9 +2345,9 @@ class Breakable extends EngineObject
     {
         super(pos, vec2(isBarrel ? 1.1 : 1.0),
               isBarrel ? sprites.barrel : sprites.crate);
-        // Bumped from 25 / 10 — walk-into damage is gone so weapons need
-        // to do real work to crack one open. Now a few solid hits each.
-        this.hp = isBarrel ? 60 : 25;
+        // Halved from 60 / 25 after playtest — was a bit too chewy. Still
+        // takes a few solid hits each, just not a small project per crate.
+        this.hp = isBarrel ? 30 : 12;
         this.maxHp = this.hp;
         this.isBarrel = isBarrel;
         this.isBreakable = true;
@@ -2358,10 +2391,20 @@ class Breakable extends EngineObject
             this.hitFlashTimer -= 1 / 60;
             additive = new Color(.85, .85, .85, 0);
         }
-        drawEmoji(this.pos, this.size, this.tileInfo, WHITE, additive);
-        // Barrel sparkle ring removed 2026-05-28 — read as confusing motion
-        // around the prop. The cyan breathing additive is enough to
-        // distinguish a barrel from a chest's gold pulse + sparkle.
+        // Small angle wobble so the prop looks alive instead of frozen on
+        // the floor. ~±4.5° at a slow rate, independent per-instance via
+        // bobPhase so a cluster of crates doesn't sway in unison.
+        const sway = sin(time * 1.4 + this.bobPhase) * .08;
+        drawEmoji(this.pos, this.size, this.tileInfo, WHITE, additive, sway);
+        // Twinkles painted ON the sprite catch the eye in a busy field.
+        // Cyan on barrels (premium hue), warm cream on crates so they
+        // still read as distinct at a glance.
+        const half = this.size.scale(.45);
+        const twinkleColor = this.isBarrel
+            ? new Color(.55, .95, 1, 1)
+            : new Color(1, .95, .7, 1);
+        drawTwinkles(this.pos, half, this.isBarrel ? 4 : 3,
+                     twinkleColor, this.bobPhase);
     }
 
     takeDamage(amount)
@@ -3062,7 +3105,15 @@ async function gameInit()
     sprites.dagger    = drawToTexture(31, paintEmoji('🗡️'), 'a small dagger');
 
     sprites.iceImp      = drawToTexture(36, paintEmoji('🧊'), 'a small ice imp');
-    sprites.evilWizard  = drawToTexture(37, paintEmoji('🧙'), 'an evil wizard');
+    sprites.evilWizard  = drawToTexture(37, ctx =>
+    {
+        // 180° hue rotation — same baking trick as the large gem. Flips
+        // the player wizard's purple robes to the opposite hue (yellow-
+        // green) so the evil version reads as a clearly different mage
+        // at a glance, no extra atlas slot needed.
+        ctx.filter = 'hue-rotate(180deg)';
+        paintEmoji('🧙')(ctx);
+    }, 'a hue-shifted evil wizard');
     sprites.megaSnake   = drawToTexture(38, paintEmoji('🐍'), 'a large green snake');
     sprites.ghost       = drawToTexture(39, paintEmoji('👻'), 'a pale ghost');
 
@@ -4347,11 +4398,93 @@ function drawOffScreenIndicators()
     }
 }
 
+// Tiny debug-shape helpers. drawLine in world space draws on top of the
+// entity batch when called from gameRenderPost, so outlines stay visible
+// over their sprites.
+function drawDebugBox(pos, size, color)
+{
+    const hw = size.x / 2, hh = size.y / 2;
+    const tl = vec2(pos.x - hw, pos.y + hh);
+    const tr = vec2(pos.x + hw, pos.y + hh);
+    const br = vec2(pos.x + hw, pos.y - hh);
+    const bl = vec2(pos.x - hw, pos.y - hh);
+    drawLine(tl, tr, .05, color);
+    drawLine(tr, br, .05, color);
+    drawLine(br, bl, .05, color);
+    drawLine(bl, tl, .05, color);
+}
+function drawDebugCircle(pos, radius, color)
+{
+    // drawCircle(pos, size = diameter, fill, lineWidth, lineColor) — pass
+    // CLEAR_WHITE fill so only the outline shows up, no faceted polygon
+    // segments to look junky.
+    drawCircle(pos, radius * 2, CLEAR_WHITE, .08, color);
+}
+
+// Collision-shape overlay — auto-turns on when the engine's debug overlay
+// is toggled (press ~ in a run). Shows the AABB for things that use
+// isOverlapping (player, enemies, projectiles) and a ring for things that
+// use a distance check (magnet, pickup, chest, AOE blasts, lava pools,
+// nuke field). Colour-coded so player / enemy / boss / breakable / friendly-
+// projectile / enemy-projectile read at a glance.
+function drawCollisionDebug()
+{
+    if (!debugOverlay) return;
+
+    const playerC    = new Color( 0,   1,    0,   .9);
+    const enemyC     = new Color( 1,  .25,  .25,  .9);
+    const bossC      = new Color( 1,   0,    0,   .9);
+    const breakableC = new Color(.7,  .5,    0,   .9);
+    const projC      = new Color( 1,   1,    0,   .9);
+    const enemyShotC = new Color( 1,   0,    1,   .9);
+    const magnetC    = new Color(.4,  .6,   1,   .55);
+    const pickupC    = new Color( 0,   1,    1,   .8);
+    const chestC     = new Color( 1,  .85,   0,   .8);
+    const aoeC       = new Color( 1,  .5,    0,   .7);
+    const lavaC      = new Color( 1,  .3,    0,   .8);
+    const fieldC     = new Color(.6,   1,   .4,   .65);
+
+    if (player)
+    {
+        drawDebugBox(player.pos, player.size, playerC);
+        drawDebugCircle(player.pos,
+            magnetRadius * (player.magnetMult || 1), magnetC);
+    }
+    // Enemies + breakables share the `enemies` array.
+    for (const e of enemies)
+    {
+        const c = e.isBreakable ? breakableC : e.isBoss ? bossC : enemyC;
+        drawDebugBox(e.pos, e.size, c);
+    }
+    // Projectiles, AOE fields, pickups, chests — single sweep of engineObjects.
+    for (const obj of engineObjects)
+    {
+        if (obj.destroyed) continue;
+        if (obj instanceof Projectile ||
+            obj instanceof StarToss ||
+            obj instanceof CometProjectile)
+            drawDebugBox(obj.pos, obj.size, projC);
+        else if (obj instanceof EnemyProjectile)
+            drawDebugBox(obj.pos, obj.size, enemyShotC);
+        else if (obj instanceof Pickup)
+            drawDebugCircle(obj.pos, .8, pickupC);
+        else if (obj instanceof Chest)
+            drawDebugCircle(obj.pos, 1.2, chestC);
+        else if (obj instanceof Bomb || obj instanceof NukeBomb)
+            drawDebugCircle(obj.pos, obj.radius, aoeC);
+        else if (obj instanceof NukeField)
+            drawDebugCircle(obj.pos, obj.fieldRadius, fieldC);
+        else if (obj instanceof LavaPatch)
+            drawDebugCircle(obj.pos, obj.lavaRadius, lavaC);
+    }
+}
+
 function gameRenderPost()
 {
     if (gameOver) gameOverFrameCount++;
     else          gameOverFrameCount = 0;
 
+    drawCollisionDebug();
     drawHUD();
     drawOffScreenIndicators();
 
