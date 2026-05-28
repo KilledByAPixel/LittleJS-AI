@@ -1926,6 +1926,8 @@ async function gameInit()
     sprites.heroCat    = drawToTexture(2, paintEmoji('🐱'), 'cat hero');
     sprites.heroBot    = drawToTexture(3, paintEmoji('🤖'), 'bot hero');
 
+    sprites.fish      = drawToTexture(4, paintEmoji('🐟'), 'a blue fish');
+
     // enemies 8-13
     sprites.zombie    = drawToTexture(8,  paintEmoji('🧟'), 'a green zombie shambling forward');
     sprites.bat       = drawToTexture(9,  paintEmoji('🦇'), 'a black bat with spread wings');
@@ -1934,6 +1936,7 @@ async function gameInit()
     sprites.snail     = drawToTexture(12, paintEmoji('🐌'), 'a brown snail with shell');
     sprites.clown     = drawToTexture(13, paintEmoji('🤡'), 'a clown face with red nose');
     sprites.reaper    = drawToTexture(14, paintEmoji('☠️'), 'a skull and crossbones reaper');
+    sprites.duck      = drawToTexture(15, paintEmoji('🦆'), 'a yellow duck');
 
     // weapons / projectiles 16-21
     sprites.fireball  = drawToTexture(16, paintEmoji('🔥'), 'a fireball, orange and yellow flames');
@@ -1943,6 +1946,7 @@ async function gameInit()
     sprites.bomb      = drawToTexture(20, paintEmoji('💣'), 'a black bomb with fuse');
     sprites.ice       = drawToTexture(21, paintEmoji('🧊'), 'a clear ice cube');
     sprites.starToss  = drawToTexture(22, paintEmoji('⭐'), 'a yellow five-pointed star');
+    sprites.fireImp   = drawToTexture(23, paintEmoji('🔥'), 'a small fire imp');
 
     // pickups 24-26
     sprites.gem       = drawToTexture(24, paintEmoji('💎'), 'a cyan diamond gem');
@@ -1980,6 +1984,12 @@ async function gameInit()
     // Mystery present + Water Splash sprites
     sprites.clover    = drawToTexture(30, paintEmoji('🍀'), 'a green four-leaf clover');
     sprites.water     = drawToTexture(31, paintEmoji('💧'), 'a blue water droplet');
+
+    // new enemy sprites — see spec §5–§7, §11
+    sprites.iceImp      = drawToTexture(36, paintEmoji('🧊'), 'a small ice imp');
+    sprites.evilWizard  = drawToTexture(37, paintEmoji('🧙'), 'an evil wizard');
+    sprites.megaSnake   = drawToTexture(38, paintEmoji('🐍'), 'a large green snake');
+    sprites.ghost       = drawToTexture(39, paintEmoji('👻'), 'a friendly ghost spirit');
 
     // ground / decor 32-35 — trees scattered across the arena, mountains line the edges
     sprites.tree1     = drawToTexture(32, paintEmoji('🌳'), 'a deciduous tree');
