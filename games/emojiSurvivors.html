@@ -3074,7 +3074,7 @@ async function gameInit()
     // Row 2 — Theme enemies + bolt + barrel
     sprites.fireImp   = drawTextToTexture(16, '😈', {description: 'a smiling devil-face fire imp'});
     sprites.iceImp    = drawTextToTexture(17, '🥶', {description: 'a freezing cold-face ice imp'});
-    sprites.skeleton  = drawTextToTexture(18, '🦴', {description: 'a single white bone'});
+    sprites.skeleton  = drawTextToTexture(18, '🦴', {description: 'a single white bone', flipX: true});
     sprites.crab      = drawTextToTexture(19, '🦀', {description: 'a red crab'});
     sprites.octopus   = drawTextToTexture(20, '🐙', {description: 'a purple octopus'});
     sprites.penguin   = drawTextToTexture(21, '🐧', {description: 'a black-and-white penguin'});
@@ -3101,7 +3101,7 @@ async function gameInit()
     sprites.bomb      = drawTextToTexture(34, '💣', {description: 'a black bomb with fuse'});
     sprites.pizza     = drawTextToTexture(35, '🍕', {description: 'a pizza slice'});
     sprites.starToss  = drawTextToTexture(36, '⭐', {description: 'a yellow five-pointed star'});
-    sprites.dagger    = drawTextToTexture(37, '🗡️', {description: 'a small dagger', flipX: true});
+    sprites.dagger    = drawTextToTexture(37, '🗡️', {description: 'a small dagger', flipY: true});
     sprites.fish      = drawTextToTexture(38, '🐟', {description: 'a blue fish'});
     sprites.heartDrain = drawTextToTexture(39, '💓', {description: 'a beating red heart'});
 
@@ -3110,7 +3110,7 @@ async function gameInit()
     // the dagger's blade (asked-for tweak).
     sprites.comet       = drawTextToTexture(40, '☄️', {description: 'a fiery comet'});
     sprites.nuke        = drawTextToTexture(41, '☢️', {description: 'a radioactive trefoil'});
-    sprites.axe         = drawTextToTexture(42, '🪓', {description: 'a wood-handled axe', flipY: true});
+    sprites.axe         = drawTextToTexture(42, '🪓', {description: 'a wood-handled axe', flipX: true});
     sprites.star        = drawTextToTexture(43, '🌟', {description: 'a yellow glowing star'});
     sprites.shark       = drawTextToTexture(44, '🦈', {description: 'a grey shark'});
     sprites.heartSpiral = drawTextToTexture(45, '💖', {description: 'a sparkling pink heart'});
