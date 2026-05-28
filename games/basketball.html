@@ -54,7 +54,6 @@ const RACK_START_POS   = vec2(-14, -4.5);  // off-screen-left feed position
 const SCORE_BASE       = 2;
 const SCORE_SWISH      = 3;
 const STREAK_FOR_FIRE  = 3;
-const BEST_KEY         = 'basketball.best';
 
 const COLOR_BG       = new Color().setHex('#101a30');
 const COLOR_FLOOR    = hsl(.08, .55, .32);
@@ -335,7 +334,7 @@ function endGame()
     if (score > bestScore)
     {
         bestScore = score;
-        localStorage.setItem(BEST_KEY, String(bestScore));
+        saveData({bestScore});
     }
     // surface game-over menu (refresh its labels first)
     const m = getMenu('gameover');
@@ -369,7 +368,7 @@ async function gameInit()
     // Title has its own attract-mode behind the menu — leave it animating.
     installAutoPause(() => gamePhase === 'playing');
 
-    bestScore = parseInt(localStorage.getItem(BEST_KEY) || '0') | 0;
+    bestScore = getSaveData().bestScore ?? 0;
 
     const sound_select   = new Sound([.4,,720,,,.02,2,.07,-5,-33,,,,,,,,.25]);
     const sound_activate = new Sound([.6,,90,.01,,.05,1,2.5,40,,,,,,,,,.5]);
@@ -413,7 +412,7 @@ async function gameInit()
                     onYes: () =>
                     {
                         bestScore = 0;
-                        localStorage.setItem(BEST_KEY, '0');
+                        saveData({bestScore: 0});
                     },
                 });
             }},
