@@ -3210,7 +3210,7 @@ async function gameInit()
     await loadEmojiFont();
     initDrawToTexture(8);
     setTextureOutline(true);   // black sticker outline on every emoji sprite
-    DEBUG_SPRITES && showAtlasOverlay();
+    DEBUG_SPRITES && showAtlas();
 
     // hero sprites — painted once at startup; HEROES[*].spriteKey selects
     // which one the player uses. Avoids any mid-game atlas re-upload.
