@@ -66,6 +66,8 @@ let lastMove = null;             // {from, to} for highlighting
 // UI state
 let selectedSquare = null;       // {row, col} | null — currently-selected own piece
 let legalMovesForSelected = [];  // pre-filtered legal moves from selectedSquare
+let movableHintToken = null;     // turn token for the movable-piece hint cache
+let movableHintSquares = [];     // [{row, col}] of own pieces that have a legal move
 let promotingMove = null;        // {from, to} stashed while promotion dialog is up
 let hoverSquare = null;
 let gameMode = 'pvp';            // 'pvp' | 'ai' | 'aivai' — set on startGame
@@ -756,6 +758,26 @@ function legalMoves(color)
     return legalMovesForState(getCurrentState(), color);
 }
 
+// Source squares of the current player's pieces that have at least one legal move.
+// Cached per turn (keyed on a position+player token) so the hint doesn't regenerate
+// the full legal-move list every frame.
+function getMovableHintSquares()
+{
+    const token = positionHistory.length + ':' + currentPlayer;
+    if (token !== movableHintToken) {
+        movableHintToken = token;
+        const seen = new Set();
+        movableHintSquares = [];
+        for (const m of legalMoves(currentPlayer)) {
+            const key = m.from.row + ',' + m.from.col;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            movableHintSquares.push({row: m.from.row, col: m.from.col});
+        }
+    }
+    return movableHintSquares;
+}
+
 function hasInsufficientMaterial(b)
 {
     const pieces = {w: [], b: []};
@@ -943,6 +965,15 @@ function drawBoard()
         const king = findKing(board, currentPlayer);
         if (king && isInCheck(board, currentPlayer, getCurrentState())) {
             drawRect(getSquareWorldPos(king.row, king.col), vec2(SQUARE_SIZE), rgb(1, 0.2, 0.2, 0.45));
+        }
+    }
+
+    // Hint: pulse own pieces that have a legal move when nothing is selected
+    const humanTurn = gameMode === 'pvp' || (gameMode === 'ai' && currentPlayer === COLOR_WHITE);
+    if (isPlaying() && !gameOver && !selectedSquare && humanTurn) {
+        const hintAlpha = 0.3 + Math.sin(time * 4) * 0.15;
+        for (const sq of getMovableHintSquares()) {
+            drawRect(getSquareWorldPos(sq.row, sq.col), vec2(SQUARE_SIZE * 0.9), rgb(0.3, 1, 0.5, hintAlpha));
         }
     }
 
