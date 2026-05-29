@@ -1393,7 +1393,7 @@ function applyCanvasSize()
 function spawnMenuBackground()
 {
     menuBgPieces = [];
-    for (let i = 0; i < 15; i++)
+    for (let i = 0; i < 30; i++)
     {
         const type = randInt(PIECES.length);
         const rot = randInt(4);
@@ -1402,8 +1402,8 @@ function spawnMenuBackground()
             x: frand(-12, 12),
             y: frand(-14, 14),
             fallSpeed: MENU_FALL_SPEED + frand(-0.5, 1),
-            alpha: frand(0.15, 0.35),
-            scale: frand(0.7, 1.1),
+            alpha: frand(0.5, .9),
+            scale: frand(1, 2),
         });
     }
 }
