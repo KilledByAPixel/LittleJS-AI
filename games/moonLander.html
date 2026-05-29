@@ -185,6 +185,74 @@ class Debris extends EngineObject
     }
 }
 
+// expanding blast ring + initial flash for explosions
+class ShockWave extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2());
+        this.t = 0;
+        this.renderOrder = 1e9;
+    }
+
+    update()
+    {
+        this.t += timeDelta*2.6;
+        if (this.t >= 1) this.destroy();
+    }
+
+    render()
+    {
+        const a = 1 - this.t;
+        if (this.t < .4) // bright flash
+            drawCircle(this.pos, lerp(3, 7, this.t), rgb(1,.95,.7, (.4-this.t)*1.4));
+        // expanding ring (transparent fill, glowing outline)
+        drawCircle(this.pos, lerp(1.5, 13, this.t), rgb(1,.7,.4,0), .35*a, rgb(1,.8,.5, a*.7));
+    }
+}
+
+// fireball + sparks + chunks + shockwave
+function makeExplosion(pos, vel = vec2())
+{
+    new ShockWave(pos);
+
+    // additive fireball
+    new ParticleEmitter(
+        pos, 0,
+        .9, .12, 380, PI,                  // emitSize, emitTime(burst), emitRate, emitConeAngle
+        undefined,
+        rgb(1,.92,.5), rgb(1,.5,.12),      // bright core colors
+        rgb(1,.2,0,0), rgb(.4,0,0,0),      // fade to transparent (additive)
+        .75, .95, .12, .32, .1,            // particleTime, sizeStart, sizeEnd, speed, angleSpeed
+        .9, 1, .25,                        // damping, angleDamping, gravityScale
+        PI, .25,                           // particleConeAngle, fadeRate
+        .9, false, true, true,            // randomness, collide, additive, randomColorLinear
+        1e9                                // renderOrder
+    );
+
+    // additive spark streaks (stretched in direction of motion)
+    const sparks = new ParticleEmitter(
+        pos, 0,
+        .3, .1, 260, PI,
+        undefined,
+        rgb(1,1,.8), rgb(1,.8,.4),
+        rgb(1,.5,.1,0), rgb(1,.2,0,0),
+        .55, .3, .05, .7, 0,
+        .96, 1, .35,
+        PI, .2,
+        .5, false, true, true,
+        1e9
+    );
+    sparks.trailScale = .6;
+
+    // solid debris chunks
+    for (let i = 0; i < 28; ++i)
+    {
+        const v = randVec2(rand(.3, .06)).add(vel.scale(.5));
+        new Debris(pos.add(randVec2(rand(.7,.1))), v, randColor(rgb(1,.7,.2), rgb(.9,.2,.05), true));
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 class Player extends EngineObject
 {
@@ -255,13 +323,9 @@ class Player extends EngineObject
         this.trail.emitRate = 0;
         messageTimer.set(999);
         sfxBoom.play();
-        addScreenShake(1.4, .6);
+        addScreenShake(1.6, .6);
 
-        for (let i = 0; i < 90; ++i)
-        {
-            const v = randVec2(rand(.28, .05)).add(this.velocity.scale(.5));
-            new Debris(this.pos.add(randVec2(rand(.8,.1))), v, randColor(rgb(1,.7,.2), rgb(1,.1,.05), true));
-        }
+        makeExplosion(this.pos, this.velocity);
         submitBestScore(totalScore);
         this.destroy();
     }
@@ -501,14 +565,9 @@ function gameUpdatePost()
 function renderSky()
 {
     const W = mainCanvasSize.x, H = mainCanvasSize.y;
-    const top = rgb(.015,.02,.045), bot = rgb(.06,.05,.11);
-    const bands = 14;
-    for (let i = 0; i < bands; ++i)
-    {
-        const t = i/(bands-1);
-        const c = rgb(lerp(top.r,bot.r,t), lerp(top.g,bot.g,t), lerp(top.b,bot.b,t));
-        drawRect(vec2(W/2, H*(i+.5)/bands), vec2(W+2, H/bands+2), c, 0, true, true);
-    }
+    // one big atmosphere gradient: deep space up top, faint glow toward the horizon
+    drawRectGradient(vec2(W/2, H/2), vec2(W, H),
+        BLACK, hsl(.75,1,.1), 0, true, true);
 }
 
 function renderStars()
