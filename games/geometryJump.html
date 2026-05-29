@@ -919,12 +919,12 @@ function gameRenderPost()
     if (state === 'dead')
     {
         drawTextScreen('CRASH!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), 110, hsl(0, .9, .6), 10, hsl(0,0,0,.8));
-        drawTextScreen('Press SPACE / CLICK to try again', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 44, hsl(0,0,1,.9), 6, hsl(0,0,0,.8));
+        drawTextScreen('Click to try again', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 44, hsl(0,0,1,.9), 6, hsl(0,0,0,.8));
     }
     else if (state === 'win')
     {
         const title  = campaignComplete ? 'CAMPAIGN COMPLETE!' : 'LEVEL CLEAR!';
-        const prompt = campaignComplete ? 'Press SPACE / CLICK to return to title' : 'Press SPACE / CLICK for next level';
+        const prompt = campaignComplete ? 'Click to return to title' : 'Click for next level';
         drawTextScreen(title, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), campaignComplete ? 84 : 110, hsl(.33, .9, .55), 10, hsl(0,0,0,.8));
         drawTextScreen(prompt, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 44, hsl(0,0,1,.9), 6, hsl(0,0,0,.8));
     }
