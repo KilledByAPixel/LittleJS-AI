@@ -120,6 +120,16 @@ class Player extends EngineObject
     {
         this.speed = playerSpeed * this.moveSpeedMult;
         this.maxHp = playerMaxHp * this.maxHpMult;
+        // Death lockdown — once the run is over, the player can't move,
+        // can't accept input, and is invisible (see render). The game-over
+        // menu sits on top; if the player closes it via the toolbar they
+        // can still watch the field but they cannot keep playing on 0 HP.
+        if (gameOver)
+        {
+            this.velocity = vec2();
+            super.update();
+            return;
+        }
         // tick down mystery-pickup buff timers
         if (this.damageBoostTimer > 0)
         {
@@ -153,6 +163,10 @@ class Player extends EngineObject
 
     render()
     {
+        // Dead — sprite + halo both vanish so the player has clearly "died"
+        // even if they dismiss the game-over menu via the HUD toolbar.
+        if (gameOver) return;
+
         // Soft pulsing halo so the player is always findable in a busy
         // swarm. Drawn first so the player emoji renders on top of it.
         const pulse = .5 + .5 * sin(time * 2.5);
@@ -437,7 +451,7 @@ class Chest extends EngineObject
         // Plus a few twinkles ON the sprite for extra premium polish —
         // the ring tells you something's special, the on-sprite glints
         // make it feel actively magical.
-        drawTwinkles(this.pos, this.size.scale(.4), 4,
+        drawTwinkles(this.pos, this.size.scale(.2), 8,
                      new Color(1, .95, .6, 1), this.spawnTime + this.angle);
     }
 }
@@ -468,6 +482,7 @@ function drawSparkleRing(centerPos, radius, phase, speed, color)
 // this many props.
 function drawTwinkles(centerPos, halfSize, count, color, phase)
 {
+    setBlendMode(true);
     for (let i = 0; i < count; ++i)
     {
         const ph    = phase + i * 2.3;
@@ -479,6 +494,7 @@ function drawTwinkles(centerPos, halfSize, count, color, phase)
         drawTile(vec2(x, y), vec2(.18 + .06 * alpha), sprites.circle,
                  new Color(color.r, color.g, color.b, alpha));
     }
+    setBlendMode();
 }
 
 const enemies = [];
@@ -740,10 +756,12 @@ class Enemy extends EngineObject
         if (this.hitCooldown > 0) this.hitCooldown -= 1 / 60;
 
         // contact damage to player — fully blocked while ✨ invuln is active
-        // and in AI test mode (so the AI can wade through swarms unbothered)
+        // and in AI test mode (so the AI can wade through swarms unbothered).
+        // Also skipped while gameOver so a dead player doesn't keep taking
+        // hit-sounds and hurt-flashes from the swarm clumping on the corpse.
         if (this.hitCooldown <= 0 &&
             player.invulnTimer <= 0 &&
-            !playerAI && !godMode &&
+            !playerAI && !godMode && !gameOver &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.dmg;
@@ -964,8 +982,9 @@ class EnemyProjectile extends EngineObject
         }
 
         // player contact — respects invuln, same gate as Enemy contact
-        // (also skipped in AI test mode so the AI never bleeds to wizard bolts)
-        if (player.invulnTimer <= 0 && !playerAI && !godMode &&
+        // (also skipped in AI test mode so the AI never bleeds to wizard
+        // bolts, and skipped on gameOver so the corpse can't keep eating shots)
+        if (player.invulnTimer <= 0 && !playerAI && !godMode && !gameOver &&
             isOverlapping(this.pos, this.size, player.pos, player.size))
         {
             player.hp -= this.damage;
@@ -2505,11 +2524,11 @@ class Breakable extends EngineObject
         // Twinkles painted ON the sprite catch the eye in a busy field.
         // Cyan on barrels (premium hue), warm cream on crates so they
         // still read as distinct at a glance.
-        const half = this.size.scale(.45);
+        const half = this.size.scale(.3);
         const twinkleColor = this.isBarrel
             ? new Color(.55, .95, 1, 1)
             : new Color(1, .95, .7, 1);
-        drawTwinkles(this.pos, half, this.isBarrel ? 4 : 3,
+        drawTwinkles(this.pos, half, this.isBarrel ? 8 : 6,
                      twinkleColor, this.bobPhase);
     }
 
@@ -2543,6 +2562,34 @@ class Breakable extends EngineObject
     }
 }
 
+// Min distance (wu) a breakable must keep from every other breakable. ~half
+// a screen at cameraScale 40 (~24×16 wu visible) so two crates / barrels
+// almost never share a screen — they read as discoverable points of interest
+// instead of clustering up.
+const BREAKABLE_MIN_SPACING = 12;
+// Clearance buffer added to a backdrop prop's half-extent when checking if
+// a breakable candidate sits "under" the prop. Props are visually tall and
+// would hide a crate sitting directly behind them.
+const PROP_CLEARANCE = .8;
+
+function isPosClearOfProps(pos)
+{
+    for (const obj of engineObjects)
+    {
+        if (!(obj instanceof BackdropProp) || obj.destroyed) continue;
+        if (pos.distance(obj.pos) < obj.size.x * .55 + PROP_CLEARANCE)
+            return false;
+    }
+    return true;
+}
+
+function isPosClearOfBreakables(pos)
+{
+    for (const b of breakables)
+        if (pos.distance(b.pos) < BREAKABLE_MIN_SPACING) return false;
+    return true;
+}
+
 function preSpawnBreakables()
 {
     const totalCrates  = 30;
@@ -2551,14 +2598,52 @@ function preSpawnBreakables()
     for (let i = 0; i < totalCrates + totalBarrels; ++i)
     {
         const isBarrel = i >= totalCrates;
-        let pos;
-        for (let tries = 0; tries < 6; ++tries)
+        // Generous retry budget — backdrop props (~500 trees) + the
+        // 12 wu inter-breakable spacing eat a chunk of the arena, so the
+        // earlier 6-try cap was too tight. If we still can't find a clean
+        // spot after many tries we relax the prop check first (breakable
+        // behind a tree is annoying but not broken), then the spacing.
+        let pos = null;
+        for (let tries = 0; tries < 40; ++tries)
         {
-            pos = vec2(rand(ARENA_MIN_X + 2, ARENA_MAX_X - 2),
-                       rand(ARENA_MIN_Y + 2, ARENA_MAX_Y - 2));
-            if (pos.lengthSquared() > playerSafeRadiusSq) break;
+            const candidate = vec2(rand(ARENA_MIN_X + 2, ARENA_MAX_X - 2),
+                                   rand(ARENA_MIN_Y + 2, ARENA_MAX_Y - 2));
+            if (candidate.lengthSquared() <= playerSafeRadiusSq) continue;
+            if (!isPosClearOfBreakables(candidate)) continue;
+            if (!isPosClearOfProps(candidate))      continue;
+            pos = candidate;
+            break;
         }
-        new Breakable(pos, isBarrel);
+        // Soft fallback — spacing is the bigger gameplay signal; let the
+        // prop check go first so we don't end up with two crates touching.
+        if (!pos)
+        {
+            for (let tries = 0; tries < 20; ++tries)
+            {
+                const candidate = vec2(rand(ARENA_MIN_X + 2, ARENA_MAX_X - 2),
+                                       rand(ARENA_MIN_Y + 2, ARENA_MAX_Y - 2));
+                if (candidate.lengthSquared() <= playerSafeRadiusSq) continue;
+                if (!isPosClearOfBreakables(candidate)) continue;
+                pos = candidate;
+                break;
+            }
+        }
+        // Last-ditch fallback if even the spacing search fails — just
+        // place it outside the player safe radius.
+        if (!pos)
+        {
+            for (let tries = 0; tries < 10; ++tries)
+            {
+                const candidate = vec2(rand(ARENA_MIN_X + 2, ARENA_MAX_X - 2),
+                                       rand(ARENA_MIN_Y + 2, ARENA_MAX_Y - 2));
+                if (candidate.lengthSquared() > playerSafeRadiusSq)
+                {
+                    pos = candidate;
+                    break;
+                }
+            }
+        }
+        if (pos) new Breakable(pos, isBarrel);
     }
 }
 
@@ -2980,15 +3065,16 @@ function startRun(hero, stage)
     player.passives = [];
     recomputeMultipliers();
 
-    // Scatter the breakable props across the arena. Must run after the
-    // teardown loop above (so a restart starts from a clean board) and
-    // after player creation (so the safe-radius check has a player at
-    // origin to keep away from).
-    preSpawnBreakables();
     // Reroll road layout per run and spawn the y-sorted backdrop props
-    // (trees / headstones / etc.) randomly across the arena.
+    // (trees / headstones / etc.) randomly across the arena. Props go down
+    // FIRST so preSpawnBreakables can check candidate positions against
+    // them and avoid placing a crate behind a tree.
     rebuildRoadStrips();
     spawnBackdropProps();
+    // Scatter breakables — must run after teardown (clean board), after
+    // player creation (safe-radius check around origin), and after the
+    // backdrop prop pass (so the prop-overlap check has props to test).
+    preSpawnBreakables();
 
     setPlaying(true);
     hideAllMenus();
@@ -4173,6 +4259,14 @@ function gameUpdate()
     // setMenuVisibilityCallback wiring already in place.
     if (bindPauseKey({when: () => isPlaying() && !gameOver && !runVictory}))
         return;
+
+    // Run is over — even if the player dismisses the game-over / victory
+    // menu via the HUD toolbar, the world is FROZEN from a gameplay
+    // perspective. Timer doesn't tick, no more spawns, no weapon fire,
+    // no level-up popups. The engine still updates enemies so the board
+    // visually keeps moving for a second or two of "scene viewing", but
+    // gameplay is sealed off.
+    if (gameOver || runVictory) return;
 
     elapsedTime += 1 / 60;
     // 10-minute unlock — exposes 🧛 Vamp on the hero-select screen once a
