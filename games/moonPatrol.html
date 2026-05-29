@@ -1,538 +1,287 @@
 <!DOCTYPE html><head>
-<title>LittleJS Moonbuggy</title>
+<title>LittleJS Moon Patrol</title>
 <meta charset=utf-8>
-</head><body>
+</head><body style="background:#000">
 <script src="../dist/littlejs.js?1780012197793"></script>
 <script src="../templates/gameFx.js?1780012197793"></script>
+<script src="../templates/tweakables.js?1780012197793"></script>
 <script src="../templates/menus.js?1780012197793"></script>
 <script>
 'use strict';
 
 // engine settings
-debugWatermark = false; // Hide debug watermark in corner
-showEngineVersion = false; // Hide engine version console display
-
-// ---------------------------------------------------------------------------
-// SoundGenerator
-// Some environments block audio until user interaction, and in rare cases the
-// Sound class may not be available yet. This wrapper keeps the game running
-// even if audio is unavailable.
-
-const SoundBase = (typeof Sound != 'undefined')
-    ? Sound
-    : class { constructor(){} play(){} stop(){} };
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Moon Patrol (tiny homage prototype)
+// MOON PATROL — momentum hill-rider
+//   LEFT mouse / Space : jump        RIGHT mouse (hold) : fire turret
+//   Move mouse to aim the turret. Build speed on the downhills.
+///////////////////////////////////////////////////////////////////////////////
 
-// --- tuning (units are world units, frames are 60fps fixed-step)
-const CAMERA_SCALE = 32;
-const CAMERA_Y = 7.5;
-const GROUND_BOTTOM = -20;
+// --- world constants (world units; physics is per-second, scaled by timeDelta)
+const CAMERA_SCALE   = 32;
+const GROUND_BOTTOM  = -40;     // terrain fill floor
+const RIDE_HEIGHT    = 0.55;    // rover center above the ground line
+const ROVER_SIZE     = vec2(1.7, 0.85);
+const MIN_SPEED      = 4;       // engine never fully stalls
+const BULLET_SPEED   = 55;
+const SHOOT_COOLDOWN = 0.12;    // seconds between shots
+const MAX_HEALTH     = 6;
+const INVULN_TIME    = 1.1;     // seconds of i-frames after a hit
+const BOMB_GRAVITY   = 22;
 
-const SCROLL_SPEED = 0.15;     // units per frame (starting speed)
-const MAX_SCROLL_SPEED = SCROLL_SPEED * 2; // ramps up to ~2x
-const SPEED_RAMP_FRAMES = 60 * 20; // reach max speed in ~20 seconds (fixed 60fps)
-const PLAYER_OFFSET_X = 7.5;   // units ahead of camera left edge-ish
+// physics tuning (live-tweakable — press ~). On window so tweak() can reach it.
+var TUNE = {
+    thrust:   12,    // forward acceleration along the ground
+    gravity:  23,    // gravity (along-slope when grounded, vertical in air)
+    drag:     0.55,  // speed bleed; flat-ground cruise ~= thrust/drag
+    jump:     13.5,  // upward launch impulse
+    maxSpeed: 40,
+    lookAhead: 8,    // how far ahead of the rover the camera looks
+};
 
-const GRAVITY = 0.035;
-const JUMP_VEL = 0.62;
-
-const PLAYER_SIZE = vec2(1.6, 0.9);
-const WHEEL_RADIUS = 0.22;
-
-const BULLET_SPEED = 0.9;
-const BULLET_SIZE = vec2(0.35, 0.12);
-const SHOOT_COOLDOWN_FRAMES = 10;
-
-// Damage model
-const MAX_HEALTH = 6;
-const DAMAGE_INVULN_FRAMES = 70;
-const DAMAGE_BOUNCE_VEL = 0.45;
-
-// Powerups
-const POWERUP_FALL_GRAVITY = 0.012;
-const POWERUP_PICKUP_RADIUS = 0.65;
-const POWERUP_LIFE_FRAMES = 600;
-
-// Obstacles density (about half as many as before)
-const SPAWN_GAP_MIN = 9.0;
-const SPAWN_GAP_MAX = 19.0;
-
+///////////////////////////////////////////////////////////////////////////////
 // --- state
-let gameState; // 0=playing, 1=dead
-let scrollX;
-let speedFrames;
-let currentScrollSpeed;
-let score;
-
-let playerPos;
-let playerVelY;
-let playerOnGround;
-let shootCooldown;
-let invulnFrames;
+let state;            // 'play' | 'dead'
+let deathTimer;       // counts up after death before the game-over dialog
+let rover;            // { pos, vel, speed, angle, onGround }
+let aimDir;           // unit Vector2 the turret points toward
+let shootTimer;
+let invuln;
 let health;
-let damageFlashFrames;
+let damageFlash;
+let kills;
+let bestDist;         // furthest x reached this run (for distance score)
 
-let rocks;
-let craters;
-let ufos;
-let bullets;
-let particles;
-let powerups;
+let rocks, ufos, bullets, bombs, particles, powerups;
+let nextRockX, nextUfoX;
 
-let nextSpawnX;
-let difficulty;
-
-// --- sounds
-let sJump, sShoot, sBoom, sThud, sHeal;
+let sJump, sShoot, sBoom, sThud, sHit, sHeal;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Utility
+// --- terrain (smooth rolling lunar hills; C1-continuous so slope is clean)
 
-function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
-function lerp(a,b,t) { return a + (b-a)*t; }
-
-function hash1(n)
+function groundY(x)
 {
-    // deterministic pseudo random in [0,1)
-    n |= 0;
-    n = (n ^ 61) ^ (n >>> 16);
-    n = Math.imul(n, 9);
-    n = n ^ (n >>> 4);
-    n = Math.imul(n, 0x27d4eb2d);
-    n = n ^ (n >>> 15);
-    return (n >>> 0) / 4294967296;
+    return 1.0
+        + Math.sin(x*0.080)        * 3.2
+        + Math.sin(x*0.170 + 1.7)  * 1.1
+        + Math.sin(x*0.034 + 0.6)  * 2.2;
 }
 
-function hash2(x, y) { return hash1((x*73856093) ^ (y*19349663)); }
-
-function terrainBaseY(x)
+function groundSlope(x)
 {
-    // smooth-ish rolling lunar ground
-    const a = Math.sin(x*0.18) * 0.9;
-    const b = Math.sin(x*0.055 + 1.2) * 1.8;
-
-    const seg = 6;
-    const cell = Math.floor(x / seg);
-    const t = clamp01((x/seg) - cell);
-    const s = t*t*(3 - 2*t); // smoothstep
-    const r0 = lerp(-1, 1, hash1(cell + 1000));
-    const r1 = lerp(-1, 1, hash1(cell + 1001));
-    const c = lerp(r0, r1, s) * 0.8;
-
-    return 2.0 + a + b + c;
+    const e = 0.35;
+    return (groundY(x + e) - groundY(x - e)) / (2*e);
 }
 
-function groundYAt(x) { return terrainBaseY(x); }
+function groundAngle(x) { return Math.atan(groundSlope(x)); }
 
-function aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh)
+// rotate an offset in math convention (CCW positive = nose-up on uphill)
+function rot(v, a)
 {
-    return Math.abs(ax - bx) * 2 < (aw + bw) && Math.abs(ay - by) * 2 < (ah + bh);
+    const c = Math.cos(a), s = Math.sin(a);
+    return vec2(v.x*c - v.y*s, v.x*s + v.y*c);
 }
 
-function spawnParticles(pos, count, baseSpeed, colorA, colorB)
+function playSoundSafe(s) { try { s && s.play && s.play(); } catch (e) {} }
+
+///////////////////////////////////////////////////////////////////////////////
+// --- particles (per-frame velocity, engine convention)
+
+function burst(pos, count, speed, colA, colB, opts = {})
 {
-    for (let i=0; i<count; ++i)
+    const sizeBase = opts.size  || 0.14;
+    const grav     = opts.grav  != null ? opts.grav : 0.004;
+    const lifeMax  = opts.life  || 50;
+    const spread   = opts.dir;  // {ang, arc} for directional bursts
+    for (let i = 0; i < count; ++i)
     {
-        const ang = hash1((pos.x*1000 + pos.y*2000 + i*17)|0) * PI*2;
-        const spd = baseSpeed * (0.4 + hash1(i*999 + (pos.x*50|0)));
+        const a   = spread ? spread.ang + (rand()-0.5)*spread.arc : rand(PI*2);
+        const spd = speed * (0.4 + rand());
         particles.push({
             pos: pos.copy(),
-            vel: vec2(Math.cos(ang)*spd, Math.sin(ang)*spd),
-            life: 30 + (hash1(i*1234)*30|0),
-            max: 60,
-            colorA, // Color
-            colorB, // Color
+            vel: vec2(Math.cos(a)*spd, Math.sin(a)*spd),
+            life: lifeMax*(0.5+rand()*0.5), max: lifeMax,
+            colA, colB, size: sizeBase*(0.7+rand()*0.8), grav,
         });
     }
 }
 
-function playSoundSafe(s)
-{
-    // sound system can be blocked until user input; just try
-    try { s && s.play && s.play(); } catch (e) {}
-}
-
-function runSelfTests()
-{
-    // Minimal "tests" to catch common runtime issues.
-    // (There is no test runner; we log asserts to the console.)
-    console.assert(typeof vec2 == 'function', 'LittleJS vec2 missing');
-    console.assert(typeof hsl == 'function', 'LittleJS hsl missing');
-    console.assert(typeof engineInit == 'function', 'LittleJS engineInit missing');
-
-    const c = hsl(0, 1, 0.5);
-    console.assert(c && typeof c.lerp == 'function', 'Color.lerp missing');
-
-    console.assert(typeof groundYAt(0) == 'number', 'groundYAt must return a number');
-
-    // Sound should not hard-crash even if unavailable
-    const sg = new SoundGenerator({frequency: 440, release: .02});
-    console.assert(sg && typeof sg.play == 'function', 'SoundGenerator.play missing');
-
-    console.assert(MAX_HEALTH > 0, 'MAX_HEALTH must be > 0');
-    console.assert(DAMAGE_INVULN_FRAMES >= 0, 'DAMAGE_INVULN_FRAMES must be >= 0');
-    console.assert(SPAWN_GAP_MAX > SPAWN_GAP_MIN, 'spawn gap range invalid');
-    console.assert(POWERUP_LIFE_FRAMES > 0, 'powerup life must be > 0');
-console.assert(SPEED_RAMP_FRAMES > 0, 'SPEED_RAMP_FRAMES must be > 0');
-}
-
 ///////////////////////////////////////////////////////////////////////////////
-// Spawning
+// --- spawning
 
 function spawnRock(x)
 {
-    const w = 0.9 + hash1((x*11)|0) * 0.8;
-    const h = 0.6 + hash1((x*17 + 9)|0) * 0.9;
-    rocks.push({ x, w, h, dead:false });
-}
-
-function spawnCrater(x)
-{
-    const w = 1.6 + hash1((x*13 + 7)|0) * 1.8;
-    craters.push({ x, w });
+    rocks.push({ x, w: 1.0 + rand()*1.0, h: 0.9 + rand()*0.9, dead:false });
 }
 
 function spawnUfo(x)
 {
-    const gy = groundYAt(x);
-    const y = gy + 3.0 + hash1((x*19)|0) * 2.0;
-    const dir = -1;
-    ufos.push({ x, y, vx: dir*(0.10 + difficulty*0.02), phase: hash1((x*3)|0)*PI*2, hp: 1 });
-}
-
-function spawnRepairPowerup(pos, amount=2)
-{
-    powerups.push({
-        x: pos.x,
-        y: pos.y,
-        vy: 0.06,
-        life: POWERUP_LIFE_FRAMES,
-        amount,
+    ufos.push({
+        pos: vec2(x, groundY(x) + 5 + rand()*4),
+        phase: rand(PI*2),
+        vx: -(3 + rand()*2),
+        hp: 1,
+        bombTimer: 1.5 + rand()*2.5,
     });
 }
 
-function chooseSpawn(x)
+function spawnPowerup(pos, amount = 2)
 {
-    // weighted by difficulty
-    const r = hash1((x*999)|0);
-    const pUfo = 0.24 + difficulty*0.02; // more enemies
-    const pCrater = 0.26; // slightly fewer terrain hazards
-
-    if (r < pUfo)
-    {
-        spawnUfo(x);
-
-        // occasional extra ufo wingman
-        const r2 = hash1(((x*999)|0) + 77);
-        if (r2 < 0.18 + difficulty*0.01)
-            spawnUfo(x + 2.2);
-    }
-    else if (r < pUfo + pCrater)
-        spawnCrater(x);
-    else
-        spawnRock(x);
+    powerups.push({ pos: pos.copy(), vy: 4, life: 9, amount });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function resetGame()
 {
-    engineObjectsDestroy(); // just in case anything exists
-
-    gameState = 0;
-    scrollX = 0;
-    speedFrames = 0;
-    currentScrollSpeed = SCROLL_SPEED;
-    score = 0;
-    difficulty = 0;
-
-    rocks = [];
-    craters = [];
-    ufos = [];
-    bullets = [];
-    particles = [];
-    powerups = [];
-
-    nextSpawnX = 18;
-
-    const startX = scrollX + PLAYER_OFFSET_X;
-    const gy = groundYAt(startX);
-    playerPos = vec2(startX, gy + PLAYER_SIZE.y/2);
-    playerVelY = 0;
-    playerOnGround = true;
-    shootCooldown = 0;
-    invulnFrames = 0;
-
+    state = 'play';
+    deathTimer = 0;
+    kills = 0;
     health = MAX_HEALTH;
-    damageFlashFrames = 0;
+    damageFlash = 0;
+    invuln = 0;
+    shootTimer = 0;
+    aimDir = vec2(1, 0.6).normalize();
+
+    rocks = []; ufos = []; bullets = []; bombs = []; particles = []; powerups = [];
+
+    const x0 = 6;
+    rover = {
+        pos: vec2(x0, groundY(x0) + RIDE_HEIGHT),
+        vel: vec2(0,0),
+        speed: 8,
+        angle: groundAngle(x0),
+        onGround: true,
+    };
+    bestDist = rover.pos.x;
+
+    nextRockX = 26;
+    nextUfoX = 48;
+
+    // place camera immediately so the title backdrop is framed correctly
+    cameraScale = CAMERA_SCALE;
+    cameraPos = vec2(rover.pos.x + TUNE.lookAhead, rover.pos.y + 3.5);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-function die(atPos)
+function takeDamage(atPos, amount = 1)
 {
-    if (gameState) return;
-    gameState = 1;
-    submitBestScore(score|0);
-
-    playSoundSafe(sBoom);
-    playSoundSafe(sThud);
-    spawnParticles(atPos, 45, 0.22, hsl(.08,.8,.7), hsl(.08,.8,.35));
+    if (state != 'play' || invuln > 0) return;
+    health = max(0, health - amount);
+    damageFlash = 0.4;
+    invuln = INVULN_TIME;
+    rover.speed *= 0.45;
+    addScreenShake(0.6, 0.4);
+    playSoundSafe(sHit);
+    burst(atPos, 16, 0.18, hsl(.05,.9,.65), hsl(.05,.9,.35), {life:45});
+    if (health <= 0) die(atPos);
 }
 
-function takeDamage(atPos, amount=1)
+function die(atPos)
 {
-    if (gameState) return;
-    if (invulnFrames > 0) return;
-
-    health = Math.max(0, health - amount);
-    damageFlashFrames = 24;
-
-    // death at 0
-    if (health <= 0)
-        return die(atPos);
-
-    invulnFrames = DAMAGE_INVULN_FRAMES;
-
-    // bounce the rover a bit
-    playerOnGround = false;
-    playerVelY = Math.max(playerVelY, DAMAGE_BOUNCE_VEL);
-
-    playSoundSafe(sThud);
+    if (state == 'dead') return;
+    state = 'dead';
+    deathTimer = 0;
+    addScreenShake(1.4, 0.7);
     playSoundSafe(sBoom);
-    spawnParticles(atPos, 18, 0.15, hsl(.08,.8,.7), hsl(.08,.8,.35));
+    burst(atPos, 60, 0.35, hsl(.08,.9,.7), hsl(.0,.9,.3), {life:70, size:0.22});
 }
 
 function heal(amount)
 {
-    if (gameState) return;
     const before = health;
-    health = Math.min(MAX_HEALTH, health + amount);
+    health = min(MAX_HEALTH, health + amount);
     if (health > before)
     {
         playSoundSafe(sHeal);
-        spawnParticles(playerPos.add(vec2(0, 0.3)), 10, 0.10, hsl(.32,.7,.65), hsl(.32,.7,.35));
+        burst(rover.pos.add(vec2(0,0.3)), 12, 0.12, hsl(.33,.8,.7), hsl(.33,.8,.4), {life:40});
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-function fireBullet()
+function fire()
 {
-    if (gameState) return;
-    if (shootCooldown > 0) return;
-
-    const muzzle = playerPos.add(vec2(PLAYER_SIZE.x/2 + 0.25, 0.15));
-    bullets.push({ x: muzzle.x, y: muzzle.y, vx: BULLET_SPEED, life: 80 });
-    shootCooldown = SHOOT_COOLDOWN_FRAMES;
+    if (state != 'play' || shootTimer > 0) return;
+    shootTimer = SHOOT_COOLDOWN;
+    const muzzle = rover.pos.add(rot(vec2(0.25, 0.45), rover.angle));
+    const dir = aimDir;
+    bullets.push({ pos: muzzle.add(dir.scale(0.9)), vel: dir.scale(BULLET_SPEED), life: 1.4 });
     playSoundSafe(sShoot);
+    burst(muzzle.add(dir.scale(1.0)), 4, 0.12, hsl(.14,.9,.8), hsl(.08,.9,.5),
+        {life:14, dir:{ang:Math.atan2(dir.y, dir.x), arc:0.6}, grav:0});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Drawing helpers (world)
+// --- update
 
-function drawGround()
-{
-    const view = getCameraSize();
-    const left = cameraPos.x - view.x/2 - 2;
-    const right = cameraPos.x + view.x/2 + 2;
-
-    // fill to bottom with vertical strips
-    const step = 0.5;
-    const groundColor = hsl(.12,.25,.35);
-    const lineColor = hsl(.12,.18,.55);
-
-    let prev;
-    for (let x = Math.floor(left/step)*step; x <= right; x += step)
-    {
-        const y = groundYAt(x);
-        const h = y - GROUND_BOTTOM;
-        drawRect(vec2(x, GROUND_BOTTOM + h/2), vec2(step + 0.02, h), groundColor);
-        if (prev)
-            drawLine(prev, vec2(x, y), 0.08, lineColor);
-        prev = vec2(x, y);
-    }
-
-    // crater holes on top
-    for (const c of craters)
-    {
-        if (c.x < left - 5 || c.x > right + 5) continue;
-        const y = groundYAt(c.x);
-        drawEllipse(vec2(c.x, y - 0.15), vec2(c.w, c.w*0.45), hsl(0,0,0.05), 0, 0.06, hsl(0,0,0.3));
-        // little rim highlight
-        drawEllipse(vec2(c.x, y + 0.05), vec2(c.w*1.05, c.w*0.5), hsl(.12,.15,.45,0.35));
-    }
-}
-
-function drawBackground()
-{
-    const view = getCameraSize();
-
-    // sky
-    drawRect(cameraPos, view, hsl(.62,.35,.10));
-
-    // stars (parallax layer)
-    const p = 0.15;
-    const cell = 2.5;
-    const leftU = (cameraPos.x - view.x/2) * p;
-    const rightU = (cameraPos.x + view.x/2) * p;
-    const bottomU = (cameraPos.y - view.y/2) * p;
-    const topU = (cameraPos.y + view.y/2) * p;
-
-    const x0 = Math.floor(leftU / cell) - 1;
-    const x1 = Math.floor(rightU / cell) + 1;
-    const y0 = Math.floor(bottomU / cell) - 1;
-    const y1 = Math.floor(topU / cell) + 1;
-
-    for (let xi = x0; xi <= x1; ++xi)
-    for (let yi = y0; yi <= y1; ++yi)
-    {
-        const h = hash2(xi, yi);
-        if (h > 0.23) continue; // sparsity
-
-        const ox = hash2(xi+7, yi+3);
-        const oy = hash2(xi+11, yi+13);
-        const u = (xi + ox) * cell;
-        const v = (yi + oy) * cell;
-
-        const x = u / p;
-        const y = v / p;
-        const size = 0.06 + h*0.12;
-        drawRect(vec2(x, y), vec2(size), hsl(.62, .08, .95, 0.9));
-    }
-
-    // distant ridges
-    const ridgeP = 0.35;
-    const ridgeCell = 4;
-    const leftR = (cameraPos.x - view.x/2 - 3) * ridgeP;
-    const rightR = (cameraPos.x + view.x/2 + 3) * ridgeP;
-    const rx0 = Math.floor(leftR / ridgeCell) - 2;
-    const rx1 = Math.floor(rightR / ridgeCell) + 2;
-
-    for (let i=rx0; i<=rx1; ++i)
-    {
-        const r = hash1(i*31 + 5);
-        const u = (i + 0.5) * ridgeCell;
-        const x = u / ridgeP;
-        const y = 1.2 + r*0.9;
-        const w = ridgeCell / ridgeP;
-        const h = 1.0 + r*2.6;
-        drawRect(vec2(x, y + h/2), vec2(w, h), hsl(.62,.20,.14, 0.35));
-    }
-
-    // moon (always on screen-ish)
-    const moonX = cameraPos.x + view.x*0.28;
-    const moonY = cameraPos.y + view.y*0.22;
-    drawCircle(vec2(moonX, moonY), 2.0, hsl(.12,.08,.85, 0.9));
-    drawCircle(vec2(moonX+0.35, moonY+0.15), 2.0, hsl(.62,.35,.10));
-}
-
-function drawPlayer()
-{
-    // blink while invulnerable
-    if (!gameState && invulnFrames > 0 && ((invulnFrames >> 2) & 1))
-        return;
-
-    const bodyColor = gameState ? hsl(.58,.15,.35) : hsl(.58,.5,.65);
-    const dark = hsl(.58,.25,.35);
-    const light = hsl(.58,.35,.85);
-
-    // body
-    drawRect(playerPos.add(vec2(0, 0.08)), PLAYER_SIZE, bodyColor, 0, undefined, false);
-
-    // cockpit
-    drawRect(playerPos.add(vec2(-0.15, 0.25)), vec2(0.65, 0.35), light);
-
-    // wheels
-    const w1 = playerPos.add(vec2(-0.55, -PLAYER_SIZE.y/2 + WHEEL_RADIUS));
-    const w2 = playerPos.add(vec2( 0.55, -PLAYER_SIZE.y/2 + WHEEL_RADIUS));
-    drawCircle(w1, WHEEL_RADIUS*2, dark);
-    drawCircle(w2, WHEEL_RADIUS*2, dark);
-    drawCircle(w1, WHEEL_RADIUS*1.0, hsl(.58,.2,.75));
-    drawCircle(w2, WHEEL_RADIUS*1.0, hsl(.58,.2,.75));
-
-    // little antenna
-    drawLine(playerPos.add(vec2(0.45, 0.40)), playerPos.add(vec2(0.65, 0.85)), 0.06, dark);
-    drawCircle(playerPos.add(vec2(0.65, 0.85)), 0.14, hsl(.08,.8,.65));
-}
-
-function drawEntities()
-{
-    const view = getCameraSize();
-    const left = cameraPos.x - view.x/2 - 2;
-    const right = cameraPos.x + view.x/2 + 2;
-
-    // rocks
-    for (const r of rocks)
-    {
-        if (r.dead) continue;
-        if (r.x < left - 3 || r.x > right + 3) continue;
-        const gy = groundYAt(r.x);
-        drawRect(vec2(r.x, gy + r.h/2), vec2(r.w, r.h), hsl(.10,.15,.25), 0, undefined, false);
-        drawRect(vec2(r.x - r.w*0.15, gy + r.h*0.65), vec2(r.w*0.35, r.h*0.2), hsl(.10,.12,.45,0.5));
-    }
-
-    // ufos
-    for (const u of ufos)
-    {
-        if (u.x < left - 5 || u.x > right + 5) continue;
-        drawEllipse(vec2(u.x, u.y), vec2(1.3, 0.55), hsl(.82,.35,.55), 0, 0.06, hsl(.82,.2,.2));
-        drawEllipse(vec2(u.x, u.y + 0.18), vec2(0.55, 0.35), hsl(.62,.25,.85, 0.85));
-        drawCircle(vec2(u.x - 0.45, u.y - 0.12), 0.12, hsl(.08,.7,.65));
-        drawCircle(vec2(u.x,           u.y - 0.16), 0.12, hsl(.08,.7,.65));
-        drawCircle(vec2(u.x + 0.45, u.y - 0.12), 0.12, hsl(.08,.7,.65));
-    }
-
-    // powerups (repair)
-    for (const p of powerups)
-    {
-        if (p.x < left - 2 || p.x > right + 2) continue;
-        const pulse = 0.22 + Math.sin((p.life)*0.12) * 0.06;
-        drawCircle(vec2(p.x, p.y), 0.30 + pulse, hsl(.32,.8,.6, 0.95));
-        drawCircle(vec2(p.x, p.y), 0.12, hsl(.32,.25,.2, 0.9));
-    }
-
-    // bullets
-    for (const b of bullets)
-    {
-        if (b.x < left - 2 || b.x > right + 2) continue;
-        drawRect(vec2(b.x, b.y), BULLET_SIZE, hsl(.14,.8,.7));
-    }
-
-    // particles
-    for (const p of particles)
-    {
-        if (p.pos.x < left - 2 || p.pos.x > right + 2) continue;
-        const t = clamp01(1 - p.life / p.max);
-        const c = p.colorA.lerp(p.colorB, t);
-        drawCircle(p.pos, 0.10 + (1-t)*0.08, c);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
 function gameInit()
 {
     saveDataInit('moonPatrol');
-    // prevent right click context menu so Mouse2 can be used to shoot
     document.addEventListener('contextmenu', e => e.preventDefault());
 
-    // fixed size canvas + camera
     setCanvasFixedSize(vec2(1280, 720));
     cameraScale = CAMERA_SCALE;
-    setCanvasClearColor(hsl(.62,.35,.10));
+    setCanvasClearColor(hsl(.66,.55,.06));
 
-    runSelfTests();
-
-    // sounds
-    sJump = new SoundGenerator({ volume:.65, frequency:320, attack:0, release:.12, shapeCurve:1.6, slide:-1.8, noise:.02 });
-    sShoot = new SoundGenerator({ volume:.55, frequency:600, attack:0, release:.06, shapeCurve:0.8, noise:.01, bitCrush:2 });
-    sBoom = new SoundGenerator({ volume:.9, frequency:80,  attack:0, release:.22, shapeCurve:0.2, noise:.35, slide:-0.6, delay:0.05 });
-    sThud = new SoundGenerator({ volume:.5, frequency:140, attack:0, release:.10, shapeCurve:1.2, noise:.05 });
-    sHeal = new SoundGenerator({ volume:.45, frequency:720, attack:0, release:.10, shapeCurve:1.1, slide:0.9, noise:.01 });
+    sJump  = new SoundGenerator({ volume:.55, frequency:300, attack:0, release:.14, shapeCurve:1.7, slide:1.4, noise:.02 });
+    sShoot = new SoundGenerator({ volume:.45, frequency:680, attack:0, release:.06, shapeCurve:0.8, noise:.01, bitCrush:3 });
+    sBoom  = new SoundGenerator({ volume:.9,  frequency:70,  attack:0, release:.30, shapeCurve:0.2, noise:.45, slide:-0.6, delay:0.04 });
+    sThud  = new SoundGenerator({ volume:.4,  frequency:120, attack:0, release:.10, shapeCurve:1.3, noise:.08 });
+    sHit   = new SoundGenerator({ volume:.7,  frequency:180, attack:0, release:.16, shapeCurve:0.6, noise:.25, slide:-0.8 });
+    sHeal  = new SoundGenerator({ volume:.45, frequency:740, attack:0, release:.12, shapeCurve:1.1, slide:0.9 });
 
     resetGame();
-
     buildMenus();
+
+    tweakDivider('MOON PATROL');
+    tweak('TUNE.thrust',   {min:0,  max:30});
+    tweak('TUNE.gravity',  {min:5,  max:50});
+    tweak('TUNE.drag',     {min:0,  max:2});
+    tweak('TUNE.jump',     {min:5,  max:25});
+    tweak('TUNE.maxSpeed', {min:10, max:60});
+    tweak('TUNE.lookAhead',{min:0,  max:20});
+
     showMenu('title');
+}
+
+function buildMenus()
+{
+    if (typeof createMenu != 'function') return;
+    installAutoPause();
+    createTitleMenu({
+        title: 'MOON PATROL',
+        subtitle: 'Ride the hills. Blast the saucers.',
+        onPlay: startGame,
+        revealOnClick: false,
+        showBest: true,
+        formatBest: n => 'BEST ' + n + 'm',
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+    createOptionsMenu({
+        showResetBest: true,
+        extraItems: [
+            {type:'checkbox', label:'SCREEN SHAKE', value:isScreenShakeEnabled(), persist:'shake',
+                onChange: v => setScreenShakeEnabled(v)},
+        ],
+    });
+    createMenu({
+        id:'about', title:'ABOUT', onHide: popMenu,
+        items: [
+            {type:'text', text:'LEFT mouse or SPACE to jump.\n\nHold RIGHT mouse to fire the ' +
+                'turret — move the mouse to aim it. Shoot the UFOs, dodge their bombs, and ' +
+                'jump the boulders.\n\nGain speed barreling down the hills; you bleed it ' +
+                'climbing back up. Watch the speedometer.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+    createPauseMenu({ onRestart: startGame, onQuit: () => quitToTitle() });
+    installDefaultToolbar();
 }
 
 function startGame()
@@ -543,318 +292,569 @@ function startGame()
     hideAllMenus();
 }
 
-function buildMenus()
-{
-    if (typeof createMenu !== 'function') return;
-
-    installAutoPause();
-
-    createTitleMenu({
-        title: 'MOONBUGGY',
-        subtitle: '',
-        onPlay: startGame,
-        revealOnClick: false,
-    });
-
-    createPauseMenu({
-        onRestart: startGame,
-        onQuit:    quitToTitle,
-    });
-
-    installDefaultToolbar();
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    if (bindPauseKey({when: () => isPlaying() && !gameState})) return;
+    if (bindPauseKey({when: () => isPlaying() && state == 'play'})) return;
     if (!isPlaying()) return;
 
-    // restart on death
-    if (gameState && keyWasPressed('Enter'))
-        resetGame();
+    const dt = timeDelta;
 
-    if (gameState)
+    if (state == 'dead')
     {
-        // after death: let particles/powerups drift a bit
-        updateParticles();
-        updatePowerups(false);
+        deathTimer += dt;
+        updateEffects(dt);
+        if (deathTimer > 0.9 && !isMenuVisible())
+            showGameOverDialog({
+                score: Math.round(bestDist),
+                won: false,
+                format: n => n + 'm',
+                extraLines: ['UFOs destroyed: ' + kills],
+                onContinue: () => quitToTitle(),
+            });
         return;
     }
 
-    // difficulty slowly increases
-    difficulty = Math.min(10, (scrollX / 600) | 0);
+    // --- input
+    if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('ArrowUp'))
+        jump();
+    aimDir = aimToward();
+    if (mouseIsDown(2))
+        fire();
 
-    // input
-    const jumpPressed = keyWasPressed('Space') || keyWasPressed('ArrowUp') || mouseWasPressed(0);
-    const shootHeld = keyIsDown('KeyX') || keyIsDown('KeyZ') || mouseIsDown(2); // hold to auto-fire (right click)
+    // --- rover physics
+    updateRover(dt);
 
-    if (shootHeld)
-        fireBullet();
+    // distance score = furthest right we've reached
+    bestDist = max(bestDist, rover.pos.x);
 
-    // forward scroll (ramps up over ~20 seconds)
-    speedFrames += 1;
-    const speedT = clamp01(speedFrames / SPEED_RAMP_FRAMES);
-    currentScrollSpeed = lerp(SCROLL_SPEED, MAX_SCROLL_SPEED, speedT);
-    scrollX += currentScrollSpeed;
-    score = (scrollX * 10) | 0;
-
-    const playerX = scrollX + PLAYER_OFFSET_X;
-
-    // jumping physics
-    const gy = groundYAt(playerX) + PLAYER_SIZE.y/2;
-
-    if (playerOnGround)
+    // --- spawn ahead of the camera
+    const camRight = cameraPos.x + getCameraSize().x/2;
+    const d = clamp(rover.pos.x / 1800, 0, 1);   // difficulty 0..1
+    while (nextRockX < camRight + 40)
     {
-        playerPos.x = playerX;
-        playerPos.y = gy;
+        spawnRock(nextRockX);
+        nextRockX += lerp(24, 12, d) + rand()*10;
+    }
+    while (nextUfoX < camRight + 40)
+    {
+        spawnUfo(nextUfoX);
+        nextUfoX += lerp(50, 24, d) + rand()*20;
+    }
 
-        if (jumpPressed)
+    updateBullets(dt);
+    updateUfos(dt, d);
+    updateBombs(dt);
+    updatePowerups(dt, true);
+    updateEffects(dt);
+    checkCollisions();
+
+    // timers
+    shootTimer  = max(0, shootTimer  - dt);
+    invuln      = max(0, invuln      - dt);
+    damageFlash = max(0, damageFlash - dt);
+
+    // cull behind camera
+    const cull = rover.pos.x - 40;
+    rocks   = rocks.filter(r => !r.dead && r.x > cull);
+    ufos    = ufos.filter(u => u.hp > 0 && u.pos.x > cull - 10);
+    bullets = bullets.filter(b => b.life > 0);
+    bombs   = bombs.filter(b => b.alive);
+    powerups= powerups.filter(p => p.life > 0 && p.pos.x > cull);
+}
+
+function aimToward()
+{
+    const turret = rover.pos.add(rot(vec2(0.25, 0.45), rover.angle));
+    return mousePos.subtract(turret).normalize();
+}
+
+function jump()
+{
+    if (state != 'play' || !rover.onGround) return;
+    rover.onGround = false;
+    const a = rover.angle;
+    rover.vel = vec2(Math.cos(a), Math.sin(a)).scale(rover.speed);
+    rover.vel.y += TUNE.jump;
+    playSoundSafe(sJump);
+    burst(rover.pos.add(vec2(0,-ROVER_SIZE.y/2)), 8, 0.12, hsl(.10,.2,.6), hsl(.10,.2,.35), {life:30});
+}
+
+function updateRover(dt)
+{
+    if (rover.onGround)
+    {
+        const ang = groundAngle(rover.pos.x);
+        // accelerate forward, bleed to drag, gravity helps downhill / fights uphill
+        rover.speed += (TUNE.thrust - TUNE.gravity*Math.sin(ang)) * dt;
+        rover.speed -= TUNE.drag * rover.speed * dt;
+        rover.speed = clamp(rover.speed, MIN_SPEED, TUNE.maxSpeed);
+
+        rover.pos.x += rover.speed * Math.cos(ang) * dt;
+        rover.pos.y = groundY(rover.pos.x) + RIDE_HEIGHT;
+        rover.angle = lerp(rover.angle, groundAngle(rover.pos.x), 0.25);
+
+        // kick up dust, more the faster we go
+        if (rand() < rover.speed/TUNE.maxSpeed * 0.8)
         {
-            playerOnGround = false;
-            playerVelY = JUMP_VEL;
-            playSoundSafe(sJump);
-            spawnParticles(playerPos.add(vec2(0, -PLAYER_SIZE.y/2)), 8, 0.08, hsl(.12,.18,.55), hsl(.12,.25,.35));
+            const back = rover.pos.add(rot(vec2(-0.6,-0.35), rover.angle));
+            burst(back, 1, 0.06, hsl(.10,.18,.6), hsl(.10,.12,.4), {life:26, grav:-0.002});
         }
     }
     else
     {
-        playerPos.x = playerX;
-        playerVelY -= GRAVITY;
-        playerPos.y += playerVelY;
+        rover.vel.y -= TUNE.gravity * dt;
+        rover.pos = rover.pos.add(rover.vel.scale(dt));
 
-        if (playerPos.y <= gy)
+        // tilt toward velocity in the air
+        const target = clamp(Math.atan2(rover.vel.y, Math.abs(rover.vel.x)+0.1), -0.6, 0.6);
+        rover.angle = lerp(rover.angle, target, 0.12);
+
+        const gy = groundY(rover.pos.x) + RIDE_HEIGHT;
+        if (rover.pos.y <= gy && rover.vel.y <= 0)
         {
-            playerPos.y = gy;
-            playerVelY = 0;
-            playerOnGround = true;
-            playSoundSafe(sThud);
+            rover.pos.y = gy;
+            rover.onGround = true;
+            const ang = groundAngle(rover.pos.x);
+            const tangent = vec2(Math.cos(ang), Math.sin(ang));
+            rover.speed = max(MIN_SPEED, rover.vel.dot(tangent));
+            rover.angle = ang;
+            const impact = abs(rover.vel.y);
+            if (impact > 5)
+            {
+                addScreenShake(min(0.6, impact*0.06), 0.25);
+                playSoundSafe(sThud);
+                burst(rover.pos.add(vec2(0,-ROVER_SIZE.y/2)), 10, 0.14,
+                    hsl(.10,.2,.6), hsl(.10,.15,.4), {life:30});
+            }
         }
     }
-
-    // cooldowns
-    shootCooldown = Math.max(0, shootCooldown - 1);
-    invulnFrames = Math.max(0, invulnFrames - 1);
-    damageFlashFrames = Math.max(0, damageFlashFrames - 1);
-
-    // spawn ahead
-    const view = getCameraSize();
-    const spawnAhead = cameraPos.x + view.x/2 + 30;
-
-    while (nextSpawnX < spawnAhead)
-    {
-        chooseSpawn(nextSpawnX);
-        const g = lerp(SPAWN_GAP_MIN, SPAWN_GAP_MAX, hash1((nextSpawnX*7)|0));
-        nextSpawnX += g;
-    }
-
-    // update entities
-    updateBullets();
-    updateUfos();
-    updatePowerups(true);
-    updateParticles();
-
-    // cull old objects
-    const cullX = scrollX - 24;
-    rocks = rocks.filter(o => !o.dead && o.x > cullX);
-    craters = craters.filter(o => o.x > cullX);
-    ufos = ufos.filter(o => o.x > cullX);
-    bullets = bullets.filter(o => o.x > cullX && o.life > 0);
-    particles = particles.filter(p => p.life > 0);
-    powerups = powerups.filter(p => p.life > 0 && p.x > cullX);
-
-    // collisions
-    checkPlayerCollisions();
 }
 
-function updateBullets()
+function updateBullets(dt)
 {
     for (const b of bullets)
     {
-        b.x += b.vx;
-        b.life -= 1;
-    }
-
-    // bullet vs ufo
-    for (const b of bullets)
-    {
-        if (b.life <= 0) continue;
+        b.pos = b.pos.add(b.vel.scale(dt));
+        b.life -= dt;
         for (const u of ufos)
         {
             if (u.hp <= 0) continue;
-            if (aabbOverlap(b.x, b.y, BULLET_SIZE.x, BULLET_SIZE.y, u.x, u.y, 1.3, 0.6))
+            if (b.pos.distance(u.pos) < 1.0)
             {
                 b.life = 0;
                 u.hp = 0;
-
+                kills++;
+                addScreenShake(0.3, 0.25);
                 playSoundSafe(sBoom);
-                spawnParticles(vec2(u.x, u.y), 20, 0.16, hsl(.82,.55,.7), hsl(.62,.35,.75));
-
-                // UFOs drop repair powerups when shot
-                spawnRepairPowerup(vec2(u.x, u.y), 2);
+                burst(u.pos, 24, 0.22, hsl(.82,.6,.7), hsl(.6,.4,.6), {life:50, size:0.18});
+                if (rand() < 0.4) spawnPowerup(u.pos, 2);
+                break;
             }
         }
     }
-
-    ufos = ufos.filter(u => u.hp > 0);
 }
 
-function updateUfos()
+function updateUfos(dt, d)
 {
     for (const u of ufos)
     {
-        u.phase += 0.08;
-        u.x -= (0.10 + difficulty*0.012);
-        u.y += Math.sin(u.phase) * 0.03;
+        u.phase += dt*3;
+        u.pos.x += u.vx * dt;
+        u.pos.y += Math.sin(u.phase) * dt * 1.5;
+        const minY = groundY(u.pos.x) + 3;
+        if (u.pos.y < minY) u.pos.y = minY;
 
-        // occasional dive
-        const r = hash1(((u.x*10)|0) + 123);
-        if (r < 0.005 + difficulty*0.0005)
-            u.y -= 0.18;
-
-        // keep above ground
-        const minY = groundYAt(u.x) + 2.2;
-        if (u.y < minY) u.y = minY;
+        // drop bombs at the rover
+        u.bombTimer -= dt;
+        if (u.bombTimer <= 0 && abs(u.pos.x - rover.pos.x) < 22)
+        {
+            u.bombTimer = lerp(3.5, 1.6, d) + rand()*1.5;
+            const vx = clamp((rover.pos.x - u.pos.x)*0.3, -4, 4);
+            bombs.push({ pos: u.pos.copy(), vel: vec2(vx, -2), alive:true });
+        }
     }
 }
 
-function updatePowerups(allowPickup)
+function updateBombs(dt)
+{
+    for (const b of bombs)
+    {
+        b.vel.y -= BOMB_GRAVITY * dt;
+        b.pos = b.pos.add(b.vel.scale(dt));
+        if (b.pos.y <= groundY(b.pos.x) + 0.2)
+        {
+            b.alive = false;
+            burst(b.pos, 14, 0.18, hsl(.05,.9,.65), hsl(.08,.9,.4), {life:36});
+            playSoundSafe(sThud);
+        }
+    }
+}
+
+function updatePowerups(dt, allowPickup)
 {
     for (const p of powerups)
     {
-        p.life -= 1;
-        p.vy -= POWERUP_FALL_GRAVITY;
-        p.y += p.vy;
-
-        // settle on ground
-        const gy = groundYAt(p.x) + 0.25;
-        if (p.y < gy)
+        p.life -= dt;
+        p.vy -= 14 * dt;
+        p.pos.y += p.vy * dt;
+        const gy = groundY(p.pos.x) + 0.3;
+        if (p.pos.y < gy) { p.pos.y = gy; p.vy *= -0.3; }
+        if (allowPickup && rover.pos.distance(p.pos) < 1.0)
         {
-            p.y = gy;
-            p.vy *= -0.2;
-        }
-
-        // pickup
-        if (allowPickup)
-        {
-            const d = playerPos.distance(vec2(p.x, p.y));
-            if (d < POWERUP_PICKUP_RADIUS)
-            {
-                heal(p.amount);
-                p.life = 0;
-            }
+            heal(p.amount);
+            p.life = 0;
         }
     }
 }
 
-function updateParticles()
+function updateEffects(dt)
 {
     for (const p of particles)
     {
         p.life -= 1;
-        p.vel.y -= 0.006; // tiny gravity
-        p.pos = p.pos.add(p.vel);
+        p.vel.y -= p.grav;
         p.vel = p.vel.scale(0.98);
+        p.pos = p.pos.add(p.vel);
     }
+    particles = particles.filter(p => p.life > 0);
 }
 
-function checkPlayerCollisions()
+function checkCollisions()
 {
-    if (gameState) return;
-    if (invulnFrames) return;
+    if (state != 'play' || invuln > 0) return;
 
-    const px = playerPos.x;
-    const py = playerPos.y;
-
-    // crater -> damage if we're basically on the ground over the hole
-    for (const c of craters)
-    {
-        const dx = Math.abs(px - c.x);
-        if (dx < c.w/2 - 0.05)
-        {
-            const gy = groundYAt(px) + PLAYER_SIZE.y/2;
-            const bottom = py - PLAYER_SIZE.y/2;
-            if (bottom <= gy - PLAYER_SIZE.y/2 + 0.12) // close to ground
-            {
-                takeDamage(playerPos.copy(), 1);
-                return;
-            }
-        }
-    }
-
-    // rock
+    // rocks
     for (const r of rocks)
     {
         if (r.dead) continue;
-        const gy = groundYAt(r.x);
-        const ry = gy + r.h/2;
-        if (aabbOverlap(px, py, PLAYER_SIZE.x, PLAYER_SIZE.y, r.x, ry, r.w, r.h))
+        const rockPos = vec2(r.x, groundY(r.x) + r.h/2);
+        if (isOverlapping(rover.pos, ROVER_SIZE, rockPos, vec2(r.w, r.h)))
         {
-            r.dead = true; // smash through it
-            takeDamage(vec2(r.x, ry), 1);
+            r.dead = true;
+            burst(rockPos, 14, 0.16, hsl(.08,.2,.4), hsl(.08,.15,.25), {life:40});
+            takeDamage(rockPos, 1);
             return;
         }
     }
-
-    // ufo
+    // ufos (ramming)
     for (const u of ufos)
     {
-        if (aabbOverlap(px, py, PLAYER_SIZE.x, PLAYER_SIZE.y, u.x, u.y, 1.2, 0.6))
+        if (u.hp <= 0) continue;
+        if (isOverlapping(rover.pos, ROVER_SIZE, u.pos, vec2(1.6, 0.7)))
         {
-            u.hp = 0; // bonk it (no powerup drop for bonk)
-            takeDamage(vec2(u.x, u.y), 1);
+            u.hp = 0;
+            takeDamage(u.pos, 1);
             return;
         }
     }
-
-    ufos = ufos.filter(u => u.hp > 0);
+    // bombs
+    for (const b of bombs)
+    {
+        if (b.alive && rover.pos.distance(b.pos) < 0.9)
+        {
+            b.alive = false;
+            takeDamage(b.pos, 1);
+            return;
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    // camera follows scroll
+    if (!isPlaying()) return;
     cameraScale = CAMERA_SCALE;
-    const view = getCameraSize();
-    cameraPos = vec2(scrollX + view.x/2, CAMERA_Y);
+    const targetX = rover.pos.x + TUNE.lookAhead;
+    const targetY = rover.pos.y + 3.5;
+    cameraPos = vec2(
+        lerp(cameraPos.x, targetX, 0.25),
+        lerp(cameraPos.y, targetY, 0.06));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// --- render
+
 function gameRender()
 {
     drawBackground();
     drawGround();
     drawEntities();
-    drawPlayer();
+    drawRover();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-function gameRenderPost()
+function drawBackground()
 {
-    // HUD
-    const x = 16;
+    const view = getCameraSize();
+    drawRect(cameraPos, view, hsl(.66,.55,.06));
 
-    // health bar text (screen-space)
-    const filled = '|'.repeat(Math.max(0, health));
-    const empty = '.'.repeat(Math.max(0, MAX_HEALTH - health));
-    const hullText = `HULL [${filled}${empty}]`;
-
-    drawTextScreen(`DIST ${score}   BEST ${getBestScore()|0}   SPD ${(currentScrollSpeed/SCROLL_SPEED).toFixed(2)}x`, vec2(x, 26), 30, hsl(0,0,1), 4, hsl(0,0,0), 'left');
-    drawTextScreen(hullText, vec2(x, 58), 26, hsl(0,0,1), 3, hsl(0,0,0,0.8), 'left');
-    drawTextScreen('JUMP: Space/Up/Mouse0   SHOOT: Hold X/Z/RightClick   RESTART: Enter', vec2(x, 88), 22, hsl(0,0,1,0.85), 3, hsl(0,0,0,0.7), 'left');
-
-    if (damageFlashFrames > 0 && ((damageFlashFrames >> 2) & 1))
-        drawTextScreen('HIT!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 40), 80, hsl(.08,.75,.65), 8, hsl(0,0,0));
-
-    if (gameState)
+    // stars (parallax)
+    const p = 0.12, cell = 3.5;
+    const lx = Math.floor((cameraPos.x - view.x/2)*p/cell) - 1;
+    const rx = Math.floor((cameraPos.x + view.x/2)*p/cell) + 1;
+    const by = Math.floor((cameraPos.y - view.y/2)*p/cell) - 1;
+    const ty = Math.floor((cameraPos.y + view.y/2)*p/cell) + 1;
+    for (let xi = lx; xi <= rx; ++xi)
+    for (let yi = by; yi <= ty; ++yi)
     {
-        drawTextScreen('DESTROYED', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 65), 90, hsl(.08,.75,.65), 8, hsl(0,0,0));
-        drawTextScreen('Press Enter to restart', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 10), 40, hsl(0,0,1), 6, hsl(0,0,0));
+        const h = starHash(xi, yi);
+        if (h > 0.30) continue;
+        const sx = (xi + starHash(xi+7,yi+3)) * cell / p;
+        const sy = (yi + starHash(xi+11,yi+5)) * cell / p;
+        drawRect(vec2(sx, sy), vec2(0.05 + h*0.12), hsl(.6,.1,.95, 0.9));
+    }
+
+    // earth in the sky
+    const ex = cameraPos.x + view.x*0.30;
+    const ey = cameraPos.y + view.y*0.30;
+    drawCircle(vec2(ex, ey), 4.4, hsl(.58,.5,.45, .95));
+    drawCircle(vec2(ex+0.5, ey+0.4), 4.4, hsl(.66,.55,.06, .55));
+    drawCircle(vec2(ex-0.8, ey+0.3), 1.6, hsl(.35,.5,.45, .6));
+    drawCircle(vec2(ex+1.1, ey-1.0), 1.1, hsl(.35,.5,.45, .5));
+
+    // distant ridges (parallax: scroll slower than the foreground, stay put vertically)
+    drawRidge(0.5, hsl(.70,.30,.12, .85), -0.04, 2.6, 0.22);
+    drawRidge(0.7, hsl(.72,.40,.18, .95), -0.12, 1.8, 0.38);
+}
+
+function starHash(x, y)
+{
+    let n = (Math.imul(x|0, 73856093) ^ Math.imul(y|0, 19349663)) >>> 0;
+    n = (n ^ 61) ^ (n >>> 16); n = Math.imul(n, 9); n ^= n >>> 4;
+    n = Math.imul(n, 0x27d4eb2d); n ^= n >>> 15;
+    return (n >>> 0) / 4294967296;
+}
+
+function drawRidge(par, color, screenYFrac, amp, freq)
+{
+    const view = getCameraSize();
+    const left = cameraPos.x - view.x/2 - 5;
+    const right = cameraPos.x + view.x/2 + 5;
+    const baseY = cameraPos.y + view.y*screenYFrac;  // stays at a fixed screen height
+    const step = 1.5;
+    let prev;
+    for (let x = left; x <= right; x += step)
+    {
+        const s = x*par;  // parallax: pattern shifts slower than the camera
+        const y = baseY + Math.sin(s*freq)*amp + Math.sin(s*freq*2.3 + 2)*amp*0.4;
+        const cur = vec2(x, y);
+        if (prev)
+        {
+            const top = (prev.y + cur.y)/2;
+            drawRect(vec2((prev.x+cur.x)/2, GROUND_BOTTOM + (top-GROUND_BOTTOM)/2),
+                vec2(step+0.1, top-GROUND_BOTTOM), color);
+        }
+        prev = cur;
+    }
+}
+
+function drawGround()
+{
+    const view = getCameraSize();
+    const left = cameraPos.x - view.x/2 - 2;
+    const right = cameraPos.x + view.x/2 + 2;
+    const step = 0.5;
+    const fill = hsl(.10,.30,.30);
+    const fillDark = hsl(.10,.30,.18);
+    const surf = hsl(.10,.25,.62);
+
+    let prev;
+    for (let x = Math.floor(left/step)*step; x <= right; x += step)
+    {
+        const y = groundY(x);
+        const h = y - GROUND_BOTTOM;
+        // banded fill for a bit of depth
+        drawRect(vec2(x, GROUND_BOTTOM + h/2), vec2(step+0.02, h), fill);
+        drawRect(vec2(x, y - 0.9), vec2(step+0.02, 1.8), fillDark);
+        if (prev) drawLine(prev, vec2(x, y), 0.14, surf);
+        prev = vec2(x, y);
+    }
+}
+
+function drawRover()
+{
+    const blink = invuln > 0 && (Math.floor(invuln*16) & 1);
+    if (state == 'play' && blink) return;
+
+    const a = rover.angle;
+    const pos = rover.pos;
+    const dead = state == 'dead';
+    const body = dead ? hsl(.58,.1,.3) : hsl(.55,.45,.62);
+    const dark = hsl(.58,.3,.32);
+    const trim = hsl(.55,.5,.85);
+
+    // exhaust flame (rear), flickers with speed
+    if (!dead && rover.onGround)
+    {
+        const flame = pos.add(rot(vec2(-ROVER_SIZE.x/2 - 0.1, -0.05), a));
+        const len = 0.3 + rover.speed/TUNE.maxSpeed * 0.6 + rand()*0.2;
+        drawLine(flame, pos.add(rot(vec2(-ROVER_SIZE.x/2 - len, -0.05), a)), 0.18,
+            hsl(.08,.9,.6, .8));
+    }
+
+    // helper to draw a rect attached to the rover frame
+    const piece = (off, size, col) => drawRect(pos.add(rot(off, a)), size, col, -a);
+
+    piece(vec2(0, 0.05), ROVER_SIZE, body);                 // chassis
+    piece(vec2(-0.2, 0.35), vec2(0.7, 0.4), trim);          // cockpit canopy
+    piece(vec2(-0.2, 0.35), vec2(0.6, 0.28), hsl(.55,.6,.4));// canopy glass
+
+    // wheels (suspension wobble look: bigger soft tyres)
+    const wheel = (ox) => {
+        const w = pos.add(rot(vec2(ox, -ROVER_SIZE.y/2 + 0.05), a));
+        drawCircle(w, 0.6, dark);
+        drawCircle(w, 0.34, hsl(.58,.2,.7));
+        drawCircle(w, 0.12, dark);
+    };
+    wheel(-0.6); wheel(0.0); wheel(0.6);
+
+    // turret aiming at the mouse
+    const turret = pos.add(rot(vec2(0.25, 0.45), a));
+    const aim = aimDir;
+    drawCircle(turret, 0.34, dark);
+    drawLine(turret, turret.add(aim.scale(0.95)), 0.18, hsl(.55,.4,.5));
+    drawLine(turret, turret.add(aim.scale(0.95)), 0.08, trim);
+}
+
+function drawEntities()
+{
+    const view = getCameraSize();
+    const left = cameraPos.x - view.x/2 - 4;
+    const right = cameraPos.x + view.x/2 + 4;
+
+    // rocks
+    for (const r of rocks)
+    {
+        if (r.dead || r.x < left || r.x > right) continue;
+        const gy = groundY(r.x);
+        const c = vec2(r.x, gy + r.h/2);
+        drawRect(c, vec2(r.w, r.h), hsl(.08,.18,.30), 0.15);
+        drawRect(c, vec2(r.w*0.7, r.h*0.7), hsl(.08,.16,.38), -0.1);
+        drawRect(c.add(vec2(-r.w*0.12, r.h*0.18)), vec2(r.w*0.3, r.h*0.22), hsl(.08,.14,.50, .6));
+    }
+
+    // ufos
+    for (const u of ufos)
+    {
+        if (u.hp <= 0 || u.pos.x < left || u.pos.x > right) continue;
+        const glow = 0.5 + Math.sin(u.phase*2)*0.5;
+        drawEllipse(u.pos, vec2(2.0, 0.7), hsl(.85,.45,.55), 0, 0.08, hsl(.85,.3,.25));
+        drawEllipse(u.pos.add(vec2(0,0.25)), vec2(0.9, 0.55), hsl(.55,.4,.8, .9));
+        for (let i = -1; i <= 1; ++i)
+            drawCircle(u.pos.add(vec2(i*0.6, -0.18)), 0.18, hsl(.12,.9,.5+glow*0.3));
+    }
+
+    // bombs
+    for (const b of bombs)
+    {
+        if (!b.alive) continue;
+        drawCircle(b.pos, 0.36, hsl(.05,.85,.55));
+        drawCircle(b.pos, 0.18, hsl(.10,.9,.8));
+    }
+
+    // powerups
+    for (const p of powerups)
+    {
+        const pulse = 0.1 + Math.abs(Math.sin(p.life*3))*0.12;
+        drawCircle(p.pos, 0.6 + pulse, hsl(.33,.8,.55, .9));
+        drawCircle(p.pos, 0.32, hsl(.33,.3,.2));
+        // plus sign
+        drawRect(p.pos, vec2(0.34, 0.12), hsl(.33,.9,.8));
+        drawRect(p.pos, vec2(0.12, 0.34), hsl(.33,.9,.8));
+    }
+
+    // bullets
+    for (const b of bullets)
+    {
+        const dir = b.vel.normalize(0.7);
+        drawLine(b.pos, b.pos.subtract(dir), 0.16, hsl(.14,.9,.7));
+        drawCircle(b.pos, 0.18, hsl(.14,1,.85));
+    }
+
+    // particles
+    for (const p of particles)
+    {
+        const t = clamp(1 - p.life/p.max, 0, 1);
+        drawCircle(p.pos, p.size*(1.2-t), p.colA.lerp(p.colB, t));
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Startup LittleJS Engine
-engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+// --- HUD (screen space)
 
-</script>
+function gameRenderPost()
+{
+    if (!isPlaying()) return;
+
+    const W = mainCanvasSize.x;
+    const panel = hsl(.62,.5,.08, .65);
+    const edge  = hsl(.55,.6,.6, .9);
+
+    // ---- SPEED gauge (top-left) ----
+    const px = 24, py = 20, pw = 260, ph = 70;
+    hudPanel(px, py, pw, ph, panel, edge);
+    const clear = hsl(0,0,0,0);
+    drawTextScreen('SPEED', vec2(px+16, py+22), 20, hsl(.55,.5,.8), 0, clear, 'left');
+    const kph = Math.round(rover.speed * 4);
+    const fast = rover.speed > TUNE.maxSpeed*0.85;
+    drawTextScreen(kph + '', vec2(px+16, py+54), 36, fast ? hsl(.04,.9,.65) : hsl(0,0,1), 0, clear, 'left');
+    drawTextScreen('KPH', vec2(px+16 + ('' + kph).length*22 + 14, py+54), 18, hsl(.55,.4,.7), 0, clear, 'left');
+    // speed bar
+    const barX = px+120, barY = py+44, barW = 124, barH = 16;
+    drawRect(vec2(barX + barW/2, barY + barH/2), vec2(barW, barH), hsl(0,0,.12), 0, undefined, true);
+    const frac = clamp(rover.speed/TUNE.maxSpeed, 0, 1);
+    const barCol = frac > 0.85 ? hsl(.04,.9,.6) : hsl(lerp(.55,.12,frac), .8, .55);
+    if (frac > 0)
+        drawRect(vec2(barX + (barW*frac)/2, barY + barH/2), vec2(barW*frac, barH), barCol, 0, undefined, true);
+    if (fast)
+        drawTextScreen('BOOST!', vec2(px + pw/2, py + ph + 18), 20,
+            hsl(.04,.9,.65), 3, hsl(0,0,0), 'center');
+
+    // ---- DISTANCE (top-center) ----
+    drawTextScreen(Math.round(bestDist) + 'm', vec2(W/2, 48), 46, hsl(0,0,1), 4, hsl(0,0,0,.6));
+    drawTextScreen('BEST ' + (getBestScore()|0) + 'm', vec2(W/2, 80), 22, hsl(.55,.4,.75), 3, hsl(0,0,0,.6));
+
+    // ---- HULL pips (top-right) ----
+    const hpW = 220, hpH = 70, hx = W - hpW - 24, hy = 20;
+    hudPanel(hx, hy, hpW, hpH, panel, edge);
+    drawTextScreen('HULL', vec2(hx + hpW - 16, hy+22), 20, hsl(.55,.5,.8), 0, clear, 'right');
+    const low = health <= 2;
+    for (let i = 0; i < MAX_HEALTH; ++i)
+    {
+        const segW = 26, gap = 6;
+        const sx = hx + 16 + i*(segW+gap);
+        const sy = hy + 42;
+        const on = i < health;
+        let col = hsl(0,0,.12);
+        if (on) col = low && (Math.floor(time*6)&1) ? hsl(.04,.9,.6)
+                    : hsl(lerp(.0,.35, health/MAX_HEALTH), .8, .55);
+        drawRect(vec2(sx + segW/2, sy + 11), vec2(segW, 22), col, 0, undefined, true);
+    }
+
+    // kills badge
+    drawTextScreen('UFO x' + kills, vec2(hx + hpW - 16, hy + hpH + 18), 20,
+        hsl(.12,.8,.7), 3, hsl(0,0,0,.6), 'right');
+
+    // damage flash vignette
+    if (damageFlash > 0)
+    {
+        const a = clamp(damageFlash, 0, 1) * 0.4;
+        drawRect(vec2(W/2, mainCanvasSize.y/2), vec2(W, mainCanvasSize.y), hsl(.02,.9,.5, a), 0, undefined, true);
+    }
+
+    // first-run controls hint
+    if (bestDist < 60)
+        drawTextScreen('LEFT-click / SPACE: jump      hold RIGHT-click: fire (aim with mouse)',
+            vec2(W/2, mainCanvasSize.y - 36), 22, hsl(0,0,1,.85), 3, hsl(0,0,0,.7));
+}
+
+function hudPanel(x, y, w, h, fill, edge)
+{
+    drawRect(vec2(x + w/2, y + h/2), vec2(w, h), fill, 0, undefined, true);
+    // top accent line
+    drawRect(vec2(x + w/2, y + 2), vec2(w, 3), edge, 0, undefined, true);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>
