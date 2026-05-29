@@ -644,23 +644,20 @@ function drawStarLayer(par, cell, prob, sizeMax, seed, view)
     }
 }
 
-// Crescent moon (smooth): a bright disc with a smaller gray shadow disc carved
-// out of it. The shadow disc is tangent to the moon's left edge, so it sits
-// entirely inside the moon — a clean crescent with no gray bulge outside the
-// silhouette, and the dark side reads as faint gray instead of black.
+// Crescent moon (smooth): a bright disc carved by an equal-size sky-colored disc
+// offset to the left. The difference of two equal circles is a true crescent
+// (lune); the dark side shows the sky behind it.
 function drawMoon(mx, my)
 {
-    const R = 2.4;                       // moon radius
-    const r = 1.7;                       // shadow radius (< R so it fits inside)
-    const off = R - r;                   // tangent on the left edge
+    const mr = 4.8;                      // diameter
     const lit    = hsl(.62,.12,.84);
-    const shadow = hsl(.63,.16,.20);     // slightly gray dark side
+    const sky    = hsl(.66,.55,.06);     // matches the background sky
     const crater = hsl(.62,.10,.74);
 
-    drawCircle(vec2(mx, my), R*2, lit);          // bright moon
-    drawCircle(vec2(mx-off, my), r*2, shadow);   // gray shadow carves the crescent
-    drawCircle(vec2(mx+1.5, my+0.4), 0.55, crater);
-    drawCircle(vec2(mx+1.6, my-0.7), 0.40, crater);
+    drawCircle(vec2(mx, my), mr, lit);              // bright moon
+    drawCircle(vec2(mx-2.1, my+0.3), mr, sky);      // carve the crescent
+    drawCircle(vec2(mx+1.4, my+0.5), 0.6,  crater); // craters on the lit sliver
+    drawCircle(vec2(mx+1.5, my-1.0), 0.45, crater);
 }
 
 function drawRidge(par, color, screenYFrac, amp, freq)
