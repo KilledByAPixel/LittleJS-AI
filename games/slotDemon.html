@@ -91,6 +91,30 @@ let demons = [];            // Demon[]
 let demonsBought = {};      // type -> count (for cost scaling)
 let stats = { sacrifices: 0 };
 
+// ---- CAMERA PAN STATE ----
+// Mouse-drag pans the board; a press that releases without crossing the
+// drag threshold counts as a click (spin/refresh) instead.
+let panStartMouse = null, panStartCam = null, panMoved = false;
+const PAN_DRAG_PX = 8;   // screen-pixel movement before it counts as a drag, not a click
+
+function boardBounds()
+{
+    if (!machines.length) return { min: vec2(), max: vec2() };
+    let min = machines[0].pos.copy(), max = machines[0].pos.copy();
+    for (const m of machines)
+    {
+        min = vec2(Math.min(min.x, m.pos.x), Math.min(min.y, m.pos.y));
+        max = vec2(Math.max(max.x, m.pos.x), Math.max(max.y, m.pos.y));
+    }
+    return { min, max };
+}
+function clampCamera()
+{
+    const b = boardBounds(), pad = 6;
+    cameraPos = vec2(clamp(cameraPos.x, b.min.x - pad, b.max.x + pad),
+                     clamp(cameraPos.y, b.min.y - pad, b.max.y + pad));
+}
+
 // cost helpers
 const demonCost = (type) => Math.ceil(DEMON_TYPES[type].cost * DEMON_TYPES[type].costScale ** (demonsBought[type] || 0));
 const machineCost = () => Math.ceil(BALANCE.machineCostBase * BALANCE.machineCostScale ** machines.length);
@@ -689,13 +713,39 @@ function gameUpdate()
     if (bindPauseKey({ when: () => isPlaying() })) return;
     if (!isPlaying()) return;
 
-    // Click a demon to refresh its energy; else click an UNMANNED machine to spin it.
-    // Demons render above machines, so check demons FIRST.
+    // Press/hold/release: a click (spin/refresh) vs a drag (pan camera).
+    // The action fires on RELEASE only when the cursor didn't move past the
+    // drag threshold. screenToWorldDelta flips Y (x/scale, y/-scale), so the
+    // formula cameraPos = startCam - worldDelta moves the board WITH the cursor
+    // on both axes — verified, no per-axis adjustment needed.
     if (mouseWasPressed(0) && !isMenuVisible())
     {
-        const d = demonAtPos(mousePos);
-        if (d) d.refresh();
-        else { const m = machineAtPos(mousePos); if (m && !m.assignedDemon) { m.spin(); sfxSpin.play(m.pos); } }
+        panStartMouse = mousePosScreen.copy();
+        panStartCam = cameraPos.copy();
+        panMoved = false;
+    }
+    if (mouseIsDown(0) && panStartMouse)
+    {
+        const moved = mousePosScreen.subtract(panStartMouse);
+        if (moved.length() > PAN_DRAG_PX) panMoved = true;
+        if (panMoved)
+        {
+            // pan so the board follows the cursor: move camera opposite the drag.
+            cameraPos = panStartCam.subtract(screenToWorldDelta(mousePosScreen.subtract(panStartMouse)));
+            clampCamera();
+        }
+    }
+    if (mouseWasReleased(0) && panStartMouse)
+    {
+        // Click a demon to refresh its energy; else click an UNMANNED machine to spin it.
+        // Demons render above machines, so check demons FIRST.
+        if (!panMoved && !isMenuVisible())
+        {
+            const d = demonAtPos(mousePos);
+            if (d) d.refresh();
+            else { const m = machineAtPos(mousePos); if (m && !m.assignedDemon) { m.spin(); sfxSpin.play(m.pos); } }
+        }
+        panStartMouse = null;
     }
 
     // advance floating win texts
