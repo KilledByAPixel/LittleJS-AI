@@ -346,16 +346,16 @@ showEngineVersion = false; // Hide engine version console display
 
             if (!demo)
             {
-                    if (keyWasPressed('KeyR'))
+                    if (keyWasPressed('KeyR') || gamepadWasPressed(8)) // gamepad Back = reset
                     {
                             scoreL = scoreR = 0;
                             resetRound(true);
                     }
 
-                    if (keyWasPressed('KeyT'))
+                    if (keyWasPressed('KeyT') || gamepadWasPressed(3)) // gamepad Y = toggle AI side
                             aiRight = !aiRight;
 
-                    if (keyWasPressed('Space') || mouseWasPressed(0))
+                    if (keyWasPressed('Space') || mouseWasPressed(0) || gamepadWasPressed(0)) // gamepad A = serve
                     {
                             if (gameOver)
                             {
@@ -379,8 +379,12 @@ showEngineVersion = false; // Hide engine version console display
             }
             else
             {
-                    // mouse takes priority, keyboard still works
-                    const keyDir = keyDirection().y;
+                    // keyboard + gamepad stick take priority, mouse still works
+                    let move = keyDirection();          // gamepad: merge left stick
+                    const stick = gamepadStick(0);
+                    if (stick.lengthSquared() > .04) move = move.add(stick);
+                    if (move.lengthSquared() > 1) move = move.normalize(1);
+                    const keyDir = move.y;              // one-axis paddle uses move.y
                     if (keyDir)
                             left.pos.y += keyDir * paddleSpeed * timeDelta;
                     else
@@ -390,7 +394,12 @@ showEngineVersion = false; // Hide engine version console display
 
             if (!aiRight && !demo)
             {
-                    right.pos.y += keyDirection().y * paddleSpeed * timeDelta;
+                    // human-controlled right paddle: keyboard + gamepad stick
+                    let move = keyDirection();          // gamepad: merge left stick
+                    const stick = gamepadStick(0);
+                    if (stick.lengthSquared() > .04) move = move.add(stick);
+                    if (move.lengthSquared() > 1) move = move.normalize(1);
+                    right.pos.y += move.y * paddleSpeed * timeDelta;
             }
             else
             {

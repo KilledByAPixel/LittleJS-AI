@@ -47,6 +47,8 @@ let loseDialogShown = false;
 let swipeStartScreen;
 let swipeArmed = false;
 
+let stickLatched = false;     // gamepad: left stick must return to center before re-firing a slide
+
 let sMove, sMerge, sSpawn, sLose, sWin;
 
 
@@ -386,6 +388,27 @@ function readMoveInput()
     if (keyWasPressed('ArrowRight') || keyWasPressed('KeyD')) return 'R';
     if (keyWasPressed('ArrowUp')    || keyWasPressed('KeyW')) return 'U';
     if (keyWasPressed('ArrowDown')  || keyWasPressed('KeyS')) return 'D';
+
+    // gamepad d-pad: one press = one discrete slide (12=up 13=down 14=left 15=right)
+    if (gamepadWasPressed(14)) return 'L';
+    if (gamepadWasPressed(15)) return 'R';
+    if (gamepadWasPressed(12)) return 'U';
+    if (gamepadWasPressed(13)) return 'D';
+
+    // gamepad left-stick edge latch: push past ~.5 fires once, must recenter to re-fire
+    const stick = gamepadStick(0);
+    if (stick.lengthSquared() > .25) // beyond ~.5 in some direction
+    {
+        if (!stickLatched)
+        {
+            stickLatched = true;
+            if (abs(stick.x) > abs(stick.y))
+                return stick.x < 0 ? 'L' : 'R';
+            return stick.y > 0 ? 'U' : 'D'; // world Y up-positive: stick up = slide up
+        }
+    }
+    else
+        stickLatched = false; // returned near center; allow next push
 
     if (mouseWasPressed(0))
     {

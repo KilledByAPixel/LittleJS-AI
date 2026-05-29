@@ -441,7 +441,8 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying()})) return;
     if (!isPlaying()) return;
 
-    if (keyWasPressed('Space') || mouseWasPressed(0)) trySwing();
+    // gamepad: A button (0) swings, alongside Space / click / touch tap
+    if (keyWasPressed('Space') || mouseWasPressed(0) || gamepadWasPressed(0)) trySwing();
     if (keyWasPressed('Enter')) startPitch();
     if (keyWasPressed('KeyR')) resetSession();
 

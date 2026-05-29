@@ -569,12 +569,15 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && !gameOverPending})) return;
     if (!isPlaying() || gameOverPending) return;
 
-    // Aim
-    if (mousePos.lengthSquared() > 0.0001) aimDir = mousePos.normalize();
+    // Aim — mouse points the turret; gamepad left stick / d-pad takes over while active.
+    const stick = gamepadStick(0);                          // gamepad (d-pad merged into stick)
+    if (stick.lengthSquared() > .04) aimDir = stick.normalize();
+    else if (mousePos.lengthSquared() > 0.0001) aimDir = mousePos.normalize();
 
-    // Shoot / swap
-    if (mouseWasPressed(0)) shootBall();
-    if (mouseWasPressed(2) || keyWasPressed('Space')) swapShot();
+    // Shoot — left click / A button (0).
+    if (mouseWasPressed(0) || gamepadWasPressed(0)) shootBall();
+    // Swap loaded ball — right click / Space / X button (2) / B button (1).
+    if (mouseWasPressed(2) || keyWasPressed('Space') || gamepadWasPressed(2) || gamepadWasPressed(1)) swapShot();
 
     // Move shots
     const dt = timeDelta;

@@ -228,6 +228,11 @@ function gameInit()
     cameraScale = CAMERA_SCALE;
     setCanvasClearColor(hsl(.66,.55,.06));
 
+    // gamepad: on-screen touch pad — right stick aims the turret, face buttons jump/fire
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;     // analog right stick for aiming
+    touchGamepadButtonCount = 2;   // A = jump, B = fire
+
     sJump  = new SoundGenerator({ volume:.55, frequency:300, attack:0, release:.14, shapeCurve:1.7, slide:1.4, noise:.02 });
     sShoot = new SoundGenerator({ volume:.45, frequency:680, attack:0, release:.06, shapeCurve:0.8, noise:.01, bitCrush:3 });
     sBoom  = new SoundGenerator({ volume:.9,  frequency:70,  attack:0, release:.30, shapeCurve:0.2, noise:.45, slide:-0.6, delay:0.04 });
@@ -318,11 +323,12 @@ function gameUpdate()
         return;
     }
 
-    // --- input
-    if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('ArrowUp'))
+    // --- input (gamepad: A=jump, B/X=fire, right stick aims the turret)
+    if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('ArrowUp') ||
+        gamepadWasPressed(0))
         jump();
     aimDir = aimToward();
-    if (mouseIsDown(2))
+    if (mouseIsDown(2) || gamepadIsDown(1) || gamepadIsDown(2))
         fire();
 
     // --- rover physics
@@ -368,6 +374,10 @@ function gameUpdate()
 
 function aimToward()
 {
+    // gamepad: right stick aims the turret when pushed; otherwise aim at the mouse
+    const stick = gamepadStick(1);
+    if (stick.lengthSquared() > .04)
+        return stick.normalize();
     const turret = rover.pos.add(rot(vec2(0.25, 0.45), rover.angle));
     return mousePos.subtract(turret).normalize();
 }
@@ -408,7 +418,8 @@ function updateRover(dt)
     else
     {
         // variable jump height: trim upward speed if the button is let go while rising
-        const holdingJump = mouseIsDown(0) || keyIsDown('Space') || keyIsDown('ArrowUp');
+        const holdingJump = mouseIsDown(0) || keyIsDown('Space') || keyIsDown('ArrowUp') ||
+            gamepadIsDown(0);   // gamepad: A held keeps the jump going (variable height)
         if (rover.jumpCut && rover.vel.y > 0 && !holdingJump)
         {
             rover.vel.y *= JUMP_CUT;

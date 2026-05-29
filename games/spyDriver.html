@@ -914,7 +914,13 @@ class PlayerCar extends EngineObject
         }
 
         // speed control
-        const dir = keyDirection();
+        let dir = keyDirection();
+        const stick = gamepadStick(0);                       // gamepad: left stick merges with keyboard
+        if (stick.lengthSquared() > .04) dir = dir.add(stick);
+        // gamepad: A(0) accelerates, B(1) brakes/reverses (in addition to up/down)
+        if (gamepadIsDown(0)) dir.y += 1;
+        if (gamepadIsDown(1)) dir.y -= 1;
+        dir = vec2(clamp(dir.x, -1, 1), clamp(dir.y, -1, 1));
         this.speed += dir.y * PLAYER_ACCEL * timeDelta;
         this.speed = lerp(this.speed, PLAYER_CRUISE, .02);
         // min-speed floor doesn't apply until the player has reached cruising speed at least once
@@ -944,7 +950,8 @@ class PlayerCar extends EngineObject
         this.angle = lerp(this.angle, targetAngle, .22);
 
         // shooting — bullets always fly straight ahead in the car's heading direction
-        const wantFire = (keyIsDown('Space') || mouseIsDown(0));
+        // gamepad: X(2) held to fire (alongside Space / mouse)
+        const wantFire = (keyIsDown('Space') || mouseIsDown(0) || gamepadIsDown(2));
         if (wantFire && !this.fireCooldown.active() && !gameOver)
         {
             this.fireCooldown.set(PLAYER_FIRE_COOLDOWN);
@@ -1134,9 +1141,9 @@ function gameUpdate()
     score += player.speed * timeDelta * .45;
     checkExtraLife();
 
-    // special weapon drops
-    if (keyWasPressed('KeyZ')) dropOilSlick();
-    if (keyWasPressed('KeyX')) dropSmokeScreen();
+    // special weapon drops (gamepad: LB(4) oil slick, RB(5) smoke screen)
+    if (keyWasPressed('KeyZ') || gamepadWasPressed(4)) dropOilSlick();
+    if (keyWasPressed('KeyX') || gamepadWasPressed(5)) dropSmokeScreen();
 
     // spawn cars — wait until the player is actually cruising so traffic doesn't pile up off-screen at startup
     if (!carSpawnTimer.active())

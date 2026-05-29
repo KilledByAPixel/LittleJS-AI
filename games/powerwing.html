@@ -257,12 +257,17 @@ function updatePlayer(dt)
     // Movement
     const speed = PLAYER_SPEED * (1 + speedLevel * 0.25);
     
-    // Check for keyboard input to switch to keyboard mode
-    if (keyWasPressed('Space') || keyWasPressed('KeyZ'))
+    // gamepad: read left stick (analog + d-pad merged); any stick input switches to direct-control mode
+    const stick = gamepadStick(0);
+    const stickActive = stick.lengthSquared() > .04;
+
+    // Check for keyboard/gamepad input to switch out of mouse mode
+    if (keyWasPressed('Space') || keyWasPressed('KeyZ') || stickActive ||
+        gamepadWasPressed(0) || gamepadWasPressed(1) || gamepadWasPressed(2))
     {
         mouseMode = false;
     }
-    
+
     if (mouseMode)
     {
         // Mouse mode: move toward mouse position (fast tracking)
@@ -280,8 +285,10 @@ function updatePlayer(dt)
     }
     else
     {
-        // Keyboard mode
-        const dir = keyDirection();
+        // Keyboard / gamepad mode
+        let dir = keyDirection();
+        if (stickActive) dir = dir.add(stick); // gamepad: merge left stick into movement
+        if (dir.lengthSquared() > 1) dir = dir.normalize(1);
         player.vel = dir.scale(speed);
         player.pos = player.pos.add(player.vel.scale(dt));
     }
@@ -305,7 +312,8 @@ function updatePlayer(dt)
         mouseMode = true;
     }
     
-    if ((keyIsDown('Space') || keyIsDown('KeyZ') || mouseIsDown(0)) && fireTimer <= 0)
+    // Fire: A (held) also fires; gamepad does not flip into mouseMode
+    if ((keyIsDown('Space') || keyIsDown('KeyZ') || mouseIsDown(0) || gamepadIsDown(0)) && fireTimer <= 0)
     {
         shoot();
         fireTimer = fireMode === 2 ? .18 : .12;
@@ -322,8 +330,9 @@ function updatePlayer(dt)
         }
     }
 
-    // Bomb
-    if ((keyWasPressed('KeyX') || keyWasPressed('KeyB') || mouseWasPressed(2)) && bombCount > 0)
+    // Bomb: B / X face buttons as secondary action
+    if ((keyWasPressed('KeyX') || keyWasPressed('KeyB') || mouseWasPressed(2) ||
+        gamepadWasPressed(1) || gamepadWasPressed(2)) && bombCount > 0)
     {
         useBomb();
     }
@@ -1231,7 +1240,9 @@ function gameUpdate()
 
     if (gameState === 'gameover')
     {
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
+        // gamepad: A or Start to play again
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0) ||
+            gamepadWasPressed(0) || gamepadWasPressed(9))
         {
             startGame();
         }
@@ -1320,7 +1331,7 @@ function gameRenderPost()
 
     // Controls hint
     const modeText = mouseMode ? '[MOUSE MODE]' : '[KEYBOARD MODE]';
-    drawTextScreen('Arrow/WASD: Move | Space/Z: Shoot | X/B: Bomb | Mouse: Aim+Shoot | R: Restart',
+    drawTextScreen('Move: Arrow/WASD/Stick | Shoot: Space/Z/A | Bomb: X/B-btn | Mouse: Aim+Shoot | R: Restart',
         vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 20), 16, hsl(0, 0, .7), 2, hsl(0, 0, 0));
     drawTextScreen(modeText, vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 18, mouseMode ? hsl(.55, .8, .7) : hsl(.14, .8, .7), 2, hsl(0, 0, 0));
 

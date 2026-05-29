@@ -679,9 +679,15 @@ function gameUpdate()
             addRow();
         }
 
-        // mouse aim (updates every frame)
+        // aim: gamepad left stick takes priority while pushed, otherwise mouse
         const shooterPos = vec2(0, SHOOT_Y);
-        if (mouseInWindow)
+        const stick = gamepadStick(0);
+        if (stick.lengthSquared() > .04)
+        {
+            const ang = Math.atan2(stick.y, stick.x);
+            aimAngle = clamp(ang, MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
+        }
+        else if (mouseInWindow)
         {
             let dir = mousePos.subtract(shooterPos);
             if (dir.lengthSquared() < .001)
@@ -691,8 +697,8 @@ function gameUpdate()
             aimAngle = clamp(ang, MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
         }
 
-        // mouse shoot only
-        if (mouseWasPressed(0))
+        // shoot: mouse / touch tap or gamepad A
+        if (mouseWasPressed(0) || gamepadWasPressed(0))
             shoot();
 
         integrateProjectile();

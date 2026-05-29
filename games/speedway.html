@@ -138,6 +138,12 @@ function gameInit()
     setCanvasFixedSize(CANVAS_SIZE);
     buildTrack();
 
+    // gamepad: on-screen touch pad with an analog left stick (steer) and one
+    // face-button area used as buttons for gas/brake on touch devices.
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 2; // A = gas, B = brake
+
     // lightweight sfx
     sStart  = new SoundGenerator({ volume:.6, frequency:420, attack:0, release:.08, pitchJump:80, pitchJumpTime:.02, noise:.02 });
     sCrash  = new SoundGenerator({ volume:.8, frequency:90,  attack:0, release:.25, shapeCurve:0, noise:.35, bitCrush:6, slide:-.6 });
@@ -197,8 +203,8 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
     if (!isPlaying()) return;
 
-    // restart on timeup
-    const startPressed = keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0);
+    // restart on timeup (gamepad A also restarts)
+    const startPressed = keyWasPressed('Enter') || keyWasPressed('Space') || mouseWasPressed(0) || gamepadWasPressed(0);
     if (state !== 'play')
     {
         if (startPressed)
@@ -208,7 +214,13 @@ function gameUpdate()
 
     // input
     const dir = keyDirection();
-    const up = dir.y > 0, down = dir.y < 0;
+    // gamepad: merge left stick into the steer/gas axes (additive with keys)
+    const stick = gamepadStick(0);
+    const padSteer = abs(stick.x) > .2 ? stick.x : 0; // analog steer
+    // gas/brake: A(0) or RT(7) accelerate, B(1) brakes; stick up/down also work
+    const padGas   = gamepadIsDown(0) || gamepadIsDown(7) || stick.y > .4;
+    const padBrake = gamepadIsDown(1) || stick.y < -.4;
+    const up = dir.y > 0 || padGas, down = dir.y < 0 || padBrake;
 
     // pointer steering. On a mouse, cursor x-position always steers (no
     // button required); on touch, only an active touch counts (because the
@@ -245,7 +257,10 @@ function gameUpdate()
     // keyboard; keyboard arrows still work when the cursor is centered or on
     // touch devices not currently being touched.
     const kbSteer = dir.x;
-    const rawSteer = mouseSteerActive ? mouseSteer : kbSteer;
+    // steer priority: gamepad stick (when pushed) > active mouse/touch > keyboard
+    const rawSteer = padSteer ? clamp(padSteer, -1, 1)
+                   : mouseSteerActive ? mouseSteer
+                   : kbSteer;
     // need to be moving forward to steer at all — ramps from 0 (stopped) to
     // full at MIN_STEER_SPEED, then stays at full. Prevents the car from
     // sliding sideways from a dead stop just because the cursor is off-center.

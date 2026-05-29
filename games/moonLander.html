@@ -218,12 +218,19 @@ class Player extends EngineObject
     {
         if (gameState) return;
 
-        // controls (start from your snippet)
+        // controls (keyboard + gamepad)
         const moveInput = keyDirection();
-        this.applyAngularAcceleration(moveInput.x * TURN_POWER);
+        // gamepad: left stick x or LB/RB rotate the lander
+        let rotateInput = moveInput.x;
+        const stickX = gamepadStick(0).x;
+        if (abs(stickX) > .2) rotateInput += stickX;   // analog stick
+        if (gamepadIsDown(4)) rotateInput += 1;        // LB rotate left
+        if (gamepadIsDown(5)) rotateInput -= 1;        // RB rotate right
+        rotateInput = clamp(rotateInput, -1, 1);
+        this.applyAngularAcceleration(rotateInput * TURN_POWER);
 
-        // main thrust (Up/W/Space)
-        const thrustHeld = moveInput.y > 0 || keyIsDown('Space');
+        // main thrust (Up/W/Space + gamepad A held + touch button)
+        const thrustHeld = moveInput.y > 0 || keyIsDown('Space') || gamepadIsDown(0);
         const canThrust = thrustHeld && this.fuel > 0;
         this.thrusting = canThrust;
 
@@ -365,6 +372,12 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('lunarLander');
+
+    // gamepad: on-screen touch pad (left stick rotates, face button thrusts)
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 1;
+
     // called once after the engine starts up
     resetGame();
     buildMenus();

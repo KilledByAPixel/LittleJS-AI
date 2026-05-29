@@ -247,9 +247,25 @@ class Tank
     {
         const k = this.keys;
 
+        // ---- gamepad (twin-stick): left stick = move/steer, right stick = aim turret ----
+        const leftStick  = gamepadStick(0);
+        const rightStick = gamepadStick(1);
+        const leftActive  = leftStick.lengthSquared()  > .04;
+        const rightActive = rightStick.lengthSquared() > .04;
+
         // turn direction: make left rotate left (counter-clockwise) in player feel
         const turn = (keyIsDown(k.right)?1:0) - (keyIsDown(k.left)?1:0);
         this.ang += TURN_SPEED*turn;
+
+        // gamepad aiming: right stick aims the barrel; else left stick steers toward
+        // its push direction. Steer toward the chosen target angle (additive to keyboard turn).
+        const aimStick = rightActive ? rightStick : (leftActive ? leftStick : null);
+        if (aimStick)
+        {
+            const desiredAng = aimStick.angle();
+            let da = clamp(distanceAngle(this.ang, desiredAng), -1, 1);
+            this.ang += TURN_SPEED*clamp(da*1.4, -1, 1);
+        }
 
         const thrust = (keyIsDown(k.up)?1:0) - (keyIsDown(k.down)?1:0);
         if (thrust)
@@ -257,8 +273,12 @@ class Tank
             const accel = thrust > 0 ? ACCEL : ACCEL*.65;
             this.vel = this.vel.add(this.forward.scale(accel*thrust));
         }
+        // gamepad thrust: push forward when the left stick is engaged
+        if (leftActive)
+            this.vel = this.vel.add(this.forward.scale(ACCEL*min(leftStick.length(), 1)));
 
-        if (keyWasPressed(k.fire))
+        // fire: keyboard key, A(0), RT(7), or auto-fire while right stick is aiming
+        if (keyWasPressed(k.fire) || gamepadWasPressed(0) || gamepadWasPressed(7) || rightActive)
             this.shoot();
     }
 
@@ -535,6 +555,11 @@ function gameInit()
     // low-res + pixelated for a 2600-ish vibe
     setCanvasFixedSize(vec2(640, 360));
     setCanvasPixelated(true);
+
+    // touch twin-stick gamepad: left stick moves, right (face-button) stick aims+fires
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 1;
 
     initSounds();
     initGameState();

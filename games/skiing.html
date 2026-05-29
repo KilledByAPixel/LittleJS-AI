@@ -95,6 +95,11 @@ class Player
         const mouseDir = this.pos.subtract(mousePos);
         this.targetAngle = mouseDir.angle();
 
+        // gamepad: left stick X slalom steering, overrides mouse aim when used
+        const stick = gamepadStick(0);
+        if (abs(stick.x) > .2)
+            this.targetAngle = stick.x * (PI/2); // full left/right = max carve angle
+
         this.targetAngle = clamp(this.targetAngle, -PI/2, PI/2); // limit to downward angles only
         
         // smoothly rotate toward target angle
@@ -134,8 +139,8 @@ class Player
             // update position
             this.pos = this.pos.add(this.vel.scale(timeDelta));
 
-            // jump on click
-            if (mouseWasPressed(0))
+            // jump on click or gamepad A
+            if (mouseWasPressed(0) || gamepadWasPressed(0))
                 this.jump();
         }
         else
@@ -633,7 +638,8 @@ function gameUpdate()
     {
         updateParticles();
 
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || keyWasPressed('KeyR'))
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || keyWasPressed('KeyR')
+            || gamepadWasPressed(0) || gamepadWasPressed(9)) // gamepad A or Start
             resetGame();
         return;
     }

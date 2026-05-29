@@ -204,12 +204,15 @@ class Player
             return;
         }
 
-        const dir = keyDirection();
-        if (dir.y > 0) this.velocity.y += .05;
-        if (dir.y < 0) this.velocity.y -= .05;
+        // gamepad: merge left stick into keyboard movement
+        let dir = keyDirection();
+        const stick = gamepadStick(0);
+        if (stick.lengthSquared() > .04) dir = dir.add(stick);
+        if (dir.y > .2) this.velocity.y += .05;
+        if (dir.y < -.2) this.velocity.y -= .05;
         this.thrusting = false;
-        if (dir.x > 0) { this.facing = 1;  this.velocity.x += .05; this.thrusting = true; }
-        if (dir.x < 0) { this.facing = -1; this.velocity.x -= .05; this.thrusting = true; }
+        if (dir.x > .2) { this.facing = 1;  this.velocity.x += .05; this.thrusting = true; }
+        if (dir.x < -.2) { this.facing = -1; this.velocity.x -= .05; this.thrusting = true; }
 
         this.velocity.y *= .93;
         if (!this.thrusting) this.velocity.x *= .985;
@@ -233,12 +236,19 @@ class Player
             if (this.velocity.y > 0) this.velocity.y = 0;
         }
 
-        // Fire
-        if (keyIsDown('KeyZ') || keyIsDown('Space')) this.fire();
-        // Smart bomb
-        if (keyWasPressed('KeyX')) doSmartBomb();
-        // Hyperspace
-        if (keyWasPressed('KeyC')) doHyperspace();
+        // Fire — held (gamepad: A or RT, plus right stick for twin-stick feel)
+        if (keyIsDown('KeyZ') || keyIsDown('Space') ||
+            gamepadIsDown(0) || gamepadIsDown(7) || gamepadStick(1).lengthSquared() > .04)
+        {
+            // right stick also aims facing for twin-stick play
+            const aim = gamepadStick(1);
+            if (aim.lengthSquared() > .04) this.facing = aim.x >= 0 ? 1 : -1;
+            this.fire();
+        }
+        // Smart bomb (gamepad: X or LB)
+        if (keyWasPressed('KeyX') || gamepadWasPressed(2) || gamepadWasPressed(5)) doSmartBomb();
+        // Hyperspace (gamepad: Y or B)
+        if (keyWasPressed('KeyC') || gamepadWasPressed(3) || gamepadWasPressed(1)) doHyperspace();
 
         // Engine thrust sound (occasionally)
         if (this.thrusting && !(frame % 6)) sfxThrust.play(this.pos, .4, 1 + rand(-.1, .1));
@@ -1149,6 +1159,10 @@ async function gameInit()
 {
     saveDataInit('defender');
     setOrientationLock('landscape');
+    // touch gamepad: left analog stick moves, right stick (face-button area) aims/fires
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 1;
     initSounds();
     setSoundVolume(.6);
     // Only pause when a menu surfaces during gameplay. Title-screen menus
@@ -1175,11 +1189,11 @@ async function gameInit()
         onHide: popMenu,
         items: [
             {type:'text', text:
-                'ARROWS / WASD : fly + thrust (Left/Right also reverse facing)\n' +
-                'Z or SPACE    : fire\n' +
-                'X             : smart bomb (wipes screen)\n' +
-                'C             : hyperspace (teleport — risky!)\n' +
-                'ESC           : pause\n\n' +
+                'ARROWS / WASD / STICK : fly + thrust (Left/Right also reverse facing)\n' +
+                'Z / SPACE / A / R-STICK : fire\n' +
+                'X / LB                : smart bomb (wipes screen)\n' +
+                'C / Y                 : hyperspace (teleport — risky!)\n' +
+                'ESC / START           : pause\n\n' +
                 'Catch falling humans before they hit the ground.\n' +
                 'Scrape the ground to set them down safely.\n' +
                 'If a lander reaches the top with a human, it becomes a MUTANT.\n' +

@@ -353,6 +353,11 @@ async function gameInit()
     setCanvasFixedSize(vec2(1280, 720));
     canvasClearColor = hsl(0,0,.08);
 
+    // touch gamepad: left analog stick walks, one face button = action/confirm
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 1;
+
     // build a tiny town + routes using simple rectangles
     obstacles.length = 0;
     grassPatches.length = 0;
@@ -459,6 +464,8 @@ function gameUpdate()
     const speed = playerSpeed * (run ? 1.5 : 1);
 
     let move = keyDirection();
+    const stick = gamepadStick(0); // gamepad: merge left stick into movement
+    if (stick.lengthSquared() > .04) move = move.add(stick);
     if (move.lengthSquared() > 1)
         move = move.normalize();
 
@@ -473,8 +480,8 @@ function gameUpdate()
         if (randBool(.08)) sfxStep.play(); // occasional step tick
     }
 
-    // healer interaction
-    if (nearHealer(playerPos) && (keyWasPressed('KeyE') || keyWasPressed('Space')))
+    // healer interaction (gamepad: A = primary action)
+    if (nearHealer(playerPos) && (keyWasPressed('KeyE') || keyWasPressed('Space') || gamepadWasPressed(0)))
     {
         healPartyFull();
         money = max(0, money - 5);
@@ -528,10 +535,10 @@ function updateBattle()
         }
     }
 
-    // advance text
+    // advance text (gamepad: A or B advances)
     if (battleQueue.length)
     {
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0) || gamepadWasPressed(0) || gamepadWasPressed(1))
             battleQueue.shift();
 
         // IMPORTANT: don't overwrite 'end' state while showing queued end-of-battle text,
@@ -542,8 +549,8 @@ function updateBattle()
     // no text queued, choose next state
     if (battleState === 'end')
     {
-        // exit battle on confirm
-        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0))
+        // exit battle on confirm (gamepad: A or B)
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0) || gamepadWasPressed(0) || gamepadWasPressed(1))
         {
             inBattle = false;
             battleEnemy = null;
@@ -553,11 +560,11 @@ function updateBattle()
 
     battleState = 'menu';
 
-    // menu navigation
-    const left  = keyWasPressed('ArrowLeft')  || keyWasPressed('KeyA');
-    const right = keyWasPressed('ArrowRight') || keyWasPressed('KeyD');
-    const up    = keyWasPressed('ArrowUp')    || keyWasPressed('KeyW');
-    const down  = keyWasPressed('ArrowDown')  || keyWasPressed('KeyS');
+    // menu navigation (gamepad: d-pad buttons for discrete moves)
+    const left  = keyWasPressed('ArrowLeft')  || keyWasPressed('KeyA') || gamepadWasPressed(14);
+    const right = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || gamepadWasPressed(15);
+    const up    = keyWasPressed('ArrowUp')    || keyWasPressed('KeyW') || gamepadWasPressed(12);
+    const down  = keyWasPressed('ArrowDown')  || keyWasPressed('KeyS') || gamepadWasPressed(13);
 
     // 2x2 menu layout
     if (left)  menuIndex = (menuIndex%2===1) ? menuIndex-1 : menuIndex;
@@ -565,7 +572,7 @@ function updateBattle()
     if (up)    menuIndex = (menuIndex>=2) ? menuIndex-2 : menuIndex;
     if (down)  menuIndex = (menuIndex<=1) ? menuIndex+2 : menuIndex;
 
-    const confirm = keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0);
+    const confirm = keyWasPressed('Space') || keyWasPressed('Enter') || mouseWasPressed(0) || gamepadWasPressed(0); // gamepad: A confirms
     if (confirm)
     {
         const chosen = menuIndex;

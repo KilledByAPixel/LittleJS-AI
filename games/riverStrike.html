@@ -220,6 +220,13 @@ function gameInit()
     setCanvasFixedSize(vec2(960, 540));
     cameraScale = 32;
 
+    // gamepad: on-screen touch pad for mobile (left analog stick = move, face button = fire)
+    // count=2 so the first face button maps to standard button 0 (A = fire);
+    // count=1 would turn the face area into a right analog stick, which this game doesn't use.
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 2;
+
     // sound effects (simple)
     sShoot = new SoundGenerator({ volume:.35, frequency:620, release:.06, shapeCurve:.2, slide:-1.6, noise:.02 });
     sExplode = new SoundGenerator({ volume:.9, frequency:120, release:.35, shapeCurve:1.4, noise:.35, bitCrush:2, delay:.02 });
@@ -272,7 +279,10 @@ function gameUpdate()
         return;
 
     // speed control
-    const dir = keyDirection();
+    let dir = keyDirection();
+    const stick = gamepadStick(0); // gamepad: merge left stick (d-pad merges in too)
+    if (stick.lengthSquared() > .04) dir = dir.add(stick);
+    if (dir.lengthSquared() > 1) dir = dir.normalize(1);
     if (dir.y > 0)
         speed = clamp(speed + .004, SPEED_MIN, SPEED_MAX);
     else if (dir.y < 0)
@@ -291,7 +301,8 @@ function gameUpdate()
     playerAngle = lerp(playerAngle, playerVelX*1.2, .2);
 
     // shoot (hold to keep firing; cooldown controls rate)
-    if (keyIsDown('Space'))
+    // gamepad: A (button 0) held also fires
+    if (keyIsDown('Space') || gamepadIsDown(0))
         shoot();
 
     if (shootCooldown > 0)

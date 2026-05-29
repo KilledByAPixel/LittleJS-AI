@@ -357,9 +357,18 @@ class Car extends Box2dObject
         let throttle = 0, turn = 0;
         if (this.isPlayer)
         {
-            const k = keyDirection();
-            throttle = k.y;
-            turn = k.x;
+            // keyboard steer/throttle, merged with gamepad
+            let move = keyDirection();
+            const stick = gamepadStick(0);                 // gamepad: left stick steer + throttle
+            if (stick.lengthSquared() > .04) move = move.add(stick);
+            if (move.lengthSquared() > 1) move = move.normalize(1);
+            turn = move.x;                                  // one-axis steering (pattern 1)
+
+            // accelerate held on A(0) or RT(7); brake/reverse on B(1) or move.y (down)
+            const accel = gamepadIsDown(0) || gamepadIsDown(7);
+            const brake = gamepadIsDown(1);
+            throttle = move.y + (accel ? 1 : 0) - (brake ? 1 : 0);
+            throttle = clamp(throttle, -1, 1);
         }
         else
         {
@@ -389,8 +398,8 @@ class Car extends Box2dObject
         const TURN_RATE = 0.085;
         const TURN_FULL = 0.10;
 
-        // handbrake: space bar — huge grip drop so the car slides sideways
-        const handbrake = this.isPlayer && keyIsDown('Space');
+        // handbrake: space bar or gamepad X(2) — huge grip drop so the car slides sideways
+        const handbrake = this.isPlayer && (keyIsDown('Space') || gamepadIsDown(2));
 
         if (this.boostTimer > 0)
         {
@@ -702,6 +711,11 @@ async function gameInit()
 {
     saveDataInit('microRacer');
     bestTime = getSaveData().bestTime ?? 0;
+
+    // touch gamepad: analog left stick steers, 2 face buttons = A(accel) / B(brake)
+    touchGamepadEnable = true;
+    touchGamepadAnalog = true;
+    touchGamepadButtonCount = 2;
     // setup box2d before any physics objects (top-down — engine's gravity already vec2(0,0))
     await box2dInit();
 
@@ -765,7 +779,7 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && !raceFinished})) return;
     if (!isPlaying()) return;
 
-    if (keyWasPressed('KeyN'))
+    if (keyWasPressed('KeyN') || gamepadWasPressed(3))     // gamepad: Y = new track
     {
         trackSeed = Math.floor(Math.random() * 1e9);
         setupRace();
@@ -773,7 +787,7 @@ function gameUpdate()
     }
     if (raceFinished)
     {
-        if (keyWasPressed('KeyR')) startGame();
+        if (keyWasPressed('KeyR') || gamepadWasPressed(0)) startGame();   // gamepad: A = restart
         return;
     }
 

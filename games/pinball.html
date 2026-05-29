@@ -392,7 +392,8 @@ function gameUpdate()
 
     if (gameOver)
     {
-        if (keyWasPressed('Space') || keyWasPressed('Enter'))
+        // gamepad: A restarts on the game-over screen
+        if (keyWasPressed('Space') || keyWasPressed('Enter') || gamepadWasPressed(0))
             resetGame();
         return;
     }
@@ -402,11 +403,16 @@ function gameUpdate()
                       && mousePos.x < LANE_OUTER_X + WALL_T/2
                       && mousePos.y > 0
                       && mousePos.y < WALL_TOP_Y;
-    const leftPressed = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ') || (mouseWasPressed(0) && !inLaunchLane);
-    const rightPressed = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash') || mouseWasPressed(2);
+    // gamepad: LB(4)/Dpad-Left(14) = left flipper, RB(5)/Dpad-Right(15) = right flipper
+    const padLeftPressed  = gamepadWasPressed(4) || gamepadWasPressed(14);
+    const padRightPressed = gamepadWasPressed(5) || gamepadWasPressed(15);
+    const padLeftDown     = gamepadIsDown(4) || gamepadIsDown(14);
+    const padRightDown    = gamepadIsDown(5) || gamepadIsDown(15);
+    const leftPressed = keyWasPressed('ArrowLeft') || keyWasPressed('KeyA') || keyWasPressed('KeyZ') || (mouseWasPressed(0) && !inLaunchLane) || padLeftPressed;
+    const rightPressed = keyWasPressed('ArrowRight') || keyWasPressed('KeyD') || keyWasPressed('Slash') || mouseWasPressed(2) || padRightPressed;
     const dir = keyDirection();
-    const leftActive  = dir.x < 0 || keyIsDown('KeyZ')  || (mouseIsDown(0) && !inLaunchLane);
-    const rightActive = dir.x > 0 || keyIsDown('Slash') || mouseIsDown(2);
+    const leftActive  = dir.x < 0 || keyIsDown('KeyZ')  || (mouseIsDown(0) && !inLaunchLane) || padLeftDown;
+    const rightActive = dir.x > 0 || keyIsDown('Slash') || mouseIsDown(2) || padRightDown;
     if (leftPressed) sfxFlipper && sfxFlipper.play(leftFlipper.pos, 0.5);
     if (rightPressed) sfxFlipper && sfxFlipper.play(rightFlipper.pos, 0.5);
     leftFlipper.setMotor(leftActive);
@@ -414,7 +420,8 @@ function gameUpdate()
 
     if (canLaunch())
     {
-        const charging = keyIsDown('Space') || (mouseIsDown(0) && inLaunchLane);
+        // gamepad: hold A(0) to charge & release the plunger
+        const charging = keyIsDown('Space') || (mouseIsDown(0) && inLaunchLane) || gamepadIsDown(0);
         if (charging)
             launchCharge = Math.min(LAUNCH_MAX, launchCharge + 1.2);
         else if (launchCharge > 0)

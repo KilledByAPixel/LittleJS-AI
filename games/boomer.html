@@ -240,7 +240,10 @@ function updateBomber(dt) {
 
 function updateBucket(dt) {
     const maxX = FIELD_RIGHT - bucketHalfW(wave) - 0.3;
-    const kx = keyDirection().x;
+    // One-axis steering: keyboard arrows/WASD or gamepad left stick / d-pad.
+    let kx = keyDirection().x;                              // gamepad
+    const sx = gamepadStick(0).x;                           // gamepad: merge left stick / d-pad
+    if (sx) kx = clamp(kx + sx, -1, 1);
     if (kx !== 0)
         bucketTargetX = clamp(bucketTargetX + kx * 28 * dt, -maxX, maxX);
     else

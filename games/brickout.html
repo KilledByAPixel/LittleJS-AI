@@ -705,8 +705,13 @@ function gameUpdate()
     if (LEVELS.length > 1 && keyWasPressed('KeyN'))
         advanceLevel();
 
-    // paddle controls (keyboard overrides mouse)
-    const dir = keyDirection().x;
+    // paddle controls (keyboard/gamepad overrides mouse)
+    // gamepad: merge left stick into keyDirection, then read the x axis
+    let move = keyDirection();
+    const stick = gamepadStick(0);
+    if (stick.lengthSquared() > .04) move = move.add(stick);
+    if (move.lengthSquared() > 1) move = move.normalize(1);
+    const dir = move.x;
 
     if (dir)
         paddlePos.x += dir * 24 * dt;
@@ -733,7 +738,8 @@ function gameUpdate()
     {
         const b = balls[0];
         b.pos = paddlePos.add(vec2(0, paddleSize.y / 2 + b.size / 2 + .2));
-        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
+        // gamepad: A button also launches
+        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter') || gamepadWasPressed(0))
         {
             launchBall();
             state = 'play';
@@ -745,7 +751,8 @@ function gameUpdate()
         return;
 
     // action: if any stuck, release first; otherwise fire laser
-    const actionPressed = mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter');
+    // gamepad: A button is the action button
+    const actionPressed = mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter') || gamepadWasPressed(0);
     if (actionPressed && anyStuckBalls())
         releaseStuckBalls();
     else if (actionPressed)

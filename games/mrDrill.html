@@ -449,10 +449,16 @@ function processInput()
 {
     if (player.drilling || player.falling) return;
     if (player.walkTimer > 0) { player.walkTimer -= timeDelta; return; }
-    const dir = keyDirection();
-    const down  = dir.y < 0;
-    const left  = dir.x < 0;
-    const right = dir.x > 0;
+    // gamepad: merge left stick + d-pad into the cardinal direction (grid pattern)
+    const kd = keyDirection();
+    const stick = gamepadStick(0);
+    const gx = (gamepadIsDown(14) ? -1 : 0) + (gamepadIsDown(15) ? 1 : 0);
+    const gy = (gamepadIsDown(12) ? 1 : 0) + (gamepadIsDown(13) ? -1 : 0);
+    let down  = kd.y < 0 || stick.y < -.5 || gy < 0;
+    let left  = kd.x < 0 || stick.x < -.5 || gx < 0;
+    let right = kd.x > 0 || stick.x >  .5 || gx > 0;
+    // A button drills/digs straight down
+    if (gamepadIsDown(0)) down = true;
     if (down && startDrill('down')) return;
     if (left && !right)
     {
@@ -522,6 +528,11 @@ async function gameInit()
 {
     saveDataInit('mrDriller');
     setCanvasFixedSize(vec2(720, 960));
+
+    // touch gamepad: digital 8-way d-pad for grid movement + 1 face button (A = drill down)
+    touchGamepadEnable = true;
+    touchGamepadAnalog = false;
+    touchGamepadButtonCount = 1;
 
     sfxDrill   = new SoundGenerator({volume:.28, frequency:300, release:.12, shapeCurve:1.2, pitchJump:180, pitchJumpTime:.04, noise:.2});
     sfxClear   = new SoundGenerator({volume:.40, frequency:480, release:.25, shapeCurve:1.1, pitchJump:320, pitchJumpTime:.05, delay:.03});

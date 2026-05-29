@@ -17,6 +17,11 @@ gravity = vec2(0, -0.005);
 cameraPos = vec2(0, 0);
 cameraScale = 32;
 
+// gamepad: on-screen touch gamepad for mobile (left stick = move, face button = flap)
+touchGamepadEnable = true;
+touchGamepadAnalog = true;   // analog left stick for horizontal movement
+touchGamepadButtonCount = 1; // single face button taps as A(0) to flap
+
 ///////////////////////////////////////////////////////////////////////////////
 // Constants
 
@@ -645,7 +650,8 @@ function gameUpdate()
 
     if (gameState === 'gameover' || gameState === 'victory')
     {
-        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter'))
+        // gamepad: A button (0) also continues from game over / victory
+        if (mouseWasPressed(0) || keyWasPressed('Space') || keyWasPressed('Enter') || gamepadWasPressed(0))
         {
             quitToTitleWithCleanup();
         }
@@ -662,12 +668,16 @@ function gameUpdate()
     // Player input
     if (player && player.alive)
     {
-        // Flapping
-        if (keyWasPressed('Space') || keyWasPressed('ArrowUp') || keyWasPressed('KeyW') || mouseWasPressed(0))
+        // Flapping - gamepad: A button (0) flaps as a tap, same as keyboard/mouse
+        if (keyWasPressed('Space') || keyWasPressed('ArrowUp') || keyWasPressed('KeyW') || mouseWasPressed(0) || gamepadWasPressed(0))
             player.flap();
-        
-        // Horizontal movement
-        const moveDir = keyDirection().x;
+
+        // Horizontal movement - gamepad: merge left analog stick into keyDirection
+        let move = keyDirection();
+        const stick = gamepadStick(0);
+        if (stick.lengthSquared() > .04) move = move.add(stick);
+        if (move.lengthSquared() > 1) move = move.normalize(1);
+        const moveDir = move.x;
         if (moveDir !== 0)
             player.moveHorizontal(moveDir);
     }
