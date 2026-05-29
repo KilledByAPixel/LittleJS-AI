@@ -90,6 +90,7 @@ let machines = [];          // Machine[]
 let demons = [];            // Demon[]
 let demonsBought = {};      // type -> count (for cost scaling)
 let stats = { sacrifices: 0 };
+let saveTimer;              // autosave cadence (set in gameInit)
 
 // ---- CAMERA PAN STATE ----
 // Mouse-drag pans the board; a press that releases without crossing the
@@ -371,6 +372,54 @@ function newGame()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// SAVE / LOAD
+// Serialize only TOP-LEVEL game state (cash/pit/machines/demons/etc.). Options
+// (volume, screen shake) live under blob.options, owned entirely by the menu
+// `persist:` items — we never touch that section here. saveData() shallow-merges
+// these top-level fields via Object.assign, so the persisted `options` survive.
+// loadGame is a `demons` creator: it must push each restored demon exactly once
+// (the Demon ctor sets machine.assignedDemon but does NOT push) — the only other
+// place that pushes to `demons` is placeDemon().
+
+function saveGame()
+{
+    saveData({
+        cash, pitCapacity, demonsBought, stats,
+        machines: machines.map(m => ({ x:m.cell.x, y:m.cell.y, level:m.level, wild:m.wildCount })),
+        demons: demons.map(d => ({ type:d.type, mx:d.machine.cell.x, my:d.machine.cell.y, energy:d.energy })),
+    });
+}
+function loadGame()
+{
+    const b = getSaveData();
+    if (!b || b.cash === undefined) { newGame(); return false; }
+    machines.forEach(m => m.destroy()); machines = [];
+    demons.forEach(d => d.destroy());   demons = [];
+    cash = b.cash;
+    pitCapacity = b.pitCapacity != null ? b.pitCapacity : BALANCE.pitStart;
+    demonsBought = b.demonsBought || {};
+    stats = b.stats || { sacrifices: 0 };
+    for (const md of (b.machines || []))
+    {
+        const m = new Machine(vec2(md.x, md.y));
+        m.level = md.level; m.wildCount = md.wild || 0;
+        machines.push(m);
+    }
+    for (const dd of (b.demons || []))
+    {
+        const host = machines.find(m => m.cell.x === dd.mx && m.cell.y === dd.my);
+        if (host)
+        {
+            const dm = new Demon(dd.type, host);   // ctor sets host.assignedDemon
+            dm.energy = dd.energy;
+            demons.push(dm);                        // loader pushes (ctor does not)
+        }
+    }
+    if (!machines.length) spawnMachine();
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // ECONOMY
 // Every buy function guards canAfford() and no-ops when unaffordable, so menu
 // disabling is feedback only — never relied on for correctness.
@@ -582,7 +631,7 @@ async function gameInit()
             {type:'separator'},
             {type:'checkbox', id:'shake',  label:'SCREEN SHAKE', value: true,
                 persist:'shake',
-                onChange: v => console.log('shake ->', v)},
+                onChange: v => setScreenShakeEnabled(v)},
             {type:'color',    id:'bg',     label:'BG COLOR',     value:'#264d40',
                 persist:'bg',
                 title:'Pick the canvas background color',
@@ -593,6 +642,14 @@ async function gameInit()
                 title:'Demo of the text input item type',
                 onChange: v => console.log('name ->', v)},
             {type:'button',   label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            // Explicit progress wipe (QUIT keeps the save; this is the only
+            // path that erases it). newGame() resets state, saveGame() persists
+            // the fresh state over the old blob.
+            {type:'button',   label:'RESET GAME', title:'Erase all progress and start over',
+                onClick: () => showConfirmDialog({
+                    message:'Erase all progress and start over?', title:'RESET', icon:'⚠️',
+                    onYes: () => { newGame(); saveGame(); } })},
             {type:'separator'},
             {type:'button',   label:'BACK',       onClick: () => hideMenu('options')},
         ],
@@ -627,7 +684,9 @@ async function gameInit()
             {
                 showConfirmDialog({
                     message: 'Quit to title?',
-                    onYes: () => quitToTitle(),
+                    // Idle game: quitting KEEPS progress. Save first, then quit
+                    // to title — the existing pit stays as the frozen backdrop.
+                    onYes: () => { saveGame(); quitToTitle(); },
                 });
             }},
         ],
@@ -695,10 +754,15 @@ async function gameInit()
         ],
     });
 
-    // Spawn the starting pit so it renders as a frozen backdrop behind the
-    // title menu (menus.js freezes gameUpdate while the title is up, but
-    // gameRender still runs — the desired frozen-backdrop behavior).
-    newGame();
+    // Restore saved progress (or start fresh if there's no save) so the pit
+    // renders as a frozen backdrop behind the title menu (menus.js freezes
+    // gameUpdate while the title is up, but gameRender still runs — the
+    // desired frozen-backdrop behavior). Options (volume/shake) are restored
+    // separately by the menu persist: items, not here.
+    loadGame();
+
+    // Autosave cadence: while playing, persist every few seconds (and on QUIT).
+    saveTimer = new Timer(5);
 
     // Show the title menu immediately — no click-to-reveal step.
     showMenu('title');
@@ -751,6 +815,9 @@ function gameUpdate()
     // advance floating win texts
     for (const f of floatTexts) { f.pos.y += timeDelta*2; f.life -= timeDelta; }
     floatTexts = floatTexts.filter(f => f.life > 0);
+
+    // periodic autosave while playing
+    if (saveTimer.elapsed()) { saveGame(); saveTimer.set(5); }
 }
 
 function gameUpdatePost()
