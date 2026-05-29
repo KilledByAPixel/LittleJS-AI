@@ -649,17 +649,14 @@ async function gameInit()
             liveItem('buyWild', 'Buy Wild',
                 () => { const m = cheapestWildMachine(); return m ? wildCost(m) : null; },
                 buyWild),
-            liveItem('sellMachine', 'Sell Machine (50%)',
-                () => null, sellMachine),
+            // Sell Machine has no cost; disable it when only one machine
+            // remains (sellMachine keeps >= 1). Uses the public item API.
+            {type:'button', id:'sellMachine', label:'Sell Machine (50%)', onClick: sellMachine,
+                onUpdate: () => shopMenu.getItem('sellMachine').setDisabled(machines.length <= 1)},
             {type:'separator'},
             {type:'button', label:'CLOSE', onClick: () => hideMenu('shop')},
         ],
     });
-    // Sell Machine has no cost; disable it when only one machine remains
-    // (sellMachine keeps >= 1). Override the liveItem onUpdate for this case.
-    shopMenu.getItem('sellMachine').setLabel('Sell Machine (50%)');
-    shopMenu._items.find(it => it.itemId === 'sellMachine').onUpdate = () =>
-        shopMenu.getItem('sellMachine').setDisabled(machines.length <= 1);
 
     // ----- toolbar (always visible, including over the title menu) -----
     // installDefaultToolbar gives the standard mute / fullscreen / hamburger
@@ -670,7 +667,7 @@ async function gameInit()
     installDefaultToolbar({
         extraItemsBefore: [
             {type:'button', id:'shop', label:'🛒', title:'Shop',
-                onClick: () => showMenu('shop')},
+                onClick: () => { if (isPlaying()) showMenu('shop'); }},
         ],
     });
 
