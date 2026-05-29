@@ -56,7 +56,8 @@ const LEVEL_PALETTES = [
 const LEVEL_NAMES = ['WARMUP', 'VOLTAGE', 'OVERGROWTH', 'INFERNO', 'SINGULARITY'];
 let pal = LEVEL_PALETTES[0];
 
-let bestLevel = 1;        // deepest level reached (1-based), persisted
+// highest unlocked level (1-based) per mode, persisted. Daily isn't gated.
+let unlocked = {classic: 1, remix: 1};
 
 // Sounds
 let sJump, sDie, sWin;
@@ -183,9 +184,6 @@ function buildLevel()
     }
     endX = x + 6;       // clear run-out to the finish line
 
-    // track campaign depth
-    if (levelIndex + 1 > bestLevel) { bestLevel = levelIndex + 1; saveData({bestLevel}); }
-
     // decorative under-floor tiles (skipped by collision + draw)
     for (let i = 0; i < endX + 12; ++i) addBlock(i, -1, 1, 1);
 }
@@ -267,6 +265,13 @@ function winGame()
     sWin.play(player.pos);
     addScreenShake(.4, .3);
 
+    // unlock the next level for this mode (Daily isn't an unlockable campaign)
+    if (mode !== 'daily' && levelIndex + 2 <= TOTAL_LEVELS)
+    {
+        const next = levelIndex + 2;
+        if (next > (unlocked[mode] || 1)) { unlocked[mode] = next; saveData({unlocked}); }
+    }
+
     // confetti burst
     for (let i=0; i<30; ++i)
     {
@@ -309,7 +314,7 @@ function advanceLevel()
         announceLevel();
     }
     else
-        quitToTitle();   // campaign finished -> back to title
+        quitToTitle(titleBackdrop);   // campaign finished -> back to title
 }
 
 // spawn a quick puff of dust at a contact point
@@ -501,13 +506,13 @@ function drawSpike(s)
     const c = vec2(s.x + s.w/2,   s.y + s.h);
 
     // glow halo
-    const ga = vec2(s.x - .12,        s.y);
-    const gb = vec2(s.x + s.w + .12,  s.y);
-    const gc = vec2(s.x + s.w/2,      s.y + s.h + .18);
-    drawPoly([ga,gb,gc], hsl(pal.haz, .9, .55, .18));
+    const ga = vec2(s.x - .2,         s.y);
+    const gb = vec2(s.x + s.w + .2,   s.y);
+    const gc = vec2(s.x + s.w/2,      s.y + s.h + .3);
+    drawPoly([ga,gb,gc], hsl(pal.haz, .9, .6, .24));
 
     // body with crisp bright outline
-    drawPoly([a,b,c], hsl(pal.haz, .85, .55), .07, hsl(pal.haz + .02, 1, .75));
+    drawPoly([a,b,c], hsl(pal.haz, .9, .62), .08, hsl(pal.haz + .02, 1, .82));
     // highlight edge
     drawLine(c, a.lerp(b,.5), .06, hsl(0,0,1,.4));
 }
@@ -517,16 +522,19 @@ function drawBlock(b)
     const isCeil = b.style === 1;
     const hue = isCeil ? pal.haz : pal.block;
 
-    // soft glow behind the block
-    drawRect(b.pos, b.size.add(vec2(.22)), hsl(hue, .7, .5, .12));
+    // soft outer glow so the block lifts off the dark background
+    drawRect(b.pos, b.size.add(vec2(.5)), hsl(hue, .85, .55, .18));
 
-    // body + inner panel
-    drawRect(b.pos, b.size, hsl(hue, .60, isCeil ? .27 : .38));
-    drawRect(b.pos, b.size.scale(.84), hsl(hue, .45, isCeil ? .17 : .22));
+    // bright neon rim (slightly larger than the body)
+    drawRect(b.pos, b.size.add(vec2(.16)), hsl(hue, .95, .72));
 
-    // bright edge facing the player (top for normal, bottom for ceiling)
+    // bright body + darker inner panel for depth
+    drawRect(b.pos, b.size, hsl(hue, .80, .52));
+    drawRect(b.pos, b.size.scale(.72), hsl(hue, .60, isCeil ? .26 : .32));
+
+    // extra-bright edge facing the player (top for normal, bottom for ceiling)
     const edgeY = isCeil ? b.pos.y - b.size.y/2 : b.pos.y + b.size.y/2;
-    drawLine(vec2(b.pos.x - b.size.x/2, edgeY), vec2(b.pos.x + b.size.x/2, edgeY), .07, hsl(hue, 1, .8, .6));
+    drawLine(vec2(b.pos.x - b.size.x/2, edgeY), vec2(b.pos.x + b.size.x/2, edgeY), .09, hsl(hue, 1, .88, .9));
 }
 
 function drawBackground()
@@ -632,10 +640,11 @@ function drawParticles()
 ///////////////////////////////////////////////////////////////////////////////
 // Menus
 
-function startGame()
+// start a fresh run in a mode at a given level index
+function startRun(modeName, startIndex)
 {
-    mode = 'classic';
-    levelIndex = 0;
+    mode = modeName;
+    levelIndex = startIndex | 0;
     campaignComplete = false;
     buildLevel();
     resetGame();
@@ -645,24 +654,152 @@ function startGame()
     announceLevel();
 }
 
+// retry the current level layout (keeps the same generated level, all modes)
+function restartLevel()
+{
+    resetGame();
+    setPlaying(true);
+    clearSubmenuStack();
+    hideAllMenus();
+}
+
+// rebuild a clean Level-1 backdrop to sit behind the title screen on quit
+function titleBackdrop()
+{
+    mode = 'classic';
+    levelIndex = 0;
+    campaignComplete = false;
+    buildLevel();
+    resetGame();
+}
+
+// build one level-select menu for a mode; grid cells gate on `unlocked`
+function buildLevelSelect(modeName, id, title)
+{
+    const cells = [];
+    for (let i = 0; i < TOTAL_LEVELS; ++i)
+    {
+        const lv = i + 1;
+        cells.push({
+            label: `LEVEL ${lv}`,
+            title: LEVEL_NAMES[i],
+            icon: '🚀',
+            onClick: () =>
+            {
+                if ((unlocked[modeName] || 1) >= lv)
+                    startRun(modeName, i);
+                else
+                    showMenuToast({icon:'🔒', title:'LOCKED', text:`Clear level ${lv-1} first`, duration:1.4});
+            },
+        });
+    }
+    createMenu({
+        id, title,
+        onHide: popMenu,
+        onShow: () =>
+        {
+            const grid = getMenu(id).getItem('grid');
+            for (let i = 0; i < TOTAL_LEVELS; ++i)
+            {
+                const open = (unlocked[modeName] || 1) >= i + 1;
+                grid.setCell(i, {earned: open, icon: open ? '🚀' : '🔒', label: open ? `LEVEL ${i+1}` : 'LOCKED'});
+            }
+        },
+        items: [
+            {type:'grid', id:'grid', columns: 5, cells},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu(id)},
+        ],
+    });
+}
+
 function buildMenus()
 {
     if (typeof createMenu !== 'function') return;
 
-    // Only pause when a game is actually running. Title menu sits over
-    // the canvas without freezing anything.
+    // pause gameplay only while a run is active (title sits over a frozen backdrop)
     installAutoPause();
 
-    createTitleMenu({
-        title: 'GEOMETRY JUMP',
-        subtitle: '',
-        onPlay: startGame,
-        revealOnClick: false,
+    // global UI sounds
+    const sndSelect   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sndActivate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sndSelect.play(),
+        activate: () => sndActivate.play(),
     });
 
-    createPauseMenu({
-        onRestart: startGame,
-        onQuit:    quitToTitle,
+    // ----- title: three modes -----
+    createMenu({
+        id: 'title',
+        title: 'GEOMETRY JUMP',
+        dismissable: false,
+        onStart: () => pushMenu('levelClassic'),
+        items: [
+            {type:'label',  text:'DEFY THE GEOMETRY'},
+            {type:'button', id:'classic', label:'CLASSIC', title:'Curated 5-level campaign (same every time)', onClick: () => pushMenu('levelClassic')},
+            {type:'button', label:'REMIX',  title:'Same levels, fresh random layout each run',           onClick: () => pushMenu('levelRemix')},
+            {type:'button', label:'DAILY',  title:"Today's seed - one shared run for everyone",          onClick: () => startRun('daily', 0)},
+            {type:'separator'},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- level-select grids (Classic + Remix) -----
+    buildLevelSelect('classic', 'levelClassic', 'CLASSIC');
+    buildLevelSelect('remix',   'levelRemix',   'REMIX');
+
+    // ----- options -----
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider',   id:'volume', label:'VOLUME', value:.7, min:0, max:1, persist:'volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'checkbox', id:'shake', label:'SCREEN SHAKE', value:true, persist:'shake',
+                onChange: v => setScreenShakeEnabled(v)},
+            {type:'button',   label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button',   label:'RESET PROGRESS', onClick: () => showConfirmDialog({
+                title:'RESET PROGRESS', icon:'⚠️', message:'Re-lock all levels in Classic and Remix?',
+                onYes: () => { unlocked = {classic:1, remix:1}; saveData({unlocked});
+                    showMenuToast({icon:'🔄', title:'Progress reset'}); },
+            })},
+            {type:'button',   label:'BACK', onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ----- about -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'label', text:'GEOMETRY JUMP'},
+            {type:'text',  text:'An auto-running cube - tap SPACE / CLICK / UP to jump over spikes, ' +
+                'walls and platforms and reach the goal portal.\n\n' +
+                'CLASSIC: a fixed 5-level campaign.\n' +
+                'REMIX: the same levels, randomized every run.\n' +
+                'DAILY: one shared seed per day.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ----- pause -----
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume', label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button',              label:'RESTART',       onClick: () => restartLevel()},
+            {type:'button',              label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button',              label:'QUIT TO TITLE', onClick: () => showConfirmDialog({
+                message:'Quit to title?', onYes: () => quitToTitle(titleBackdrop)})},
+        ],
     });
 
     installDefaultToolbar();
@@ -672,7 +809,10 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('geometryDash');
-    bestLevel = getSaveData().bestLevel ?? 1;
+    const sd = getSaveData();
+    unlocked = sd.unlocked ?? {classic: 1, remix: 1};
+    unlocked.classic = unlocked.classic ?? 1;
+    unlocked.remix   = unlocked.remix   ?? 1;
     // called once after the engine starts up
     setShowSplashScreen(false);
     setCanvasFixedSize(vec2(1280, 720));
@@ -706,6 +846,13 @@ function gameUpdate()
             else
                 resetGame();        // crash (or R) -> retry current level
         }
+        return;
+    }
+
+    // R restarts the current level mid-run
+    if (keyWasPressed('KeyR'))
+    {
+        resetGame();
         return;
     }
 
@@ -753,6 +900,8 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
+    if (!isPlaying()) return;   // no HUD over the title screen
+
     // HUD
     const progress = clamp((player.pos.x - levelStartX) / (endX - levelStartX), 0, 1);
     const pct = (progress * 100)|0;
@@ -774,9 +923,7 @@ function gameRenderPost()
 
     // level readout (left of the bar)
     drawTextScreen(`LEVEL ${levelIndex+1}/${TOTAL_LEVELS}`, vec2(left - 70, by + 1), 22, hsl(.9,.8,.7), 3, hsl(0,0,0,.7), 'center', undefined, 'bold');
-
-    drawTextScreen(`SPACE / CLICK to jump   •   R to restart`, vec2(cx, 78), 26, hsl(0,0,1,.75), 4, hsl(0,0,0,.6));
-
+    
     if (state === 'dead')
     {
         drawTextScreen('CRASH!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), 110, hsl(0, .9, .6), 10, hsl(0,0,0,.8));
