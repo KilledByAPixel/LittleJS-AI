@@ -197,6 +197,21 @@ class Player extends EngineObject
         this.maxFuel = 80;
         this.thrusting = false;
         this.thrustSoundTimer = new Timer();
+
+        // rocket exhaust: additive, local-space particle emitter (drives the flame).
+        // pos/angle/emitRate are updated every frame from update(); emits out the nozzle.
+        this.trail = new ParticleEmitter(
+            this.pos, 0,                       // pos, angle (set each frame)
+            .22, 0, 0, .42,                    // emitSize, emitTime(0=forever), emitRate(off), emitConeAngle
+            undefined,                         // tileInfo (untextured = solid glow)
+            rgb(1,.95,.6), rgb(1,.6,.15),      // colorStartA/B  (bright flame core)
+            rgb(1,.3,.05,0), rgb(.7,.1,0,0),   // colorEndA/B    (fade to transparent - additive)
+            .5, .62, .08, .22, .12,            // particleTime, sizeStart, sizeEnd, speed, angleSpeed
+            .9, 1, 0,                          // damping, angleDamping, gravityScale
+            .4, .35,                           // particleConeAngle, fadeRate
+            .3, false, true, true,             // randomness, collideTiles, additive, randomColorLinear
+            1e9, true                          // renderOrder, localSpace
+        );
     }
 
     isSafeLanding()
@@ -204,16 +219,17 @@ class Player extends EngineObject
         return abs(this.angle) < SAFE_ANGLE && this.velocity.length() < SAFE_SPEED;
     }
 
-    // world-space points used for terrain contact (leg tips + body base)
+    // world-space points used for terrain contact (foot pads + body base)
     contactPoints()
     {
-        return [vec2(-.9,-1.55), vec2(.9,-1.55), vec2(0,-.9)]
+        return [vec2(-.92,-1.5), vec2(.92,-1.5), vec2(0,-.85)]
             .map(p => this.pos.add(p.rotate(this.angle)));
     }
 
     land()
     {
         gameState = 1;
+        this.trail.emitRate = 0;
         sfxLand.play();
         addScreenShake(.4, .25);
 
@@ -222,7 +238,7 @@ class Player extends EngineObject
         this.angleVelocity = 0;
         this.velocity = vec2();
         this.pos.x = padX;
-        this.pos.y = padY + PAD_THICK + 1.55;
+        this.pos.y = padY + PAD_THICK + 1.5;
 
         // score: level bonus + leftover fuel + soft-touchdown bonus
         const soft = max(0, 100 - lastTouchdownSpeed*900) | 0;
@@ -236,6 +252,7 @@ class Player extends EngineObject
     {
         if (gameState) return;
         gameState = 2;
+        this.trail.emitRate = 0;
         messageTimer.set(999);
         sfxBoom.play();
         addScreenShake(1.4, .6);
@@ -267,6 +284,11 @@ class Player extends EngineObject
         const thrustHeld = moveInput.y > 0 || keyIsDown('Space') || gamepadIsDown(0);
         const canThrust = thrustHeld && this.fuel > 0;
         this.thrusting = canThrust;
+
+        // drive the exhaust plume from the nozzle, firing opposite the ship's "up"
+        this.trail.pos = this.pos.add(vec2(0,-1.08).rotate(this.angle));
+        this.trail.angle = this.angle + PI;
+        this.trail.emitRate = canThrust ? 280 : 0;
 
         if (canThrust)
         {
@@ -316,32 +338,53 @@ class Player extends EngineObject
     render()
     {
         if (this.destroyed) return;
-
-        // body
-        const body = [
-            vec2(-.55,-.9), vec2(.55,-.9), vec2(.38,.35), vec2(0,1), vec2(-.38,.35),
-        ];
-        drawPoly(body, this.color, .08, rgb(0,0,0,.8), this.pos, this.angle);
-
-        // window
-        drawCircle(this.pos.add(vec2(0,.35).rotate(this.angle)), .42, rgb(.35,.6,1,.6), .06, rgb(0,0,0,.8));
-
-        // legs
         const w = v => this.pos.add(v.rotate(this.angle));
-        drawLine(w(vec2(-.35,-.85)), w(vec2(-.9,-1.55)), .10, rgb(.8,.8,.85));
-        drawLine(w(vec2(.35,-.85)),  w(vec2(.9,-1.55)),  .10, rgb(.8,.8,.85));
-        drawLine(w(vec2(-.9,-1.55)), w(vec2(-.4,-1.55)), .10, rgb(.8,.8,.85));
-        drawLine(w(vec2(.9,-1.55)),  w(vec2(.4,-1.55)),  .10, rgb(.8,.8,.85));
+        const outline = rgb(.08,.10,.16);
 
-        // flame
+        // landing legs + foot pads (behind body)
+        const legCol = rgb(.66,.69,.76);
+        for (const sx of [-1, 1])
+        {
+            drawLine(w(vec2(sx*.34,-.74)), w(vec2(sx*.82,-1.46)), .12, legCol);
+            drawLine(w(vec2(sx*.62,-1.46)), w(vec2(sx*1.0,-1.46)), .15, legCol); // foot
+        }
+
+        // engine nozzle (the flame connects right here)
+        drawPoly([vec2(-.22,-.9), vec2(.22,-.9), vec2(.14,-1.12), vec2(-.14,-1.12)],
+            rgb(.28,.30,.36), .05, outline, this.pos, this.angle);
+
+        // fins
+        const finCol = rgb(.82,.30,.26);
+        drawPoly([vec2(-.46,-.18), vec2(-.82,-.84), vec2(-.4,-.66)], finCol, .05, outline, this.pos, this.angle);
+        drawPoly([vec2(.46,-.18),  vec2(.82,-.84),  vec2(.4,-.66)],  finCol, .05, outline, this.pos, this.angle);
+
+        // main hull (sleek capsule, pointed nose)
+        const body = [
+            vec2(0,1.18), vec2(.34,.6), vec2(.46,-.18),
+            vec2(.4,-.78), vec2(-.4,-.78), vec2(-.46,-.18), vec2(-.34,.6),
+        ];
+        drawPoly(body, rgb(.88,.90,.95), .1, outline, this.pos, this.angle);
+
+        // soft cylindrical shading down the right side
+        drawPoly([vec2(.06,1.0), vec2(.34,.6), vec2(.46,-.18), vec2(.4,-.78), vec2(.06,-.78)],
+            rgb(.32,.36,.46,.45), 0, undefined, this.pos, this.angle);
+        // highlight stripe down the left
+        drawLine(w(vec2(-.2,.5)), w(vec2(-.3,-.62)), .09, rgb(1,1,1,.5));
+
+        // nose cone accent
+        drawPoly([vec2(0,1.18), vec2(.34,.6), vec2(-.34,.6)], finCol, .05, outline, this.pos, this.angle);
+
+        // porthole window (rim + glass + glint)
+        const win = w(vec2(0,.28));
+        drawCircle(win, .66, rgb(.62,.66,.74));
+        drawCircle(win, .5,  rgb(.28,.55,1));
+        drawCircle(win.add(vec2(-.1,.1).rotate(this.angle)), .18, rgb(.85,.92,1,.85));
+
+        // bright thruster core at the nozzle while firing (plume itself is particles)
         if (!gameState && this.thrusting)
         {
-            const flicker = .3 + .25*oscillate(22, 1, time);
-            drawCircle(this.pos.add(vec2(0,-1.1).rotate(this.angle)), 1.0 + flicker*.4, rgb(1,.6,.1,.18));
-            drawPoly([vec2(-.18,-1.02), vec2(.18,-1.02), vec2(0,-1.85-flicker)],
-                rgb(1,.7,.15,.9), 0, undefined, this.pos, this.angle);
-            drawPoly([vec2(-.11,-1.02), vec2(.11,-1.02), vec2(0,-1.55-flicker*.5)],
-                rgb(1,.95,.6,.95), 0, undefined, this.pos, this.angle);
+            const flick = .7 + .3*oscillate(30, 1, time);
+            drawCircle(w(vec2(0,-1.1)), .55*flick, rgb(1,.85,.4,.5));
         }
     }
 }
@@ -551,46 +594,53 @@ function gameRender()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// One HUD gauge: label + filled bar (+ optional safe-limit tick), screen space
+function hudBar(x, y, w, label, frac, color, tickFrac)
+{
+    const labelW = 44, h = 13;
+    const bx = x + labelW, bw = w - labelW;
+    drawTextScreen(label, vec2(x, y), 15, rgb(1,1,1,.85), 3, rgb(0,0,0,.7), 'left');
+    drawRect(vec2(bx + bw/2, y), vec2(bw+4, h+4), rgb(.06,.07,.11,.95), 0, false, true);
+    const f = clamp(frac, 0, 1);
+    drawRect(vec2(bx + bw*f/2, y), vec2(bw*f, h), color, 0, false, true);
+    if (tickFrac != null)
+        drawRect(vec2(bx + bw*clamp(tickFrac,0,1), y), vec2(2, h+8), rgb(1,1,1,.9), 0, false, true);
+}
+
 function gameRenderPost()
 {
-    const fuel = player && !player.destroyed ? player.fuel : 0;
+    const alive = player && !player.destroyed;
+    const fuel = alive ? player.fuel : 0;
     const maxFuel = player ? player.maxFuel : 80;
-    const vel = player && !player.destroyed ? player.velocity.length() : 0;
-    const ang = player && !player.destroyed ? abs(player.angle) : 0;
-    const alt = player && !player.destroyed ? max(0, player.pos.y - getTerrainY(player.pos.x)) : 0;
+    const vel = alive ? player.velocity.length() : 0;
+    const ang = alive ? abs(player.angle) : 0;
+    const alt = alive ? max(0, player.pos.y - getTerrainY(player.pos.x)) : 0;
 
-    // HUD (top-left)
-    const text =
-        `LEVEL ${level}\n`+
-        `Score: ${totalScore}\n`+
-        `Alt:   ${alt.toFixed(1)}\n`+
-        `Speed: ${vel.toFixed(3)}\n`+
-        `Tilt:  ${(ang*180/PI).toFixed(1)}°`;
-    drawTextScreen(text, vec2(14, 110), 22, rgb(1,1,1,.92), 4, rgb(0,0,0,.6), 'left');
+    // --- instrument panel, top-LEFT (top-right stays clear for the toolbar) ---
+    const px = 16, py = 14, pw = 252, ph = 150;
+    drawRect(vec2(px+pw/2, py+ph/2), vec2(pw+4, ph+4), rgb(.4,.55,.9,.18), 0, false, true); // border
+    drawRect(vec2(px+pw/2, py+ph/2), vec2(pw, ph), rgb(.04,.05,.09,.6), 0, false, true);    // bg
 
-    // fuel bar
-    const barPos = vec2(230, 26), barSize = vec2(220, 16);
-    const pct = clamp(fuel/maxFuel, 0, 1);
-    const fuelCol = pct < .25 ? rgb(1,.35,.2,.95) : rgb(.25,.9,.35,.95);
-    drawRect(barPos, barSize.add(vec2(4,4)), rgb(0,0,0,.5), 0, false, true);
-    drawRect(barPos.add(vec2(-(1-pct)*barSize.x/2,0)), vec2(barSize.x*pct, barSize.y), fuelCol, 0, false, true);
-    drawTextScreen('FUEL', vec2(barPos.x, barPos.y+24), 16, rgb(1,1,1,.7), 3, rgb(0,0,0,.6));
+    drawTextScreen(`LEVEL ${level}`, vec2(px+16, py+26), 26, rgb(1,1,1,.96), 4, rgb(0,0,0,.7), 'left');
+    drawTextScreen(`SCORE ${totalScore}`, vec2(px+16, py+54), 18, rgb(.72,.86,1,.96), 3, rgb(0,0,0,.7), 'left');
+    drawTextScreen(`ALT ${alt.toFixed(1)}`, vec2(px+pw-16, py+26), 18, rgb(.82,.9,1,.92), 3, rgb(0,0,0,.7), 'right');
 
-    // safe-limits readout
-    const safe = (vel < SAFE_SPEED && ang < SAFE_ANGLE);
-    const safeColor = safe ? rgb(.2,1,.35,.95) : rgb(1,.45,.25,.95);
-    const msg = `SAFE: speed < ${SAFE_SPEED.toFixed(2)}   tilt < ${(SAFE_ANGLE*180/PI).toFixed(0)}°`;
-    drawTextScreen(msg, vec2(mainCanvasSize.x/2, mainCanvasSize.y-30), 22, safeColor, 4, rgb(0,0,0,.6));
+    // gauges: speed/tilt turn green inside the safe window, red/orange outside
+    const fFuel = fuel/maxFuel;
+    const safeC = rgb(.3,.9,.45), badC = rgb(1,.4,.25);
+    hudBar(px+16, py+84,  pw-32, 'FUEL', fFuel, fFuel < .25 ? rgb(1,.45,.2) : safeC, null);
+    hudBar(px+16, py+110, pw-32, 'SPD',  vel/(SAFE_SPEED*2.2), vel < SAFE_SPEED ? safeC : badC, 1/2.2);
+    hudBar(px+16, py+136, pw-32, 'TILT', ang/(SAFE_ANGLE*2.2), ang < SAFE_ANGLE ? safeC : badC, 1/2.2);
 
     // end states
     if (gameState === 1)
     {
-        drawTextScreen(`LEVEL ${level} CLEARED!\n+${lastLevelScore}   Total ${totalScore}\n\nSpace / Enter for next level`,
+        drawTextScreen(`LEVEL ${level} CLEARED!\n\n+${lastLevelScore}   Total ${totalScore}`,
             vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 54, rgb(.2,1,.4,.97), 8, rgb(0,0,0,.7));
     }
     else if (gameState === 2)
     {
-        drawTextScreen(`CRASHED\nReached level ${level}   Score ${totalScore}\n\nSpace / Enter to try again`,
+        drawTextScreen(`CRASHED!\n\nReached level ${level}   Score ${totalScore}`,
             vec2(mainCanvasSize.x/2, mainCanvasSize.y/2), 54, rgb(1,.3,.22,.97), 8, rgb(0,0,0,.7));
     }
 }
