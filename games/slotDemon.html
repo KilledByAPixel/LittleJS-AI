@@ -41,13 +41,14 @@ canvasMaxSize = vec2(2048, 2048);
 
 // ---- CONFIG (single source of balance truth) ----
 const BALANCE = {
-    // weighted symbol table: rising payout, falling weight (cherry -> demon)
+    // weighted symbol table: rising payout, falling weight (cherry -> demon).
+    // Fewer symbol types + a heavier common symbol = more frequent wins.
+    // Win chance per spin ≈ sum of (weight/total)^reelCount over all symbols.
     symbols: [
-        { emoji: '🍒', weight: 40, payout: 2 },
-        { emoji: '🍋', weight: 30, payout: 3 },
-        { emoji: '🔔', weight: 18, payout: 6 },
-        { emoji: '💎', weight: 9,  payout: 15 },
-        { emoji: '😈', weight: 3,  payout: 50 },   // demon = jackpot
+        { emoji: '🍒', weight: 50, payout: 2 },
+        { emoji: '🔔', weight: 28, payout: 4 },
+        { emoji: '💎', weight: 15, payout: 12 },
+        { emoji: '😈', weight: 7,  payout: 40 },   // demon = jackpot
     ],
     reelCount: 3,            // 3 reels; win = all reels equal
     payoutBase: 1,           // multiplied by symbol.payout, level, demon mult
@@ -403,7 +404,7 @@ class Machine extends EngineObject
         }
         // mask bars (cabinet-colored) hide the scroll above/below the window row,
         // so the slot reads like a real reel spinning behind a window.
-        const maskH = windowH*1.6, maskW = this.size.x*0.95;
+        const maskH = windowH*1.25, maskW = this.size.x*0.95;   // covers overflow, stays clear of the cabinet outline
         drawRect(vec2(this.pos.x, rowY + windowH/2 + maskH/2), vec2(maskW, maskH), hsl(.85,.3,.15));
         drawRect(vec2(this.pos.x, rowY - windowH/2 - maskH/2), vec2(maskW, maskH), hsl(.85,.3,.15));
 
