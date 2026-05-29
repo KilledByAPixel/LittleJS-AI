@@ -3533,13 +3533,7 @@ async function gameInit()
     tweakEngineDefaults();
     tweakDivider('Emoji Survivors');
     tweak('playerSpeed',              {min: 2,   max: 12});
-    tweak('playerMaxHp',              {min: 50,  max: 300});
     tweak('enemySpawnIntervalBase',   {min: .2,  max: 3});
-    tweak('xpToNextBase',             {min: 2,   max: 20});
-    tweak('fireballDamage',           {min: 1,   max: 10});
-    tweak('magnetRadius',             {min: 1,   max: 10});
-    tweak('runDuration',              {min: 60,  max: 1800});
-    tweak('pizzaSpinRate',            {min: 0,   max: 20});
 
     if (DEBUG_AUTOSTART) startRun(HEROES[0], STAGES[0]);
     else                 showMenu('title');
