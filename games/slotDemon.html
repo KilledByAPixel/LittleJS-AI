@@ -144,6 +144,76 @@ function rollSymbol()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// GRID MATH + MACHINE ENTITY
+// Grid-as-truth: each machine owns an integer `cell`; its world pixel pos is
+// derived via cellToPos. The atlas was built with initDrawToTexture(), which
+// calls setTileDefaultSize(vec2(500)), so tile(index) resolves to the correct
+// 500px atlas tile without passing an explicit size (matches textureGame.html,
+// which never hand-specifies the atlas tile size either).
+
+const GRID_COLS = 5;
+const CELL = vec2(6, 7);                 // world-units per machine cell (w,h)
+const cellToPos = (cell) => vec2((cell.x - (GRID_COLS-1)/2) * CELL.x, -cell.y * CELL.y);
+const nextFreeCell = () => {
+    const i = machines.length;
+    return vec2(i % GRID_COLS, Math.floor(i / GRID_COLS));
+};
+
+class Machine extends EngineObject
+{
+    constructor(cell)
+    {
+        super(cellToPos(cell), vec2(CELL.x*0.9, CELL.y*0.9));
+        this.cell = cell;
+        this.level = 1;
+        this.wildCount = 0;
+        this.assignedDemon = null;
+        this.reels = [];                 // current displayed symbols (objects from BALANCE.symbols)
+        for (let i=0;i<BALANCE.reelCount;++i) this.reels.push(rollSymbol());
+        this.spinTimer = new Timer();    // used by demon-driven spins (later task)
+        this.flash = 0;                  // win flash amount (0..1)
+    }
+    update()
+    {
+        if (this.flash > 0) this.flash = max(0, this.flash - timeDelta*3);
+        super.update();
+    }
+    render() {}   // suppress default; we draw via draw() from gameRender for layer control
+    draw()
+    {
+        // cabinet
+        drawRect(this.pos, this.size, this.flash > 0 ? hsl(0,0,1,this.flash) : hsl(.85,.4,.25));
+        drawRect(this.pos, this.size.scale(0.96), hsl(.85,.3,.15));
+        // reels
+        const slotW = this.size.x / (BALANCE.reelCount+1);
+        for (let i=0;i<this.reels.length;++i)
+        {
+            const rp = this.pos.add(vec2((i-(this.reels.length-1)/2)*slotW, 0.6));
+            drawRect(rp, vec2(slotW*0.9, slotW*0.9), hsl(0,0,.95));
+            drawTile(rp, vec2(slotW*0.8), tile(symbolTileIndex(this.reels[i])));
+        }
+        // level label
+        drawText('Lv ' + this.level, this.pos.add(vec2(0, -this.size.y/2+0.6)), 0.8, hsl(0,0,1));
+    }
+}
+
+// ---- PIT SPAWN ----
+function spawnMachine()
+{
+    if (machines.length >= pitCapacity) return null;
+    const m = new Machine(nextFreeCell());
+    machines.push(m);
+    return m;
+}
+function newGame()
+{
+    machines.forEach(m => m.destroy()); machines = [];
+    demons.forEach(d => d.destroy());   demons = [];
+    cash = 0; pitCapacity = BALANCE.pitStart; demonsBought = {}; stats = { sacrifices:0 };
+    spawnMachine();   // start with one machine to click
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // MENU SYSTEM TEMPLATE
 // Demonstrates createMenu() and createToolbar() from menus.js.
 
@@ -172,9 +242,8 @@ async function gameInit()
     // Build the procedural sprite atlas (demons + symbol/wild emoji tiles).
     buildSprites();
 
-    // Initial bg shared with the color picker in OPTIONS, so opening the
-    // menu shows the swatch matching what's actually on screen.
-    canvasClearColor = new Color().setHex('#264d40');
+    // Dark red-black hellish backdrop for the pit.
+    canvasClearColor = hsl(0, .3, .06);
 
     // Match the engine's master volume to whatever the options slider starts at,
     // so the very first menu sound plays at the user-visible volume.
@@ -337,6 +406,11 @@ async function gameInit()
     // try to open the pause menu from on top of the title menu.
     installDefaultToolbar();
 
+    // Spawn the starting pit so it renders as a frozen backdrop behind the
+    // title menu (menus.js freezes gameUpdate while the title is up, but
+    // gameRender still runs — the desired frozen-backdrop behavior).
+    newGame();
+
     // Show the title menu immediately — no click-to-reveal step.
     showMenu('title');
 }
@@ -371,10 +445,10 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    // Draw gameplay content only while actually playing — the pre-play
-    // / post-quit "title screen" state shows just the prompt below.
-    if (isPlaying())
-        drawRect(playerPos, playerSize, hsl(.13, 1, .6));
+    // Draw the pit every frame regardless of isPlaying() — when the title
+    // menu is up, gameUpdate is frozen but gameRender still runs, so the pit
+    // sits as a static backdrop behind the menu.
+    machines.forEach(m => m.draw());
 }
 
 function gameRenderPost()
