@@ -835,6 +835,11 @@ async function gameInit()
     // three fields are READ from BALANCE every frame and never reassigned, so
     // panel edits take effect live.
     window.BALANCE = BALANCE;
+
+    // Dev cheat: type giveMoney() in the browser console (or giveMoney(50000)
+    // for a specific amount). Adds cash and saves so it persists.
+    window.giveMoney = (amount = 100000) => { cash += amount; saveGame(); return cash; };
+
     tweakDivider('Slot Demon');
     tweak('BALANCE.decayRate',    {min:0.005, max:0.2});
     tweak('BALANCE.spinInterval', {min:0.2,   max:3});
