@@ -384,11 +384,12 @@ showEngineVersion = false; // Hide engine version console display
                     const stick = gamepadStick(0);
                     if (stick.lengthSquared() > .04) move = move.add(stick);
                     if (move.lengthSquared() > 1) move = move.normalize(1);
-                    const keyDir = move.y;              // one-axis paddle uses move.y
-                    if (keyDir)
-                            left.pos.y += keyDir * paddleSpeed * timeDelta;
-                    else
+                    // Follow the most recently used device: mouse drives the
+                    // paddle only while it's active, so stick/keys don't snap back.
+                    if (usingMouseInput())
                             left.pos.y = mousePos.y;
+                    else
+                            left.pos.y += move.y * paddleSpeed * timeDelta;
             }
             clampPaddleY(left);
 

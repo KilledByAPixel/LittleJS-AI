@@ -372,14 +372,20 @@ function gameUpdate()
     powerups= powerups.filter(p => p.life > 0 && p.pos.x > cull);
 }
 
+let _moonAim = vec2(1, 0); // last turret aim, held while no device is actively aiming
+
 function aimToward()
 {
-    // gamepad: right stick aims the turret when pushed; otherwise aim at the mouse
-    const stick = gamepadStick(1);
-    if (stick.lengthSquared() > .04)
-        return stick.normalize();
+    // Aim with the most recently used device: mouse aims at the cursor, right
+    // stick aims the turret. When neither is actively aiming, hold the last aim
+    // so releasing the stick doesn't snap the turret back to the mouse.
     const turret = rover.pos.add(rot(vec2(0.25, 0.45), rover.angle));
-    return mousePos.subtract(turret).normalize();
+    const stick = gamepadStick(1);
+    if (usingMouseInput())
+        _moonAim = mousePos.subtract(turret).normalize();
+    else if (stick.lengthSquared() > .04)
+        _moonAim = stick.normalize();
+    return _moonAim;
 }
 
 function jump()

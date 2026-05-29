@@ -468,7 +468,7 @@
 
                     const movingByKeyOrStick = move.lengthSquared() > .05;
 
-                    if (movingByKeyOrStick)
+                    if (!usingMouseInput()) // mouse snaps to cursor only while it's the active device; else keyboard/gamepad (idle = move is 0 = holds position)
                     {
                             // Cap the input vector to length 1 so diagonal + stick can't exceed playerSpeed.
                             if (move.lengthSquared() > 1) move = move.normalize();

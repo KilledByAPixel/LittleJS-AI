@@ -91,13 +91,13 @@ class Player
     {
         if (this.crashed) return;
 
-        // mouse directional control
-        const mouseDir = this.pos.subtract(mousePos);
-        this.targetAngle = mouseDir.angle();
-
-        // gamepad: left stick X slalom steering, overrides mouse aim when used
+        // Steer with the most recently used device. Mouse aims toward the cursor
+        // only while it's active; gamepad carves with the left stick; when the
+        // stick is idle the last carve angle is held (no snap back to the mouse).
         const stick = gamepadStick(0);
-        if (abs(stick.x) > .2)
+        if (usingMouseInput())
+            this.targetAngle = this.pos.subtract(mousePos).angle();
+        else if (abs(stick.x) > .2)
             this.targetAngle = stick.x * (PI/2); // full left/right = max carve angle
 
         this.targetAngle = clamp(this.targetAngle, -PI/2, PI/2); // limit to downward angles only

@@ -244,10 +244,13 @@ function updateBucket(dt) {
     let kx = keyDirection().x;                              // gamepad
     const sx = gamepadStick(0).x;                           // gamepad: merge left stick / d-pad
     if (sx) kx = clamp(kx + sx, -1, 1);
-    if (kx !== 0)
-        bucketTargetX = clamp(bucketTargetX + kx * 28 * dt, -maxX, maxX);
-    else
+    // Follow whichever device is active. Mouse only drives while it's the most
+    // recently used device, so keyboard/gamepad steering doesn't snap back to
+    // the cursor; when keyboard/gamepad are idle, kx is 0 and the bucket holds.
+    if (usingMouseInput())
         bucketTargetX = clamp(mousePos.x, -maxX, maxX);
+    else
+        bucketTargetX = clamp(bucketTargetX + kx * 28 * dt, -maxX, maxX);
     // Direct assignment — paddle games live on instant response.
     bucketX = bucketTargetX;
 }

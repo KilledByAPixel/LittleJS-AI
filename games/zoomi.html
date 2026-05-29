@@ -569,10 +569,16 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && !gameOverPending})) return;
     if (!isPlaying() || gameOverPending) return;
 
-    // Aim — mouse points the turret; gamepad left stick / d-pad takes over while active.
+    // Aim follows the most recently used device: mouse points the turret at the
+    // cursor while it's active; gamepad left stick / d-pad aims directly. When the
+    // stick is idle, aimDir holds its last value (no snap back to the mouse).
     const stick = gamepadStick(0);                          // gamepad (d-pad merged into stick)
-    if (stick.lengthSquared() > .04) aimDir = stick.normalize();
-    else if (mousePos.lengthSquared() > 0.0001) aimDir = mousePos.normalize();
+    if (usingMouseInput())
+    {
+        if (mousePos.lengthSquared() > 0.0001) aimDir = mousePos.normalize();
+    }
+    else if (stick.lengthSquared() > .04)
+        aimDir = stick.normalize();
 
     // Shoot — left click / A button (0).
     if (mouseWasPressed(0) || gamepadWasPressed(0)) shootBall();

@@ -679,22 +679,28 @@ function gameUpdate()
             addRow();
         }
 
-        // aim: gamepad left stick takes priority while pushed, otherwise mouse
+        // Aim follows the most recently used device:
+        //  - mouse: aim straight at the cursor (absolute)
+        //  - gamepad / keyboard: left/right (left stick, d-pad, or arrows/A-D)
+        //    sweeps the aim by fixed increments; idle holds the current angle so
+        //    it never snaps back to the mouse.
         const shooterPos = vec2(0, SHOOT_Y);
-        const stick = gamepadStick(0);
-        if (stick.lengthSquared() > .04)
+        if (usingMouseInput())
         {
-            const ang = Math.atan2(stick.y, stick.x);
-            aimAngle = clamp(ang, MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
+            if (mouseInWindow)
+            {
+                let dir = mousePos.subtract(shooterPos);
+                if (dir.lengthSquared() < .001)
+                    dir = vec2(0, 1);
+                aimAngle = clamp(Math.atan2(dir.y, dir.x), MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
+            }
         }
-        else if (mouseInWindow)
+        else
         {
-            let dir = mousePos.subtract(shooterPos);
-            if (dir.lengthSquared() < .001)
-                dir = vec2(0, 1);
-
-            const ang = Math.atan2(dir.y, dir.x);
-            aimAngle = clamp(ang, MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
+            const AIM_SWEEP = 2.2; // radians per second
+            const adj = clamp(gamepadStick(0).x + keyDirection().x, -1, 1); // +1 = right
+            if (adj) // aimAngle measured from +X, so right (+) lowers the angle
+                aimAngle = clamp(aimAngle - adj * AIM_SWEEP * timeDelta, MIN_SHOT_ANGLE, MAX_SHOT_ANGLE);
         }
 
         // shoot: mouse / touch tap or gamepad A

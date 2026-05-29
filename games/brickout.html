@@ -713,10 +713,12 @@ function gameUpdate()
     if (move.lengthSquared() > 1) move = move.normalize(1);
     const dir = move.x;
 
-    if (dir)
-        paddlePos.x += dir * 24 * dt;
-    else
+    // Follow the most recently used device: mouse only steers while it's active,
+    // so the stick/keys don't get yanked back to the cursor each idle frame.
+    if (usingMouseInput())
         paddlePos.x = mousePos.x;
+    else
+        paddlePos.x += dir * 24 * dt;
 
     paddlePos.x = clamp(paddlePos.x, paddleSize.x / 2, levelSize.x - paddleSize.x / 2);
 

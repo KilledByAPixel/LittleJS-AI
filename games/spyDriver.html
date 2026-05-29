@@ -931,9 +931,14 @@ class PlayerCar extends EngineObject
         // forward
         this.pos.y += this.speed * timeDelta;
 
-        // steering — mouse drives target; A/D nudges target as fallback
-        let targetX = clampToRoad(mousePos.x, this.size.x/2, this.pos.y);
-        if (dir.x)
+        // steering — follow the most recently used device. Mouse drives the
+        // target only while it's active; otherwise stick/keys nudge the target
+        // (dir.x is 0 when idle, so the car holds its lane instead of snapping
+        // back to the cursor).
+        let targetX;
+        if (usingMouseInput())
+            targetX = clampToRoad(mousePos.x, this.size.x/2, this.pos.y);
+        else
             targetX = clampToRoad(this.pos.x + dir.x * KEY_STEER_TARGET_OFFSET, this.size.x/2, this.pos.y);
 
         // tight tracking

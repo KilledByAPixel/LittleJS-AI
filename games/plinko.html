@@ -513,13 +513,13 @@ function gameUpdate()
 
     if (!isPlaying()) return;
 
-    // Aim follows the mouse X by default; arrow / A-D keys override and
-    // nudge it (last input wins).
-    const dir = keyDirection();
-    if (dir.x)
-        aimX += dir.x * .35;
-    else
+    // Aim follows the most recently used device: the mouse sets aimX to the
+    // cursor only while it's active; arrows / A-D / gamepad left stick / d-pad
+    // nudge aimX (and hold when idle instead of snapping back to the cursor).
+    if (usingMouseInput())
         aimX = mousePos.x;
+    else
+        aimX += clamp(keyDirection().x + gamepadStick(0).x, -1, 1) * .35;
     aimX = clamp(aimX, -BOARD_WIDTH/2 + 1, BOARD_WIDTH/2 - 1);
 
     if (mouseWasPressed(0) || keyWasPressed('Space') || gamepadWasPressed(0))
