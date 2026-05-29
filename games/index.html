@@ -88,31 +88,23 @@
         align-items: center;
         margin-bottom: 12px;
         cursor: pointer;
+        /* One-time entrance pop lives on the wrapper so hover state changes on
+              the logo never replay it. */
+        animation: splat .55s cubic-bezier(.34, 1.56, .64, 1);
     }
-    /* Soft breathing glow behind the logo + title. Sits below both via z-index
-          and never intercepts clicks. */
-    #sidebar-logo-wrap::before {
-        content: '';
-        position: absolute;
-        left: 50%;
-        top: 38%;
-        width: 150%;
-        height: 150%;
-        transform: translate(-50%, -50%);
-        z-index: 0;
-        pointer-events: none;
-        border-radius: 50%;
-        background: radial-gradient(ellipse at center,
-            rgba(88, 166, 255, .35) 0%,
-            rgba(255, 126, 182, .14) 40%,
-            transparent 70%);
-        filter: blur(6px);
-        animation: logo-breathe 4s ease-in-out infinite;
-    }
-    #sidebar-logo-wrap > * { position: relative; z-index: 1; }
+    /* Breathing glow lives on the logo's own drop-shadow (no separate halo). */
     @keyframes logo-breathe {
-        0%, 100% { opacity: .5;  transform: translate(-50%, -50%) scale(.92); }
-        50%      { opacity: .95; transform: translate(-50%, -50%) scale(1.08); }
+        0%, 100% { filter: drop-shadow(0 3px 8px rgba(88, 166, 255, .35))
+                           drop-shadow(0 0 12px rgba(255, 126, 182, .15)); }
+        50%      { filter: drop-shadow(0 3px 13px rgba(88, 166, 255, .6))
+                           drop-shadow(0 0 22px rgba(255, 126, 182, .32)); }
+    }
+    /* Gentle left/right wobble on hover — keeps the hover scale baked in so it
+          isn't overridden by the transform animation. */
+    @keyframes logo-wobble {
+        0%, 100% { transform: scale(1.05) rotate(0deg); }
+        25%      { transform: scale(1.05) rotate(-4deg); }
+        75%      { transform: scale(1.05) rotate(4deg); }
     }
     #sidebar-logo-title {
         margin-top: 6px;
@@ -134,13 +126,14 @@
     #sidebar-logo {
         height: 64px;
         width: auto;
-        filter: drop-shadow(0 0 12px rgba(88, 166, 255, .35));
+        filter: drop-shadow(0 3px 10px rgba(88, 166, 255, .45))
+                drop-shadow(0 0 16px rgba(255, 126, 182, .2));
         transition: transform .15s, filter .15s;
-        animation: splat .55s cubic-bezier(.34, 1.56, .64, 1);
+        animation: logo-breathe 4s ease-in-out infinite;
     }
     #sidebar-logo-wrap:hover #sidebar-logo {
-        transform: scale(1.05);
-        filter: drop-shadow(0 0 18px rgba(255, 126, 182, .55));
+        animation: logo-breathe 4s ease-in-out infinite,
+                   logo-wobble 2.5s linear infinite;
     }
 
     #search {
@@ -696,7 +689,7 @@
         .quick-btn .icon.rolling,
         .sparkle,
         #welcome-logo,
-        #sidebar-logo-wrap::before,
+        #sidebar-logo-wrap,
         #sidebar-logo { animation: none !important; }
         .tile { opacity: 1; transform: none; }
     }
