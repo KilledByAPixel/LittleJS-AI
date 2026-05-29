@@ -1267,31 +1267,18 @@ class Pickup extends EngineObject
 }
 
 // Auto-aim picker for weapons that need a single target (Fireball, Comet,
-// ChainLightning first hop, StarStorm, etc). Default order: enemy first,
-// breakable as fallback so the player isn't wasting shots on crates during
-// a swarm. The 🧙 Wizard hero biases toward breakables — its
-// `preferBreakables` flag prefers a crate/barrel ONLY when the player is
-// already standing within WIZARD_BREAKABLE_RADIUS of one. Outside that
-// range, auto-aim falls back to the normal nearest-enemy pick so the
-// Wizard's weapons never abandon an incoming swarm for a far-off loot box.
-const WIZARD_BREAKABLE_RADIUS = 4;
+// ChainLightning first hop, StarStorm, etc). Breakables aren't in the
+// `enemies` array anymore — they're touch-only — so this is now just a
+// flat nearest-enemy scan with no breakable special case.
 function nearestEnemy(fromPos, maxDist)
 {
-    let bestEnemy = null,     bestEnemyD = maxDist;
-    let bestBreakable = null, bestBreakableD = maxDist;
+    let bestEnemy = null, bestEnemyD = maxDist;
     for (const e of enemies)
     {
         const d = fromPos.distance(e.pos);
-        if (e.isBreakable)
-        {
-            if (d < bestBreakableD) { bestBreakable = e; bestBreakableD = d; }
-        }
-        else if (d < bestEnemyD)    { bestEnemy = e;     bestEnemyD = d; }
+        if (d < bestEnemyD) { bestEnemy = e; bestEnemyD = d; }
     }
-    if (currentHero && currentHero.preferBreakables && bestBreakable &&
-        player && player.pos.distance(bestBreakable.pos) < WIZARD_BREAKABLE_RADIUS)
-        return bestBreakable;
-    return bestEnemy || bestBreakable;
+    return bestEnemy;
 }
 
 // Tiered XP gem drop — small/medium/large by xpDrop, with elites always
@@ -2505,9 +2492,10 @@ class Bomb extends EngineObject
 
 // Persistent destructibles scattered across the map — 📦 crates (common, coin
 // drops) and 🛢️ barrels (rare, gold-glow, premium drops). Pre-spawned at run
-// start, no respawn. Slotted into the `enemies` array so projectiles and AOE
-// weapons can damage them with no per-weapon plumbing; target-acquisition
-// helpers (nearestEnemy etc.) skip them so auto-aim never wastes a shot.
+// start, no respawn. Walk-into to break: the player just touches one and it
+// pops open. Not in the `enemies` array — weapons can't hit them, so no
+// auto-aim hooks are needed. Dropped loot is briefly un-grabbable so the
+// player can see what fell out before vacuuming it up.
 const breakables = [];
 
 class Breakable extends EngineObject
@@ -2516,20 +2504,17 @@ class Breakable extends EngineObject
     {
         super(pos, vec2(isBarrel ? 1.1 : 1.0),
               isBarrel ? sprites.barrel : sprites.crate);
-        // Halved from 60 / 25 after playtest — was a bit too chewy. Still
-        // takes a few solid hits each, just not a small project per crate.
-        this.hp = isBarrel ? 30 : 12;
-        this.maxHp = this.hp;
         this.isBarrel = isBarrel;
         this.isBreakable = true;
         this.dmg = 0;
+        // Set after the touch check so destroy() can tell a touch-break
+        // apart from a teardown-driven destroy. 1 = intact, 0 = broken.
+        this.hp = 1;
         setupKinematicProp(this);
-        this.hitFlashTimer = 0;
         this.bobPhase = rand(2 * PI);
-        // Fake type so any defensive read of .type.key (none today outside
-        // Enemy.render, which Breakable overrides) gets a benign value.
+        // Fake type so any defensive read of .type.key (none today)
+        // gets a benign value.
         this.type = {key: 'breakable'};
-        enemies.push(this);
         breakables.push(this);
     }
 
@@ -2537,13 +2522,14 @@ class Breakable extends EngineObject
     {
         super.update();
         this.renderOrder = -baseY(this);
-        // Breakables no longer chip on player contact in normal play —
-        // only weapons damage them. The one exception is AI test mode:
-        // the AI can't aim at a specific crate, so it would just clip
-        // through them forever. Walk-into break stays on for the AI so
-        // balance runs don't deadlock on a crate field.
-        if (playerAI && isOverlapping(this.pos, this.size, player.pos, player.size))
-            this.takeDamage(this.hp);
+        // Walk-into break — touch is the only trigger. Gated on
+        // !gameOver so a corpse drifting onto a crate doesn't trip it.
+        if (!gameOver &&
+            isOverlapping(this.pos, this.size, player.pos, player.size))
+        {
+            this.hp = 0;
+            this.destroy();
+        }
     }
 
     render()
@@ -2556,11 +2542,6 @@ class Breakable extends EngineObject
             // can tell premium evolution chests apart from loot barrels.
             const pulse = .5 + .5 * sin(time * 3.5 + this.bobPhase);
             additive = new Color(.05 * pulse, .55 * pulse, .55 * pulse, 0);
-        }
-        if (this.hitFlashTimer > 0)
-        {
-            this.hitFlashTimer -= 1 / 60;
-            additive = new Color(.85, .85, .85, 0);
         }
         // Small angle wobble so the prop looks alive instead of frozen on
         // the floor. ~±4.5° at a slow rate, independent per-instance via
@@ -2578,28 +2559,22 @@ class Breakable extends EngineObject
                      twinkleColor, this.bobPhase);
     }
 
-    takeDamage(amount)
-    {
-        this.hp -= amount;
-        this.hitFlashTimer = .08;
-        if (this.hp <= 0) this.destroy();
-    }
-
     destroy()
     {
-        const i = enemies.indexOf(this);
-        if (i >= 0) enemies.splice(i, 1);
         const j = breakables.indexOf(this);
         if (j >= 0) breakables.splice(j, 1);
+        // Only drop loot on a real touch-break — tearDownRun also calls
+        // destroy() during run resets and we don't want it raining pickups.
         if (this.hp <= 0)
         {
             const table    = this.isBarrel ? BARREL_DROP_TABLE   : CRATE_DROP_TABLE;
             const fallback = this.isBarrel ? barrelCoinFallback  : crateCoinFallback;
             // Brief un-grabbable window on every loot pickup spawned inside
-            // this rollDrop — Pickup's constructor reads the hint. Reset
-            // immediately after so future enemy-kill drops grab as fast as
-            // they used to (only crate/barrel loot needs the breather).
-            pickupSpawnDelay = .45;
+            // this rollDrop — Pickup's constructor reads the hint. ~1 second
+            // gives the player time to see what dropped before it vacuums in.
+            // Reset immediately after so future enemy-kill drops grab as fast
+            // as they used to (only crate/barrel loot needs the breather).
+            pickupSpawnDelay = .5;
             rollDrop(table, this.pos.copy(), this, fallback);
             pickupSpawnDelay = 0;
             if (sounds.chest && sounds.chest.play) sounds.chest.play(this.pos);
@@ -2693,14 +2668,11 @@ function preSpawnBreakables()
     }
 }
 
-// Used by the spawner cap check — breakables share `enemies` so they have
-// to be filtered out of the live-enemy count.
-function countLiveEnemies()
-{
-    let n = 0;
-    for (const e of enemies) if (!e.isBreakable) ++n;
-    return n;
-}
+// Used by the spawner cap check. Breakables aren't in `enemies` anymore
+// so a plain length read does the job; helper kept for readability at the
+// call sites and so a future "enemy-like-but-not-counted" object only
+// needs one place changed.
+function countLiveEnemies() { return enemies.length; }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PASSIVES — in-run stat upgrades. Each passive caps at 5 levels and applies
@@ -2962,10 +2934,6 @@ const HEROES = [
         blurb:'Cheerful knife guy'},
     {key:'wizard', emoji:'🧙', name:'Wizard',  weapon:'Fireball',
         spriteKey:'heroWizard', stats:{areaMult: 1.15},
-        // Auto-aim weapons prefer breakables — fireball etc. clear crates
-        // and barrels even when enemies are closer, since those are hard
-        // to hit by hand.
-        preferBreakables: true,
         blurb:'Wide projectile caster'},
     {key:'cat',    emoji:'🐱', name:'Cat',     weapon:'FishOrbit',
         spriteKey:'heroCat',    stats:{moveSpeedMult: 1.2, maxHpMult: .85},
@@ -4755,12 +4723,13 @@ function drawCollisionDebug()
         drawDebugCircle(player.pos,
             magnetRadius * (player.magnetMult || 1), magnetC);
     }
-    // Enemies + breakables share the `enemies` array.
+    // Enemies — boxes coloured by boss vs regular.
     for (const e of enemies)
-    {
-        const c = e.isBreakable ? breakableC : e.isBoss ? bossC : enemyC;
-        drawDebugBox(e.pos, e.size, c);
-    }
+        drawDebugBox(e.pos, e.size, e.isBoss ? bossC : enemyC);
+    // Breakables live in their own array now (touch-only, not weapon-
+    // damageable) so debug them out of `breakables` directly.
+    for (const b of breakables)
+        drawDebugBox(b.pos, b.size, breakableC);
     // Projectiles, AOE fields, pickups, chests — single sweep of engineObjects.
     for (const obj of engineObjects)
     {
