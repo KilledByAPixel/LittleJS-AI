@@ -1,0 +1,851 @@
+<!DOCTYPE html><head>
+<title>Klondike</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Override any CSS variable on #littlejs-menus to re-skin all menus
+   and toolbars. Uncomment to try a different look — the helper itself
+   never needs to change. */
+/*
+#littlejs-menus {
+    --menu-bg:           rgba(20, 0, 30, 0.92);
+    --menu-fg:           #fff;
+    --menu-accent:       #f0a;
+    --menu-font:         sans-serif;
+    --menu-border-width: 4px;
+    --menu-radius:       18px;
+}
+*/
+</style>
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1780071765370"></script>
+<script src="../templates/menus.js?1780071765370"></script>
+<script src="../templates/gameFx.js?1780071765370"></script>
+<script src="../templates/textureGenerator.js?1780071765370"></script>
+<script src="../templates/cards.js?1780071765370"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+tilesPixelated = false;
+
+// engine settings, customize if necessary
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 32;          // overridden in gameInit
+// Default LittleJS canvas cap is 1920x1080 — raise it so the canvas
+// fills modern high-res monitors instead of letterboxing.
+canvasMaxSize = vec2(2048, 2048);
+canvasClearColor = new Color().setHex('#264d40');   // felt green
+
+///////////////////////////////////////////////////////////////////////////////
+// Layout (world units, Y-up)
+// CARD_SIZE comes from templates/cards.js (default vec2(6, 8.5)).
+const COL_COUNT       = 7;          // Klondike: 7 tableau columns
+const COL_PITCH_X     = 7;          // horizontal distance between column anchors
+const CARD_PITCH_Y    = 1.6;        // vertical gap below a FACE-UP cascade card
+const CARD_PITCH_DOWN = 0.65;       // tighter gap below a FACE-DOWN cascade card
+const TOP_MARGIN      = 2.5;        // empty felt above the top row of stacks
+const MAX_CASCADE_DEPTH = 13;       // height budget (face-up pitches) for camera fit
+
+///////////////////////////////////////////////////////////////////////////////
+// Card model
+//
+// suit: 0=♥ (red), 1=♠ (black), 2=♦ (red), 3=♣ (black)   — `suit % 2 === 0` is red
+// value: 0..12 (Ace..King)
+
+const StackType = { Cascade: 0, Stock: 1, Waste: 2, Foundation: 3 };
+
+class Card
+{
+    constructor(value, suit, faceUp = false)
+    {
+        this.value  = value;
+        this.suit   = suit;
+        this.faceUp = faceUp;       // Klondike: tableau hides all but the top card
+        this.pos    = vec2();       // world center; set when placed in a stack
+        this.tweenFrom     = null;  // null = no active tween
+        this.tweenTimer    = new Timer();
+        this.tweenDuration = 0.2;
+    }
+    startTween(fromPos)
+    {
+        this.tweenFrom = fromPos.copy();
+        this.tweenTimer.set(this.tweenDuration);
+    }
+    // True only while the tween is actively interpolating. Goes false the
+    // frame the timer elapses — the deferred sweep in gameUpdatePost
+    // clears tweenFrom shortly after.
+    isTweening()
+    {
+        return this.tweenFrom !== null && this.tweenTimer.active();
+    }
+    // Pure getter — no side effects. Caller can invoke this multiple times
+    // per frame (hover tint, legal-drop highlight, tweening pass) without
+    // accidentally cancelling the tween for everyone else.
+    drawnPos()
+    {
+        if (!this.tweenFrom) return this.pos;
+        if (this.tweenTimer.elapsed()) return this.pos;
+        return this.tweenFrom.lerp(this.pos, smoothStep(this.tweenTimer.getPercent()));
+    }
+}
+
+class CardStack
+{
+    constructor(anchorPos, type = StackType.Cascade)
+    {
+        this.pos   = anchorPos.copy();
+        this.type  = type;
+        this.cards = [];
+    }
+    topCard()    { return this.cards.length ? this.cards[this.cards.length - 1] : null; }
+    bottomCard() { return this.cards.length ? this.cards[0] : null; }
+    isEmpty()    { return !this.cards.length; }
+
+    cardOffset(index)
+    {
+        // Cascades stagger downward (Y-up world: lower y = lower on screen).
+        // Each card's drop below the one above depends on whether that upper
+        // card is face-down (tight) or face-up (wide). Stock/Waste/Foundation
+        // keep cards centered on the anchor.
+        if (this.type !== StackType.Cascade) return vec2();
+        let y = 0;
+        for (let i = 0; i < index; ++i)
+            y -= this.cards[i].faceUp ? CARD_PITCH_Y : CARD_PITCH_DOWN;
+        return vec2(0, y);
+    }
+    relayout()
+    {
+        for (let i = 0; i < this.cards.length; ++i)
+            this.cards[i].pos = this.pos.add(this.cardOffset(i));
+    }
+    putCardOnTop(card, tween = false)
+    {
+        const oldPos = card.pos.copy();
+        this.cards.push(card);
+        card.pos = this.pos.add(this.cardOffset(this.cards.length - 1));
+        if (tween) card.startTween(oldPos);
+    }
+    moveTopCard(target, tween = false)
+    {
+        if (this.isEmpty()) return;
+        target.putCardOnTop(this.cards.pop(), tween);
+    }
+    moveManyToStack(target, startCard, tween = false)
+    {
+        const startIndex = startCard ? this.cards.indexOf(startCard) : 0;
+        if (startIndex < 0) return;
+        const moving = this.cards.splice(startIndex);
+        for (const c of moving) target.putCardOnTop(c, tween);
+    }
+}
+
+function drawSlotOutline(stack)
+{
+    // Draw a faint outlined rect at the stack anchor (cards will overlay it).
+    const isFoundation = stack.type === StackType.Foundation;
+    const fill   = new Color(0, 0, 0, isFoundation ? 0.18 : 0.30);
+    const stroke = new Color(1, 1, 1, isFoundation ? 0.55 : 0.30);
+    drawRect(stack.pos, CARD_SIZE, fill);
+    // Outline drawn as 4 thin rects (drawRect has no outline param).
+    const t = 0.12;
+    drawRect(vec2(stack.pos.x, stack.pos.y + CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+    drawRect(vec2(stack.pos.x, stack.pos.y - CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+    drawRect(vec2(stack.pos.x - CARD_SIZE.x/2, stack.pos.y), vec2(t, CARD_SIZE.y), stroke);
+    drawRect(vec2(stack.pos.x + CARD_SIZE.x/2, stack.pos.y), vec2(t, CARD_SIZE.y), stroke);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Board layout — recomputed in gameInit (and again on canvas size change).
+let layoutTopRowY     = 8;       // anchor y for the top row (stock / waste / foundations)
+let layoutColLeftX    = -21;     // anchor x for column 0
+let layoutCascadeTopY = -2;      // anchor y for the topmost card of every cascade
+
+function setupLayout()
+{
+    // Total width: COL_COUNT columns at COL_PITCH_X apart, centered on x=0.
+    layoutColLeftX    = -((COL_COUNT - 1) * COL_PITCH_X) / 2;
+    layoutTopRowY     = 8;             // arbitrary positive y for the top row
+    layoutCascadeTopY = layoutTopRowY - CARD_SIZE.y - 1;  // gap below top row
+
+    // Fit camera to the whole table (top row + deepest cascade budget).
+    // cameraPos.y is anchored so the top of the table sits TOP_MARGIN units
+    // below the top edge of the visible area.
+    const topY    = layoutTopRowY + CARD_SIZE.y/2;
+    const bottomY = layoutCascadeTopY - CARD_PITCH_Y * MAX_CASCADE_DEPTH - CARD_SIZE.y/2;
+    const tableW  = (COL_COUNT - 1) * COL_PITCH_X + CARD_SIZE.x + 2;     // +padding
+    const tableH  = topY - bottomY + TOP_MARGIN + 1;                    // +bottom padding
+    cameraScale   = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
+    const viewH   = mainCanvasSize.y / cameraScale;
+    cameraPos     = vec2(0, topY + TOP_MARGIN - viewH/2);
+}
+
+function newGame()
+{
+    cardStacks = [];
+    won = false;
+
+    // Top row: Stock (col 0), Waste (col 1), gap (col 2), Foundations (col 3-6).
+    const stock = new CardStack(vec2(layoutColLeftX + 0 * COL_PITCH_X, layoutTopRowY), StackType.Stock);
+    const waste = new CardStack(vec2(layoutColLeftX + 1 * COL_PITCH_X, layoutTopRowY), StackType.Waste);
+    cardStacks.push(stock, waste);
+    for (let i = 0; i < 4; ++i)
+        cardStacks.push(new CardStack(vec2(layoutColLeftX + (3 + i) * COL_PITCH_X, layoutTopRowY), StackType.Foundation));
+
+    // Bottom: 7 tableau cascades.
+    const cascades = [];
+    for (let i = 0; i < COL_COUNT; ++i)
+    {
+        const c = new CardStack(vec2(layoutColLeftX + i * COL_PITCH_X, layoutCascadeTopY), StackType.Cascade);
+        cascades.push(c);
+        cardStacks.push(c);
+    }
+    window.stockStack = stock;
+    window.wasteStack = waste;
+
+    // Build and shuffle a 52-card deck.
+    const deck = [];
+    for (let suit = 0; suit < 4; ++suit)
+        for (let value = 0; value < 13; ++value)
+            deck.push(new Card(value, suit));
+    // Fisher-Yates with LittleJS rand
+    for (let i = deck.length - 1; i > 0; --i)
+    {
+        const j = randInt(i + 1);
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    // Deal tableau: column c gets c+1 cards; only the last (top) is face-up.
+    let idx = 0;
+    for (let col = 0; col < COL_COUNT; ++col)
+        for (let row = 0; row <= col; ++row)
+        {
+            const card = deck[idx++];
+            card.faceUp = (row === col);
+            cascades[col].putCardOnTop(card);
+        }
+    // Remaining 24 cards form the face-down stock.
+    while (idx < deck.length)
+    {
+        const card = deck[idx++];
+        card.faceUp = false;
+        stock.putCardOnTop(card);
+    }
+
+    handStack    = new CardStack(vec2(0, 0), StackType.Cascade);  // off-screen until pickup
+    pickupOrigin = null;
+    stateUndo    = [];
+    stateRedo    = [];
+    saveState();   // initial snapshot so undo never empties the stack
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// KLONDIKE
+
+let cardStacks  = [];
+let handStack   = null;
+let pickupOrigin = null;
+let mouseHoldPos = vec2();
+let won = false;
+let hintsEnabled = true;     // toggled by OPTIONS → HINTS; gates the green legal-drop tint
+let stockDrawCount = 1;      // 1 or 3, toggled by OPTIONS → DRAW 3
+let lastClick = { card: null, time: -1 };
+let stateUndo = [];
+let stateRedo = [];
+
+
+
+async function gameInit()
+{
+    saveDataInit('klondike');
+    setupLayout();
+    initCardAtlas();
+
+    // Read any in-progress saved game BEFORE newGame() — newGame calls
+    // saveState() at the end which overwrites the save data with the
+    // fresh-deal snapshot, so we'd otherwise lose the previous session.
+    let savedSnap = null;
+    const raw = getSaveData().saveState;
+    if (raw) savedSnap = raw;
+
+    newGame();
+
+    if (savedSnap)
+    {
+        loadState(savedSnap);   // also recomputes the `won` flag
+        if (won)
+            newGame();          // saved game was already finished — deal fresh
+        else
+        {
+            // Restore in-memory state AND re-write the save data (newGame
+            // just clobbered it with the fresh-deal snapshot).
+            stateUndo = [];
+            stateRedo = [];
+            saveState();
+        }
+    }
+
+    // Match the engine's master volume to whatever the options slider starts at,
+    // so the very first menu sound plays at the user-visible volume.
+    setSoundVolume(.8);
+
+    // SoundGenerator options (from templates/gameFx.js):
+    //   volume, randomness, frequency, attack, release, shapeCurve, slide,
+    //   pitchJump, pitchJumpTime, repeatTime, noise, bitCrush, delay
+    // Tune by ear during polish — these are starting points.
+    const sndPickup     = new SoundGenerator({ frequency: 400, attack: 0, release: 0.005, volume: 0.4, noise:2 });
+    const sndPlace      = new SoundGenerator({ frequency: 200, attack: 0, release: 0.01, volume: 0.4, noise:2 });
+    const sndFlip       = new SoundGenerator({ frequency: 600, attack: 0, release: 0.02, volume: 0.35, noise:1 });
+    const sndInvalid    = new SoundGenerator({ frequency: 110, attack: 0.005, release: 0.14, shapeCurve: 2, noise: 0.4, slide: -2, volume: 0.4 });
+    const sndFoundation = new SoundGenerator({ frequency: 880, attack: 0.002, release: 0.08, volume: 0.4 });
+    const sndWin        = new SoundGenerator({ frequency: 440, attack: 0.02, release: 0.5, pitchJump: 660, pitchJumpTime: 0.2, repeatTime: 0.25, volume: 0.5 });
+
+    // Expose for the rest of the file via window globals (simple).
+    window.sndPickup     = sndPickup;
+    window.sndPlace      = sndPlace;
+    window.sndFlip       = sndFlip;
+    window.sndInvalid    = sndInvalid;
+    window.sndFoundation = sndFoundation;
+    window.sndWin        = sndWin;
+
+    // Pause whenever a menu is up during a run. Title menu sits over the
+    // canvas without freezing anything.
+    installAutoPause();
+
+    // ----- title menu -----
+    const playFromTitle = () => { setPlaying(true); hideMenu('title'); };
+    createTitleMenu({
+        id: 'title',
+        title: 'KLONDIKE',
+        onPlay: playFromTitle,
+        canReveal: () => !isPlaying(),
+        revealOnClick: false,
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- options menu -----
+    createOptionsMenu({
+        persistKey: 'volume',
+        extraItems: [
+            {type:'checkbox', id:'draw3', label:'DRAW 3', value: false,
+                persist: 'draw3',
+                onChange: v => { stockDrawCount = v ? 3 : 1; }},
+            {type:'checkbox', id:'hints', label:'HINTS', value: true,
+                persist: 'hints',
+                onChange: v => { hintsEnabled = v; }},
+        ],
+    });
+
+    // ----- about menu -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'text', text:
+                'Klondike — the classic solitaire. Build the four foundations ' +
+                'up from Ace to King by suit. Stack tableau columns down by ' +
+                'alternating color; only a King may start an empty column.\n\n' +
+                'Click the stock (top-left) to deal cards to the waste; click the ' +
+                'empty stock to recycle. Drag cards or runs with the mouse. ' +
+                'Double-click a card to send it to a foundation. Z = undo, ' +
+                'Y = redo. Press Esc to pause.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ----- HUD toolbar -----
+    // Extra game-specific buttons (undo / redo / new) live before the
+    // default mute / fullscreen / hamburger trio. They're hidden while
+    // at title since there's no game in progress to undo or restart.
+    installDefaultToolbar({
+        extraItemsBefore: [
+            {type:'button', id:'undo', label:'↶', title:'Undo (Z)', onClick: undoState},
+            {type:'button', id:'redo', label:'↷', title:'Redo (Y)', onClick: redoState},
+            {type:'button', id:'new',  label:'⟳', title:'New game', onClick: () =>
+                showConfirmDialog({
+                    message: 'Abandon this game and start a new one?',
+                    onYes: () => newGame(),
+                })},
+        ],
+    });
+    addPlayingListener(p =>
+    {
+        const hud = getToolbar('hud');
+        if (!hud) return;
+        for (const id of ['undo', 'redo', 'new'])
+            hud.getItem(id).setVisible(p);
+    });
+
+    // ----- pause menu -----
+    createPauseMenu({
+        onQuit: () =>
+        {
+            clearSubmenuStack();
+            hideAllMenus();
+            newGame();             // reset board so title backdrop is clean
+            setPlaying(false);
+            showMenu('title');
+        },
+        extraItems: [
+            {type:'button', label:'NEW GAME', onClick: () =>
+                showConfirmDialog({
+                    message: 'Abandon this game and start a new one?',
+                    onYes: () => { newGame(); clearSubmenuStack(); hideAllMenus(); },
+                })},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+        ],
+    });
+
+    // Surface the title menu immediately — no click-to-reveal gate.
+    showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Input helpers
+
+function pointInRect(point, center, size)
+{
+    return abs(point.x - center.x) <= size.x / 2
+        && abs(point.y - center.y) <= size.y / 2;
+}
+
+// Returns { stack, card } for the topmost card under `worldPoint`, or
+// { stack, card: null } if the point is over an empty stack, or null.
+function stackUnderPoint(worldPoint)
+{
+    // Search cascades last-card-first (visually topmost is logically last).
+    for (const s of cardStacks)
+    {
+        if (s.type === StackType.Cascade)
+        {
+            for (let i = s.cards.length - 1; i >= 0; --i)
+                if (pointInRect(worldPoint, s.cards[i].pos, CARD_SIZE))
+                    return { stack: s, card: s.cards[i] };
+        }
+        else
+        {
+            const top = s.topCard();
+            if (top && pointInRect(worldPoint, top.pos, CARD_SIZE))
+                return { stack: s, card: top };
+        }
+    }
+    // No card hit — check empty stack anchors so clicks/drops on empty stacks work.
+    for (const s of cardStacks)
+        if (s.isEmpty() && pointInRect(worldPoint, s.pos, CARD_SIZE))
+            return { stack: s, card: null };
+    return null;
+}
+
+function isMoveLegal(target)
+{
+    if (!target || handStack.isEmpty()) return false;
+    const bottom = handStack.bottomCard();
+
+    if (target.type === StackType.Foundation)
+    {
+        if (handStack.cards.length !== 1) return false;            // one card at a time
+        const top = target.topCard();
+        if (!top) return bottom.value === RANK_ACE;                // Ace on empty
+        return top.suit === bottom.suit && top.value + 1 === bottom.value;
+    }
+
+    if (target.type === StackType.Cascade)
+    {
+        if (target.isEmpty()) return bottom.value === RANK_KING;   // only King on empty
+        const top = target.topCard();
+        return (top.suit % 2) !== (bottom.suit % 2) && top.value === bottom.value + 1;
+    }
+
+    // Stock / Waste are never drop targets.
+    return false;
+}
+
+// Is the tail of `stack` starting at `card` a valid alternating-color
+// descending run of FACE-UP cards? Always true for a single face-up card.
+function tailIsValidRun(stack, card)
+{
+    const i = stack.cards.indexOf(card);
+    if (i < 0 || !stack.cards[i].faceUp) return false;
+    for (let k = i; k < stack.cards.length - 1; ++k)
+    {
+        const a = stack.cards[k], b = stack.cards[k + 1];
+        if (!b.faceUp)                      return false;
+        if ((a.suit % 2) === (b.suit % 2))  return false;
+        if (a.value !== b.value + 1)        return false;
+    }
+    return true;
+}
+
+// Cards that would be picked up if the player clicked on `hit` right now.
+// Returns [] if the hit isn't legal to grab. Used by both the hover-tint
+// highlight and the grab-cursor logic.
+function pickableTail(hit)
+{
+    if (!hit || !hit.card) return [];
+    if (hit.stack.type === StackType.Cascade)
+    {
+        if (!tailIsValidRun(hit.stack, hit.card)) return [];
+        return hit.stack.cards.slice(hit.stack.cards.indexOf(hit.card));
+    }
+    if (hit.stack.type === StackType.Stock) return [];   // stock is click-to-deal only
+    return hit.card === hit.stack.topCard() ? [hit.card] : [];
+}
+
+// After cards leave a tableau column, reveal a newly-exposed face-down top
+// card. Only the top of a cascade can ever be face-down post-move, so a
+// single pass suffices. Returns how many cards flipped.
+function flipExposedCards()
+{
+    let flipped = 0;
+    for (const s of cardStacks)
+    {
+        if (s.type !== StackType.Cascade) continue;
+        const top = s.topCard();
+        if (top && !top.faceUp) { top.faceUp = true; ++flipped; }
+    }
+    return flipped;
+}
+
+// Deal from stock to waste, or recycle the waste back into the stock when
+// the stock is empty (unlimited redeals).
+function drawFromStock()
+{
+    if (!stockStack.isEmpty())
+    {
+        const n = min(stockDrawCount, stockStack.cards.length);
+        for (let i = 0; i < n; ++i)
+        {
+            const card = stockStack.cards.pop();
+            card.faceUp = true;
+            wasteStack.putCardOnTop(card, true);
+        }
+        window.sndPickup && window.sndPickup.play(wasteStack.pos);
+    }
+    else if (!wasteStack.isEmpty())
+    {
+        while (!wasteStack.isEmpty())
+        {
+            const card = wasteStack.cards.pop();
+            card.faceUp = false;
+            stockStack.putCardOnTop(card);
+        }
+        window.sndPlace && window.sndPlace.play(stockStack.pos);
+    }
+    else return;   // nothing to do (both empty)
+
+    saveState();
+}
+
+// Run flip + sound after a successful move, then persist and check for a win.
+function afterMove()
+{
+    if (flipExposedCards())
+        window.sndFlip && window.sndFlip.play();
+    saveState();
+    checkWin();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function checkWin()
+{
+    if (won) return;
+    let total = 0;
+    for (const s of cardStacks)
+        if (s.type === StackType.Foundation) total += s.cards.length;
+    if (total < 52) return;
+
+    won = true;
+    window.sndWin && window.sndWin.play();
+    showMenuToast({
+        icon:     '🎉',
+        title:    'You Win!',
+        text:     'Press NEW GAME to play again.',
+        duration: 5,
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function snapshot()
+{
+    return {
+        stacks: cardStacks.map(s => s.cards.map(c => [c.value, c.suit, c.faceUp ? 1 : 0])),
+    };
+}
+
+function saveState()
+{
+    stateUndo.push(snapshot());
+    if (stateUndo.length > 500) stateUndo.shift();   // cap memory
+    stateRedo = [];
+    try { saveData({saveState: stateUndo[stateUndo.length - 1]}); }
+    catch (e) { /* non-fatal */ }
+}
+
+function loadState(snap)
+{
+    if (!snap || !snap.stacks) return;
+    for (let i = 0; i < cardStacks.length; ++i)
+    {
+        const stack = cardStacks[i];
+        stack.cards = snap.stacks[i].map(([v, s, f]) => new Card(v, s, !!f));
+        stack.relayout();
+    }
+    // Clear any in-flight tweens — restored positions are authoritative.
+    for (const s of cardStacks) for (const c of s.cards) c.tweenFrom = null;
+    // Recompute win state from foundation counts (snapshot doesn't store it).
+    let total = 0;
+    for (const s of cardStacks)
+        if (s.type === StackType.Foundation) total += s.cards.length;
+    won = total >= 52;
+}
+
+function undoState()
+{
+    if (stateUndo.length <= 1) return;
+    stateRedo.push(stateUndo.pop());
+    loadState(stateUndo[stateUndo.length - 1]);
+}
+
+function redoState()
+{
+    if (!stateRedo.length) return;
+    const snap = stateRedo.pop();
+    stateUndo.push(snap);
+    loadState(snap);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate()
+{
+    if (bindPauseKey({ when: () => isPlaying() && !won })) return;
+    if (!isPlaying() || won) return;
+
+    if (mouseWasPressed(0) && handStack.isEmpty())
+    {
+        const hit = stackUnderPoint(mousePos);
+
+        // Stock click: deal to waste (or recycle when empty).
+        if (hit && hit.stack.type === StackType.Stock)
+        {
+            drawFromStock();
+            return;
+        }
+
+        if (hit && hit.card)
+        {
+            // Double-click shortcut: top card → first foundation that accepts it.
+            if (hit.card === hit.stack.topCard())
+            {
+                const now = time;
+                const isDouble = lastClick.card === hit.card && (now - lastClick.time) < 0.3;
+                lastClick = { card: hit.card, time: now };
+                if (isDouble)
+                {
+                    // Move the single top card into the hand temporarily so isMoveLegal works.
+                    const savedType = handStack.type;
+                    handStack.type = hit.stack.type;
+                    hit.stack.moveTopCard(handStack);
+                    let placedTarget = null;
+                    for (const f of cardStacks)
+                    {
+                        if (f.type === StackType.Foundation && isMoveLegal(f))
+                        {
+                            handStack.moveManyToStack(f, undefined, true);
+                            placedTarget = f;
+                            break;
+                        }
+                    }
+                    if (!placedTarget) handStack.moveManyToStack(hit.stack);   // put it back
+                    handStack.type = savedType;
+                    if (placedTarget)
+                    {
+                        window.sndFoundation && window.sndFoundation.play(placedTarget.topCard().pos);
+                        afterMove();
+                    }
+                    return;
+                }
+            }
+            // For cascades, allow picking up a tail-run starting at `hit.card`.
+            // For waste / foundation, only the top card is pickable.
+            const canPick = hit.stack.type === StackType.Cascade
+                ? tailIsValidRun(hit.stack, hit.card)
+                : (hit.card === hit.stack.topCard());
+            if (canPick)
+            {
+                pickupOrigin = hit.stack;
+                mouseHoldPos = hit.card.pos.subtract(mousePos);
+                handStack.type = hit.stack.type;
+                // Play BEFORE moveManyToStack so hit.card.pos is still the
+                // original slot, not the new handStack position.
+                window.sndPickup && window.sndPickup.play(hit.card.pos);
+                hit.stack.moveManyToStack(handStack, hit.card);
+            }
+        }
+    }
+
+    // Drag
+    if (!handStack.isEmpty())
+    {
+        const head = mousePos.add(mouseHoldPos);
+        for (let i = 0; i < handStack.cards.length; ++i)
+            handStack.cards[i].pos = head.add(vec2(0, -CARD_PITCH_Y * i));
+    }
+
+    if (mouseWasReleased(0) && !handStack.isEmpty())
+    {
+        // Use the top-of-hand card center as the hit point for target search.
+        const head = mousePos.add(mouseHoldPos);
+        let target = null, bestArea = 0;
+        for (const s of cardStacks)
+        {
+            if (s === pickupOrigin || !isMoveLegal(s)) continue;
+            const targetPos = s.topCard() ? s.topCard().pos : s.pos;
+            // Overlap area: width and height of intersection rectangle.
+            const dx = CARD_SIZE.x - abs(head.x - targetPos.x);
+            const dy = CARD_SIZE.y - abs(head.y - targetPos.y);
+            if (dx > 0 && dy > 0 && dx * dy > bestArea)
+            {
+                bestArea = dx * dy;
+                target = s;
+            }
+        }
+        const placed = target !== null;
+        // Snap-back tweens; drops on a valid target snap instantly because the
+        // card is already where the cursor left it.
+        handStack.moveManyToStack(target || pickupOrigin, undefined, !placed);
+        pickupOrigin = null;
+        if (placed)
+        {
+            window.sndPlace && window.sndPlace.play(target.topCard().pos);
+            afterMove();
+        }
+        else
+        {
+            window.sndInvalid && window.sndInvalid.play(mousePos);
+        }
+    }
+
+    const shift = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight');
+    if (keyWasPressed('KeyZ')) shift ? redoState() : undoState();
+    if (keyWasPressed('KeyY')) redoState();
+}
+function gameUpdatePost()
+{
+    // Recompute camera scale every frame so the table refits if the canvas
+    // resizes. setupLayout is cheap — just trig-less arithmetic.
+    setupLayout();
+
+    // Release tweenFrom on cards whose tween has finished. Done as a
+    // dedicated sweep (rather than as a side effect inside drawnPos) so
+    // hover-tint / legal-drop-highlight calls don't accidentally cancel
+    // the tween before the tweening render pass gets a chance to draw it.
+    for (const s of cardStacks)
+        for (const c of s.cards)
+            if (c.tweenFrom && c.tweenTimer.elapsed())
+                c.tweenFrom = null;
+
+    // Cursor feedback: open hand over a pickable card, closed hand while
+    // dragging, default otherwise. setCursor is a LittleJS built-in.
+    let cursor = 'default';
+    if (isPlaying() && !won)
+    {
+        if (!handStack.isEmpty())
+            cursor = 'grabbing';
+        else
+        {
+            const hit = stackUnderPoint(mousePos);
+            if (pickableTail(hit).length || (hit && hit.stack.type === StackType.Stock))
+                cursor = 'grab';
+        }
+    }
+    setCursor(cursor);
+}
+
+// Draws a card face-up or face-down depending on its state. `tint` is an
+// optional highlight veil.
+function drawAnyCard(c, pos, tint)
+{
+    if (c.faceUp) drawCard(pos, c.value, c.suit, {tint});
+    else          drawCardBack(pos, {tint});
+}
+
+function gameRender()
+{
+    if (!cardStacks.length) return;
+
+    // Empty-slot outlines (back layer): every cascade slot, plus the top-row
+    // stacks (stock / waste / foundations) whether or not they hold cards.
+    for (const s of cardStacks)
+        if (s.isEmpty() || s.type !== StackType.Cascade)
+            drawSlotOutline(s);
+
+    // Compute per-card tint for this frame. Color-coded:
+    //   blue  = "this would lift if you click" (hover, hand empty)
+    //   green = "this is a legal drop target" (dragging)
+    const HOVER_TINT = new Color(0.55, 0.8, 1.0, 0.4);
+    const DROP_TINT  = new Color(0.3, 1.0, 0.4, 0.4);
+    const hoverSet   = (handStack.isEmpty() && isPlaying() && !won)
+        ? new Set(pickableTail(stackUnderPoint(mousePos))) : null;
+    const dropTops   = new Set();
+    if (hintsEnabled && !handStack.isEmpty())
+    {
+        for (const s of cardStacks)
+        {
+            if (s === pickupOrigin || !isMoveLegal(s)) continue;
+            const top = s.topCard();
+            if (top) dropTops.add(top);
+        }
+    }
+    const tintFor = c =>
+        dropTops.has(c) ? DROP_TINT :
+        (hoverSet && hoverSet.has(c)) ? HOVER_TINT :
+        null;
+
+    // Stack cards — non-tweening pass. Tint is applied inside drawCard,
+    // immediately after the card content, so each card carries its own
+    // highlight instead of relying on a global second pass.
+    for (const s of cardStacks)
+        for (const c of s.cards)
+            if (!c.isTweening())
+                drawAnyCard(c, c.pos, tintFor(c));
+
+    // Empty legal-drop slots still need a phantom tint because there's
+    // no card to draw the overlay on.
+    if (hintsEnabled && !handStack.isEmpty())
+    {
+        for (const s of cardStacks)
+        {
+            if (s === pickupOrigin || !isMoveLegal(s) || !s.isEmpty()) continue;
+            drawCardShape(s.pos, CARD_SIZE, DROP_TINT);
+        }
+    }
+
+    // Tweening cards (stock deal, snap-back, auto-send-home) drawn last so the
+    // flight path stays on top of static cards.
+    for (const s of cardStacks)
+        for (const c of s.cards)
+            if (c.isTweening())
+                drawAnyCard(c, c.drawnPos(), null);
+
+    // Hand cards on top with a rounded-card shadow.
+    const shadow = new Color(0, 0, 0, 0.35);
+    for (const c of handStack.cards)
+        drawCardShape(c.pos.add(vec2(0.25, -0.25)),
+            CARD_SIZE.add(vec2(0.1, 0.1)), shadow);
+    for (const c of handStack.cards)
+        drawAnyCard(c, c.pos, null);
+}
+function gameRenderPost() {}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>
