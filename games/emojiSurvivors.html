@@ -12,9 +12,9 @@
 'use strict';
 
 // debug settings
-const DEBUG_SPRITES = 0;
-const DEBUG_AUTOSTART = 0;
-const DEBUG_GOD_MODE_DEFAULT = 0;
+const DEBUG_SPRITES = 1;
+const DEBUG_AUTOSTART = 1;
+const DEBUG_GOD_MODE_DEFAULT = 1;
 
 // engine settings, do not remove
 debugWatermark = false;
@@ -431,8 +431,6 @@ class Chest extends EngineObject
                                duration: 2.5, position: 'bottom-right'});
             }
         }
-        // fireworks burst — radial chainFlashes for the reward moment
-        emitRadialFlashes(this.pos, 3, 16, null, .5);
         if (sounds.chest && sounds.chest.play) sounds.chest.play(this.pos);
     }
 
@@ -1614,20 +1612,6 @@ function drawChainFlashes()
     }
 }
 
-// Emit an N-spoke chainFlash burst radiating from a point. Used standalone
-// by chest fireworks and as the visual half of radialBlast.
-function emitRadialFlashes(pos, radius, rayCount = 12, rayColor, rayDuration = .25)
-{
-    for (let i = 0; i < rayCount; ++i)
-    {
-        const a = i * 2 * PI / rayCount;
-        const tip = pos.add(vec2().setAngle(a, radius));
-        const flash = {a: pos.copy(), b: tip, t: time + rayDuration};
-        if (rayColor) flash.color = rayColor;
-        chainFlashes.push(flash);
-    }
-}
-
 // Pre-baked starburst explosion polygons. Each entry caches its own random
 // point list + rotation so re-rendering the same explosion across frames is
 // stable (just fades out + expands slightly). Drawn by drawExplosions().
@@ -1639,21 +1623,23 @@ const explosions = [];
 // painted on top. Fades + expands over ~.35 s.
 function pushExplosion(pos, radius)
 {
-    const pointCount = randInt(5, 8);             // 5, 6, or 7 points
+    const pointCount = randInt(5, 8)*2|0;             // 5, 6, or 7 points
     const outerPts = [];
     const innerPts = [];
     for (let i = 0; i < pointCount; ++i)
     {
         // Even base angle + a small jitter so points aren't perfectly spaced.
-        const a = i * 2 * PI / pointCount + rand(-.18, .18);
-        outerPts.push(vec2().setAngle(a, radius * rand(.82, 1.18)));
-        innerPts.push(vec2().setAngle(a, radius * .55 * rand(.8, 1.2)));
+        const a = i * 2 * PI / pointCount + rand(-.1, .1);
+        let r = (i%2?.5:1) * rand(.8, 1.2) * radius;
+        outerPts.push(vec2().setAngle(a, r));
+        innerPts.push(vec2().setAngle(a, r * rand(.5, .8)));
     }
+    const angle = rand(2 * PI);
     explosions.push({
         pos: pos.copy(),
         outerPts, innerPts,
-        outerAngle: rand(2 * PI),
-        innerAngle: rand(2 * PI),
+        outerAngle: angle,
+        innerAngle: angle,
         t: time + .35,
         duration: .35,
     });
@@ -1661,6 +1647,7 @@ function pushExplosion(pos, radius)
 
 function drawExplosions()
 {
+    setBlendMode(true);
     for (let i = explosions.length - 1; i >= 0; --i)
     {
         const e = explosions[i];
@@ -1675,16 +1662,17 @@ function drawExplosions()
         drawPoly(outer,
             new Color(1,  .55, .15, a * .85),    // orange fill, alpha eased
             .14,                                 // line width
-            new Color(1,  1,   .92, a),          // creamy-white outline
+            new Color(1,  1,   1, a),          // white outline
             e.pos, e.outerAngle);
         // Inner core — redder, no outline, slightly brighter alpha so it
         // punches against the orange shell.
         const inner = e.innerPts.map(p => p.scale(scale));
         drawPoly(inner,
             new Color(1,  .22, .12, a),
-            0, BLACK,
+            0, CLEAR_BLACK,
             e.pos, e.innerAngle);
     }
+    setBlendMode();
 }
 
 // Damage every enemy in `radius` and emit a radial chainFlash burst plus
@@ -1696,7 +1684,6 @@ function radialBlast(pos, radius, damage, rayCount = 12, rayColor, rayDuration =
     for (const e of enemies)
         if (e.pos.distance(pos) < radius)
             e.takeDamage(damage);
-    emitRadialFlashes(pos, radius, rayCount, rayColor, rayDuration);
     pushExplosion(pos, radius);
 }
 class FireballWeapon
@@ -4338,6 +4325,13 @@ function gameUpdatePost()
     // gameUpdatePost but before gameRenderPost. gameUpdatePost runs every
     // frame including while paused, so this works on the game-over menu.
     if (keyWasPressed('KeyT')) playerAI = !playerAI;
+
+    // Debug — while god mode is on, E drops a test explosion at the mouse
+    // cursor. Same shape as a Bomb blast: AOE damage + starburst + radial
+    // flash. Lets us QA the explosion visuals without waiting for a real
+    // bomb to land. mousePos is already in world space.
+    if (godMode && keyWasPressed('KeyE'))
+        radialBlast(mousePos.copy(), 4, 50);
 
     if (gameOver &&
         (keyWasPressed('KeyR') || (playerAI && gameOverFrameCount > 90)))
