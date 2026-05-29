@@ -51,103 +51,19 @@ const TOP_MARGIN    = 2.5;          // empty felt above the top row of stacks
 ///////////////////////////////////////////////////////////////////////////////
 // Card model
 //
+// Card, CardStack, shuffledDeck, drawCardSlot, updateCardTweens and CardHistory
+// come from templates/cards.js. This game only defines its own stack types and
+// cascade fan layout.
+//
 // suit: 0=♥ (red), 1=♠ (black), 2=♦ (red), 3=♣ (black)   — `suit % 2 === 0` is red
 // value: 0..12 (Ace..King)
 
 const StackType = { Cascade: 0, FreeCell: 1, Foundation: 2 };
 
-class Card
+// Cascade fan: cards stagger straight down from the anchor (Y-up world).
+function cascadeOffset(index)
 {
-    constructor(value, suit)
-    {
-        this.value = value;
-        this.suit  = suit;
-        this.pos   = vec2();        // world center; set when placed in a stack
-        this.tweenFrom     = null;  // null = no active tween
-        this.tweenTimer    = new Timer();
-        this.tweenDuration = 0.2;
-    }
-    startTween(fromPos)
-    {
-        this.tweenFrom = fromPos.copy();
-        this.tweenTimer.set(this.tweenDuration);
-    }
-    // True only while the tween is actively interpolating. Goes false the
-    // frame the timer elapses — the deferred sweep in gameUpdatePost
-    // clears tweenFrom shortly after.
-    isTweening()
-    {
-        return this.tweenFrom !== null && this.tweenTimer.active();
-    }
-    // Pure getter — no side effects. Caller can invoke this multiple times
-    // per frame (hover tint, legal-drop highlight, tweening pass) without
-    // accidentally cancelling the tween for everyone else.
-    drawnPos()
-    {
-        if (!this.tweenFrom) return this.pos;
-        if (this.tweenTimer.elapsed()) return this.pos;
-        return this.tweenFrom.lerp(this.pos, smoothStep(this.tweenTimer.getPercent()));
-    }
-}
-
-class CardStack
-{
-    constructor(anchorPos, type = StackType.Cascade)
-    {
-        this.pos   = anchorPos.copy();
-        this.type  = type;
-        this.cards = [];
-    }
-    topCard()    { return this.cards.length ? this.cards[this.cards.length - 1] : null; }
-    bottomCard() { return this.cards.length ? this.cards[0] : null; }
-    isEmpty()    { return !this.cards.length; }
-
-    cardOffset(index)
-    {
-        // Cascades stagger downward (Y-up world: lower y = lower on screen).
-        // Top row stacks keep cards centered on the anchor.
-        if (this.type !== StackType.Cascade) return vec2();
-        return vec2(0, -CARD_PITCH_Y * index);
-    }
-    relayout()
-    {
-        for (let i = 0; i < this.cards.length; ++i)
-            this.cards[i].pos = this.pos.add(this.cardOffset(i));
-    }
-    putCardOnTop(card, tween = false)
-    {
-        const oldPos = card.pos.copy();
-        this.cards.push(card);
-        card.pos = this.pos.add(this.cardOffset(this.cards.length - 1));
-        if (tween) card.startTween(oldPos);
-    }
-    moveTopCard(target, tween = false)
-    {
-        if (this.isEmpty()) return;
-        target.putCardOnTop(this.cards.pop(), tween);
-    }
-    moveManyToStack(target, startCard, tween = false)
-    {
-        const startIndex = startCard ? this.cards.indexOf(startCard) : 0;
-        if (startIndex < 0) return;
-        const moving = this.cards.splice(startIndex);
-        for (const c of moving) target.putCardOnTop(c, tween);
-    }
-}
-
-function drawSlotOutline(stack)
-{
-    // Draw a faint outlined rect at the stack anchor (cards will overlay it).
-    const isFoundation = stack.type === StackType.Foundation;
-    const fill   = new Color(0, 0, 0, isFoundation ? 0.18 : 0.30);
-    const stroke = new Color(1, 1, 1, isFoundation ? 0.55 : 0.30);
-    drawRect(stack.pos, CARD_SIZE, fill);
-    // Outline drawn as 4 thin rects (drawRect has no outline param).
-    const t = 0.12;
-    drawRect(vec2(stack.pos.x, stack.pos.y + CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
-    drawRect(vec2(stack.pos.x, stack.pos.y - CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
-    drawRect(vec2(stack.pos.x - CARD_SIZE.x/2, stack.pos.y), vec2(t, CARD_SIZE.y), stroke);
-    drawRect(vec2(stack.pos.x + CARD_SIZE.x/2, stack.pos.y), vec2(t, CARD_SIZE.y), stroke);
+    return vec2(0, -CARD_PITCH_Y * index);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -192,20 +108,10 @@ function newGame()
     for (let i = 0; i < 8; ++i)
     {
         const x = layoutColLeftX + i * COL_PITCH_X;
-        cardStacks.push(new CardStack(vec2(x, layoutCascadeTopY), StackType.Cascade));
+        cardStacks.push(new CardStack(vec2(x, layoutCascadeTopY), StackType.Cascade, cascadeOffset));
     }
 
-    // Build and shuffle a 52-card deck.
-    const deck = [];
-    for (let suit = 0; suit < 4; ++suit)
-        for (let value = 0; value < 13; ++value)
-            deck.push(new Card(value, suit));
-    // Fisher-Yates with LittleJS rand
-    for (let i = deck.length - 1; i > 0; --i)
-    {
-        const j = randInt(i + 1);
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
+    const deck = shuffledDeck();
 
     // Deal into cascades: 7,7,7,7,6,6,6,6
     const cascades = cardStacks.slice(8);   // 8 cascade stacks
@@ -216,9 +122,7 @@ function newGame()
 
     handStack    = new CardStack(vec2(0, 0), StackType.Cascade);  // off-screen until pickup
     pickupOrigin = null;
-    stateUndo    = [];
-    stateRedo    = [];
-    saveState();   // initial snapshot so undo never empties the stack
+    history.reset();   // clear undo/redo and seed the initial snapshot
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -234,8 +138,7 @@ let mouseHoldPos = vec2();
 let won = false;
 let hintsEnabled = true;     // toggled by OPTIONS → HINTS; gates the green legal-drop tint
 let lastClick = { card: null, time: -1 };
-let stateUndo = [];
-let stateRedo = [];
+let history = null;          // CardHistory (created in gameInit)
 
 
 
@@ -252,6 +155,9 @@ async function gameInit()
     const raw = getSaveData().saveState;
     if (raw) savedSnap = raw;
 
+    // Undo/redo + autosave. snapshot()/loadState() are the game-specific hooks.
+    history = new CardHistory({ serialize: snapshot, deserialize: loadState });
+
     newGame();
 
     if (savedSnap)
@@ -260,13 +166,7 @@ async function gameInit()
         if (won)
             newGame();          // saved game was already finished — deal fresh
         else
-        {
-            // Restore in-memory state AND re-write the save data (newGame
-            // just clobbered it with the fresh-deal snapshot).
-            stateUndo = [];
-            stateRedo = [];
-            saveState();
-        }
+            history.reset();    // re-seed history + save data with the restored game
     }
 
     // Match the engine's master volume to whatever the options slider starts at,
@@ -385,12 +285,6 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 // Input helpers
 
-function pointInRect(point, center, size)
-{
-    return abs(point.x - center.x) <= size.x / 2
-        && abs(point.y - center.y) <= size.y / 2;
-}
-
 // Returns { stack, card } for the topmost card under `worldPoint`, or
 // { stack, card: null } if the point is over an empty stack, or null.
 function stackUnderPoint(worldPoint)
@@ -401,19 +295,19 @@ function stackUnderPoint(worldPoint)
         if (s.type === StackType.Cascade)
         {
             for (let i = s.cards.length - 1; i >= 0; --i)
-                if (pointInRect(worldPoint, s.cards[i].pos, CARD_SIZE))
+                if (isOverlapping(worldPoint, CARD_SIZE, s.cards[i].pos))
                     return { stack: s, card: s.cards[i] };
         }
         else
         {
             const top = s.topCard();
-            if (top && pointInRect(worldPoint, top.pos, CARD_SIZE))
+            if (top && isOverlapping(worldPoint, CARD_SIZE, top.pos))
                 return { stack: s, card: top };
         }
     }
     // No card hit — check empty stack anchors so drops on empty stacks work.
     for (const s of cardStacks)
-        if (s.isEmpty() && pointInRect(worldPoint, s.pos, CARD_SIZE))
+        if (s.isEmpty() && isOverlapping(worldPoint, CARD_SIZE, s.pos))
             return { stack: s, card: null };
     return null;
 }
@@ -607,15 +501,6 @@ function snapshot()
     };
 }
 
-function saveState()
-{
-    stateUndo.push(snapshot());
-    if (stateUndo.length > 500) stateUndo.shift();   // cap memory
-    stateRedo = [];
-    try { saveData({saveState: stateUndo[stateUndo.length - 1]}); }
-    catch (e) { /* non-fatal */ }
-}
-
 function loadState(snap)
 {
     if (!snap || !snap.stacks) return;
@@ -634,20 +519,10 @@ function loadState(snap)
     won = total >= 52;
 }
 
-function undoState()
-{
-    if (stateUndo.length <= 1) return;
-    stateRedo.push(stateUndo.pop());
-    loadState(stateUndo[stateUndo.length - 1]);
-}
-
-function redoState()
-{
-    if (!stateRedo.length) return;
-    const snap = stateRedo.pop();
-    stateUndo.push(snap);
-    loadState(snap);
-}
+// Thin delegators to the shared CardHistory (cards.js).
+function saveState() { history.save(); }
+function undoState() { history.undoMove(); }
+function redoState() { history.redoMove(); }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
@@ -766,14 +641,8 @@ function gameUpdatePost()
     // resizes. setupLayout is cheap — just trig-less arithmetic.
     setupLayout();
 
-    // Release tweenFrom on cards whose tween has finished. Done as a
-    // dedicated sweep (rather than as a side effect inside drawnPos) so
-    // hover-tint / legal-drop-highlight calls don't accidentally cancel
-    // the tween before the tweening render pass gets a chance to draw it.
-    for (const s of cardStacks)
-        for (const c of s.cards)
-            if (c.tweenFrom && c.tweenTimer.elapsed())
-                c.tweenFrom = null;
+    // Release finished tweens (deferred sweep — see cards.js).
+    updateCardTweens(cardStacks);
 
     // Cursor feedback: open hand over a pickable card, closed hand while
     // dragging, default otherwise. setCursor is a LittleJS built-in.
@@ -794,7 +663,7 @@ function gameRender()
     // Empty-slot outlines (back layer).
     for (const s of cardStacks)
         if (s.isEmpty() || s.type !== StackType.Cascade)
-            drawSlotOutline(s);
+            drawCardSlot(s.pos, s.type === StackType.Foundation);
 
     // Compute per-card tint for this frame. Color-coded:
     //   blue  = "this would lift if you click" (hover, hand empty)

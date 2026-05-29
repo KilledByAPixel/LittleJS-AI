@@ -25,134 +25,304 @@ canvasClearColor = new Color().setHex('#264d40');   // felt green
 ///////////////////////////////////////////////////////////////////////////////
 // PLAYING CARDS TEMPLATE
 //
-// A pure-rendering sandbox for templates/cards.js. Builds a 52-card deck,
-// lays it out in a 13x4 grid, lets the user push cards around to verify
-// every face renders correctly.
+// A rules-free starter for a card game built on templates/cards.js. It shows
+// how to use the shared model layer:
+//   shuffledDeck()       — build a shuffled 52-card deck of Card instances
+//   CardStack(pos, type, offsetFn) — a pile; offsetFn fans cards downward
+//   stack.putCardOnTop / moveManyToStack(..., true) — move cards, tween = true
+//   updateCardTweens(stacks)        — clear finished tweens once per frame
+//   drawCard / drawCardBack         — render face-up / face-down (Card.faceUp)
+//   drawCardSlot(pos)               — empty-slot outline
+//   CardHistory({serialize, deserialize}) — undo/redo (in-memory here; it also
+//       autosaves through menus.js's saveData when that helper is loaded)
+//
+// There are NO legality rules — you can drag any card onto any pile. Add your
+// own isMoveLegal()/win check on top of this skeleton to make a real game.
 //
 // Controls:
-//   Mouse           — hover highlights a card
-//   Left-click+drag — pick up the hovered card; release to drop
-//   Right-click     — flip the hovered (or held) card face-up <-> face-down
-//   Mouse wheel     — rotate the held card
-//   R               — reset to grid layout
-//   ` (backtick)    — LittleJS debug overlay
+//   Click the stock (top-left) — deal a card to the waste; click when empty to
+//                                recycle the waste back into the stock
+//   Left-click + drag          — pick up a card (and everything on top of it in
+//                                a tableau column) and drop it on any pile
+//   Right-click                — flip the hovered/held card face-up <-> down
+//   Z / Shift+Z / Y            — undo / redo / redo
+//   R                          — reshuffle and redeal
+//   ` (backtick)               — LittleJS debug overlay
 
-const COL_PITCH = 7;        // horizontal spacing between cards in the grid
-const ROW_PITCH = 9.5;      // vertical spacing
-const ROT_STEP  = PI / 12;  // 15 deg per R press
+const COL_COUNT    = 7;        // tableau columns
+const COL_PITCH_X  = 7;        // horizontal spacing between piles
+const CARD_PITCH_Y = 1.6;      // vertical fan gap in a tableau column
+const TOP_MARGIN   = 2.5;      // empty felt above the top row
+const MAX_DEPTH    = 9;        // camera height budget, in fan-pitches
 
-let cards = [];
-let dragging = null;        // card currently glued to the cursor
-let dragOffset = vec2();
+// Opaque stack tags. Tableau columns fan; stock/waste pile on the anchor.
+const StackType = { Stock: 0, Waste: 1, Tableau: 2 };
 
-function dealGrid()
+// Tableau fan: each card sits CARD_PITCH_Y below the one before it (Y-up).
+function tableauOffset(index) { return vec2(0, -CARD_PITCH_Y * index); }
+
+let stacks       = [];
+let handStack    = null;        // cards currently glued to the cursor
+let pickupOrigin = null;
+let mouseHoldPos = vec2();
+let history      = null;        // CardHistory
+
+// Board anchors — recomputed by setupLayout (also refits on canvas resize).
+let layoutLeftX = -21, layoutTopY = 8, layoutCascadeY = -2;
+
+function setupLayout()
 {
-    cards = [];
-    // 13 columns (A..K) x 4 rows (suits) centered on world origin.
-    for (let suit = 0; suit < 4; ++suit)
-    for (let rank = 0; rank < 13; ++rank)
-    {
-        const x = (rank - 6) * COL_PITCH;
-        const y = (1.5 - suit) * ROW_PITCH;
-        cards.push({ rank, suit, pos: vec2(x, y), angle: 0, faceDown: false });
-    }
-    dragging = null;
+    layoutLeftX    = -((COL_COUNT - 1) * COL_PITCH_X) / 2;
+    layoutTopY     = 8;
+    layoutCascadeY = layoutTopY - CARD_SIZE.y - 1;
+
+    const topY    = layoutTopY + CARD_SIZE.y/2;
+    const bottomY = layoutCascadeY - CARD_PITCH_Y * MAX_DEPTH - CARD_SIZE.y/2;
+    const tableW  = (COL_COUNT - 1) * COL_PITCH_X + CARD_SIZE.x + 2;
+    const tableH  = topY - bottomY + TOP_MARGIN + 1;
+    cameraScale   = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
+    const viewH   = mainCanvasSize.y / cameraScale;
+    cameraPos     = vec2(0, topY + TOP_MARGIN - viewH/2);
 }
 
-function topmostCardAt(worldPos)
+function buildTable()
 {
-    // Iterate back-to-front: the last-drawn card is the topmost one.
-    for (let i = cards.length - 1; i >= 0; --i)
+    stacks = [];
+    const stock = new CardStack(vec2(layoutLeftX, layoutTopY), StackType.Stock);
+    const waste = new CardStack(vec2(layoutLeftX + COL_PITCH_X, layoutTopY), StackType.Waste);
+    stacks.push(stock, waste);
+
+    const cascades = [];
+    for (let i = 0; i < COL_COUNT; ++i)
     {
-        const c = cards[i];
-        // Hit test uses an axis-aligned approximation of the rotated card —
-        // good enough for a sandbox at small rotations and not worse than
-        // any other simple test at 45 degrees.
-        if (isOverlapping(worldPos, vec2(), c.pos, CARD_SIZE))
-            return c;
+        const c = new CardStack(vec2(layoutLeftX + i * COL_PITCH_X, layoutCascadeY),
+            StackType.Tableau, tableauOffset);
+        cascades.push(c);
+        stacks.push(c);
     }
+    window.stockStack = stock;
+    window.wasteStack = waste;
+
+    // Deal 4 face-up cards into each column; the rest become the face-down stock.
+    const deck = shuffledDeck();
+    let idx = 0;
+    for (let row = 0; row < 4; ++row)
+        for (let col = 0; col < COL_COUNT; ++col)
+        {
+            const card = deck[idx++];
+            card.faceUp = true;
+            cascades[col].putCardOnTop(card);
+        }
+    while (idx < deck.length)
+        stock.putCardOnTop(deck[idx++]);   // faceUp stays false
+
+    handStack    = new CardStack(vec2(0, 0), StackType.Tableau);
+    pickupOrigin = null;
+}
+
+// Returns { stack, card } for the topmost card under `worldPoint`, the empty
+// stack there ({card:null}), or null.
+function stackUnderPoint(worldPoint)
+{
+    for (const s of stacks)
+    {
+        if (s.type === StackType.Tableau)
+        {
+            for (let i = s.cards.length - 1; i >= 0; --i)
+                if (isOverlapping(worldPoint, CARD_SIZE, s.cards[i].pos))
+                    return { stack: s, card: s.cards[i] };
+        }
+        else
+        {
+            const top = s.topCard();
+            if (top && isOverlapping(worldPoint, CARD_SIZE, top.pos))
+                return { stack: s, card: top };
+        }
+    }
+    for (const s of stacks)
+        if (s.isEmpty() && isOverlapping(worldPoint, CARD_SIZE, s.pos))
+            return { stack: s, card: null };
     return null;
 }
 
-function bringToFront(card)
+// Cards that would lift if `hit` were grabbed now. Free-form: any face-up
+// tableau card takes everything stacked on top of it; waste takes its top
+// card; the stock is click-to-deal only.
+function pickableTail(hit)
 {
-    const i = cards.indexOf(card);
-    if (i < 0) return;
-    cards.splice(i, 1);
-    cards.push(card);
+    if (!hit || !hit.card) return [];
+    if (hit.stack.type === StackType.Stock) return [];
+    if (hit.stack.type === StackType.Tableau)
+    {
+        if (!hit.card.faceUp) return [];
+        return hit.stack.cards.slice(hit.stack.cards.indexOf(hit.card));
+    }
+    return hit.card === hit.stack.topCard() ? [hit.card] : [];
+}
+
+// Deal the top stock card to the waste, or recycle the waste when empty.
+function dealFromStock()
+{
+    if (!stockStack.isEmpty())
+    {
+        const card = stockStack.cards.pop();
+        card.faceUp = true;
+        wasteStack.putCardOnTop(card, true);
+    }
+    else if (!wasteStack.isEmpty())
+    {
+        while (!wasteStack.isEmpty())
+        {
+            const card = wasteStack.cards.pop();
+            card.faceUp = false;
+            stockStack.putCardOnTop(card);
+        }
+    }
+    else return;
+    history.save();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CardHistory hooks: serialize current state and apply a snapshot.
+function snapshot()
+{
+    return { stacks: stacks.map(s => s.cards.map(c => [c.value, c.suit, c.faceUp ? 1 : 0])) };
+}
+function loadState(snap)
+{
+    if (!snap || !snap.stacks) return;
+    for (let i = 0; i < stacks.length; ++i)
+    {
+        stacks[i].cards = snap.stacks[i].map(([v, s, f]) => new Card(v, s, !!f));
+        stacks[i].relayout();
+    }
+    for (const s of stacks) for (const c of s.cards) c.tweenFrom = null;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
     initCardAtlas();   // default look (matches games/freecell.html)
-    dealGrid();
-
-    // Auto-fit camera so the 13x4 grid + a margin fills the canvas.
-    const tableW = 13 * COL_PITCH + 4;
-    const tableH = 4 * ROW_PITCH + 6;
-    cameraScale = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
+    setupLayout();
+    history = new CardHistory({ serialize: snapshot, deserialize: loadState });
+    buildTable();
+    history.reset();   // seed the initial snapshot
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    // While dragging, the held card IS the hovered card.
-    const hovered = dragging || topmostCardAt(mousePos);
-
-    // Press-and-hold pickup: left-button down on a card grabs it; release drops it.
-    if (mouseWasPressed(0) && !dragging && hovered)
+    // Pickup / stock-deal on press.
+    if (mouseWasPressed(0) && handStack.isEmpty())
     {
-        dragging   = hovered;
-        dragOffset = hovered.pos.subtract(mousePos);
-        bringToFront(hovered);
+        const hit = stackUnderPoint(mousePos);
+        if (hit && hit.stack.type === StackType.Stock) { dealFromStock(); return; }
+        if (pickableTail(hit).length)
+        {
+            pickupOrigin = hit.stack;
+            mouseHoldPos = hit.card.pos.subtract(mousePos);
+            handStack.type = hit.stack.type;
+            hit.stack.moveManyToStack(handStack, hit.card);
+        }
     }
-    if (dragging && !mouseIsDown(0))
-        dragging = null;
 
-    if (dragging)
-        dragging.pos = mousePos.add(dragOffset);
+    // Drag: glue the held run to the cursor.
+    if (!handStack.isEmpty())
+    {
+        const head = mousePos.add(mouseHoldPos);
+        for (let i = 0; i < handStack.cards.length; ++i)
+            handStack.cards[i].pos = head.add(vec2(0, -CARD_PITCH_Y * i));
+    }
 
-    // Right-click flips. Works on a held card mid-drag (left button still down)
-    // or on a hovered card with no drag in progress.
-    if (mouseWasPressed(2) && hovered)
-        hovered.faceDown = !hovered.faceDown;
+    // Drop on the most-overlapped pile (any pile — no rules), else snap back.
+    if (mouseWasReleased(0) && !handStack.isEmpty())
+    {
+        const head = mousePos.add(mouseHoldPos);
+        let target = null, bestArea = 0;
+        for (const s of stacks)
+        {
+            if (s === pickupOrigin) continue;
+            const p  = s.topCard() ? s.topCard().pos : s.pos;
+            const dx = CARD_SIZE.x - abs(head.x - p.x);
+            const dy = CARD_SIZE.y - abs(head.y - p.y);
+            if (dx > 0 && dy > 0 && dx * dy > bestArea) { bestArea = dx * dy; target = s; }
+        }
+        handStack.moveManyToStack(target || pickupOrigin, undefined, true);   // tween home
+        if (target) history.save();
+        pickupOrigin = null;
+    }
 
-    // Mouse wheel rotates the held card. mouseWheel is +/-1 per notch and
-    // is reset to 0 by the engine each frame.
-    if (dragging && mouseWheel)
-        dragging.angle += mouseWheel * ROT_STEP;
+    // Right-click flips the held (or hovered) card.
+    if (mouseWasPressed(2))
+    {
+        const held = !handStack.isEmpty();
+        const card = held ? handStack.topCard() : (stackUnderPoint(mousePos) || {}).card;
+        if (card) { card.faceUp = !card.faceUp; if (!held) history.save(); }
+    }
 
-    if (keyWasPressed('KeyR')) dealGrid();
+    const shift = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight');
+    if (keyWasPressed('KeyZ')) shift ? history.redoMove() : history.undoMove();
+    if (keyWasPressed('KeyY')) history.redoMove();
+    if (keyWasPressed('KeyR')) { buildTable(); history.reset(); }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    setCursor(dragging ? 'grabbing'
-            : topmostCardAt(mousePos) ? 'grab'
-            : 'default');
+    setupLayout();              // refit camera on resize
+    updateCardTweens(stacks);   // release finished tweens
+
+    let cursor = 'default';
+    if (!handStack.isEmpty())
+        cursor = 'grabbing';
+    else
+    {
+        const hit = stackUnderPoint(mousePos);
+        if (pickableTail(hit).length || (hit && hit.stack.type === StackType.Stock))
+            cursor = 'grab';
+    }
+    setCursor(cursor);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+function drawAnyCard(c, pos, tint)
+{
+    if (c.faceUp) drawCard(pos, c.value, c.suit, {tint});
+    else          drawCardBack(pos, {tint});
+}
+
 function gameRender()
 {
-    const hovered  = dragging || topmostCardAt(mousePos);
-    const SHADOW   = new Color(0, 0, 0, 0.35);
-    const HOVER    = new Color(1, 1, 0.4, 0.30);
+    if (!stacks.length) return;
 
-    for (const c of cards)
-    {
-        const isHovered = c === hovered;
-        const liftPos   = c === dragging
-            ? c.pos.add(vec2(0.4, -0.4))    // larger shadow offset while dragging
-            : c.pos.add(vec2(0.15, -0.15)); // subtle resting shadow
-        drawCardShape(liftPos, CARD_SIZE.add(vec2(0.1, 0.1)), SHADOW, c.angle);
+    // Empty-slot outlines (back layer).
+    for (const s of stacks)
+        if (s.isEmpty() || s.type !== StackType.Tableau)
+            drawCardSlot(s.pos);
 
-        const opts = { angle: c.angle, tint: isHovered ? HOVER : null };
-        if (c.faceDown) drawCardBack(c.pos, opts);
-        else            drawCard(c.pos, c.rank, c.suit, opts);
-    }
+    // Hover highlight on the tail that would lift if clicked.
+    const HOVER    = new Color(0.55, 0.8, 1.0, 0.4);
+    const hoverSet = handStack.isEmpty()
+        ? new Set(pickableTail(stackUnderPoint(mousePos))) : null;
+    const tintFor  = c => (hoverSet && hoverSet.has(c)) ? HOVER : null;
+
+    for (const s of stacks)
+        for (const c of s.cards)
+            if (!c.isTweening())
+                drawAnyCard(c, c.pos, tintFor(c));
+
+    // Tweening cards drawn last so the flight path stays on top.
+    for (const s of stacks)
+        for (const c of s.cards)
+            if (c.isTweening())
+                drawAnyCard(c, c.drawnPos(), null);
+
+    // Held cards on top with a soft shadow.
+    const shadow = new Color(0, 0, 0, 0.35);
+    for (const c of handStack.cards)
+        drawCardShape(c.pos.add(vec2(0.25, -0.25)), CARD_SIZE.add(vec2(0.1, 0.1)), shadow);
+    for (const c of handStack.cards)
+        drawAnyCard(c, c.pos, null);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -161,7 +331,7 @@ function gameRenderPost()
     drawTextScreen('Playing Cards Template',
         vec2(mainCanvasSize.x / 2, 60), 50, WHITE, 4, BLACK);
     drawTextScreen(
-        'Left-click = pick up   Right-click = flip   Wheel = rotate   R = reset',
+        'Click stock = deal/recycle   Drag = move   Right-click = flip   Z/Y = undo/redo   R = reshuffle',
         vec2(mainCanvasSize.x / 2, 110), 22, hsl(0, 0, .85), 2, BLACK);
 }
 

@@ -313,3 +313,189 @@ function _drawPips(center, v, suitTile, color, angle, scale)
         drawTile(center.add(offset), pipSize, suitTile, color, angle);
     }
 }
+
+// =============================================================================
+// CARD GAME MODEL  (optional helpers shared by solitaire-style games)
+//
+// These build on the rendering API above to provide the parts every card
+// game re-implements: an animated Card, a generic CardStack with a pluggable
+// fan layout, a shuffled-deck builder, an empty-slot outline, a tween sweep,
+// and an undo/redo history. Game-specific rules (legal moves, win/lose,
+// per-stack layout, and what each `type` tag means) stay in the game.
+//
+//   const deck = shuffledDeck();                       // 52 shuffled Cards
+//   const col  = new CardStack(pos, MY_TYPE, fanFn);   // fanFn(i, cards)->Vector2
+//   col.putCardOnTop(deck.pop(), true);                // true = animate
+//   updateCardTweens(allStacks);                       // once per frame
+//   drawCardSlot(pos, isFoundation);                   // empty-slot outline
+//   const history = new CardHistory({serialize, deserialize});
+// =============================================================================
+
+// A single card with built-in move-tween animation. `faceUp` is honored by
+// games that hide cards (Klondike); games that don't simply never set it.
+class Card
+{
+    constructor(value, suit, faceUp = false)
+    {
+        this.value  = value;
+        this.suit   = suit;
+        this.faceUp = faceUp;
+        this.pos    = vec2();        // world center; set when placed in a stack
+        this.tweenFrom     = null;   // null = no active tween
+        this.tweenTimer    = new Timer();
+        this.tweenDuration = 0.2;
+    }
+    startTween(fromPos)
+    {
+        this.tweenFrom = fromPos.copy();
+        this.tweenTimer.set(this.tweenDuration);
+    }
+    // True only while actively interpolating; goes false the frame the timer
+    // elapses (updateCardTweens clears tweenFrom shortly after).
+    isTweening()
+    {
+        return this.tweenFrom !== null && this.tweenTimer.active();
+    }
+    // Pure getter — safe to call many times per frame (hover tint, drop
+    // highlight, tween render) without disturbing the tween.
+    drawnPos()
+    {
+        if (!this.tweenFrom) return this.pos;
+        if (this.tweenTimer.elapsed()) return this.pos;
+        return this.tweenFrom.lerp(this.pos, smoothStep(this.tweenTimer.getPercent()));
+    }
+}
+
+// A pile of cards anchored at a world position. `type` is an opaque tag the
+// game assigns (its own StackType). `offsetFn(index, cards) -> Vector2` gives
+// each card's offset from the anchor; omit it for piles that stack every card
+// on the anchor (stock, waste, foundations).
+class CardStack
+{
+    constructor(anchorPos, type = 0, offsetFn = null)
+    {
+        this.pos      = anchorPos.copy();
+        this.type     = type;
+        this.cards    = [];
+        this.offsetFn = offsetFn;
+    }
+    topCard()    { return this.cards.length ? this.cards[this.cards.length - 1] : null; }
+    bottomCard() { return this.cards.length ? this.cards[0] : null; }
+    isEmpty()    { return !this.cards.length; }
+
+    cardOffset(index)
+    {
+        return this.offsetFn ? this.offsetFn(index, this.cards) : vec2();
+    }
+    relayout()
+    {
+        for (let i = 0; i < this.cards.length; ++i)
+            this.cards[i].pos = this.pos.add(this.cardOffset(i));
+    }
+    putCardOnTop(card, tween = false)
+    {
+        const oldPos = card.pos.copy();
+        this.cards.push(card);
+        card.pos = this.pos.add(this.cardOffset(this.cards.length - 1));
+        if (tween) card.startTween(oldPos);
+    }
+    moveTopCard(target, tween = false)
+    {
+        if (this.isEmpty()) return;
+        target.putCardOnTop(this.cards.pop(), tween);
+    }
+    moveManyToStack(target, startCard, tween = false)
+    {
+        const startIndex = startCard ? this.cards.indexOf(startCard) : 0;
+        if (startIndex < 0) return;
+        const moving = this.cards.splice(startIndex);
+        for (const c of moving) target.putCardOnTop(c, tween);
+    }
+}
+
+// Returns a fresh, shuffled 52-card deck (Fisher-Yates with LittleJS rand).
+function shuffledDeck()
+{
+    const deck = [];
+    for (let suit = 0; suit < 4; ++suit)
+        for (let value = 0; value < 13; ++value)
+            deck.push(new Card(value, suit));
+    for (let i = deck.length - 1; i > 0; --i)
+    {
+        const j = randInt(i + 1);
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+}
+
+// Draws a faint empty-slot outline at `pos`. `subtle` uses a lighter look
+// (e.g. foundations) than the default tableau slot.
+function drawCardSlot(pos, subtle = false)
+{
+    const fill   = new Color(0, 0, 0, subtle ? 0.18 : 0.30);
+    const stroke = new Color(1, 1, 1, subtle ? 0.55 : 0.30);
+    drawRect(pos, CARD_SIZE, fill);
+    const t = 0.12;   // outline = 4 thin rects (drawRect has no outline param)
+    drawRect(vec2(pos.x, pos.y + CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+    drawRect(vec2(pos.x, pos.y - CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+    drawRect(vec2(pos.x - CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
+    drawRect(vec2(pos.x + CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
+}
+
+// Clears finished tweens. Call once per frame (e.g. gameUpdatePost) with the
+// stacks that hold cards. Done as a deferred sweep so hover/highlight reads of
+// drawnPos() during the frame don't cancel a tween early.
+function updateCardTweens(stacks)
+{
+    for (const s of stacks)
+        for (const c of s.cards)
+            if (c.tweenFrom && c.tweenTimer.elapsed())
+                c.tweenFrom = null;
+}
+
+// Undo/redo + autosave for a card game. The game supplies `serialize()`
+// (current state -> plain object) and `deserialize(snap)` (apply a snapshot).
+// Snapshots persist through menus.js saveData under `saveKey` when that helper
+// is present, so a reload can restore the latest position.
+class CardHistory
+{
+    constructor({ serialize, deserialize, saveKey = 'saveState', cap = 500 })
+    {
+        this.serialize   = serialize;
+        this.deserialize = deserialize;
+        this.saveKey     = saveKey;
+        this.cap         = cap;
+        this.undo = [];
+        this.redo = [];
+    }
+    // Clear history and seed it with the current state (call from newGame).
+    reset()
+    {
+        this.undo = [];
+        this.redo = [];
+        this.save();
+    }
+    // Push the current state as a new undo point and persist it.
+    save()
+    {
+        this.undo.push(this.serialize());
+        if (this.undo.length > this.cap) this.undo.shift();   // cap memory
+        this.redo = [];
+        const snap = this.undo[this.undo.length - 1];
+        if (typeof saveData === 'function')
+            try { saveData({ [this.saveKey]: snap }); } catch (e) { /* non-fatal */ }
+    }
+    undoMove()
+    {
+        if (this.undo.length <= 1) return;   // keep the initial snapshot
+        this.redo.push(this.undo.pop());
+        this.deserialize(this.undo[this.undo.length - 1]);
+    }
+    redoMove()
+    {
+        if (!this.redo.length) return;
+        const snap = this.redo.pop();
+        this.undo.push(snap);
+        this.deserialize(snap);
+    }
+}
