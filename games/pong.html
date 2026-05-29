@@ -33,9 +33,9 @@ showEngineVersion = false; // Hide engine version console display
     const paddleSpeed = 18;
     const aiSpeed     = 14;          // capped so fast, wide shots can beat the AI
 
-    const ballStartSpeed  = 17;      // serve speed at the start of each rally
-    const ballSpeedup     = 5.2;     // added to ball speed on every paddle hit
-    const maxBallSpeed    = 42;      // rally speed ceiling
+    const ballStartSpeed  = 30;      // serve speed at the start of each rally
+    const ballSpeedup     = 5;     // added to ball speed on every paddle hit
+    const maxBallSpeed    = 70;      // rally speed ceiling
     const maxBounceAngle  = 1.15;    // ~66 deg off horizontal at the paddle edges
 
     // ball spin (curveball): a moving paddle imparts spin that bends the ball's path
@@ -549,7 +549,7 @@ showEngineVersion = false; // Hide engine version console display
             drawRect(right.pos, rPadSize, rightCol);
 
             // ball — glow halo (sized with speed, flaring red & pulsing in the danger zone)
-            const speedT = clamp((ball.vel.length() - ballStartSpeed) / (maxBallSpeed - ballStartSpeed), 0, 1);
+            const speedT = clamp((ball.vel.length() - ballStartSpeed) / max(1,maxBallSpeed - ballStartSpeed), 0, 1);
             const dangerPulse = dangerLevel * (.6 + .4 * Math.sin(time * 22));
             const haloCol = colorLerp(ballTintColor(), dangerColor, dangerLevel);
             drawRect(
