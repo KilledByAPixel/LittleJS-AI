@@ -3345,7 +3345,7 @@ async function gameInit()
     // Title screen — stats refresh each time it's shown.
     createMenu({
         id: 'title',
-        title: '🎉 EMOJI SURVIVORS 🎉',
+        title: '🤣 EMOJI SURVIVORS 🎉',
         subtitle: 'Survive the ☠️ Reaper',
         dismissable: false,
         onShow: () =>
@@ -4198,7 +4198,7 @@ function buildResultsItems(isNewBest)
     const items = [];
     if (isNewBest)
     {
-        items.push({type: 'label', text: '🎉  NEW BEST!  🎉'});
+        items.push({type: 'label', text: '🎉  NEW BEST!  👍'});
         items.push({type: 'separator'});
     }
     items.push({type: 'label', text: '⏱  ' + formatTime(elapsedTime)});
@@ -4224,7 +4224,7 @@ function showGameOverMenu()
     items.push({type: 'button', label: 'BACK TO TITLE', onClick: goToTitle});
     createMenu({
         id: 'gameover',
-        title: 'YOU DIED',
+        title: 'YOU DIED 😭',
         subtitle: '',
         dismissable: false,
         items,
