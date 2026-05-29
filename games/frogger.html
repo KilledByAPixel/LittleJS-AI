@@ -196,7 +196,7 @@
     // Difficulty ramp by level. diff = 0 on level 1 (the authored baseline).
     const diff = level - 1;
     const speedScale   = .5 * (1 + diff * .16);             // everything faster each level
-    const densityBonus = Math.min(3, Math.floor(diff / 2)); // +1 car/lane every 2 levels, cap +3
+    const densityBonus = Math.min(2, Math.floor(diff / 3)); // +1 car/lane every 3 levels, cap +2
     const totalSpan = LEVEL_W + OFFSCREEN_PAD*2;
     // Level 1 alternates directions for a clean baseline; later levels randomize.
     const laneDir = i => (level > 1) ? (rand() < .5 ? 1 : -1) : (i%2 ? -1 : 1);
