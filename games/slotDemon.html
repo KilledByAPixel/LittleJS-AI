@@ -143,6 +143,57 @@ function rollSymbol()
     return BALANCE.symbols[0];
 }
 
+// ---- WIN FX + SOUNDS ----
+let floatTexts = [];   // {text, pos, color, life}
+function spawnFloatText(text, pos, color) { floatTexts.push({text, pos: pos.copy(), color, life: 1}); }
+function spawnWinBurst(pos, big)
+{
+    // ParticleEmitter(pos, angle, emitSize, emitTime, emitRate, emitConeAngle,
+    //   tileInfo, colorStartA, colorStartB, colorEndA, colorEndB, particleTime,
+    //   sizeStart, sizeEnd, speed, angleSpeed, damping, angleDamping,
+    //   gravityScale, particleConeAngle, fadeRate, randomness, collideTiles, additive)
+    // Finite burst: emitTime ~0.1s, emitRate sized so total ≈ count.
+    const count = big ? 60 : 20;
+    new ParticleEmitter(
+        pos,                          // pos
+        0,                            // angle
+        1.5,                          // emitSize (circle diameter)
+        0.1,                          // emitTime (short burst)
+        count / 0.1,                  // emitRate -> ~count particles
+        2.2,                          // emitConeAngle (mostly upward spread)
+        tile(wildTileIndex()),        // tileInfo (star/wild glyph)
+        hsl(.13, 1, .7),              // colorStartA (gold)
+        hsl(.06, 1, .6),             // colorStartB (orange)
+        hsl(.13, 1, .7, 0),           // colorEndA (gold, alpha 0)
+        hsl(.06, 1, .6, 0),           // colorEndB (orange, alpha 0)
+        0.5,                          // particleTime
+        big ? 1.0 : 0.7,              // sizeStart
+        0.1,                          // sizeEnd
+        0.3,                          // speed (PER FRAME, <= 0.4)
+        0.1,                          // angleSpeed
+        0.95,                         // damping
+        1,                            // angleDamping
+        1,                            // gravityScale (fall back down)
+        PI,                           // particleConeAngle
+        0.2                           // fadeRate
+    );
+}
+
+let sfxWin, sfxSpin;   // SoundGenerator instances
+function buildSounds()
+{
+    // Short dry low click for each spin.
+    sfxSpin = new SoundGenerator({
+        volume: .4, frequency: 180, attack: 0, release: .06,
+        shapeCurve: 0, slide: -2, noise: .05,
+    });
+    // Brighter, richer chime for a win.
+    sfxWin = new SoundGenerator({
+        volume: .6, frequency: 520, attack: .01, release: .25,
+        shapeCurve: 1, slide: 1, pitchJump: 220, pitchJumpTime: .06,
+    });
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // GRID MATH + MACHINE ENTITY
 // Grid-as-truth: each machine owns an integer `cell`; its world pixel pos is
@@ -158,6 +209,7 @@ const nextFreeCell = () => {
     const i = machines.length;
     return vec2(i % GRID_COLS, Math.floor(i / GRID_COLS));
 };
+const machineAtPos = (p) => machines.find(m => isOverlapping(m.pos, m.size, p, vec2(0.1)));
 
 class Machine extends EngineObject
 {
@@ -178,6 +230,36 @@ class Machine extends EngineObject
         if (this.flash > 0) this.flash = max(0, this.flash - timeDelta*3);
         super.update();
     }
+    spin()
+    {
+        const wildChance = this.wildCount * BALANCE.wildChancePerWild;
+        for (let i=0;i<this.reels.length;++i)
+        {
+            if (rand() < wildChance) this.reels[i] = '__WILD__';
+            else this.reels[i] = rollSymbol();
+        }
+        // win = all non-wild reels share one symbol (wilds match anything); all-wild = top jackpot
+        const real = this.reels.filter(r => r !== '__WILD__');
+        let win = null;
+        if (real.length === 0) win = BALANCE.symbols[BALANCE.symbols.length-1];
+        else if (real.every(r => r === real[0])) win = real[0];
+        if (win)
+        {
+            const mult = (1 + 0.5*(this.level-1)) * (this.assignedDemon ? DEMON_TYPES[this.assignedDemon.type].payoutMult : 1);
+            const payout = Math.ceil(BALANCE.payoutBase * win.payout * mult);
+            cash += payout;
+            this.onWin(payout, win);
+        }
+    }
+    onWin(payout, sym)
+    {
+        this.flash = 1;
+        spawnFloatText('+' + payout, this.pos, hsl(.13,1,.6));
+        const big = sym === BALANCE.symbols[BALANCE.symbols.length-1] || payout >= 100;
+        if (big && isScreenShakeEnabled()) addScreenShake(0.4, 0.3);
+        sfxWin.play(this.pos, big ? 1 : 0.5);
+        spawnWinBurst(this.pos, big);
+    }
     render() {}   // suppress default; we draw via draw() from gameRender for layer control
     draw()
     {
@@ -190,7 +272,8 @@ class Machine extends EngineObject
         {
             const rp = this.pos.add(vec2((i-(this.reels.length-1)/2)*slotW, 0.6));
             drawRect(rp, vec2(slotW*0.9, slotW*0.9), hsl(0,0,.95));
-            drawTile(rp, vec2(slotW*0.8), tile(symbolTileIndex(this.reels[i])));
+            const tileIndex = this.reels[i] === '__WILD__' ? wildTileIndex() : symbolTileIndex(this.reels[i]);
+            drawTile(rp, vec2(slotW*0.8), tile(tileIndex));
         }
         // level label
         drawText('Lv ' + this.level, this.pos.add(vec2(0, -this.size.y/2+0.6)), 0.8, hsl(0,0,1));
@@ -217,9 +300,6 @@ function newGame()
 // MENU SYSTEM TEMPLATE
 // Demonstrates createMenu() and createToolbar() from menus.js.
 
-let playerPos = vec2(0, 0);
-const playerSize = vec2(2, 2);
-
 ///////////////////////////////////////////////////////////////////////////////
 // Pause the engine whenever any menu (including alert/confirm dialogs) is
 // visible. setMenuVisibilityCallback fires for every show/hide, so we don't
@@ -241,6 +321,9 @@ async function gameInit()
 
     // Build the procedural sprite atlas (demons + symbol/wild emoji tiles).
     buildSprites();
+
+    // Gameplay sfx (SoundGenerator — gameplay audio per project rules).
+    buildSounds();
 
     // Dark red-black hellish backdrop for the pit.
     canvasClearColor = hsl(0, .3, .06);
@@ -418,25 +501,23 @@ async function gameInit()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
-    // Esc / gamepad Start opens the pause menu while playing. Gated on
-    // isPlaying so the shortcut never fires before the player has clicked
-    // PLAY (when title is up, gameUpdate is paused anyway, so this is
-    // defensive — but also makes the intent obvious to readers).
-    if (isPlaying() && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    // Esc / gamepad Start opens the pause menu while playing. bindPauseKey
+    // (menus.js) polls every frame, guards on isMenuVisible(), plays the
+    // activate sound, and swallows the press. Early-return when it fires.
+    if (bindPauseKey({ when: () => isPlaying() })) return;
+    if (!isPlaying()) return;
+
+    // Click an UNMANNED machine to spin it (demon-driven spins come later).
+    if (mouseWasPressed(0) && !isMenuVisible())
     {
-        playMenuSound('activate');
-        showMenu('pause');
-        inputClearKey('Escape');
-        // Partial clear (only the pressed bit, not down) so the engine
-        // doesn't re-trigger pressed every frame the button is held.
-        inputClearKey(9, 1, false, true, false);
+        const m = machineAtPos(mousePos);
+        if (m && !m.assignedDemon) { m.spin(); sfxSpin.play(m.pos); }
+        // (demon-refresh + camera-pan handled in later tasks)
     }
 
-    if (isPlaying())
-    {
-        const dir = keyDirection();
-        playerPos = playerPos.add(dir.scale(.2));
-    }
+    // advance floating win texts
+    for (const f of floatTexts) { f.pos.y += timeDelta*2; f.life -= timeDelta; }
+    floatTexts = floatTexts.filter(f => f.life > 0);
 }
 
 function gameUpdatePost()
@@ -449,16 +530,21 @@ function gameRender()
     // menu is up, gameUpdate is frozen but gameRender still runs, so the pit
     // sits as a static backdrop behind the menu.
     machines.forEach(m => m.draw());
+
+    // floating win texts (rise and fade)
+    for (const f of floatTexts)
+        drawText(f.text, f.pos, 1.2, new Color(f.color.r, f.color.g, f.color.b, f.life));
 }
 
 function gameRenderPost()
 {
-    // "Menu System Demo" header — title-screen banner only. Hide once
-    // the player is actually playing. The title menu is always up when
-    // !isPlaying, so no "click to play" prompt is needed.
-    if (!isPlaying())
-        drawTextScreen('Menu System Demo', vec2(mainCanvasSize.x/2, 150),
-            32, hsl(0, 0, 1), 4, hsl(0, 0, 0));
+    // Cash HUD — always visible during play. Drawn here (screen pixels)
+    // rather than via a toolbar onUpdate: menus.js's per-frame onUpdate loop
+    // only ticks menu items, not toolbar items, so a toolbar label would not
+    // refresh live.
+    if (isPlaying())
+        drawTextScreen('$' + Math.floor(cash) + '   👹 ' + demons.length,
+            vec2(110, 40), 40, hsl(.13,1,.7), 4, hsl(0,0,0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
