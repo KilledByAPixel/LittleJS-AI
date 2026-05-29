@@ -40,9 +40,6 @@ const BOARD_Y = -BOARD_H_VISIBLE / 2;
 ///////////////////////////////////////////////////////////////////////////////
 // Gem factories
 
-let _nextPowerGemId = 1;
-function nextPowerGemId() { return _nextPowerGemId++; }
-
 function gemRegular(color) { return { type:'regular', color, powerGemId:-1 }; }
 function gemCrash(color)   { return { type:'crash',   color }; }
 function gemCounter(color, countdown) { return { type:'counter', color, countdown }; }
@@ -61,188 +58,101 @@ function emptyGrid()
 function isRegular(g) { return g && g.type === 'regular'; }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Power gem rectangle merge (pure function over grid)
+// Power gems — flag-then-cluster model (design doc §7.1)
 //
-// Authentic SPF II behavior: a power gem is an axis-aligned rectangle of
-// 2x2+ same-color regular gems. Power gems never spontaneously split — they
-// can only grow (or merge with another PG of the same color when the result
-// is still a rectangle). Algorithm:
-//   1. Existing PG pass: for each existing PG, find the maximum rectangle
-//      that contains all its cells AND is still all same-color regulars.
-//      Greedy extend (left/right/down/up) until no more expansion possible.
-//      This preserves PG shape and grows it as much as possible, absorbing
-//      adjacent same-color cells (including other same-color PGs) along the way.
-//   2. New PG pass: enumerate same-color rectangles of unclaimed cells,
-//      greedy-pick largest first to form new PGs.
-//   3. Cleanup: any cell with a stale powerGemId (e.g. after a diamond carved
-//      a hole) that isn't covered by any rectangle resets to -1 (loose).
+// A power gem is monochrome regular gems forming a solid rectangle, BUT once
+// two same-color power gems touch they count as one larger gem regardless of
+// the combined shape (doc §7.3). The clone-breaking mistake is tracking "the
+// one true rectangle"; instead we:
+//
+//   1. FLAG every cell covered by ANY axis-aligned >=2x2 monochrome rectangle
+//      of regular gems. (A cell is "in a power gem" if some 2x2+ block covers it.)
+//   2. CLUSTER flagged cells into power gems by 4-connectivity (same color).
+//      Each connected blob shares one powerGemId — so a 2x2 touching a 2x3
+//      becomes a single size-10 gem, and (because gravity groups cells by
+//      powerGemId via buildGravityComponents) that blob falls as one rigid
+//      unit and never shears. Loose (non-flagged) regular cells get id -1.
+//
+// powerGemId is reassigned from scratch every call; the values are arbitrary,
+// only "same id == same rigid power gem within this grid" matters. Recomputing
+// after every settle is stable: rigid gravity preserves a blob's shape, so the
+// same flags/clusters re-derive — a power gem only loses cells when destroyed.
+//
+// Returns true if any cell's power membership (in-a-gem vs loose) changed, so
+// the resolution loop can tell when the board has settled.
 
 function mergePowerGems(grid)
 {
-    let changed = false;
-    const claimed = [...Array(BOARD_W)].map(() => Array(BOARD_H).fill(false));
+    const isPow = (x, y) => isRegular(grid[x][y]) && grid[x][y].powerGemId >= 0;
+    const colorAt = (x, y) => isRegular(grid[x][y]) ? grid[x][y].color : -1;
 
-    // Step 1: collect existing PGs by id, in scan order so the lowest-coord
-    // PG is processed first (deterministic).
-    const existingPGs = new Map();
-    for (let x = 0; x < BOARD_W; x++)
-    for (let y = 0; y < BOARD_H; y++)
-    {
-        const g = grid[x][y];
-        if (!isRegular(g) || g.powerGemId < 0) continue;
-        if (!existingPGs.has(g.powerGemId))
-            existingPGs.set(g.powerGemId, { cells: [], color: g.color });
-        existingPGs.get(g.powerGemId).cells.push([x, y]);
-    }
+    // Snapshot prior membership (for the changed flag).
+    const before = [...Array(BOARD_W)].map((_, x) =>
+        Array.from({length: BOARD_H}, (_, y) => isPow(x, y)));
 
-    const sameColorAvailable = (x, y, color) =>
-    {
-        if (!inBounds(x, y) || claimed[x][y]) return false;
-        const c = grid[x][y];
-        return isRegular(c) && c.color === color;
-    };
-
-    for (const [id, pg] of existingPGs)
-    {
-        // Bounding box of un-claimed PG cells. (Cells already claimed by an
-        // earlier PG's growth mean this PG was absorbed; we'll skip it.)
-        let minX = BOARD_W, minY = BOARD_H, maxX = -1, maxY = -1, anyUnclaimed = false;
-        for (const [x, y] of pg.cells)
-        {
-            if (claimed[x][y]) continue;
-            anyUnclaimed = true;
-            minX = min(minX, x); minY = min(minY, y);
-            maxX = max(maxX, x); maxY = max(maxY, y);
-        }
-        if (!anyUnclaimed) continue;
-
-        // Validate the bbox is fully same-color regulars (it might not be if
-        // some cells were carved out externally, e.g. by diamond).
-        let validBbox = true;
-        for (let x = minX; x <= maxX && validBbox; x++)
-        for (let y = minY; y <= maxY; y++)
-            if (!sameColorAvailable(x, y, pg.color)) { validBbox = false; break; }
-
-        if (!validBbox)
-        {
-            // PG is no longer a filled rectangle. Its remaining cells will be
-            // reset to loose in step 3, then step 2 might re-form smaller PGs.
-            continue;
-        }
-
-        // Greedy expand in each cardinal direction until no growth possible.
-        let extended = true;
-        while (extended)
-        {
-            extended = false;
-            // Left
-            if (minX > 0)
-            {
-                let ok = true;
-                for (let y = minY; y <= maxY && ok; y++)
-                    if (!sameColorAvailable(minX - 1, y, pg.color)) { ok = false; break; }
-                if (ok) { minX--; extended = true; continue; }
-            }
-            // Right
-            if (maxX < BOARD_W - 1)
-            {
-                let ok = true;
-                for (let y = minY; y <= maxY && ok; y++)
-                    if (!sameColorAvailable(maxX + 1, y, pg.color)) { ok = false; break; }
-                if (ok) { maxX++; extended = true; continue; }
-            }
-            // Down
-            if (minY > 0)
-            {
-                let ok = true;
-                for (let x = minX; x <= maxX && ok; x++)
-                    if (!sameColorAvailable(x, minY - 1, pg.color)) { ok = false; break; }
-                if (ok) { minY--; extended = true; continue; }
-            }
-            // Up
-            if (maxY < BOARD_H - 1)
-            {
-                let ok = true;
-                for (let x = minX; x <= maxX && ok; x++)
-                    if (!sameColorAvailable(x, maxY + 1, pg.color)) { ok = false; break; }
-                if (ok) { maxY++; extended = true; continue; }
-            }
-        }
-
-        for (let x = minX; x <= maxX; x++)
-        for (let y = minY; y <= maxY; y++)
-        {
-            claimed[x][y] = true;
-            const g = grid[x][y];
-            if (g.powerGemId !== id) { g.powerGemId = id; changed = true; }
-        }
-    }
-
-    // Step 2: enumerate all valid rectangles of unclaimed same-color regulars,
-    // greedy-take largest. Forms new PGs from leftover cells.
-    const candidates = [];
+    // Step 1: flag cells covered by any >=2-wide AND >=2-tall monochrome rect.
+    const flag = [...Array(BOARD_W)].map(() => Array(BOARD_H).fill(false));
     for (let x1 = 0; x1 < BOARD_W; x1++)
     for (let y1 = 0; y1 < BOARD_H; y1++)
     {
-        if (claimed[x1][y1]) continue;
-        const seed = grid[x1][y1];
-        if (!isRegular(seed)) continue;
-        const color = seed.color;
-
-        for (let x2 = x1 + 1; x2 < BOARD_W; x2++)
+        const color = colorAt(x1, y1);
+        if (color < 0) continue;
+        // widest same-color run rightward from (x1,y1)
+        let xRun = x1;
+        while (xRun + 1 < BOARD_W && colorAt(xRun + 1, y1) === color) xRun++;
+        // for each width >=2, climb rows while the full-width band stays mono
+        for (let x2 = x1 + 1; x2 <= xRun; x2++)
         {
-            if (!sameColorAvailable(x2, y1, color)) break;
-            for (let y2 = y1 + 1; y2 < BOARD_H; y2++)
+            let y2 = y1, canClimb = true;
+            while (canClimb && y2 + 1 < BOARD_H)
             {
-                let valid = true;
-                for (let x = x1; x <= x2 && valid; x++)
-                    if (!sameColorAvailable(x, y2, color)) { valid = false; break; }
-                if (!valid) break;
-                candidates.push({ x1, y1, x2, y2, area: (x2 - x1 + 1) * (y2 - y1 + 1) });
+                for (let x = x1; x <= x2; x++)
+                    if (colorAt(x, y2 + 1) !== color) { canClimb = false; break; }
+                if (canClimb) y2++;
+            }
+            if (y2 >= y1 + 1)   // height >=2 (width already >=2)
+                for (let x = x1; x <= x2; x++)
+                for (let y = y1; y <= y2; y++)
+                    flag[x][y] = true;
+        }
+    }
+
+    // Reset all ids, then cluster flagged same-color cells by 4-connectivity.
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+        if (isRegular(grid[x][y])) grid[x][y].powerGemId = -1;
+
+    let nextId = 1;
+    const seen = [...Array(BOARD_W)].map(() => Array(BOARD_H).fill(false));
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (let sx = 0; sx < BOARD_W; sx++)
+    for (let sy = 0; sy < BOARD_H; sy++)
+    {
+        if (!flag[sx][sy] || seen[sx][sy]) continue;
+        const color = colorAt(sx, sy);
+        const id = nextId++;
+        const stack = [[sx, sy]];
+        seen[sx][sy] = true;
+        while (stack.length)
+        {
+            const [x, y] = stack.pop();
+            grid[x][y].powerGemId = id;
+            for (const [dx, dy] of dirs)
+            {
+                const nx = x + dx, ny = y + dy;
+                if (!inBounds(nx, ny) || seen[nx][ny]) continue;
+                if (!flag[nx][ny] || colorAt(nx, ny) !== color) continue;
+                seen[nx][ny] = true;
+                stack.push([nx, ny]);
             }
         }
     }
 
-    candidates.sort((a, b) =>
-    {
-        if (b.area !== a.area) return b.area - a.area;
-        if (a.x1 !== b.x1) return a.x1 - b.x1;
-        return a.y1 - b.y1;
-    });
-
-    for (const r of candidates)
-    {
-        let anyClaimed = false;
-        for (let x = r.x1; x <= r.x2 && !anyClaimed; x++)
-        for (let y = r.y1; y <= r.y2; y++)
-            if (claimed[x][y]) { anyClaimed = true; break; }
-        if (anyClaimed) continue;
-
-        const newId = nextPowerGemId();
-        for (let x = r.x1; x <= r.x2; x++)
-        for (let y = r.y1; y <= r.y2; y++)
-        {
-            claimed[x][y] = true;
-            grid[x][y].powerGemId = newId;
-            changed = true;
-        }
-    }
-
-    // Step 3: stale powerGemId cleanup (cells that used to be in a PG but
-    // didn't survive into any rectangle this pass — only happens when an
-    // external clear, like a diamond, carved out part of a PG).
+    // changed = did any cell flip between in-a-gem and loose?
     for (let x = 0; x < BOARD_W; x++)
     for (let y = 0; y < BOARD_H; y++)
-    {
-        const g = grid[x][y];
-        if (isRegular(g) && g.powerGemId >= 0 && !claimed[x][y])
-        {
-            g.powerGemId = -1;
-            changed = true;
-        }
-    }
-
-    return changed;
+        if (before[x][y] !== isPow(x, y)) return true;
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -532,9 +442,13 @@ function chainBonusFor(wave)
     return 34;
 }
 
+// Counter gems are cheap "filler" — worth half a regular when destroyed (§13).
+const COUNTER_GEM_VALUE = 0.5;
+
 // result = {
 //   regularsDestroyed: number (loose, not part of power gems),
 //   crashesDestroyed: number,
+//   countersDestroyed: number (optional — counter gems swept up this clear),
 //   powerGemSizes: number[]  // each size of a power gem destroyed this clear
 // }
 // opts = { chainWave, isDiamondInitiated, allClear, characterMultiplier }
@@ -544,6 +458,7 @@ function computeDamage(result, opts)
     const isDiamond = !!opts.isDiamondInitiated;
     const allClear = !!opts.allClear;
     const mult = opts.characterMultiplier || 1.0;
+    const counters = result.countersDestroyed || 0;
 
     // Sum power gem damage; simultaneous bonus = +2 per extra power gem
     let pg = 0;
@@ -552,9 +467,11 @@ function computeDamage(result, opts)
     if (result.powerGemSizes.length > 1)
         pg += 2 * (result.powerGemSizes.length - 1);
 
-    let total = pg + result.regularsDestroyed + result.crashesDestroyed;
+    let total = pg + result.regularsDestroyed + result.crashesDestroyed
+              + counters * COUNTER_GEM_VALUE;
 
-    // Decade bonus: +1 per 10n+1 threshold of (regulars + power gem cells)
+    // Decade bonus: +1 per 10n+1 threshold of (regulars + power gem cells).
+    // Counter gems are excluded from the decade count (doc §13).
     const decadeBase = result.regularsDestroyed + pgTotalCells;
     if (decadeBase >= 11) total += Math.floor((decadeBase - 1) / 10);
 
@@ -766,13 +683,14 @@ function resolveBoard(grid, opts)
         // Accounting
         let regularsDestroyed = 0;
         let crashesDestroyed = 0;
+        let countersDestroyed = 0;
         const powerGemSizes = [];
         const seenPowerGems = new Map();
         for (const [x, y] of clears)
         {
             const g = grid[x][y];
             if (!g) continue;
-            if (g.type === 'counter') continue;
+            if (g.type === 'counter') { countersDestroyed++; continue; }
             if (g.type === 'crash') crashesDestroyed++;
             else if (g.type === 'regular')
             {
@@ -787,7 +705,7 @@ function resolveBoard(grid, opts)
         for (const size of seenPowerGems.values()) powerGemSizes.push(size);
 
         waves++;
-        const result = { regularsDestroyed, crashesDestroyed, powerGemSizes };
+        const result = { regularsDestroyed, crashesDestroyed, countersDestroyed, powerGemSizes };
         const dmg = computeDamage(result, {
             chainWave: waves,
             isDiamondInitiated: diamondOnFirstWave,
@@ -846,11 +764,13 @@ function previewChain(grid, opts)
 
         let regularsDestroyed = 0;
         let crashesDestroyed = 0;
+        let countersDestroyed = 0;
         const seenPowerGems = new Map();
         for (const [x, y] of clears)
         {
             const g = sim[x][y];
-            if (!g || g.type === 'counter') continue;
+            if (!g) continue;
+            if (g.type === 'counter') { countersDestroyed++; continue; }
             if (g.type === 'crash') crashesDestroyed++;
             else if (g.type === 'regular')
             {
@@ -865,7 +785,7 @@ function previewChain(grid, opts)
         const powerGemSizes = [...seenPowerGems.values()];
         const waveNum = waves.length + 1;
         const dmg = computeDamage(
-            { regularsDestroyed, crashesDestroyed, powerGemSizes },
+            { regularsDestroyed, crashesDestroyed, countersDestroyed, powerGemSizes },
             { chainWave: waveNum, isDiamondInitiated: diamondOnFirstWave, characterMultiplier, allClear: false }
         );
         diamondOnFirstWave = false;
@@ -1885,6 +1805,147 @@ function runUnitTests()
         assert(g[1][1].powerGemId === -1, 'merge: 3-cell L cannot stay as PG');
     }
 
+    // --- Power gem CONNECTIVITY tests (doc §7.3: touch = merge, any shape) ---
+    {
+        const place = (g, x, y, color) => { g[x][y] = gemRegular(color); };
+        // Count cells sharing the powerGemId at (x,y).
+        const clusterSize = (g, x, y) =>
+        {
+            const id = g[x][y].powerGemId;
+            if (id < 0) return 0;
+            let n = 0;
+            for (let i = 0; i < BOARD_W; i++)
+            for (let j = 0; j < BOARD_H; j++)
+                if (isRegular(g[i][j]) && g[i][j].powerGemId === id) n++;
+            return n;
+        };
+        const allSameId = (g, cells) =>
+        {
+            const id = g[cells[0][0]][cells[0][1]].powerGemId;
+            return id >= 0 && cells.every(([x,y]) => g[x][y].powerGemId === id);
+        };
+
+        // 3-wide-2-tall (size 6) with a 2x2 (size 4) sitting on its LEFT half,
+        // touching by 2 cells → ONE merged power gem of size 10 (NOT a clean
+        // rectangle). This is the case the old rectangle tracker got wrong.
+        let g = emptyGrid();
+        for (let x = 0; x < 3; x++) { place(g, x, 0, COLOR_R); place(g, x, 1, COLOR_R); } // 3x2 base
+        place(g, 0, 2, COLOR_R); place(g, 1, 2, COLOR_R);                                  // 2x2 on left
+        place(g, 0, 3, COLOR_R); place(g, 1, 3, COLOR_R);
+        mergePowerGems(g);
+        assert(g[0][0].powerGemId >= 0, 'connect: merged blob is a power gem');
+        assert(clusterSize(g, 0, 0) === 10, 'connect: 3x2 + 2x2 touching = one size-10 gem (got ' + clusterSize(g,0,0) + ')');
+        assert(g[2][0].powerGemId === g[0][3].powerGemId, 'connect: far corners share the same id');
+        assert(g[2][2] === null, 'connect: no phantom cell created');
+
+        // A cell that sticks out and is NOT part of any 2x2 stays loose, even
+        // though it touches the power gem.
+        g = emptyGrid();
+        for (let x = 0; x < 2; x++) { place(g, x, 0, COLOR_G); place(g, x, 1, COLOR_G); } // 2x2
+        place(g, 2, 0, COLOR_G);   // lone tab on the right, not in any 2x2
+        mergePowerGems(g);
+        assert(clusterSize(g, 0, 0) === 4, 'connect: 2x2 stays size 4');
+        assert(g[2][0].powerGemId === -1, 'connect: lone touching cell stays loose');
+
+        // Two DIFFERENT-color 2x2s touching do NOT merge.
+        g = emptyGrid();
+        for (let x = 0; x < 2; x++) { place(g, x, 0, COLOR_R); place(g, x, 1, COLOR_R); }
+        for (let x = 2; x < 4; x++) { place(g, x, 0, COLOR_B); place(g, x, 1, COLOR_B); }
+        mergePowerGems(g);
+        assert(g[0][0].powerGemId !== g[2][0].powerGemId, 'connect: different colors keep separate ids');
+        assert(clusterSize(g, 0, 0) === 4 && clusterSize(g, 2, 0) === 4, 'connect: each color is its own size-4 gem');
+
+        // Same-color contact across mismatched widths merges (2-wide on 4-wide).
+        g = emptyGrid();
+        for (let x = 0; x < 4; x++) { place(g, x, 0, COLOR_Y); place(g, x, 1, COLOR_Y); } // 4x2 (8)
+        place(g, 1, 2, COLOR_Y); place(g, 2, 2, COLOR_Y);                                   // 2x2 centered on top
+        place(g, 1, 3, COLOR_Y); place(g, 2, 3, COLOR_Y);
+        mergePowerGems(g);
+        assert(clusterSize(g, 0, 0) === 12, 'connect: 4x2 + 2x2 on top = size 12 (got ' + clusterSize(g,0,0) + ')');
+        assert(allSameId(g, [[0,0],[3,1],[1,3],[2,2]]), 'connect: all 12 cells share one id');
+    }
+
+    // --- No-shear gravity: a merged (non-rectangular) blob falls as one unit ---
+    {
+        const place = (g, x, y, color) => { g[x][y] = gemRegular(color); };
+        // L-shaped red blob (3x2 base + 2x2 on left half) floating at rows 5-8,
+        // with a single blue support under column 0 only. The whole blob must
+        // drop together and rest on the support — never shear into pieces.
+        let g = emptyGrid();
+        g[0][0] = gemRegular(COLOR_B);                                   // support at col 0 floor
+        for (let x = 0; x < 3; x++) { place(g, x, 5, COLOR_R); place(g, x, 6, COLOR_R); }
+        place(g, 0, 7, COLOR_R); place(g, 1, 7, COLOR_R);
+        place(g, 0, 8, COLOR_R); place(g, 1, 8, COLOR_R);
+        mergePowerGems(g);
+        const id = g[0][5].powerGemId;
+        // Relative shape before the fall (offsets from the blob's bottom-left).
+        const cellsOf = (gg) => {
+            const out = [];
+            for (let x = 0; x < BOARD_W; x++)
+            for (let y = 0; y < BOARD_H; y++)
+                if (isRegular(gg[x][y]) && gg[x][y].color === COLOR_R) out.push([x, y]);
+            return out;
+        };
+        const norm = (cells) => {
+            const minX = Math.min(...cells.map(c=>c[0])), minY = Math.min(...cells.map(c=>c[1]));
+            return cells.map(([x,y]) => (x-minX) + ',' + (y-minY)).sort().join(' ');
+        };
+        const shapeBefore = norm(cellsOf(g));
+        applyGravity(g);
+        const shapeAfter = norm(cellsOf(g));
+        assert(shapeBefore === shapeAfter, 'no-shear: merged blob keeps its exact shape after falling');
+        assert(g[0][0] && g[0][0].color === COLOR_B, 'no-shear: blue support stays on floor');
+        // Bottom of the blob now rests one row above the support in col 0.
+        assert(g[0][1] && g[0][1].color === COLOR_R, 'no-shear: blob col 0 lands on the support (y=1)');
+        assert(g[2][1] && g[2][1].color === COLOR_R, 'no-shear: blob col 2 lands at the SAME row (y=1), no shear');
+        let stillOne = true, n = 0;
+        for (let x = 0; x < BOARD_W; x++)
+        for (let y = 0; y < BOARD_H; y++)
+            if (isRegular(g[x][y]) && g[x][y].color === COLOR_R) { n++; if (g[x][y].powerGemId < 0) stillOne = false; }
+        assert(n === 10 && stillOne, 'no-shear: all 10 red cells remain power-gem cells after the fall');
+    }
+
+    // --- Merged-cluster scoring (doc §13.2 — proves size feeds the formula) ---
+    {
+        const place = (g, x, y, color) => { g[x][y] = gemRegular(color); };
+        // 2x3 + 2x2 merged = size 10 → powerGemValue(10)=25, +1 bomb = 26.
+        // Spectator blue prevents the all-clear bonus.
+        let g = emptyGrid();
+        for (let x = 0; x < 3; x++) { place(g, x, 0, COLOR_R); place(g, x, 1, COLOR_R); }
+        place(g, 0, 2, COLOR_R); place(g, 1, 2, COLOR_R);
+        place(g, 0, 3, COLOR_R); place(g, 1, 3, COLOR_R);
+        g[5][0] = gemRegular(COLOR_B);          // spectator (prevents all-clear)
+        g[3][0] = gemCrash(COLOR_R);            // detonator touching the blob's base at (2,0)
+        let res = resolveBoard(g, { characterMultiplier: 1 });
+        assert(res.totalDamage === 26, 'score: merged size-10 blob + bomb = 26 (got ' + res.totalDamage + ')');
+
+        // 3x3 + 2x2 merged = size 13 → powerGemValue(13)=floor(2.5*13)=32, +1 bomb +1 decade = 34.
+        g = emptyGrid();
+        for (let x = 0; x < 3; x++) for (let y = 0; y < 3; y++) place(g, x, y, COLOR_G); // 3x3 (9)
+        place(g, 0, 3, COLOR_G); place(g, 1, 3, COLOR_G);                                 // 2x2 on top-left (4)
+        place(g, 0, 4, COLOR_G); place(g, 1, 4, COLOR_G);
+        g[5][0] = gemRegular(COLOR_R);          // spectator
+        g[3][0] = gemCrash(COLOR_G);            // detonator touching (2,0)
+        res = resolveBoard(g, { characterMultiplier: 1 });
+        assert(res.totalDamage === 34, 'score: merged size-13 blob + bomb + decade = 34 (got ' + res.totalDamage + ')');
+    }
+
+    // --- Counter gem value (doc §13: ½ each) ---
+    {
+        // 1 loose regular + 2 counters swept up + 1 bomb = 1 + 2*0.5 + 1 = 3.
+        let d = computeDamage(
+            { regularsDestroyed: 1, crashesDestroyed: 1, countersDestroyed: 2, powerGemSizes: [] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 3, 'counter: 1 reg + 2 counters(½) + bomb = 3 (got ' + d + ')');
+        // Omitting countersDestroyed is treated as 0 (back-compat).
+        d = computeDamage(
+            { regularsDestroyed: 0, crashesDestroyed: 1, powerGemSizes: [4] },
+            { chainWave: 1, characterMultiplier: 1 }
+        );
+        assert(d === 9, 'counter: missing countersDestroyed defaults to 0 (got ' + d + ')');
+    }
+
     // --- Piece tests ---
     {
         // Rotation offsets
@@ -2329,7 +2390,7 @@ function runUnitTests()
 // Match state + menus
 
 let matchState = 'title';        // 'title' | 'playing' | 'roundover'
-let chosenMode = 'cpu';          // 'cpu' | 'pvp'
+let chosenMode = 'cpu';          // 'cpu' | 'pvp' | 'cpucpu'
 let chosenDifficulty = 'normal';
 let chosenP1Char = CHARACTERS[0];
 let chosenP2Char = CHARACTERS[1];
@@ -2375,10 +2436,22 @@ function setupMenus()
         id: 'mode',
         title: 'CHOOSE MODE',
         dismissable: true,
-        onHide: (reason) => { if (reason === 'dismiss') showMenu('title'); },
+        // Re-show the title only on a genuine user dismiss (Esc/back) — NOT when
+        // we're hiding all menus to start a match (e.g. CPU VS CPU starts the
+        // match directly from this menu, with matchState already 'playing').
+        onHide: (reason) => { if (reason === 'dismiss' && matchState !== 'playing') showMenu('title'); },
         items: [
             { type:'button', label:'VS CPU',    onClick: () => { chosenMode = 'cpu'; pushMenu('difficulty'); } },
             { type:'button', label:'VS PLAYER', onClick: () => { chosenMode = 'pvp'; pushMenu('p1select'); } },
+            { type:'button', label:'CPU VS CPU', onClick: () => {
+                // Spectator mode: two random (distinct) fighters battle on hard.
+                chosenMode = 'cpucpu';
+                chosenDifficulty = 'hard';
+                chosenP1Char = CHARACTERS[randInt(CHARACTERS.length)];
+                do { chosenP2Char = CHARACTERS[randInt(CHARACTERS.length)]; }
+                while (chosenP2Char === chosenP1Char && CHARACTERS.length > 1);
+                startMatchFromSelection();
+            } },
         ],
     });
 
@@ -2460,8 +2533,7 @@ function setupMenus()
 function startMatchFromSelection()
 {
     const seed = (Date.now() & 0x7FFFFFFF) || 1;
-    const aiDiff = chosenMode === 'cpu' ? chosenDifficulty : null;
-    startMatch(chosenP1Char, chosenP2Char, seed, aiDiff);
+    startMatch(chosenP1Char, chosenP2Char, seed, chosenMode, chosenDifficulty);
     matchState = 'playing';
     clearSubmenuStack();
     hideAllMenus();
@@ -2478,7 +2550,8 @@ function checkRoundOver()
         const item = menu.getItem('roundresult');
         const w = currentMatch.winner;
         let txt;
-        if (chosenMode === 'pvp') txt = w === 0 ? 'PLAYER 1 WINS' : 'PLAYER 2 WINS';
+        if (chosenMode === 'cpucpu') txt = currentMatch.boards[w].character.name + ' WINS';
+        else if (chosenMode === 'pvp') txt = w === 0 ? 'PLAYER 1 WINS' : 'PLAYER 2 WINS';
         else txt = w === 0 ? 'YOU WIN' : 'CPU WINS';
         if (item) item.setLabel(txt);
     }
@@ -2535,18 +2608,22 @@ function spawnDemoBoards()
     demoBoards = [makeDemoBoard(CHARACTERS[0]), makeDemoBoard(CHARACTERS[1])];
 }
 
-function startMatch(p1Char, p2Char, seed, aiDifficulty)
+function startMatch(p1Char, p2Char, seed, mode, difficulty)
 {
     currentMatch = new GameMatch(p1Char, p2Char, seed);
-    const oppForAI = currentMatch.boards[0];
-    controllers = [
-        new HumanController(KEYMAP_P1),
-        aiDifficulty ? new AIController(aiDifficulty, oppForAI) : new HumanController(KEYMAP_P2),
-    ];
+    const b0 = currentMatch.boards[0];
+    const b1 = currentMatch.boards[1];
+    // An AI controller is aimed at its OPPONENT's board (for pattern lookup).
+    if (mode === 'cpucpu')
+        controllers = [new AIController(difficulty, b1), new AIController(difficulty, b0)];
+    else if (mode === 'cpu')
+        controllers = [new HumanController(KEYMAP_P1), new AIController(difficulty, b0)];
+    else
+        controllers = [new HumanController(KEYMAP_P1), new HumanController(KEYMAP_P2)];
     currentMatch.spawn(0);
     currentMatch.spawn(1);
-    p1Board = currentMatch.boards[0];
-    p2Board = currentMatch.boards[1];
+    p1Board = b0;
+    p2Board = b1;
 }
 
 function gameUpdate()
