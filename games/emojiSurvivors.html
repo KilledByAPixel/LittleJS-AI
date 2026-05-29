@@ -1,4 +1,8 @@
-<!DOCTYPE html><head>
+<!DOCTYPE html>
+<!-- Emoji art: Twemoji (twemoji.ttf) (c) Twitter, Inc & contributors,
+     licensed under CC-BY 4.0 - https://creativecommons.org/licenses/by/4.0/
+     See TWEMOJI-LICENSE.txt. -->
+<head>
 <title>Emoji Survivors</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -3588,7 +3592,8 @@ async function gameInit()
         ]),
     });
 
-    // About — explains the loop briefly.
+    // About — short how-to-play. Twemoji (CC-BY 4.0) attribution lives in the
+    // HTML source header + TWEMOJI-LICENSE.txt, so it's kept out of here.
     createMenu({
         id: 'about',
         title: 'ABOUT',
@@ -3596,12 +3601,11 @@ async function gameInit()
         onHide: popMenu,
         items: [
             {type: 'text', text:
-                'Move with WASD or arrows. Weapons fire automatically.\n\n' +
-                'Defeat enemies to collect 💎 XP and level up. Pick weapons and ' +
-                'passive items to grow. Bosses 🦇 🧟 🤡 drop 🎁 chests — open them ' +
-                'with the right combo of weapon-at-max-level + matching passive to ' +
-                'evolve a weapon.\n\n' +
-                'Survive until 15:00 and kill the ☠️ Reaper to win.'},
+                'WASD or arrows to move. Weapons fire automatically.\n\n' +
+                'Collect 💎 to level up and choose weapons + passives. Bosses ' +
+                'drop 🎁 chests — open one with a maxed weapon and its matching ' +
+                'passive to evolve it.\n\n' +
+                'Survive 15:00 and beat the ☠️ Reaper to win.'},
             {type: 'separator'},
             {type: 'button', label: 'BACK', onClick: () => hideMenu('about')},
         ],

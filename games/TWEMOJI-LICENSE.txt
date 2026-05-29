@@ -1,0 +1,17 @@
+Twemoji (twemoji.ttf — "Twemoji Mozilla" COLR/CPAL build, v0.6.0)
+==================================================================
+
+This game uses emoji artwork from the Twemoji project, rendered at runtime
+into its sprite atlas (recolored/outlined — i.e. modified).
+
+Emoji graphics:
+    Copyright © Twitter, Inc and other contributors.
+    Licensed under CC-BY 4.0.
+    https://creativecommons.org/licenses/by/4.0/
+
+Project: https://github.com/jdecked/twemoji
+(originally https://github.com/twitter/twemoji)
+
+The CC-BY 4.0 license covers the emoji artwork. The Mozilla build tooling
+used to produce the COLR/CPAL font is separately Apache-2.0, which does not
+affect redistribution of the rendered glyphs.
