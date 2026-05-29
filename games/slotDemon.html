@@ -1,0 +1,282 @@
+<!DOCTYPE html><head>
+<title>Slot Demon</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Override any CSS variable on #littlejs-menus to re-skin all menus
+   and toolbars. Uncomment to try a different look — the helper itself
+   never needs to change. */
+/*
+#littlejs-menus {
+    --menu-bg:           rgba(20, 0, 30, 0.92);
+    --menu-fg:           #fff;
+    --menu-accent:       #f0a;
+    --menu-font:         sans-serif;
+    --menu-border-width: 4px;
+    --menu-radius:       18px;
+}
+*/
+</style>
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1780012197793"></script>
+<script src="../templates/menus.js?1780012197793"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+
+// engine settings, customize if necessary
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 32;
+// Default LittleJS canvas cap is 1920x1080 — raise it so the canvas
+// fills modern high-res monitors instead of letterboxing.
+canvasMaxSize = vec2(2048, 2048);
+
+///////////////////////////////////////////////////////////////////////////////
+// MENU SYSTEM TEMPLATE
+// Demonstrates createMenu() and createToolbar() from menus.js.
+
+let playerPos = vec2(0, 0);
+const playerSize = vec2(2, 2);
+
+///////////////////////////////////////////////////////////////////////////////
+// Pause the engine whenever any menu (including alert/confirm dialogs) is
+// visible. setMenuVisibilityCallback fires for every show/hide, so we don't
+// have to wire onShow/onHide on each individual menu — and we can't miss
+// dialogs created internally by showAlertDialog / showConfirmDialog. Without
+// this, alert dialogs leave paused=false, letting gameUpdate run on the same
+// frame as a menu Esc and re-open pause on top of the surfaced menu.
+
+// Gameplay code in gameUpdate / gameRender gates on isPlaying() from menus.js
+// (replaces the old per-game let isPlaying / setPlaying boilerplate). The
+// toolbar is always visible — installDefaultToolbar grays the hamburger
+// when the title menu is on top.
+
+async function gameInit()
+{
+    // Primes the unified save blobs. Must come before any menu construction
+    // so persist: items can read their stored values on init.
+    saveDataInit('SlotDemon');
+
+    // Initial bg shared with the color picker in OPTIONS, so opening the
+    // menu shows the swatch matching what's actually on screen.
+    canvasClearColor = new Color().setHex('#264d40');
+
+    // Match the engine's master volume to whatever the options slider starts at,
+    // so the very first menu sound plays at the user-visible volume.
+    setSoundVolume(.8);
+
+    // One callback drives `paused` for every menu, including dialogs.
+    setMenuVisibilityCallback(v => paused = v);
+
+    // ----- global UI sounds (LittleJS Sound class wraps zzfx params and
+    //       routes through the engine's audio system, so master volume,
+    //       muting, and user-gesture gating all just work). -----
+    const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
+    const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
+    setMenuSounds({
+        select:   () => sound_select.play(),
+        activate: () => sound_activate.play(),
+    });
+
+    // ----- title menu -----
+    // Shown immediately at the end of gameInit (no click-to-reveal step).
+    // dismissable: false so Esc/B can't strand the player in a "no menu,
+    // not playing" state — the only ways out are the action buttons.
+    // onStart wires gamepad Start to launch PLAY directly without the
+    // player having to navigate to the PLAY item first.
+    const playFromTitle = () => { setPlaying(true); titleMenu.hide(); };
+    const titleMenu = createMenu({
+        id: 'title',
+        title: 'MENU DEMO',
+        dismissable: false,
+        onStart: playFromTitle,
+        items: [
+            {type:'label',  text:'A demo of menus.js'},
+            {type:'button', label:'PLAY',    onClick: playFromTitle},
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+            {type:'button', label:'MEDALS',  onClick: () => pushMenu('medals')},
+            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+        ],
+    });
+
+    // ----- medals menu (grid demo + MenuMedal integration) -----
+    // MenuMedal extends LittleJS's Medal — same persistence, same `medals`
+    // map registration, but unlock() fires a DOM toast (top-left) instead
+    // of pushing to the engine's canvas display queue.
+    const allMedals = [
+        new MenuMedal(0, 'First Win',    'Win your first match.',          '🏆'),
+        new MenuMedal(1, 'Die 10 Times', 'Die 10 times across all runs.',  '💀'),
+        new MenuMedal(2, 'Speed Run',    'Finish a level in under 30s.',   '⚡'),
+        new MenuMedal(3, 'Combo x10',    'Chain 10 hits without missing.', '🔥'),
+    ];
+    medalsInit('SlotDemon');   // loads `unlocked` from localStorage
+
+    const medalCellOf = m => ({
+        icon: m.icon, label: m.name, title: m.description, earned: m.unlocked,
+        onClick: () => showAlertDialog({title: m.name, icon: m.icon, message: m.description}),
+    });
+
+    createMenu({
+        id: 'medals',
+        title: 'MEDALS',
+        // Re-sync the grid each time the menu opens so newly-unlocked
+        // medals show as "earned" without needing a full rebuild.
+        onShow: () =>
+        {
+            const grid = getMenu('medals').getItem('medalGrid');
+            allMedals.forEach((m, i) => grid.setCell(i, {earned: m.unlocked}));
+        },
+        onHide: popMenu,
+        items: [
+            {type:'grid', id:'medalGrid', columns:2, cells: allMedals.map(medalCellOf)},
+            {type:'separator'},
+            {type:'button', label:'UNLOCK NEXT (DEBUG)', title:'Unlock the next locked medal',
+                onClick: () =>
+                {
+                    const next = allMedals.find(m => !m.unlocked);
+                    if (next)
+                    {
+                        next.unlock();
+                        const grid = getMenu('medals').getItem('medalGrid');
+                        grid.setCell(allMedals.indexOf(next), {earned: true});
+                    }
+                    else showMenuToast({icon:'⭐', title:'All unlocked',
+                        text:'Clear localStorage to reset.'});
+                }},
+            {type:'button', label:'BACK', onClick: () => hideMenu('medals')},
+        ],
+    });
+
+    // ----- options menu (shared between title and pause) -----
+    // Demonstrates separators grouping audio / display / back.
+    // The `persist:'key'` flag on slider / checkbox / color / input items
+    // auto-loads from localStorage on init and auto-saves on every change.
+    // onChange also fires once at init time with the resolved value, so
+    // the consumer's effect (e.g. setSoundVolume) applies the saved value
+    // before the first menu sound plays.
+    createMenu({
+        id: 'options',
+        title: 'OPTIONS',
+        onHide: popMenu,
+        items: [
+            {type:'slider',   id:'volume', label:'VOLUME',       value: 0.8, min:0, max:1,
+                persist:'volume',
+                onChange: v => setSoundVolume(v)},
+            {type:'separator'},
+            {type:'checkbox', id:'shake',  label:'SCREEN SHAKE', value: true,
+                persist:'shake',
+                onChange: v => console.log('shake ->', v)},
+            {type:'color',    id:'bg',     label:'BG COLOR',     value:'#264d40',
+                persist:'bg',
+                title:'Pick the canvas background color',
+                onChange: c => canvasClearColor = new Color().setHex(c)},
+            {type:'input',    id:'name',   label:'NAME',         value:'Player',
+                persist:'name',
+                placeholder:'Enter a name', maxLength:16,
+                title:'Demo of the text input item type',
+                onChange: v => console.log('name ->', v)},
+            {type:'button',   label:'FULLSCREEN', onClick: toggleFullscreen},
+            {type:'separator'},
+            {type:'button',   label:'BACK',       onClick: () => hideMenu('options')},
+        ],
+    });
+
+    // ----- about menu (demos the `text` item: wrapping multi-line paragraph) -----
+    createMenu({
+        id: 'about',
+        title: 'ABOUT',
+        onHide: popMenu,
+        items: [
+            {type:'label', text:'menus.js demo'},
+            {type:'text',  text:'A small declarative menu and toolbar helper for ' +
+                'LittleJS. Items: label, text, separator, button, toggle, slider, ' +
+                'checkbox, color, input, grid (clickable cells optional), and ' +
+                'custom.\n\nKeyboard, gamepad, mouse and touch input are all wired ' +
+                'automatically.'},
+            {type:'separator'},
+            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+        ],
+    });
+
+    // ----- pause menu (initialItemId defaults selection to RESUME) -----
+    createMenu({
+        id: 'pause',
+        title: 'PAUSED',
+        initialItemId: 'resume',
+        items: [
+            {type:'button', id:'resume',  label:'RESUME',        onClick: () => hideMenu('pause')},
+            {type:'button', id:'options', label:'OPTIONS',       onClick: () => pushMenu('options')},
+            {type:'button', id:'quit',    label:'QUIT TO TITLE', onClick: () =>
+            {
+                showConfirmDialog({
+                    message: 'Quit to title?',
+                    onYes: () => quitToTitle(),
+                });
+            }},
+        ],
+    });
+
+    // ----- toolbar (always visible, including over the title menu) -----
+    // installDefaultToolbar gives the standard mute / fullscreen / hamburger
+    // trio, with built-in title-aware hamburger graying so the player can't
+    // try to open the pause menu from on top of the title menu.
+    installDefaultToolbar();
+
+    // Show the title menu immediately — no click-to-reveal step.
+    showMenu('title');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate()
+{
+    // Esc / gamepad Start opens the pause menu while playing. Gated on
+    // isPlaying so the shortcut never fires before the player has clicked
+    // PLAY (when title is up, gameUpdate is paused anyway, so this is
+    // defensive — but also makes the intent obvious to readers).
+    if (isPlaying() && (keyWasPressed('Escape') || gamepadWasPressed(9)))
+    {
+        playMenuSound('activate');
+        showMenu('pause');
+        inputClearKey('Escape');
+        // Partial clear (only the pressed bit, not down) so the engine
+        // doesn't re-trigger pressed every frame the button is held.
+        inputClearKey(9, 1, false, true, false);
+    }
+
+    if (isPlaying())
+    {
+        const dir = keyDirection();
+        playerPos = playerPos.add(dir.scale(.2));
+    }
+}
+
+function gameUpdatePost()
+{
+}
+
+function gameRender()
+{
+    // Draw gameplay content only while actually playing — the pre-play
+    // / post-quit "title screen" state shows just the prompt below.
+    if (isPlaying())
+        drawRect(playerPos, playerSize, hsl(.13, 1, .6));
+}
+
+function gameRenderPost()
+{
+    // "Menu System Demo" header — title-screen banner only. Hide once
+    // the player is actually playing. The title menu is always up when
+    // !isPlaying, so no "click to play" prompt is needed.
+    if (!isPlaying())
+        drawTextScreen('Menu System Demo', vec2(mainCanvasSize.x/2, 150),
+            32, hsl(0, 0, 1), 4, hsl(0, 0, 0));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>
