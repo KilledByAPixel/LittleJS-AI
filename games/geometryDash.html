@@ -25,15 +25,38 @@ const FLOOR_Y     = 0;
 const PLAYER_SIZE = vec2(.80);
 
 // Game state
-let state;          // 'play' | 'dead' | 'win'
-let bestProgress = 0;  // % of level reached
+let state;            // 'play' | 'dead' | 'win'
 let player;
 let solids = [];
 let spikes = [];
 let endX = 0;
+let levelStartX = 2;
 let particles = [];
+let trail = [];       // glowing motion trail behind the cube
+let campaignComplete = false;
 
-// menu / session state
+// run / progression state
+const TOTAL_LEVELS = 5;
+let mode = 'classic';     // 'classic' | 'remix' | 'daily'
+let levelIndex = 0;       // 0-based current level
+let runSpeed = RUN_SPEED; // per-level run speed (gentle ramp)
+let rng;                  // seeded RandomGenerator for level layout
+
+// hard-coded, beatability-verified seeds for Classic (one per level)
+const CLASSIC_SEEDS = [ 1337, 24681, 99173, 51234, 70007 ];
+
+// per-level visual theme (hue values 0..1): bg sky, blocks, hazards (spikes/bars)
+const LEVEL_PALETTES = [
+    {bg: .58, block: .58, haz: .02},   // 1 - teal/blue, red spikes
+    {bg: .75, block: .72, haz: .95},   // 2 - violet, pink spikes
+    {bg: .40, block: .35, haz: .02},   // 3 - green, red spikes
+    {bg: .07, block: .08, haz: .95},   // 4 - sunset orange, pink spikes
+    {bg: .88, block: .83, haz: .04},   // 5 - magenta, orange spikes
+];
+const LEVEL_NAMES = ['WARMUP', 'VOLTAGE', 'OVERGROWTH', 'INFERNO', 'SINGULARITY'];
+let pal = LEVEL_PALETTES[0];
+
+let bestLevel = 1;        // deepest level reached (1-based), persisted
 
 // Sounds
 let sJump, sDie, sWin;
@@ -42,13 +65,88 @@ function resetGame()
 {
     state = 'play';
     particles.length = 0;
+    trail.length = 0;
 
     player = {
         pos: vec2(2, 1),
         velY: 0,
         grounded: false,
+        wasGrounded: true,
         angle: 0,
+        land: 0,    // landing-squash impulse (1 -> 0)
     };
+}
+
+// --- level building helpers --------------------------------------------------
+// style: 0=normal block, 1=ceiling bar (go-under)
+function addBlock(x, y, w=1, h=1, style=0)
+{
+    solids.push({pos: vec2(x + w/2, y + h/2), size: vec2(w, h), style});
+}
+function addSpike(x, y=0, w=1, h=1)
+{
+    spikes.push({x, y, w, h});
+}
+
+// --- procedural level generation ---------------------------------------------
+// Each pattern places obstacles starting at world-x `x` and returns the
+// horizontal width it consumed. The generator then adds a fair run-up gap so
+// every hazard has clear take-off and landing room.
+
+// --- basics (Level 1) ---
+function patSingleSpike(x){ addSpike(x, 0, 1, 1); return 1; }
+function patDoubleSpike(x){ addSpike(x, 0, 1, 2); return 1; }
+function patStepBlock(x){ addBlock(x, 0, 2, 1); return 2; }
+function patCeilingBar(x){ const w = 3 + rng.int(3); addBlock(x, 0.86, w, 0.64, 1); return w; }
+
+// --- compound / combo mechanics (later levels) ---
+// n adjacent ground spikes, cleared in a single arc
+function patCluster(x, n){ for (let i=0; i<n; ++i) addSpike(x+i, 0, 1, 1); return n; }
+// raised plateau (jump up onto it) with a spike on the deck (jump again to clear)
+function patPlatformSpike(x){
+    const w = 8 + rng.int(3);          // 8..10 wide deck (room to land + run up to spike)
+    addBlock(x, 0, w, 2, 0);           // solid plateau, deck top at y=2
+    addSpike(x + (w-3), 2, 1, 1);      // spike near the far end -> run-up after landing
+    return w;
+}
+// short wall crowned with a spike: clear the whole thing in one jump
+function patSpikeWall(x){ addBlock(x, 0, 1, 2, 0); addSpike(x, 2, 1, 1); return 1; }
+// tall wall: a big single jump
+function patTallWall(x){ addBlock(x, 0, 1, 3, 0); return 1; }
+// two-tier ascending steps, then a drop
+function patStairs(x){ addBlock(x, 0, 2, 1, 0); addBlock(x+2, 0, 2, 2, 0); return 4; }
+
+// Pattern registry. `minLevel` gates when a mechanic appears (1-based level);
+// `ceiling` flags go-under bars (need extra run-up); `padAfter` adds recovery
+// room after landing-heavy patterns. Insertion order is the rng pick order.
+const PATTERNS = [
+    { fn: patSingleSpike,                minLevel: 1 },
+    { fn: patDoubleSpike,                minLevel: 1 },
+    { fn: patStepBlock,                  minLevel: 1 },
+    { fn: patCeilingBar,                 minLevel: 1, ceiling: true },
+    { fn: x => patCluster(x, 2),         minLevel: 2 },
+    { fn: patPlatformSpike,              minLevel: 2, padAfter: 1 },
+    { fn: x => patCluster(x, 3),         minLevel: 3 },
+    { fn: patSpikeWall,                  minLevel: 3, padAfter: 1 },
+    { fn: patTallWall,                   minLevel: 4, padAfter: 1 },
+    { fn: patStairs,                     minLevel: 4, padAfter: 1 },
+];
+
+// Pattern pool gated by level number (1-based).
+function patternsForLevel(level){ return PATTERNS.filter(p => p.minLevel <= level); }
+
+function seedForLevel(modeName, level)
+{
+    if (modeName === 'classic')
+        return CLASSIC_SEEDS[level] || (1234567 + level*7919);
+    if (modeName === 'daily')
+    {
+        const d = new Date();
+        const base = d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate();
+        return base + level*7919;   // all levels derived from today's date
+    }
+    // remix: fresh random non-zero seed per level (global rand, varies each run)
+    return randInt(1, 1e9) + level;
 }
 
 function buildLevel()
@@ -56,56 +154,40 @@ function buildLevel()
     solids.length = 0;
     spikes.length = 0;
 
-    // helper: bottom-left -> center/size
-    // style: 0=normal, 1=ceiling (go-under)
-    const addBlock = (x, y, w=1, h=1, style=0) =>
-        solids.push({pos: vec2(x + w/2, y + h/2), size: vec2(w, h), style});
+    const seed = seedForLevel(mode, levelIndex);
+    rng = new RandomGenerator(seed || 1);       // guard: seed must be non-zero
+    runSpeed = RUN_SPEED + levelIndex * .008;   // gentle per-level speed ramp
+    pal = LEVEL_PALETTES[levelIndex % LEVEL_PALETTES.length];
 
-    // helper: spike base on floor or platform
-    const addSpike = (x, y=0, w=1, h=1) =>
-        spikes.push({x, y, w, h});
+    const pats   = patternsForLevel(levelIndex + 1);
+    const length = 70 + levelIndex * 18;        // later levels run longer
 
-    // --- Faster + a few more early spikes ---
-    // Spacing rule: every spike/wall has clear run-up + clear landing/recovery.
+    levelStartX = 2;
+    let x = 8;                                  // initial run-up before first hazard
+    const stopX = x + length;
+    let prevWasCeiling = false;
+    while (x < stopX)
+    {
+        const pd = pats[rng.int(pats.length)];
+        // extra run-up before a go-under bar so you land in time
+        if (pd.ceiling && !prevWasCeiling) x += 1.5;
 
-    // decorative under-floor tiles (not collidable/drawn)
-    for (let i=0; i<130; ++i) addBlock(i, -1, 1, 1);
+        const span = pd.fn(x);
+        x += span;
 
-    // 1) Go-under ceiling bar (stay grounded)
-    // bottom ~0.86 so grounded cube (top ~0.80) fits, but jumping bonks.
-    addBlock(10, 0.86, 4, 0.64, 1); // spans x=[10..14]
+        // fair run-up gap before the next hazard (tightens slightly per level)
+        const minGap = max(4, 5.5 - levelIndex * .25);
+        const maxGap = max(minGap + 2, 8 - levelIndex * .3);
+        x += rng.float(minGap, maxGap) + (pd.padAfter || 0);
+        prevWasCeiling = !!pd.ceiling;
+    }
+    endX = x + 6;       // clear run-out to the finish line
 
-    // 2) Early spike run (a couple are double-height)
-    // Spaced so you can still jump, land, and reset before the next.
-    addSpike(20, 0, 1, 1);
-    addSpike(27, 0, 1, 2); // double-height
-    addSpike(34, 0, 1, 2); // double-height
+    // track campaign depth
+    if (levelIndex + 1 > bestLevel) { bestLevel = levelIndex + 1; saveData({bestLevel}); }
 
-    // 3) Low step (jump onto or over) (jump onto or over)
-    addBlock(42, 0, 2, 1);
-
-    // 4) Spike after the step (separate timing)
-    addSpike(50, 0);
-
-    // 5) Platform + single spike on top (land before and after)
-    addBlock(58, 2, 6, 1);     // top is y=3
-    addSpike(61, 3, 1, 1);
-
-    // 6) Go-under ceiling bar (stay grounded)
-    addBlock(72, 0.86, 4, 0.64, 1); // spans x=[72..76]
-
-    // 7) Two spaced ground spikes
-    addSpike(82, 0);
-    addSpike(90, 0);
-
-    // 8) Tall wall (big jump)
-    addBlock(98, 0, 1, 2);
-
-    // 9) Finale spikes (still spaced)
-    addSpike(106, 0);
-    addSpike(114, 0);
-
-    endX = 120;
+    // decorative under-floor tiles (skipped by collision + draw)
+    for (let i = 0; i < endX + 12; ++i) addBlock(i, -1, 1, 1);
 }
 
 function wantJump()
@@ -139,23 +221,40 @@ function killPlayer()
 {
     if (state !== 'play') return;
     state = 'dead';
-    const pct = (clamp(player.pos.x / endX, 0, 1) * 100) | 0;
-    if (pct > bestProgress) {
-        bestProgress = pct;
-        saveData({bestProgress});
-    }
     sDie.play(player.pos);
+    addScreenShake(.7, .4);
+    trail.length = 0;
 
-    // little burst
-    for (let i=0; i<18; ++i)
+    // shatter the cube into spinning neon fragments
+    for (let i=0; i<14; ++i)
     {
         const a = rand(PI*2);
-        const sp = rand(.35, .12);
+        const sp = rand(.45, .15);
+        particles.push({
+            pos: player.pos.add(randVec2(.2)),
+            vel: vec2(Math.cos(a), Math.sin(a)).scale(sp).add(vec2(0, .15)),
+            life: rand(55, 35),
+            maxLife: 55,
+            size: rand(.30, .14),
+            angle: rand(PI*2),
+            spin: rand(-.4, .4),
+            hue: .90,
+        });
+    }
+    // bright spark flecks
+    for (let i=0; i<14; ++i)
+    {
+        const a = rand(PI*2);
+        const sp = rand(.55, .25);
         particles.push({
             pos: player.pos.copy(),
             vel: vec2(Math.cos(a), Math.sin(a)).scale(sp),
-            life: rand(40, 25),
-            size: rand(.22, .10),
+            life: rand(28, 14),
+            maxLife: 28,
+            size: rand(.12, .05),
+            angle: 0,
+            spin: 0,
+            hue: .95,
         });
     }
 }
@@ -164,7 +263,73 @@ function winGame()
 {
     if (state !== 'play') return;
     state = 'win';
+    campaignComplete = (levelIndex + 1 >= TOTAL_LEVELS);
     sWin.play(player.pos);
+    addScreenShake(.4, .3);
+
+    // confetti burst
+    for (let i=0; i<30; ++i)
+    {
+        const a = rand(PI*2);
+        const sp = rand(.6, .2);
+        particles.push({
+            pos: player.pos.add(randVec2(.3)),
+            vel: vec2(Math.cos(a), Math.sin(a)).scale(sp).add(vec2(0, .25)),
+            life: rand(70, 40),
+            maxLife: 70,
+            size: rand(.22, .10),
+            angle: rand(PI*2),
+            spin: rand(-.5, .5),
+            hue: rand(),
+        });
+    }
+}
+
+// brief corner toast announcing the level + its theme name
+function announceLevel()
+{
+    if (typeof showMenuToast === 'function')
+        showMenuToast({
+            icon: '🚀',
+            title: `LEVEL ${levelIndex+1}`,
+            text: LEVEL_NAMES[levelIndex % LEVEL_NAMES.length],
+            duration: 1.8,
+            position: 'top-left',
+        });
+}
+
+// advance to the next level after a clear (or end the campaign)
+function advanceLevel()
+{
+    if (levelIndex + 1 < TOTAL_LEVELS)
+    {
+        levelIndex++;
+        buildLevel();
+        resetGame();
+        announceLevel();
+    }
+    else
+        quitToTitle();   // campaign finished -> back to title
+}
+
+// spawn a quick puff of dust at a contact point
+function spawnDust(pos, count, spread, hue=.62)
+{
+    for (let i=0; i<count; ++i)
+    {
+        const a = rand(PI*2);
+        const sp = rand(spread, spread*.3);
+        particles.push({
+            pos: pos.add(randVec2(.15)),
+            vel: vec2(Math.cos(a), Math.sin(a)*.6 + .04).scale(sp),
+            life: rand(22, 12),
+            maxLife: 22,
+            size: rand(.16, .07),
+            angle: 0,
+            spin: 0,
+            hue,
+        });
+    }
 }
 
 function updateParticles()
@@ -174,19 +339,33 @@ function updateParticles()
         const p = particles[i];
         p.life -= 1;
         p.vel.y += GRAVITY * .35;
+        p.vel = p.vel.scale(.97);
         p.pos = p.pos.add(p.vel);
+        p.angle += p.spin || 0;
         p.size *= .98;
         if (p.life <= 0 || p.size < .02)
             particles.splice(i, 1);
+    }
+
+    // fade the motion trail
+    for (let i=trail.length; i--;)
+    {
+        trail[i].t -= .06;
+        if (trail[i].t <= 0)
+            trail.splice(i, 1);
     }
 }
 
 function playerStep()
 {
     const prev = player.pos.copy();
+    const wasGrounded = player.grounded;
+
+    // glowing motion trail (denser while airborne)
+    trail.push({pos: player.pos.copy(), t: 1, air: !player.grounded});
 
     // auto-run (constant speed, even while jumping)
-    player.pos.x += RUN_SPEED;
+    player.pos.x += runSpeed;
 
     // jump
     if (player.grounded && wantJump())
@@ -194,6 +373,7 @@ function playerStep()
         player.velY = JUMP_VEL;
         player.grounded = false;
         sJump.play(player.pos);
+        spawnDust(vec2(player.pos.x, FLOOR_Y + .05), 6, .22, .62);
     }
 
     // gravity
@@ -285,6 +465,16 @@ function playerStep()
         }
     }
 
+    // landing impact (just touched down after being airborne)
+    if (!wasGrounded && player.grounded && state === 'play')
+    {
+        player.land = 1;
+        spawnDust(vec2(player.pos.x, player.pos.y - PLAYER_SIZE.y/2 + .05), 7, .26, .62);
+        addScreenShake(.06, .12);
+    }
+    player.land *= .82;
+    player.wasGrounded = player.grounded;
+
     // fall out
     if (player.pos.y < -6)
         killPlayer();
@@ -309,33 +499,44 @@ function drawSpike(s)
     const a = vec2(s.x,           s.y);
     const b = vec2(s.x + s.w,     s.y);
     const c = vec2(s.x + s.w/2,   s.y + s.h);
-    drawPoly([a,b,c], hsl(.02, .85, .55));
-    // little highlight line
-    drawLine(c, a.lerp(b,.5), .06, hsl(0,0,1,.35));
+
+    // glow halo
+    const ga = vec2(s.x - .12,        s.y);
+    const gb = vec2(s.x + s.w + .12,  s.y);
+    const gc = vec2(s.x + s.w/2,      s.y + s.h + .18);
+    drawPoly([ga,gb,gc], hsl(pal.haz, .9, .55, .18));
+
+    // body with crisp bright outline
+    drawPoly([a,b,c], hsl(pal.haz, .85, .55), .07, hsl(pal.haz + .02, 1, .75));
+    // highlight edge
+    drawLine(c, a.lerp(b,.5), .06, hsl(0,0,1,.4));
 }
 
 function drawBlock(b)
 {
-    if (b.style === 1)
-    {
-        // ceiling bars (distinct look)
-        drawRect(b.pos, b.size, hsl(.02, .55, .25));
-        drawRect(b.pos, b.size.scale(.86), hsl(.02, .45, .16));
-        drawLine(vec2(b.pos.x - b.size.x/2, b.pos.y - b.size.y/2), vec2(b.pos.x + b.size.x/2, b.pos.y - b.size.y/2), .06, hsl(0,0,1,.22));
-        return;
-    }
+    const isCeil = b.style === 1;
+    const hue = isCeil ? pal.haz : pal.block;
 
-    // normal blocks
-    drawRect(b.pos, b.size, hsl(.58, .55, .35));
-    drawRect(b.pos, b.size.scale(.82), hsl(.58, .35, .22));
+    // soft glow behind the block
+    drawRect(b.pos, b.size.add(vec2(.22)), hsl(hue, .7, .5, .12));
+
+    // body + inner panel
+    drawRect(b.pos, b.size, hsl(hue, .60, isCeil ? .27 : .38));
+    drawRect(b.pos, b.size.scale(.84), hsl(hue, .45, isCeil ? .17 : .22));
+
+    // bright edge facing the player (top for normal, bottom for ceiling)
+    const edgeY = isCeil ? b.pos.y - b.size.y/2 : b.pos.y + b.size.y/2;
+    drawLine(vec2(b.pos.x - b.size.x/2, edgeY), vec2(b.pos.x + b.size.x/2, edgeY), .07, hsl(hue, 1, .8, .6));
 }
 
 function drawBackground()
 {
     const camSize = getCameraSize();
 
-    // sky
-    drawRect(cameraPos, camSize.scale(1.05), hsl(.62, .45, .12));
+    // sky (slow beat pulse + gentle hue drift around the level palette)
+    const pulse = .12 + .03 * (Math.sin(time * 2.4) * .5 + .5);
+    const hue = pal.bg + .04 * Math.sin(time * .15);
+    drawRect(cameraPos, camSize.scale(1.05), hsl(hue, .5, pulse));
 
     // parallax stripes
     const left = cameraPos.x - camSize.x/2;
@@ -346,7 +547,7 @@ function drawBackground()
     {
         const x = left + ((i*6 + t*1.2) % (camSize.x + 30));
         const pos = vec2(x, cameraPos.y);
-        drawRect(pos, vec2(1.5, stripeH), hsl(.62, .45, .14, .12));
+        drawRect(pos, vec2(1.5, stripeH), hsl(pal.bg, .45, .16, .14));
     }
 
     // subtle grid
@@ -367,7 +568,7 @@ function drawFloor()
     const centerX = cameraPos.x;
 
     // floor slab
-    drawRect(vec2(centerX, -0.5), vec2(w, 1), hsl(.62, .20, .06));
+    drawRect(vec2(centerX, -0.5), vec2(w, 1), hsl(pal.bg, .25, .07));
 
     // top edge
     drawLine(vec2(centerX - w/2, 0), vec2(centerX + w/2, 0), .08, hsl(0,0,1,.22));
@@ -375,24 +576,56 @@ function drawFloor()
 
 function drawPlayer()
 {
-    // shadow
-    drawRect(vec2(player.pos.x, FLOOR_Y + .05), vec2(.9, .12), hsl(0,0,0,.25));
+    // ground shadow (shrinks as cube rises)
+    const h = max(0, player.pos.y - FLOOR_Y);
+    const shA = clamp(.3 - h*.06, .05, .3);
+    const shW = clamp(.95 - h*.05, .45, .95);
+    drawRect(vec2(player.pos.x, FLOOR_Y + .04), vec2(shW, .14), hsl(0,0,0,shA));
 
-    // cube
-    drawRect(player.pos, PLAYER_SIZE, hsl(.90, .75, .58), player.angle);
-    drawRect(player.pos, PLAYER_SIZE.scale(.78), hsl(.90, .70, .35), player.angle);
+    // landing squash: wider + shorter for a frame or two
+    const sq = player.land;
+    const size = vec2(PLAYER_SIZE.x * (1 + .45*sq), PLAYER_SIZE.y * (1 - .45*sq));
 
-    // tiny face dot (screen-ish vibe)
+    // soft neon glow
+    drawRect(player.pos, size.scale(1.7), hsl(.90, .85, .6, .12), player.angle);
+    drawRect(player.pos, size.scale(1.35), hsl(.90, .85, .6, .16), player.angle);
+
+    // cube body
+    drawRect(player.pos, size, hsl(.90, .80, .60), player.angle);
+    drawRect(player.pos, size.scale(.78), hsl(.90, .72, .38), player.angle);
+
+    // tiny face dot
     const eyeOffset = vec2(.16, .08).rotate(player.angle);
-    drawRect(player.pos.add(eyeOffset), vec2(.10, .10), hsl(0,0,1,.9));
+    drawRect(player.pos.add(eyeOffset), vec2(.10, .10), hsl(0,0,1,.9), player.angle);
+}
+
+function drawTrail()
+{
+    for (const n of trail)
+    {
+        const w = (n.air ? .62 : .42) * n.t;
+        drawRect(n.pos, vec2(PLAYER_SIZE.x * w), hsl(.90, .85, .62, .35 * n.t));
+    }
+}
+
+function drawFinish()
+{
+    // glowing goal portal at the end of the level
+    for (let i=4; i>=1; --i)
+        drawRect(vec2(endX, 3.5), vec2(.45*i, 8), hsl(.33, .9, .55, .1));
+    drawRect(vec2(endX, 3.5), vec2(.4, 8), hsl(.33, 1, .65, .85));
+
+    // checker flag band near the top of the pole
+    for (let i=0; i<5; ++i)
+        drawRect(vec2(endX + .55, 6.6 - i*.5), vec2(.5, .5), (i%2) ? hsl(0,0,1) : hsl(0,0,.1));
 }
 
 function drawParticles()
 {
     for (const p of particles)
     {
-        const a = clamp(p.life / 40, 0, 1);
-        drawRect(p.pos, vec2(p.size), hsl(.90, .75, .65, a));
+        const a = clamp(p.life / (p.maxLife || 40), 0, 1);
+        drawRect(p.pos, vec2(p.size), hsl(p.hue ?? .90, .80, .65, a), p.angle || 0);
     }
 }
 
@@ -401,11 +634,15 @@ function drawParticles()
 
 function startGame()
 {
+    mode = 'classic';
+    levelIndex = 0;
+    campaignComplete = false;
     buildLevel();
     resetGame();
     setPlaying(true);
     clearSubmenuStack();
     hideAllMenus();
+    announceLevel();
 }
 
 function buildMenus()
@@ -435,7 +672,7 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('geometryDash');
-    bestProgress = getSaveData().bestProgress ?? 0;
+    bestLevel = getSaveData().bestLevel ?? 1;
     // called once after the engine starts up
     setShowSplashScreen(false);
     setCanvasFixedSize(vec2(1280, 720));
@@ -463,7 +700,12 @@ function gameUpdate()
     {
         updateParticles();
         if (wantJump() || keyWasPressed('KeyR'))
-            resetGame();
+        {
+            if (state === 'win' && !keyWasPressed('KeyR'))
+                advanceLevel();     // clear -> next level (or finish campaign)
+            else
+                resetGame();        // crash (or R) -> retry current level
+        }
         return;
     }
 
@@ -502,6 +744,8 @@ function gameRender()
     for (const s of spikes)
         drawSpike(s);
 
+    drawFinish();
+    drawTrail();
     drawParticles();
     drawPlayer();
 }
@@ -510,11 +754,28 @@ function gameRender()
 function gameRenderPost()
 {
     // HUD
-    const progress = clamp(player.pos.x / endX, 0, 1);
+    const progress = clamp((player.pos.x - levelStartX) / (endX - levelStartX), 0, 1);
     const pct = (progress * 100)|0;
 
-    drawTextScreen(`SPACE / CLICK to jump   •   R to restart`, vec2(mainCanvasSize.x/2, 38), 28, hsl(0,0,1,.8), 4, hsl(0,0,0,.6));
-    drawTextScreen(`Progress: ${pct}%`, vec2(mainCanvasSize.x/2, 74), 34, hsl(0,0,1,.85), 4, hsl(0,0,0,.6));
+    // Geometry-Dash-style progress bar
+    const cx = mainCanvasSize.x/2;
+    const barW = mainCanvasSize.x * .46;
+    const barH = 22;
+    const by = 40;
+    const left = cx - barW/2;
+    drawRect(vec2(cx, by), vec2(barW + 10, barH + 10), hsl(0,0,0,.55), 0, false, true);
+    drawRect(vec2(cx, by), vec2(barW, barH), hsl(.62,.4,.18), 0, false, true);
+    if (progress > 0)
+        drawRect(vec2(left + barW*progress/2, by), vec2(barW*progress, barH), hsl(.33,.85,.55), 0, false, true);
+    // bright leading edge
+    if (progress > 0 && progress < 1)
+        drawRect(vec2(left + barW*progress, by), vec2(4, barH), hsl(.33,1,.8), 0, false, true);
+    drawTextScreen(`${pct}%`, vec2(cx, by + 1), 18, hsl(0,0,1,.95), 3, hsl(0,0,0,.7), 'center', undefined, 'bold');
+
+    // level readout (left of the bar)
+    drawTextScreen(`LEVEL ${levelIndex+1}/${TOTAL_LEVELS}`, vec2(left - 70, by + 1), 22, hsl(.9,.8,.7), 3, hsl(0,0,0,.7), 'center', undefined, 'bold');
+
+    drawTextScreen(`SPACE / CLICK to jump   •   R to restart`, vec2(cx, 78), 26, hsl(0,0,1,.75), 4, hsl(0,0,0,.6));
 
     if (state === 'dead')
     {
@@ -523,8 +784,10 @@ function gameRenderPost()
     }
     else if (state === 'win')
     {
-        drawTextScreen('LEVEL CLEAR!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), 110, hsl(.33, .9, .55), 10, hsl(0,0,0,.8));
-        drawTextScreen('Press SPACE / CLICK to play again', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 44, hsl(0,0,1,.9), 6, hsl(0,0,0,.8));
+        const title  = campaignComplete ? 'CAMPAIGN COMPLETE!' : 'LEVEL CLEAR!';
+        const prompt = campaignComplete ? 'Press SPACE / CLICK to return to title' : 'Press SPACE / CLICK for next level';
+        drawTextScreen(title, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), campaignComplete ? 84 : 110, hsl(.33, .9, .55), 10, hsl(0,0,0,.8));
+        drawTextScreen(prompt, vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 + 30), 44, hsl(0,0,1,.9), 6, hsl(0,0,0,.8));
     }
 }
 
