@@ -417,6 +417,17 @@
     quitToTitle(() => { gameOver = false; resetRun(true); });
   }
 
+  // Debug: jump to the next level from the browser console — call nextLevel().
+  // Bumps the level (faster cars/logs), reshuffles obstacles, resets the frog.
+  function nextLevel() {
+    level++;
+    reached.fill(false);
+    buildLanes();
+    resetRun(false);
+    console.log('Jumped to level', level);
+  }
+  window.nextLevel = nextLevel;
+
   function buildMenus() {
     if (typeof createMenu !== 'function') return;
 
@@ -667,13 +678,6 @@
     // bark grooves
     ctx.strokeStyle = 'rgba(60,38,18,.5)'; ctx.lineWidth = 9;
     for (const gx of [165, 250, 335]) { ctx.beginPath(); ctx.moveTo(gx, 104); ctx.lineTo(gx, 396); ctx.stroke(); }
-    // cut-face rings at both ends
-    const rings = [['#7a4f27',1],['#9a6a38',.74],['#b5854c',.5],['#caa06a',.26]];
-    for (const ex of [78, 422])
-      for (const [col, k] of rings) {
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.ellipse(ex, 250, 52*k, 150*k, 0, 0, Math.PI*2); ctx.fill();
-      }
   }
 
   function paintFrog(ctx) {
@@ -736,7 +740,7 @@
     sprites.busBase       = drawToTexture(10, paintBusBase,       'white tall bus body, tintable');
     sprites.busDetail     = drawToTexture(11, paintBusDetail,     'bus window row, door, stripe, headlight overlay');
     sprites.tire          = drawToTexture(12, paintTire,          'black rubber tire with gray hub, top wheel');
-    sprites.log           = drawToTexture(13, paintLog,           'brown floating log with bark grooves and cut-face rings');
+    sprites.log           = drawToTexture(13, paintLog,           'brown floating log with bark grooves');
     sprites.frog          = drawToTexture(14, paintFrog,          'green cartoon frog from above, big eyes, facing up');
     sprites.lily          = drawToTexture(15, paintLily,          'green lily pad with notch, top view');
   }
@@ -948,17 +952,23 @@
     drawWaterRipples();
     drawHomeFrogs();
 
-    // Draw back-to-front: higher-y (further back) first so lower-y obstacles
-    // overlap and read as nearer the viewer.
-    const byDepth = (a, b) => b.pos.y - a.pos.y;
-    for (const l of [...logs].sort(byDepth)) drawLog(l);
-    for (const c of [...cars].sort(byDepth)) drawCar(c);
+    // Draw cars, logs, AND the player together, sorted back-to-front by y:
+    // higher y (further back) first, lower y (nearer) last/on top. So the frog
+    // can sit behind a car that's one row below it, or in front of one above.
+    const drawables = [];
+    for (const l of logs) drawables.push({ y: l.pos.y, draw: () => drawLog(l) });
+    for (const c of cars) drawables.push({ y: c.pos.y, draw: () => drawCar(c) });
 
     // Alive player frog — disappears on death (particles play instead) and on title.
     if (isPlaying() && !gameOver && !respawnTimer.active()) {
       const logBump = frog.onLog ? logBumpY(frog.onLog) : 0;
-      drawFrog(frog.pos.add(vec2(0, logBump)), frog.facing, frog.hopAnim);
+      // tiny bias so the frog draws in front of a log it's riding at the same row
+      drawables.push({ y: frog.pos.y - .001,
+        draw: () => drawFrog(frog.pos.add(vec2(0, logBump)), frog.facing, frog.hopAnim) });
     }
+
+    drawables.sort((a, b) => b.y - a.y);
+    for (const d of drawables) d.draw();
 
     // Death particles on top of everything so they read clearly.
     for (const p of particles) {
