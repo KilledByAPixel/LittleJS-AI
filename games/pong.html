@@ -31,9 +31,12 @@ showEngineVersion = false; // Hide engine version console display
     const ballSize   = vec2(1.0, 1.0);
 
     const paddleSpeed = 18;
-    const aiSpeed     = 15;
+    const aiSpeed     = 14;          // capped so fast, wide shots can beat the AI
 
-    const maxBallSpeed = 30;
+    const ballStartSpeed  = 13;      // serve speed at the start of each rally
+    const ballSpeedup     = 5.2;     // added to ball speed on every paddle hit
+    const maxBallSpeed    = 42;      // rally speed ceiling
+    const maxBounceAngle  = 1.15;    // ~66 deg off horizontal at the paddle edges
 
     let left = { pos: vec2(-halfField.x + 2.2, 0) };
     let right = { pos: vec2( halfField.x - 2.2, 0) };
@@ -48,12 +51,12 @@ showEngineVersion = false; // Hide engine version console display
     let aiRight = true; // press T to toggle
 
     // AI configuration
-    const aiReactionDelay = 0.15;   // seconds before AI reacts to ball direction change
-    const aiErrorMargin = 1.5;      // random offset to make AI imperfect
-    const aiPredictionNoise = 0.12; // noise in ball trajectory prediction
-    let aiTargetY = 0;              // where AI wants to move
-    let aiLastUpdate = 0;           // time of last prediction update
-    let aiPredictedY = 0;           // predicted ball Y at paddle
+    const aiErrorMargin = 1.8;      // random aim offset, rolled ONCE per volley (keeps it beatable, no jitter)
+    const aiSmoothing   = 0.15;     // how quickly AI velocity eases toward its desired velocity
+    let aiTargetY  = 0;             // where AI wants to move
+    let aiPredictedY = 0;           // predicted ball Y at paddle, locked in for the current volley
+    let aiVel      = 0;             // smoothed paddle velocity (eliminates snap/jitter)
+    let aiBallDir  = 0;             // sign of ball.vel.x last frame, used to detect a new volley
 
     // Sounds
     let sfxPaddle, sfxWall, sfxScore, sfxServe;
@@ -68,6 +71,15 @@ showEngineVersion = false; // Hide engine version console display
     let bgFlash = 0, bgFlashColor = COLOR_L;
     let lastHitter = 0;                  // -1 left, +1 right, 0 none
     let ballTrail = [];                  // {pos, color}
+
+    // squash & stretch (0 = rest, 1 = just got hit, decays each frame)
+    let ballSquash  = 0;                 // ball stretches along travel on impact
+    let leftSquash  = 0, rightSquash = 0;// paddles recoil on impact
+
+    // danger state — ramps up as the ball nears max speed
+    const dangerColor = hsl(.02, .95, .55);  // hot red
+    const dangerStart = 33;                  // speed where the danger effect begins
+    let dangerLevel = 0;                     // 0..1
 
     function ballTintColor()
     {
@@ -115,6 +127,24 @@ showEngineVersion = false; // Hide engine version console display
     {
             const limit = halfField.y - paddleSize.y/2;
             p.pos.y = clamp(p.pos.y, -limit, limit);
+    }
+
+    // Bounce the ball off a paddle. dirX is the outgoing x direction (+1 = right, -1 = left).
+    // Where the ball strikes the paddle sets the angle; every hit also speeds the ball up.
+    function bounceOffPaddle(paddle, dirX)
+    {
+            // snap ball to the paddle face so it can't tunnel through on a fast frame
+            ball.pos.x = paddle.pos.x + dirX * (paddleSize.x + ballSize.x) * .5;
+
+            // hit position drives the bounce angle (steep near the edges, flat in the middle)
+            const offset = clamp((ball.pos.y - paddle.pos.y) / (paddleSize.y * .5), -1, 1);
+            const angle  = offset * maxBounceAngle;
+
+            // faster and faster: add a fixed boost each hit, up to the rally ceiling
+            const speed = min(ball.vel.length() + ballSpeedup, maxBallSpeed);
+            ball.vel = vec2(dirX * Math.cos(angle), Math.sin(angle)).scale(speed);
+
+            ballSquash = 1; // snappy stretch on the way out
     }
 
     // Predict where ball will be when it reaches a given x position
@@ -167,8 +197,7 @@ showEngineVersion = false; // Hide engine version console display
             // Serve direction: +x goes right, -x goes left
             const dirX = ball._serveDir ?? (randBool() ? 1 : -1);
             const angle = rand(-.25, .25); // slight vertical variance
-            const speed = 14;
-            ball.vel = vec2(dirX, angle).normalize(speed);
+            ball.vel = vec2(dirX, angle).normalize(ballStartSpeed);
             waitingForServe = false;
             sfxServe?.play(ball.pos);
     }
@@ -211,6 +240,9 @@ showEngineVersion = false; // Hide engine version console display
             // camera centered; choose scale so field fits nicely
             setCameraPos(vec2(0, 0));
             cameraScale = 32;
+
+            // CRT vibe over the whole frame (scanlines, bloom, curvature, chromatic aberration)
+            new PostProcessPlugin(tvShader, true);
 
             // Sounds (simple, punchy)
             sfxPaddle = new SoundGenerator({ volume:.7, frequency:520, release:.07, shapeCurve:1.8, randomness:.08 });
@@ -295,37 +327,30 @@ showEngineVersion = false; // Hide engine version console display
             }
             else
             {
-                    // AI with prediction and imperfection
+                    // AI: lock in one prediction per volley, then ease toward it smoothly.
                     if (waitingForServe || gameOver)
                     {
-                            // Drift to center when waiting
-                            aiTargetY = 0;
+                            aiTargetY = 0; // drift to center when waiting
                     }
                     else if (ball.vel.x > 0)
                     {
-                            // Ball coming toward AI - predict intercept
-                            const now = time;
-                            if (now - aiLastUpdate > aiReactionDelay)
-                            {
-                                    aiLastUpdate = now;
-                                    aiPredictedY = predictBallY(right.pos.x);
-                                    // Add some error to make AI beatable
-                                    aiPredictedY += rand(-aiErrorMargin, aiErrorMargin);
-                                    aiPredictedY += ball.vel.y * aiPredictionNoise;
-                            }
+                            // Ball just turned toward the AI? Predict the intercept ONCE and
+                            // bake in a fixed aim error for the whole volley (stable = no jitter).
+                            if (aiBallDir <= 0)
+                                    aiPredictedY = predictBallY(right.pos.x) + rand(-aiErrorMargin, aiErrorMargin);
                             aiTargetY = aiPredictedY;
                     }
                     else
                     {
-                            // Ball going away - return toward center
-                            aiTargetY = ball.pos.y * 0.3;
+                            aiTargetY = ball.pos.y * 0.3; // ball going away - relax toward center
                     }
-                    
-                    // Move toward target
+                    aiBallDir = sign(ball.vel.x);
+
+                    // Smoothly accelerate toward the target (P-controller + velocity easing).
                     const diff = aiTargetY - right.pos.y;
-                    const dir = Math.sign(diff);
-                    const move = Math.min(Math.abs(diff), aiSpeed * timeDelta);
-                    right.pos.y += dir * move;
+                    const desiredVel = clamp(diff * 5, -aiSpeed, aiSpeed);
+                    aiVel = lerp(aiVel, desiredVel, aiSmoothing);
+                    right.pos.y += aiVel * timeDelta;
             }
             clampPaddleY(right);
 
@@ -344,6 +369,7 @@ showEngineVersion = false; // Hide engine version console display
                     sfxWall?.play(ball.pos);
                     spawnHitBurst(ball.pos, ballTintColor());
                     addScreenShake(.06, .05);
+                    ballSquash = .6;
             }
             else if (ball.pos.y < -yLimit)
             {
@@ -352,45 +378,40 @@ showEngineVersion = false; // Hide engine version console display
                     sfxWall?.play(ball.pos);
                     spawnHitBurst(ball.pos, ballTintColor());
                     addScreenShake(.06, .05);
+                    ballSquash = .6;
             }
 
             // Left paddle
             if (ball.vel.x < 0 && aabbOverlap(ball.pos, ballSize, left.pos, paddleSize))
             {
-                    ball.pos.x = left.pos.x + (paddleSize.x + ballSize.x) * .5;
-                    ball.vel.x = Math.abs(ball.vel.x);
-
-                    const offset = clamp((ball.pos.y - left.pos.y) / (paddleSize.y * .5), -1, 1);
-                    ball.vel.y += offset * 8;
-
-                    const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
-                    ball.vel = ball.vel.normalize(speed);
+                    bounceOffPaddle(left, 1);
                     sfxPaddle?.play(ball.pos);
 
                     lastHitter = -1;
                     leftFlash = 1;
-                    addScreenShake(.10, .1);
+                    leftSquash = 1;
+                    // faster rallies hit harder
+                    addScreenShake(.08 + ball.vel.length() / maxBallSpeed * .12, .12);
                     spawnHitBurst(ball.pos, COLOR_L);
             }
 
             // Right paddle
             if (ball.vel.x > 0 && aabbOverlap(ball.pos, ballSize, right.pos, paddleSize))
             {
-                    ball.pos.x = right.pos.x - (paddleSize.x + ballSize.x) * .5;
-                    ball.vel.x = -Math.abs(ball.vel.x);
-
-                    const offset = clamp((ball.pos.y - right.pos.y) / (paddleSize.y * .5), -1, 1);
-                    ball.vel.y += offset * 8;
-
-                    const speed = clamp(ball.vel.length() * 1.04, 14, maxBallSpeed);
-                    ball.vel = ball.vel.normalize(speed);
+                    bounceOffPaddle(right, -1);
                     sfxPaddle?.play(ball.pos);
 
                     lastHitter = 1;
                     rightFlash = 1;
-                    addScreenShake(.10, .1);
+                    rightSquash = 1;
+                    addScreenShake(.08 + ball.vel.length() / maxBallSpeed * .12, .12);
                     spawnHitBurst(ball.pos, COLOR_R);
             }
+
+            // Danger ramps up as the ball approaches max speed
+            dangerLevel = clamp((ball.vel.length() - dangerStart) / (maxBallSpeed - dangerStart), 0, 1);
+            if (dangerLevel > 0)
+                    addScreenShake(.02 * dangerLevel, .05); // low continuous rumble at top speed
 
             // Scoring
             if (ball.pos.x < -halfField.x - 2)
@@ -408,14 +429,24 @@ showEngineVersion = false; // Hide engine version console display
             rightScoreFlash = max(0, rightScoreFlash - timeDelta * 1.2);
             bgFlash         = max(0, bgFlash         - timeDelta * 1.8);
 
+            // squash & stretch springs back quickly
+            ballSquash  = max(0, ballSquash  - timeDelta * 6);
+            leftSquash  = max(0, leftSquash  - timeDelta * 6);
+            rightSquash = max(0, rightSquash - timeDelta * 6);
+
             if (!waitingForServe && !gameOver)
             {
-                    ballTrail.push({ pos: ball.pos.copy(), color: ballTintColor() });
+                    // trail glows hotter (toward red) as danger rises
+                    ballTrail.push({ pos: ball.pos.copy(), color: colorLerp(ballTintColor(), dangerColor, dangerLevel) });
                     if (ballTrail.length > TRAIL_LEN)
                             ballTrail.shift();
             }
-            else if (ballTrail.length)
-                    ballTrail.length = 0;
+            else
+            {
+                    dangerLevel = 0;
+                    if (ballTrail.length)
+                            ballTrail.length = 0;
+            }
     }
 
     function gameRender()
@@ -425,9 +456,11 @@ showEngineVersion = false; // Hide engine version console display
 
             // playfield (tinted briefly toward scoring team on a score)
             const fieldBase = rgb(.12, .12, .12);
-            const fieldCol  = bgFlash > 0
+            let fieldCol = bgFlash > 0
                     ? colorLerp(fieldBase, bgFlashColor, bgFlash * .5)
                     : fieldBase;
+            if (dangerLevel > 0)
+                    fieldCol = colorLerp(fieldCol, rgb(.16, .03, .03), dangerLevel * .5);
             drawRect(vec2(0, 0), fieldSize, fieldCol);
 
             // center dashed line
@@ -448,25 +481,35 @@ showEngineVersion = false; // Hide engine version console display
                     drawRect(t.pos, ballSize.scale(k * .9), c);
             }
 
-            // paddles — flash to team color on hit, white at rest
+            // paddles — flash to team color on hit, white at rest; recoil (squash) on impact
             const leftCol  = colorLerp(rgb(.95,.95,.95), COLOR_L, leftFlash);
             const rightCol = colorLerp(rgb(.95,.95,.95), COLOR_R, rightFlash);
-            drawRect(left.pos,  paddleSize, leftCol);
-            drawRect(right.pos, paddleSize, rightCol);
+            const lPadSize = vec2(paddleSize.x * (1 - leftSquash  * .4), paddleSize.y * (1 + leftSquash  * .18));
+            const rPadSize = vec2(paddleSize.x * (1 - rightSquash * .4), paddleSize.y * (1 + rightSquash * .18));
+            drawRect(left.pos,  lPadSize, leftCol);
+            drawRect(right.pos, rPadSize, rightCol);
 
-            // ball — glow halo (sized with speed, color of last hitter)
-            const speedT = clamp((ball.vel.length() - 14) / (maxBallSpeed - 14), 0, 1);
-            const haloCol = ballTintColor();
+            // ball — glow halo (sized with speed, flaring red & pulsing in the danger zone)
+            const speedT = clamp((ball.vel.length() - ballStartSpeed) / (maxBallSpeed - ballStartSpeed), 0, 1);
+            const dangerPulse = dangerLevel * (.6 + .4 * Math.sin(time * 22));
+            const haloCol = colorLerp(ballTintColor(), dangerColor, dangerLevel);
             drawRect(
                     ball.pos,
-                    ballSize.scale(1.6 + speedT * 1.4),
-                    new Color(haloCol.r, haloCol.g, haloCol.b, .18 + speedT * .25),
+                    ballSize.scale(1.6 + speedT * 1.4 + dangerPulse * 1.3),
+                    new Color(haloCol.r, haloCol.g, haloCol.b, .18 + speedT * .25 + dangerPulse * .3),
             );
-            drawRect(ball.pos, ballSize, rgb(1, 1, 1));
 
-            // top/bottom border lines (subtle)
-            drawRect(vec2(0, halfField.y + .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
-            drawRect(vec2(0,-halfField.y - .15), vec2(fieldSize.x, .15), rgb(.2,.2,.2));
+            // core — stretched along travel direction on impact, tinted hot when dangerous
+            const ballAngle    = ball.vel.lengthSquared() ? ball.vel.angle() : 0;
+            const ballDrawSize = vec2(ballSize.x * (1 - ballSquash * .4), ballSize.y * (1 + ballSquash * .7));
+            const coreCol      = colorLerp(rgb(1,1,1), dangerColor, dangerLevel * .6);
+            drawRect(ball.pos, ballDrawSize, coreCol, ballAngle);
+
+            // top/bottom border lines (pulse red at top speed)
+            const borderCol   = colorLerp(rgb(.2,.2,.2), dangerColor, dangerPulse);
+            const borderThick = .15 + dangerPulse * .35;
+            drawRect(vec2(0, halfField.y + .15), vec2(fieldSize.x, borderThick), borderCol);
+            drawRect(vec2(0,-halfField.y - .15), vec2(fieldSize.x, borderThick), borderCol);
     }
 
     function gameRenderPost()
@@ -500,6 +543,68 @@ showEngineVersion = false; // Hide engine version console display
                     y += 28;
             }
     }
+
+    // ------------------------------------------------------------
+    // CRT post-process shader, juiced up from the Space Invaders version:
+    // barrel curvature + chromatic aberration + neon bloom + static + scanlines + vignette.
+    // (includeMainCanvas=true pulls the HUD/menus through the shader too — kept mild so text stays readable.)
+    const tvShader = `
+    float hash(vec2 p)
+    {
+        p = fract(p * .3197);
+        return fract(1. + sin(51.*p.x + 73.*p.y) * 13753.3);
+    }
+
+    void mainImage(out vec4 c, vec2 p)
+    {
+        p /= iResolution.xy;
+
+        // subtle CRT barrel curvature
+        vec2 cuv = p - .5;
+        float curve = dot(cuv, cuv);
+        p += cuv * curve * .10;
+
+        // chromatic aberration — split RGB radially, stronger toward the edges
+        float ca = .0014 * (1. + curve * 3.);
+        vec2 dir = normalize(cuv + 1e-5);
+        c.r = texture(iChannel0, p - dir * ca).r;
+        c.g = texture(iChannel0, p).g;
+        c.b = texture(iChannel0, p + dir * ca).b;
+        c.a = 1.;
+
+        // neon bloom (brighter cross blur than the invaders version)
+        const float blurSize = .0026;
+        const float bloomIntensity = .34;
+        vec4 bloom = vec4(0);
+        bloom += texture(iChannel0, p + vec2(-2.*blurSize, 0)) * .12;
+        bloom += texture(iChannel0, p + vec2(   -blurSize, 0)) * .24;
+        bloom += texture(iChannel0, p)                         * .28;
+        bloom += texture(iChannel0, p + vec2(    blurSize, 0)) * .24;
+        bloom += texture(iChannel0, p + vec2( 2.*blurSize, 0)) * .12;
+        bloom += texture(iChannel0, p + vec2(0, -2.*blurSize)) * .12;
+        bloom += texture(iChannel0, p + vec2(0,    -blurSize)) * .24;
+        bloom += texture(iChannel0, p)                         * .28;
+        bloom += texture(iChannel0, p + vec2(0,     blurSize)) * .24;
+        bloom += texture(iChannel0, p + vec2(0,  2.*blurSize)) * .12;
+        c += bloom * bloomIntensity;
+
+        // faint static noise
+        const float staticAlpha = .05;
+        const float staticScale = .002;
+        c += staticAlpha * hash(floor(p / staticScale) + mod(iTime * 500., 1e3));
+
+        // scan lines
+        const float scanlineAlpha = .28;
+        c *= 1. - scanlineAlpha * cos(p.y * 2. * iResolution.y);
+
+        // dark vignette around edges
+        float dx = 2.*p.x - 1., dy = 2.*p.y - 1.;
+        c *= 1. - pow((dx*dx + dy*dy) / 2., 6.);
+
+        // black border outside the curved screen
+        if (p.x < 0. || p.x > 1. || p.y < 0. || p.y > 1.)
+            c = vec4(0, 0, 0, 1);
+    }`;
 
     // Startup LittleJS Engine
     engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
