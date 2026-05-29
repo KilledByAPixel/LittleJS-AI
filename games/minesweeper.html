@@ -253,6 +253,78 @@ function pickCellFromMouse()
     return {x,y};
 }
 
+// Silent flood reveal used ONLY for the title backdrop — no sounds, no win
+// check. Mirrors revealCell's flood fill but never touches a mine (flood only
+// ever starts from a zero cell, whose neighbors are mine-free by definition).
+function attractReveal(x,y)
+{
+    if (!inBounds(x,y)) return;
+    const i = idx(x,y);
+    if (revealed[i] || mines[i]) return;
+
+    revealed[i] = 1;
+    revealedCount++;
+
+    if (nums[i] === 0)
+    {
+        const stack = [x,y];
+        while (stack.length)
+        {
+            const cy = stack.pop();
+            const cx = stack.pop();
+            for (let oy=-1; oy<=1; oy++)
+            for (let ox=-1; ox<=1; ox++)
+            {
+                const nx = cx+ox, ny = cy+oy;
+                if (!inBounds(nx,ny)) continue;
+                const ni = idx(nx,ny);
+                if (revealed[ni] || mines[ni]) continue;
+                revealed[ni] = 1;
+                revealedCount++;
+                if (nums[ni] === 0) stack.push(nx, ny);
+            }
+        }
+    }
+}
+
+// Build a mid-game-looking board for the title screen: place mines, then open
+// a few safe regions so the menu sits over a partially-played board instead of
+// a blank grid. Starting a real round calls resetGame() and wipes this.
+function setupAttractBoard()
+{
+    resetGame();
+
+    // pick a safe interior cell and seed the mine field around it
+    const sx = randInt(2, max(3, boardW-2));
+    const sy = randInt(2, max(3, boardH-2));
+    placeMines(sx, sy);
+    firstClick = false;
+
+    // open the guaranteed-safe seed, then a couple more zero-cell openings so
+    // several blobs of numbers show through behind the menu
+    attractReveal(sx, sy);
+    for (let tries=0, opened=0; tries<60 && opened<2; tries++)
+    {
+        const x = randInt(boardW), y = randInt(boardH);
+        const ci = idx(x,y);
+        if (mines[ci] || revealed[ci] || nums[ci] !== 0) continue;
+        attractReveal(x, y);
+        opened++;
+    }
+
+    // scatter a few flags on hidden cells (preferring real mines) so the
+    // backdrop reads like a game in progress, not a fresh board
+    for (let placed=0, tries=0; placed<4 && tries<200; tries++)
+    {
+        const x = randInt(boardW), y = randInt(boardH);
+        const fi = idx(x,y);
+        if (revealed[fi] || flagged[fi]) continue;
+        if (!mines[fi] && tries < 120) continue; // bias toward mines early
+        flagged[fi] = 1;
+        placed++;
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Lightweight self-tests (logs only; won’t affect gameplay)
 function assert(cond, msg)
@@ -311,7 +383,7 @@ async function gameInit()
     sWin    = new SoundGenerator({frequency:520, release:.25, slide:.6, volume:.9});
 
     runSelfTests();
-    resetGame();
+    setupAttractBoard();
 
     // pause the engine whenever any menu (including dialogs) is visible
     installAutoPause();
@@ -376,6 +448,7 @@ async function gameInit()
             clearSubmenuStack();
             hideAllMenus();
             setPlaying(false);
+            setupAttractBoard();
             showMenu('title');
         },
     });

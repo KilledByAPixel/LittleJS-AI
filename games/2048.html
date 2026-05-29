@@ -55,7 +55,7 @@ let sMove, sMerge, sSpawn, sLose, sWin;
 
 function quitToTitleWithCleanup()
 {
-    quitToTitle(newGame);
+    quitToTitle(setupAttractBoard);
 }
 
 function gameInit()
@@ -69,7 +69,7 @@ function gameInit()
     sLose  = new SoundGenerator({frequency: 120, slide: -.15, release: .35, volume: .9, randomness: .02});
     sWin   = new SoundGenerator({frequency: 620, pitchJump: 220, pitchJumpTime: .05, release: .25, volume: 1, randomness: .01});
 
-    newGame();
+    setupAttractBoard();
     buildMenus();
     showMenu('title');
 }
@@ -144,7 +144,7 @@ function showLoseDialog()
         yesLabel: 'NEW GAME',
         noLabel:  'QUIT',
         onYes: () => { newGame(); },
-        onNo:  () => { newGame(); setPlaying(false); showMenu('title'); },
+        onNo:  () => { setupAttractBoard(); setPlaying(false); showMenu('title'); },
     });
 }
 
@@ -186,6 +186,47 @@ function newGame()
     // Silent on the opening two tiles — startup audio is noise, not feedback.
     addRandomTile(true);
     addRandomTile(true);
+}
+
+// Decorative, non-interactive layout shown behind the title menu: a 2048 tile
+// in the top-left plus a scatter of other values so the board looks mid-game
+// instead of nearly empty. Gameplay never runs on the title (gameUpdate
+// early-returns on !isPlaying), so this is purely visual; starting a round
+// calls newGame() and replaces it.
+function setupAttractBoard()
+{
+    score = 0;
+    gameOver = false;
+    won = false;
+    continueAfterWin = false;
+    winDialogShown = false;
+    loseDialogShown = false;
+    animT = 0;
+    pendingSpawn = false;
+
+    tiles = [];
+    grid = [];
+    for (let y = 0; y < GRID; ++y)
+    {
+        grid[y] = [];
+        for (let x = 0; x < GRID; ++x) grid[y][x] = null;
+    }
+
+    // [gridX, gridY, value] — gy 0 is the top row, so [0,0,*] is top-left.
+    const layout = [
+        [0, 0, 2048],
+        [3, 1, 8],
+        [0, 2, 32],
+        [0, 3, 2],
+        [2, 3, 16],
+        [3, 3, 258],
+    ];
+    for (const [gx, gy, value] of layout)
+    {
+        const t = makeTile(value, gx, gy);
+        grid[gy][gx] = t;
+        tiles.push(t);
+    }
 }
 
 function boardWorldSize()
