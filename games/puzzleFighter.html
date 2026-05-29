@@ -2876,6 +2876,30 @@ function rrPath(ctx, x, y, w, h, r)
     else ctx.rect(x, y, w, h);
 }
 
+// Mini view of a character's counter-gem drop pattern (6 wide, rows bottom-up,
+// the order they'd stack on the opponent). Drawn on the raw 2D context.
+function drawAttackPattern(ctx, character, cx, top)
+{
+    const pat = character.pattern;       // [row][col], row 0 = first dropped (bottom)
+    const rows = pat.length, cols = 6, cell = 13;
+    const gw = cols * cell, gh = rows * cell, left = cx - gw/2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.fillRect(left - 2, top - 2, gw + 4, gh + 4);
+    for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+    {
+        const ci = pat[r][c];
+        const col = GEM_COLORS[ci];
+        const sr = rows - 1 - r;          // pattern row 0 drawn at the BOTTOM
+        const x = left + c * cell, y = top + sr * cell;
+        ctx.fillStyle = css(col, 1);
+        ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+        drawSimpleGlyph(ctx, ci, x + cell/2, y + cell/2, cell - 4);
+    }
+    ctx.restore();
+}
+
 function gameRenderPost()
 {
     const ctx = mainContext;
@@ -2892,7 +2916,7 @@ function gameRenderPost()
     if (matchState !== 'playing' || !currentMatch) return;
 
     const cx = mainCanvasSize.x / 2;
-    const colOffset = 60, PW = 92, PH = 296, PTOP = 138;
+    const colOffset = 60, PW = 92, PH = 322, PTOP = 138;
 
     for (let i = 0; i < 2; i++)
     {
@@ -2915,7 +2939,7 @@ function gameRenderPost()
         ctx.restore();
 
         // NEXT well
-        const wellCy = PTOP + 56;
+        const wellCy = PTOP + 54;
         ctx.save();
         rrPath(ctx, px - 22, wellCy - 30, 44, 60, 6);
         ctx.fillStyle = 'rgba(0,0,0,.5)';
@@ -2930,29 +2954,32 @@ function gameRenderPost()
 
         // Text via the crisp overlay layer (drawn on top of the panel/gems).
         drawTextScreen('NEXT', vec2(px, PTOP + 16), 13, hsl(0,0,.65), 2);
-        drawTextScreen(b.character.name, vec2(px, PTOP + 108), 20, accent, 4, hsl(0,0,0));
-        drawTextScreen('SCORE', vec2(px, PTOP + 138), 12, hsl(0,0,.6), 2);
-        drawTextScreen('' + b.score, vec2(px, PTOP + 164), 26, hsl(.14,1,.7), 4, hsl(0,0,0));
+        drawTextScreen(b.character.name, vec2(px, PTOP + 104), 20, accent, 4, hsl(0,0,0));
+        drawTextScreen('SCORE', vec2(px, PTOP + 128), 12, hsl(0,0,.6), 2);
+        drawTextScreen('' + b.score, vec2(px, PTOP + 152), 24, hsl(.14,1,.7), 4, hsl(0,0,0));
         if (b.chain > 1)
-            drawTextScreen('CHAIN x' + b.chain, vec2(px, PTOP + 190), 13, hsl(.55,1,.78), 3, hsl(0,0,0));
+            drawTextScreen('CHAIN x' + b.chain, vec2(px, PTOP + 176), 13, hsl(.55,1,.78), 3, hsl(0,0,0));
 
-        // Incoming meter — colored bar that fills with pressure.
+        // Incoming meter — colored bar with the count on it (fixed slot).
         const inc = b.incomingQueue;
         if (inc > 0)
         {
             let col = rgb(1,1,.3), label = 'CAUTION';
             if (inc > 30)      { col = rgb(1,.3,.3); label = 'DANGER'; }
             else if (inc > 10) { col = rgb(1,.6,.2); label = 'WARNING'; }
-            const barW = PW - 26, barH = 14, bx = px - barW/2, barY = PTOP + 234;
+            const barW = PW - 26, barH = 14, bx = px - barW/2, barY = PTOP + 210;
             ctx.save();
             ctx.fillStyle = 'rgba(0,0,0,.55)';
             ctx.fillRect(bx, barY, barW, barH);
             ctx.fillStyle = css(col, .9);
             ctx.fillRect(bx, barY, barW * clamp(inc/40, 0, 1), barH);
             ctx.restore();
-            drawTextScreen(label, vec2(px, barY - 11), 12, col, 3, hsl(0,0,0));
-            drawTextScreen('' + inc, vec2(px, barY + 28), 16, hsl(0,0,1), 3, hsl(0,0,0));
+            drawTextScreen(label + ' ' + inc, vec2(px, barY + 7), 11, hsl(0,0,1), 3, hsl(0,0,0));
         }
+
+        // Attack pattern — the colors this fighter drops on the opponent.
+        drawTextScreen('ATTACK', vec2(px, PTOP + 240), 12, hsl(0,0,.6), 2);
+        drawAttackPattern(ctx, b.character, px, PTOP + 252);
     }
 }
 
