@@ -40,21 +40,21 @@ const LEVEL_ASCII = [
     '########################',
     '#...G..*..............G#',
     '#.######.###.######....#',
-    '#.#....#.#.#......#..M.#',
+    '#.#....#.#........#..M.#',
     '#.#P.....#.#.+.B..#....#',
     '#.#....#.#.#......#....#',
-    '#.######.#.#.######....#',
-    '#........#.#...........#',
+    '#.######.#.#.####.#....#',
+    '#........#G#...........#',
     '#.######.#.#.######...##',
     '#......#.#.#.#G.M.#....#',
     '#.B....#.#.#......#.+..#',
-    '#......#.#.#......#....#',
+    '#......#...#......#....#',
     '#......#####......######',
     '#......................#',
     '#.####.####....####.####',
-    '#.#..#.#..#....#L.#.#G.#',
-    '#.#..#.#..#.+..#..#.#..#',
-    '#.####.####....####.####',
+    '#.#+.#.#.+#....#L.#.#G.#',
+    '#.#....#....,..#....#..#',
+    '#.####.####....####.##.#',
     '#......................#',
     '###.######.######.######',
     '#.......G..*...........#',
@@ -1498,6 +1498,9 @@ function gameRenderPost()
         drawTextScreen('REACH THE EXIT', vec2(W / 2, 80),
             22, hsl(.13, 1, .7), 3, BLACK);
 
+    // minimap, top-left
+    drawMinimap();
+
     // hit flash
     if (hitFlashT > 0)
     {
@@ -1505,6 +1508,59 @@ function gameRenderPost()
         drawRect(vec2(W / 2, H / 2), vec2(W, H),
             new Color(1, 0, 0, a), 0, false, true);
     }
+}
+
+// Top-left minimap. Screen space (Y-down), world is Y-up, so the Y axis is
+// flipped here to keep north at the top of the map. Walls/exit/decorations are
+// drawn as cells, alive enemies + pickups as dots, and the player as a dot with
+// a short facing arrow.
+function drawMinimap()
+{
+    const W = mainCanvasSize.x, H = mainCanvasSize.y;
+    const mapSize = Math.min(W, H) * .22;    // overall pixel size of the square map
+    const cell = mapSize / LEVEL_W;
+    const ox = 30, oy = 64;                  // origin: just below the HP bar
+    // world (x, y-up) -> minimap pixel (y-down, north at top)
+    const toScreen = (wx, wy) => vec2(ox + wx * cell, oy + (LEVEL_H - wy) * cell);
+    const center = vec2(ox + mapSize / 2, oy + mapSize / 2);
+
+    // framed backdrop
+    drawRect(center, vec2(mapSize + 10, mapSize + 10), new Color(.6, .55, .65, .5), 0, false, true);
+    drawRect(center, vec2(mapSize + 4, mapSize + 4), new Color(0, 0, 0, .6), 0, false, true);
+
+    // cells (floor is left as the dark backdrop)
+    for (let gy = 0; gy < LEVEL_H; ++gy)
+    for (let gx = 0; gx < LEVEL_W; ++gx)
+    {
+        const c = levelGrid[gy][gx];
+        let col;
+        if      (c === '#')              col = new Color(.5, .46, .55, .95);  // wall
+        else if (c === 'X')              col = new Color(.95, .78, .2, 1);    // exit
+        else if (c === 'L' || c === 'B') col = new Color(.4, .32, .22, .85);  // decoration
+        else continue;
+        drawRect(toScreen(gx + .5, gy + .5), vec2(cell, cell), col, 0, false, true);
+    }
+
+    // pickups
+    for (const p of pickups)
+    {
+        const col = p.kind === 'health' ? new Color(.25, .9, .35, 1) : new Color(.95, .8, .3, 1);
+        drawRect(toScreen(p.pos.x, p.pos.y), vec2(cell * .55, cell * .55), col, 0, false, true);
+    }
+
+    // alive enemies
+    for (const e of enemies)
+    {
+        if (!e.alive) continue;
+        const col = e.kind === 'melee' ? new Color(1, .4, .85, 1) : new Color(1, .25, .2, 1);
+        drawRect(toScreen(e.pos.x, e.pos.y), vec2(cell * .65, cell * .65), col, 0, false, true);
+    }
+
+    // player + facing arrow (forward world delta = (sin a, cos a); screen Y inverted)
+    const pc = toScreen(playerPos.x, playerPos.y);
+    const fwd = vec2(Math.sin(playerAngle), -Math.cos(playerAngle));
+    drawLine(pc, pc.add(fwd.scale(cell * 2)), 3, new Color(1, 1, 1, 1), vec2(), 0, false, true);
+    drawRect(pc, vec2(cell * .75, cell * .75), new Color(.3, .9, 1, 1), 0, false, true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
