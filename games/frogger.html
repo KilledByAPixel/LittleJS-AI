@@ -40,27 +40,32 @@
   // spawns at row 2). The number of road + river lanes VARIES per level, so the
   // band extents and home row are computed each level by computeLayout() and
   // grow upward into the spare rows near the top of the view.
-  const ROAD_MIN_Y  = 4;            // first road lane, pinned at the bottom
-  const HOME_ROW    = LEVEL_H - 2;  // lily pads pinned near the top (row 18; row 19 = far-bank margin)
-  const MIN_MEDIAN  = 2;            // minimum safe-grass gap between road and river
-  let ROAD_LANES = 5, RIVER_LANES = 5;
+  const ROAD_MIN_FLOOR = 4;            // lowest the road can sit (start grass rows 0..3)
+  const HOME_ROW       = LEVEL_H - 2;  // lily pads pinned near the top (row 18; row 19 = far-bank margin)
+  const TARGET_MEDIAN  = 3;            // preferred grass gap between road and river
+  const MIN_MEDIAN     = 2;            // gap is only allowed to shrink to this when lanes are dense
+  let ROAD_MIN_Y = 4, ROAD_LANES = 5, RIVER_LANES = 5;
   let ROAD_MAX_Y = 8, RIVER_MIN_Y = 11, RIVER_MAX_Y = 15, HOME_Y = 16;
 
-  // The lily pads are pinned to the top (HOME_ROW) and the start grass to the
-  // bottom; the road grows UP from the bottom and the river grows DOWN from
-  // just under the home row, so added lanes fill in toward the middle. The
-  // leftover rows form the grass median between road and river, which shrinks
-  // (never below MIN_MEDIAN) as lane counts ramp with the level.
+  // The lily pads are pinned to the top (HOME_ROW) and the river grows DOWN from
+  // just under them. When lanes are sparse, the road floats UP toward the river
+  // (adding start grass at the bottom) so the middle gap stays around
+  // TARGET_MEDIAN instead of yawning open. As lane counts ramp with the level,
+  // the road sinks back toward ROAD_MIN_FLOOR and the gap compresses (never
+  // below MIN_MEDIAN), so added lanes fill in toward the middle.
   function computeLayout() {
     const diff = level - 1;
     ROAD_LANES  = clamp(4 + Math.floor(diff/2), 4, 7);   // 4 → 7
     RIVER_LANES = clamp(5 + Math.floor(diff/3), 5, 6);   // 5 → 6
     HOME_Y      = HOME_ROW;
     RIVER_MAX_Y = HOME_Y - 1;
-    const band  = RIVER_MAX_Y - ROAD_MIN_Y + 1;          // rows shared by road + median + river
-    RIVER_LANES = Math.min(RIVER_LANES, band - MIN_MEDIAN - ROAD_LANES); // keep the median >= MIN_MEDIAN
-    ROAD_MAX_Y  = ROAD_MIN_Y + ROAD_LANES - 1;           // road grows up from the bottom
+    // Cap river lanes so road + MIN_MEDIAN + river still fit above the floor.
+    const band  = RIVER_MAX_Y - ROAD_MIN_FLOOR + 1;
+    RIVER_LANES = Math.min(RIVER_LANES, band - MIN_MEDIAN - ROAD_LANES);
     RIVER_MIN_Y = RIVER_MAX_Y - RIVER_LANES + 1;         // river grows down from under the pads
+    // Float the road up to hold TARGET_MEDIAN, but never below the start-grass floor.
+    ROAD_MIN_Y  = max(RIVER_MIN_Y - TARGET_MEDIAN - ROAD_LANES, ROAD_MIN_FLOOR);
+    ROAD_MAX_Y  = ROAD_MIN_Y + ROAD_LANES - 1;
   }
 
   const frogSize = vec2(.75, .75);
