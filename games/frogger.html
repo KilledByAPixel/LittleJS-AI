@@ -100,6 +100,10 @@
   let respawnTimer;
   let gameOver = false;
   let gameOverHoldTimer = 0; // seconds before gameOver menu surfaces
+  // Per-crossing countdown: drains while the current frog is mid-crossing;
+  // hitting zero costs a life. Shrinks per level for added late-game pressure.
+  let crossTimer = 0, crossTimerMax = 1;
+  function levelCrossTime() { return Math.max(8, 22 - (level-1)*1.5); }
 
   // Sounds
   let sHop, sDie, sHome, sLevel;
@@ -131,13 +135,19 @@
       level = 1;
       buildLanes();
     }
+    // fresh crossing timer for the new frog
+    crossTimerMax = levelCrossTime();
+    crossTimer = crossTimerMax;
   }
 
   function buildLanes() {
     cars.length = 0;
     logs.length = 0;
 
-    const speedScale = (1 + (level-1) * .12) * .5;
+    // Difficulty ramp by level. diff = 0 on level 1 (the authored baseline).
+    const diff = level - 1;
+    const speedScale   = .5 * (1 + diff * .16);            // everything faster each level
+    const densityBonus = Math.min(3, Math.floor(diff / 2)); // +1 car/lane every 2 levels, cap +3
 
     // ---- Cars ----
     // Each lane keeps its own direction + speed (cars in a lane share speed so
@@ -153,12 +163,15 @@
       {y:7, dir:-1, speed: 6.0, count: 3},
       {y:8, dir: 1, speed: 7.8, count: 2},
     ];
+    // From level 2 on, randomize each lane's direction so layouts feel new.
+    if (level > 1) for (const d of roadDefs) d.dir = rand() < .5 ? 1 : -1;
     for (const d of roadDefs) {
+      const count = d.count + densityBonus;
       const totalSpan = LEVEL_W + OFFSCREEN_PAD*2;
-      for (let i=0; i<d.count; i++) {
+      for (let i=0; i<count; i++) {
         const kind = carKinds[Math.floor(rand() * carKinds.length)];
         const w = CAR_W[kind];
-        const x = -OFFSCREEN_PAD + (i * totalSpan / d.count) + rand(0, 2);
+        const x = -OFFSCREEN_PAD + (i * totalSpan / count) + rand(0, 2);
         cars.push({
           pos: vec2(x, d.y + .5),
           size: vec2(w, .85),
@@ -171,7 +184,8 @@
       }
     }
 
-    // ---- Logs ----
+    // ---- Logs ----  (river speeds up too; log COUNT stays fixed — more logs
+    // would make crossing easier, so the river escalates via speed only)
     const riverDefs = [
       {y:11, dir:-1, speed: 3.5, count: 4, w: 4.5},
       {y:12, dir: 1, speed: 4.2, count: 4, w: 3.6},
@@ -179,6 +193,7 @@
       {y:14, dir: 1, speed: 3.9, count: 5, w: 3.2},
       {y:15, dir:-1, speed: 4.4, count: 4, w: 4.0},
     ];
+    if (level > 1) for (const d of riverDefs) d.dir = rand() < .5 ? 1 : -1;
     for (const d of riverDefs) {
       const totalSpan = LEVEL_W + OFFSCREEN_PAD*2;
       for (let i=0; i<d.count; i++) {
@@ -243,6 +258,9 @@
       sLevel.play(vec2(LEVEL_W/2, HOME_Y+.5));
       reached.fill(false);
       buildLanes();
+      // new level → apply its (shorter) crossing time to the next frog
+      crossTimerMax = levelCrossTime();
+      crossTimer = crossTimerMax;
     }
   }
 
@@ -318,11 +336,17 @@
   }
 
   function updateObstacles(arr) {
+    // Wrap over a FIXED span (independent of each obstacle's width) so cars in
+    // a lane that share a speed keep their exact spacing forever. Using a
+    // width-based boundary makes mixed-width cars loop over different distances
+    // and slowly drift into clumps. OFFSCREEN_PAD (10) keeps even wide buses
+    // fully off-screen at the wrap edges, so there's no pop-in.
+    const span = LEVEL_W + OFFSCREEN_PAD*2;
+    const lo = -OFFSCREEN_PAD, hi = LEVEL_W + OFFSCREEN_PAD;
     for (const o of arr) {
       o.pos.x += o.vx * DT;
-      const pad = o.size.x/2 + OFFSCREEN_PAD;
-      if (o.pos.x < -pad) o.pos.x = LEVEL_W + pad;
-      if (o.pos.x > LEVEL_W + pad) o.pos.x = -pad;
+      if (o.pos.x <  lo) o.pos.x += span;
+      if (o.pos.x >= hi) o.pos.x -= span;
     }
   }
 
@@ -545,6 +569,13 @@
     updateObstacles(cars);
     updateObstacles(logs);
     frogWorldChecks();
+
+    // Crossing countdown — runs only while the live frog is in play (not during
+    // the respawn freeze). Running out costs a life, same as any other death.
+    if (!respawnTimer.active()) {
+      crossTimer -= DT;
+      if (crossTimer <= 0) { crossTimer = 0; killFrog(); }
+    }
 
     // tick & cull death particles (simple gravity arcs)
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -945,10 +976,22 @@
       debugRect(frog.pos, frogSize, hsl(.15,1,.5));
   }
 
+  // Per-level time-of-day mood. The whole background is cached once, so we
+  // just multiply the blit by this tint — free recolor, cycles every 4 levels.
+  function levelTint() {
+    return [
+      WHITE,                      // day
+      new Color(1.0, .80, .58),   // dusk (warm)
+      new Color(.48, .58, .92),   // night (cool + darker)
+      new Color(.92, .76, .98),   // dawn (soft violet)
+    ][(level-1) % 4];
+  }
+
   function gameRender() {
-    // Pre-rendered static background blitted as one screen-space quad.
+    // Pre-rendered static background blitted as one screen-space quad, tinted
+    // by the current level's time-of-day mood.
     ensureBackground();
-    bgLayer.draw(mainCanvasSize.scale(.5), mainCanvasSize, WHITE, 0, false, undefined, true);
+    bgLayer.draw(mainCanvasSize.scale(.5), mainCanvasSize, levelTint(), 0, false, undefined, true);
     drawWaterRipples();
     drawHomeFrogs();
 
@@ -987,6 +1030,16 @@
     drawTextScreen(`LIVES  ${Math.max(0,lives)}     LEVEL  ${level}`,
       vec2(mainCanvasSize.x/2, 30), 26,
       hsl(105/360,.55,.85), 4, hsl(0,0,0));
+
+    // Crossing-timer bar — drains as you cross; green → red, hidden on game over
+    if (!gameOver) {
+      const frac = clamp(crossTimer / crossTimerMax, 0, 1);
+      const barW = 320, barH = 14, cx = mainCanvasSize.x/2, by = 60;
+      drawRect(vec2(cx, by), vec2(barW+8, barH+8), hsl(0,0,0,.55), 0, glEnable, true);
+      const fillW = barW * frac;
+      drawRect(vec2(cx - barW/2 + fillW/2, by), vec2(fillW, barH),
+        hsl(frac*.33, .9, .5), 0, glEnable, true);
+    }
 
     // Brief on-canvas banner; the gameOver menu owns the rest.
     if (gameOver && gameOverHoldTimer > 0) {
