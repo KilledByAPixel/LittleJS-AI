@@ -659,6 +659,14 @@ function spawnClearParticles(cellX, cellY, colorIndex)
      setShowSplashScreen(false);
      setCameraScale(36);
 
+     // Center the board now so the title-screen backdrop is positioned
+     // correctly — gameUpdate (which also centers the camera for screen-shake)
+     // doesn't run while a menu has paused the game.
+     {
+         const totalW = COLS + 0.6 + PANEL_W;
+         setCameraPos(vec2(totalW/2, ROWS/2));
+     }
+
      // SFX
      sfxMove     = new SoundGenerator({volume:.20, frequency:520, attack:0, release:.05, shapeCurve:1.5});
      sfxRotate   = new SoundGenerator({volume:.22, frequency:640, attack:0, release:.06, shapeCurve:1.8, slide:-1.2});
