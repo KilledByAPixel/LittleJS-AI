@@ -1316,48 +1316,87 @@ function makeRandomPiece()
 ///////////////////////////////////////////////////////////////////////////////
 // Controllers
 
-const KEYMAP_P1 = {
-    left: ['ArrowLeft'], right: ['ArrowRight'],
-    softDrop: ['ArrowDown'], hardDrop: ['ArrowUp', 'Space'],
-    rotCCW: ['KeyZ'], rotCW: ['KeyX'],
-};
-const KEYMAP_P2 = {
+// Control schemes. In a two-human match P1 uses WASD and P2 uses the arrows
+// (distinct, so they can share one keyboard). When P1 is the only human (vs CPU)
+// they get KEYMAP_SOLO, which accepts EITHER scheme.
+const KEYMAP_WASD = {
     left: ['KeyA'], right: ['KeyD'],
     softDrop: ['KeyS'], hardDrop: ['KeyW', 'ShiftLeft'],
-    rotCCW: ['KeyK'], rotCW: ['KeyL'],
+    rotCCW: ['KeyZ'], rotCW: ['KeyX'],
+};
+const KEYMAP_ARROWS = {
+    left: ['ArrowLeft'], right: ['ArrowRight'],
+    softDrop: ['ArrowDown'], hardDrop: ['ArrowUp', 'Space'],
+    rotCCW: ['Comma'], rotCW: ['Period'],
+};
+const KEYMAP_SOLO = {
+    left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
+    softDrop: ['KeyS', 'ArrowDown'], hardDrop: ['KeyW', 'ShiftLeft', 'ArrowUp', 'Space'],
+    rotCCW: ['KeyZ', 'Comma'], rotCW: ['KeyX', 'Period'],
 };
 
 function anyPressed(codes) { for (const k of codes) if (keyWasPressed(k)) return true; return false; }
 function anyDown(codes)    { for (const k of codes) if (keyIsDown(k))    return true; return false; }
 
+// Gamepad mapping (player one only, primary gamepad):
+//   D-pad L/R (14/15) or left-stick X  -> move      (edge-triggered)
+//   D-pad Up (12) or Y (3)             -> hard drop  (edge-triggered)
+//   A (0) / RB (5)                     -> rotate CW
+//   B (1) / LB (4)                     -> rotate CCW
+//   D-pad Down (13) or left-stick down -> soft drop  (held)
+// (Start / button 9 is reserved for pause, handled in gameUpdate.)
 class HumanController
 {
-    constructor(keymap) { this.keymap = keymap; this.hardDropping = false; }
+    constructor(keymap, gamepad = false)
+    {
+        this.keymap = keymap;
+        this.gamepad = gamepad;   // player one also reads the primary gamepad
+        this.hardDropping = false;
+        this.gpStickX = 0;        // last analog-stick horizontal dir, for edge taps
+    }
 
     update(board)
     {
         if (!board.active || board.gameOver) return;
         const km = this.keymap;
+        const gp = this.gamepad;
+
+        // Analog stick → a one-shot left/right tap only on crossing into a side.
+        let stickL = false, stickR = false;
+        if (gp)
+        {
+            const sx = gamepadStick(0).x;
+            const dir = sx > .4 ? 1 : sx < -.4 ? -1 : 0;
+            if (dir !== this.gpStickX)
+            {
+                stickL = dir < 0;
+                stickR = dir > 0;
+                this.gpStickX = dir;
+            }
+        }
+
+        const left  = anyPressed(km.left)    || (gp && gamepadWasPressed(14)) || stickL;
+        const right = anyPressed(km.right)   || (gp && gamepadWasPressed(15)) || stickR;
+        const ccw   = anyPressed(km.rotCCW)  || (gp && (gamepadWasPressed(0) ||gamepadWasPressed(2) || gamepadWasPressed(4)));
+        const cw    = anyPressed(km.rotCW)   || (gp && (gamepadWasPressed(1) || gamepadWasPressed(5)));
+        const hard  = anyPressed(km.hardDrop)|| (gp && (gamepadWasPressed(12) || gamepadWasPressed(3)));
 
         if (!this.hardDropping)
         {
-            if (anyPressed(km.left)   && pieceTryMove(board.grid, board.active, -1, 0)) sMove?.play();
-            if (anyPressed(km.right)  && pieceTryMove(board.grid, board.active,  1, 0)) sMove?.play();
-            if (anyPressed(km.rotCCW) && pieceTryRotate(board.grid, board.active, -1))  sRotate?.play();
-            if (anyPressed(km.rotCW)  && pieceTryRotate(board.grid, board.active,  1))  sRotate?.play();
-
-            if (anyPressed(km.hardDrop))
-            {
-                this.hardDropping = true;
-            }
+            if (left  && pieceTryMove(board.grid, board.active, -1, 0)) sMove?.play();
+            if (right && pieceTryMove(board.grid, board.active,  1, 0)) sMove?.play();
+            if (ccw   && pieceTryRotate(board.grid, board.active, -1))  sRotate?.play();
+            if (cw    && pieceTryRotate(board.grid, board.active,  1))  sRotate?.play();
+            if (hard) this.hardDropping = true;
         }
     }
 
     fallSpeed(board)
     {
         if (this.hardDropping) return 0;
-        if (anyDown(this.keymap.softDrop)) return 0.025;
-        return board.fallInterval;
+        let soft = anyDown(this.keymap.softDrop);
+        if (this.gamepad && (gamepadIsDown(13) || gamepadStick(0).y > .4)) soft = true;
+        return soft ? 0.025 : board.fallInterval;
     }
 }
 
@@ -2632,9 +2671,11 @@ function startMatch(p1Char, p2Char, seed, mode, difficulty)
     if (mode === 'cpucpu')
         controllers = [new AIController(difficulty, b1), new AIController(difficulty, b0)];
     else if (mode === 'cpu')
-        controllers = [new HumanController(KEYMAP_P1), new AIController(difficulty, b0)];
+        // Solo human gets both keyboard schemes + the gamepad; opponent is CPU.
+        controllers = [new HumanController(KEYMAP_SOLO, true), new AIController(difficulty, b0)];
     else
-        controllers = [new HumanController(KEYMAP_P1), new HumanController(KEYMAP_P2)];
+        // Two humans share the keyboard: P1 on WASD (+ gamepad), P2 on arrows.
+        controllers = [new HumanController(KEYMAP_WASD, true), new HumanController(KEYMAP_ARROWS)];
     currentMatch.spawn(0);
     currentMatch.spawn(1);
     p1Board = b0;
