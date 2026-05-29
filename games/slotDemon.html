@@ -39,6 +39,75 @@ cameraScale = 32;
 // fills modern high-res monitors instead of letterboxing.
 canvasMaxSize = vec2(2048, 2048);
 
+// ---- CONFIG (single source of balance truth) ----
+const BALANCE = {
+    // weighted symbol table: rising payout, falling weight (cherry -> demon)
+    symbols: [
+        { emoji: '🍒', weight: 40, payout: 2 },
+        { emoji: '🍋', weight: 30, payout: 3 },
+        { emoji: '🔔', weight: 18, payout: 6 },
+        { emoji: '💎', weight: 9,  payout: 15 },
+        { emoji: '😈', weight: 3,  payout: 50 },   // demon = jackpot
+    ],
+    reelCount: 3,            // 3 reels; win = all reels equal
+    payoutBase: 1,           // multiplied by symbol.payout, level, demon mult
+    wildEmoji: '⭐',
+    wildChancePerWild: 0.05, // +5% chance per reel that a reel becomes wild
+
+    machineCostBase: 25,  machineCostScale: 1.55,
+    pitCostBase: 200,     pitCostScale: 3,
+    pitStart: 5,          pitExpand: 5,
+    levelCostBase: 50,    levelCostScale: 2,   // per-machine level cost doubles
+    wildCostBase: 150,    wildCostScale: 3,
+    sellRefund: 0.5,
+
+    decayRate: 0.05,         // base energy/sec drained (1.0 = full bar; ~20s at imp)
+    spinInterval: 1.0,       // seconds per spin at full energy & speedMult 1
+};
+
+// MVP ships only `standard`. Volatility profiles add entries later (symbolTable/payoutShape unused for now).
+const MACHINE_TYPES = {
+    standard: { name: 'Slot', symbolTable: null /* falls back to BALANCE.symbols */, payoutShape: 'balanced' },
+};
+
+// `ability` hooks are no-ops in MVP; board-aware behaviors fill them in the matchup pass.
+const noop = () => {};
+const DEMON_TYPES = {
+    imp:   { name: 'Imp',   tile: 0, cost: 50,  costScale: 1.5, decayMult: 1,   payoutMult: 1,   speedMult: 1,   ability: noop },
+    greed: { name: 'Greed', tile: 1, cost: 200, costScale: 1.6, decayMult: 1,   payoutMult: 1.3, speedMult: 1,   ability: noop },
+    wrath: { name: 'Wrath', tile: 2, cost: 200, costScale: 1.6, decayMult: 1,   payoutMult: 1,   speedMult: 1.6, ability: noop },
+    sloth: { name: 'Sloth', tile: 3, cost: 300, costScale: 1.7, decayMult: 0.3, payoutMult: 1,   speedMult: 1,   ability: noop },
+};
+
+// symbol/tile index helpers (atlas tiles 0-3 = demons, 4+ = symbols, last = wild)
+const symbolTileIndex = (sym) => 4 + BALANCE.symbols.indexOf(sym);
+const wildTileIndex = () => 4 + BALANCE.symbols.length;
+
+// ---- GLOBALS ----
+let cash = 0;
+let pitCapacity = BALANCE.pitStart;
+let machines = [];          // Machine[]
+let demons = [];            // Demon[]
+let demonsBought = {};      // type -> count (for cost scaling)
+let stats = { sacrifices: 0 };
+
+// cost helpers
+const demonCost = (type) => Math.ceil(DEMON_TYPES[type].cost * DEMON_TYPES[type].costScale ** (demonsBought[type] || 0));
+const machineCost = () => Math.ceil(BALANCE.machineCostBase * BALANCE.machineCostScale ** machines.length);
+const pitCost = () => Math.ceil(BALANCE.pitCostBase * BALANCE.pitCostScale ** ((pitCapacity - BALANCE.pitStart) / BALANCE.pitExpand));
+const wildCost = (m) => Math.ceil(BALANCE.wildCostBase * BALANCE.wildCostScale ** m.wildCount);
+const levelCost = (m) => Math.ceil(BALANCE.levelCostBase * BALANCE.levelCostScale ** (m.level - 1));
+const canAfford = (n) => cash >= n;
+
+// weighted symbol roll
+function rollSymbol()
+{
+    let total = 0; for (const s of BALANCE.symbols) total += s.weight;
+    let r = rand(total), acc = 0;
+    for (const s of BALANCE.symbols) { acc += s.weight; if (r < acc) return s; }
+    return BALANCE.symbols[0];
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // MENU SYSTEM TEMPLATE
 // Demonstrates createMenu() and createToolbar() from menus.js.
