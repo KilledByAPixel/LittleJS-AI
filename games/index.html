@@ -82,11 +82,37 @@
 
     /* Sidebar logo — clickable "home" button */
     #sidebar-logo-wrap {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
         margin-bottom: 12px;
         cursor: pointer;
+    }
+    /* Soft breathing glow behind the logo + title. Sits below both via z-index
+          and never intercepts clicks. */
+    #sidebar-logo-wrap::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 38%;
+        width: 150%;
+        height: 150%;
+        transform: translate(-50%, -50%);
+        z-index: 0;
+        pointer-events: none;
+        border-radius: 50%;
+        background: radial-gradient(ellipse at center,
+            rgba(88, 166, 255, .35) 0%,
+            rgba(255, 126, 182, .14) 40%,
+            transparent 70%);
+        filter: blur(6px);
+        animation: logo-breathe 4s ease-in-out infinite;
+    }
+    #sidebar-logo-wrap > * { position: relative; z-index: 1; }
+    @keyframes logo-breathe {
+        0%, 100% { opacity: .5;  transform: translate(-50%, -50%) scale(.92); }
+        50%      { opacity: .95; transform: translate(-50%, -50%) scale(1.08); }
     }
     #sidebar-logo-title {
         margin-top: 6px;
@@ -670,6 +696,7 @@
         .quick-btn .icon.rolling,
         .sparkle,
         #welcome-logo,
+        #sidebar-logo-wrap::before,
         #sidebar-logo { animation: none !important; }
         .tile { opacity: 1; transform: none; }
     }
