@@ -90,6 +90,7 @@ let won = false;
 let scratchedThisShot = false;
 let inHand = false;      // true after a scratch — cue ball follows the mouse until placed
 let wheelPower = 0;      // wheel-driven power offset added on top of mouse drag (cleared on each shot)
+let padAim = null;       // gamepad aim: {dir, power} from the left stick, or null when idle
 let sinking = [];        // visual-only sink animations — physics already destroyed; see updateSinking
 const SINK_TIME = .5;    // seconds to lerp from contact point to pocket center
 
@@ -613,6 +614,12 @@ function canShoot()
 
 function getAim()
 {
+    // Gamepad: while the left stick is the active device, it fully drives the
+    // aim — direction = stick direction, power = how far it's pushed. Returned
+    // here so the cue-stick preview, arrow, and power readout all reflect it.
+    if (padAim && !usingMouseInput())
+        return { dir: padAim.dir, power: padAim.power, len: padAim.power * MAX_HIT };
+
     // Direction comes from the mouse position relative to the cue ball.
     // Power has two contributions:
     //   1) Drag — distance past an AIM_DEADZONE around the ball, scaled into 0..1.
@@ -824,9 +831,19 @@ function gameUpdate()
         wheelPower = clamp(wheelPower - mouseWheel * WHEEL_STEP, -basePower, 1 - basePower);
     }
 
+    // Gamepad: push the left stick to aim (direction) and set power (how far
+    // it's pushed); press A (0) or right trigger (7) to shoot. padAim is read
+    // by getAim() so the cue preview follows the stick; cleared when idle so
+    // the mouse takes back over.
+    const padStick = gamepadStick(0);
+    padAim = padStick.lengthSquared() > .04
+        ? { dir: padStick.normalize(), power: min(padStick.length(), 1) }
+        : null;
+
     // Touch devices fire on release so the player can press, drag to aim,
     // then lift to commit. Mouse keeps the click-to-fire feel.
-    const shotInput = isTouchDevice ? mouseWasReleased(0) : mouseWasPressed(0);
+    const shotInput = (isTouchDevice ? mouseWasReleased(0) : mouseWasPressed(0)) ||
+        (padAim && (gamepadWasPressed(0) || gamepadWasPressed(7)));
     if (canShoot() && shotInput)
     {
         const {dir, power, len} = getAim();

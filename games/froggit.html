@@ -360,11 +360,11 @@
     if (left)  return tryMove(-1,0);
     if (right) return tryMove(1, 0);
 
-    // Physical D-pad buttons (12-15) — edge-triggered automatically.
-    if (gamepadWasPressed(12)) return tryMove(0, 1);
-    if (gamepadWasPressed(13)) return tryMove(0,-1);
-    if (gamepadWasPressed(14)) return tryMove(-1,0);
-    if (gamepadWasPressed(15)) return tryMove(1, 0);
+    // (D-pad is handled by the stick block below: the engine merges the d-pad
+    // into gamepadStick(0) via gamepadDirectionEmulateStick, so the edge-detect
+    // there covers it. Reading gamepadWasPressed on the d-pad here too would
+    // double-hop — once on the press frame, once on the next held frame when the
+    // emulated stick crosses into the direction.)
 
     // Touch: tap one of the four screen triangles (split by the diagonals).
     // Top triangle hops up, bottom hops down, left/right hop sideways.

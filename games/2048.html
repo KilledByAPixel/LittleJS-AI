@@ -389,13 +389,12 @@ function readMoveInput()
     if (keyWasPressed('ArrowUp')    || keyWasPressed('KeyW')) return 'U';
     if (keyWasPressed('ArrowDown')  || keyWasPressed('KeyS')) return 'D';
 
-    // gamepad d-pad: one press = one discrete slide (12=up 13=down 14=left 15=right)
-    if (gamepadWasPressed(14)) return 'L';
-    if (gamepadWasPressed(15)) return 'R';
-    if (gamepadWasPressed(12)) return 'U';
-    if (gamepadWasPressed(13)) return 'D';
-
-    // gamepad left-stick edge latch: push past ~.5 fires once, must recenter to re-fire
+    // gamepad: left-stick edge latch handles BOTH the analog stick AND the
+    // d-pad (the engine merges the d-pad into gamepadStick(0) via
+    // gamepadDirectionEmulateStick). Push past ~.5 fires one slide, then the
+    // stick must recenter before another. (Don't also read gamepadWasPressed on
+    // the d-pad buttons here — that double-fires: the press frame slides once and
+    // the next held frame the emulated stick slides again.)
     const stick = gamepadStick(0);
     if (stick.lengthSquared() > .25) // beyond ~.5 in some direction
     {

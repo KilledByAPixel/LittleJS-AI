@@ -897,7 +897,7 @@ function gameUpdate()
     const stick1 = gamepadStick(1);
     if (Math.abs(stick1.x) > .08)
         playerAngle += stick1.x * GAMEPAD_LOOK_SPEED * (invertX ? -1 : 1);
-    if (gamepadWasPressed(0))
+    if (gamepadWasPressed(0) || gamepadWasPressed(7)) // A or right trigger fires
         playerFire();
 
     // movement: keyDirection().y = forward, .x = strafe; gamepad stick overrides if pushed harder

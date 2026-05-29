@@ -216,6 +216,14 @@
     }
     .empty { padding: 20px 16px; color: var(--muted); font-size: 13px; text-align: center; }
 
+    /* Gamepad-support chip — accent-tinted so it stands out from plain tag chips. */
+    .chip.gamepad {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        text-transform: none;
+    }
+
     /* High-score badge — gold accent, used on tiles + sidebar cards. */
     .score-badge {
         display: inline-flex;
@@ -836,6 +844,20 @@ const GAMES = [
 GAMES.sort((a, b) => a.name.localeCompare(b.name));
 const gameByFile = Object.fromEntries(GAMES.map(g => [g.file, g]));
 
+// Games whose source uses the gamepad API — drives the 🎮 chip on cards/tiles.
+const GAMEPAD_GAMES = new Set([
+    '2048.html','asterblast.html','bobblePop.html','boomer.html','brickout.html',
+    'centibug.html','drPill.html','emojiSurvivors.html','floppyBird.html','froggit.html',
+    'gemFighter.html','geometryJump.html','homerDerby.html','jetdash.html','jouster.html',
+    'jumpman.html','microRacer.html','missileDefense.html','moonLander.html','moonbuggy.html',
+    'mrDrill.html','pegball.html','pillars.html','pinball.html','plinko.html',
+    'pocketCritters.html','pong.html','pool.html','powerwing.html','protector.html',
+    'pucMan.html','riverStrike.html','roboRescue.html','skiing.html','snake.html',
+    'sokoban.html','spaceIntruders.html','speedway.html','spyDriver.html','tankCombat.html',
+    'tetrix.html','wulfstein.html','zoomi.html',
+]);
+const hasGamepad = g => GAMEPAD_GAMES.has(g.file);
+
 // Display name, emoji, and accent color (referencing CSS vars) per category.
 // Used for row headers, filter chips, and tile color stripes.
 const CATEGORIES = [
@@ -968,6 +990,12 @@ function makeCard(g) {
         chip.textContent = t;
         chipsEl.appendChild(chip);
     }
+    if (hasGamepad(g)) {
+        const chip = document.createElement('span');
+        chip.className = 'chip gamepad';
+        chip.textContent = '🎮 gamepad';
+        chipsEl.appendChild(chip);
+    }
     card.addEventListener('click', () => selectGame(g.file));
     return card;
 }
@@ -1055,6 +1083,13 @@ function makeTile(g, index) {
         const chip = document.createElement('span');
         chip.className = 'chip';
         chip.textContent = t;
+        chipsEl.appendChild(chip);
+    }
+    if (hasGamepad(g)) {
+        const chip = document.createElement('span');
+        chip.className = 'chip gamepad';
+        chip.textContent = '🎮';
+        chip.title = 'Gamepad supported';
         chipsEl.appendChild(chip);
     }
     // Color the left stripe + hover border by category.
