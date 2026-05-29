@@ -1768,6 +1768,7 @@ function boardTick(board, controller, onLock)
                             }
                             clearCells(board.grid, dr.cleared);
                             applyGravity(board.grid);
+                            mergePowerGems(board.grid);  // refresh ids before the chain renders
                         }
                     }
                 }
@@ -2941,7 +2942,7 @@ async function gameInit()
 
     // Build marker — confirm in the console which power-gem build is loaded.
     // If you see non-rectangles joining, you're on a cached OLD build; hard-reload.
-    console.log('%cGem Fighter — RECTANGLE-ONLY power gems, break-as-unit, counter-order (rev 7)', 'color:#0f0;font-weight:bold');
+    console.log('%cGem Fighter — power gems re-derived every frame + self-check (rev 8)', 'color:#0f0;font-weight:bold');
 
     runUnitTests();
 }
@@ -3004,6 +3005,41 @@ function gameUpdate()
     }
     updateParticles();
 }
+// Self-check: power gems on the grid must each be a filled rectangle >= 2x2.
+// If one isn't, log it ONCE with context so a live session pins the exact repro.
+let _pgBugSig = '';
+function auditPowerGems(board, idx)
+{
+    const grid = board.grid, groups = new Map();
+    for (let x = 0; x < BOARD_W; x++)
+    for (let y = 0; y < BOARD_H; y++)
+    {
+        const g = grid[x][y];
+        if (g && g.type === 'regular' && g.powerGemId >= 0)
+        {
+            if (!groups.has(g.powerGemId)) groups.set(g.powerGemId, []);
+            groups.get(g.powerGemId).push([x, y]);
+        }
+    }
+    for (const [id, cells] of groups)
+    {
+        let a = 99, b = 99, c = -1, d = -1;
+        for (const [x, y] of cells) { a = min(a,x); b = min(b,y); c = max(c,x); d = max(d,y); }
+        const w = c - a + 1, h = d - b + 1;
+        if (cells.length !== w * h || w < 2 || h < 2)
+        {
+            const sig = idx + ':' + id + ':' + cells.length + '/' + (w*h);
+            if (sig !== _pgBugSig)
+            {
+                _pgBugSig = sig;
+                console.warn('[PG BUG] board', idx, 'phase', board.chainAnim ? board.chainAnim.phase : 'settled',
+                    '— gem id', id, 'has', cells.length, 'cells in a', w + 'x' + h, 'bbox; cells:', JSON.stringify(cells));
+            }
+            return;
+        }
+    }
+}
+
 function gameUpdatePost()
 {
     cameraPos = vec2(0, 0);
@@ -3013,6 +3049,12 @@ function gameUpdatePost()
         {
             if (b.chainPop)  b.chainPop.t  = max(0, b.chainPop.t  - timeDelta * 1.3);
             if (b.lockFlash) b.lockFlash.t = max(0, b.lockFlash.t - timeDelta * 5);
+            // Re-derive power-gem grouping every SETTLED frame so a freshly-formed
+            // gem shows joined at once and no stale/partial id can linger. We skip
+            // this mid-animation (the chain owns its own merges) so a falling gem
+            // doesn't visually fuse in mid-air — gems join when they land.
+            if (!b.chainAnim) mergePowerGems(b.grid);
+            auditPowerGems(b, b.index);   // always: flags any invalid gem + its phase
         }
 }
 function gameRender()
