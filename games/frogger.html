@@ -819,11 +819,11 @@
     ctx.beginPath(); ctx.moveTo(250, 250); ctx.lineTo(182, 504); ctx.lineTo(318, 504); ctx.closePath(); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
     // radial veins
-    ctx.strokeStyle = 'rgba(20,60,18,.5)'; ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(20,60,18,.5)'; ctx.lineWidth = 28;
     for (let i = 0; i < 7; i++) {
       const a = -Math.PI/2 + (i-3)*.6;
       ctx.beginPath(); ctx.moveTo(250, 250);
-      ctx.lineTo(250 + Math.cos(a)*210, 250 + Math.sin(a)*210); ctx.stroke();
+      ctx.lineTo(250 + Math.cos(a)*220, 250 + Math.sin(a)*220); ctx.stroke();
     }
   }
 
