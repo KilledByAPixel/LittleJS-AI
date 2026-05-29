@@ -238,6 +238,7 @@ function newGame()
 
     handStack    = new CardStack(vec2(0, 0), StackType.Cascade);  // off-screen until pickup
     pickupOrigin = null;
+    recyclesUsed = 0;
     stateUndo    = [];
     stateRedo    = [];
     saveState();   // initial snapshot so undo never empties the stack
@@ -253,6 +254,8 @@ let mouseHoldPos = vec2();
 let won = false;
 let hintsEnabled = true;     // toggled by OPTIONS → HINTS; gates the green legal-drop tint
 let stockDrawCount = 1;      // 1 or 3, toggled by OPTIONS → DRAW 3
+let limitPasses = false;     // toggled by OPTIONS → LIMIT PASSES (Vegas-style redeal cap)
+let recyclesUsed = 0;        // times the waste has been recycled this game (part of game state)
 let lastClick = { card: null, time: -1 };
 let stateUndo = [];
 let stateRedo = [];
@@ -337,6 +340,9 @@ async function gameInit()
             {type:'checkbox', id:'draw3', label:'DRAW 3', value: false,
                 persist: 'draw3',
                 onChange: v => { stockDrawCount = v ? 3 : 1; }},
+            {type:'checkbox', id:'limitPasses', label:'LIMIT PASSES', value: false,
+                persist: 'limitPasses',
+                onChange: v => { limitPasses = v; }},
             {type:'checkbox', id:'hints', label:'HINTS', value: true,
                 persist: 'hints',
                 onChange: v => { hintsEnabled = v; }},
@@ -515,8 +521,18 @@ function flipExposedCards()
     return flipped;
 }
 
+// How many times the waste may be recycled this game. Vegas-style cap tied
+// to draw mode when LIMIT PASSES is on; otherwise unlimited.
+//   Draw 1 → 1 pass  → 0 redeals
+//   Draw 3 → 3 passes → 2 redeals
+function maxRecycles()
+{
+    if (!limitPasses) return Infinity;
+    return stockDrawCount === 3 ? 2 : 0;
+}
+
 // Deal from stock to waste, or recycle the waste back into the stock when
-// the stock is empty (unlimited redeals).
+// the stock is empty (subject to the redeal cap).
 function drawFromStock()
 {
     if (!stockStack.isEmpty())
@@ -532,12 +548,18 @@ function drawFromStock()
     }
     else if (!wasteStack.isEmpty())
     {
+        if (recyclesUsed >= maxRecycles())   // pass limit reached — stock is dead
+        {
+            window.sndInvalid && window.sndInvalid.play(stockStack.pos);
+            return;
+        }
         while (!wasteStack.isEmpty())
         {
             const card = wasteStack.cards.pop();
             card.faceUp = false;
             stockStack.putCardOnTop(card);
         }
+        ++recyclesUsed;
         window.sndPlace && window.sndPlace.play(stockStack.pos);
     }
     else return;   // nothing to do (both empty)
@@ -578,6 +600,7 @@ function snapshot()
 {
     return {
         stacks: cardStacks.map(s => s.cards.map(c => [c.value, c.suit, c.faceUp ? 1 : 0])),
+        recycles: recyclesUsed,
     };
 }
 
@@ -599,6 +622,7 @@ function loadState(snap)
         stack.cards = snap.stacks[i].map(([v, s, f]) => new Card(v, s, !!f));
         stack.relayout();
     }
+    recyclesUsed = snap.recycles || 0;
     // Clear any in-flight tweens — restored positions are authoritative.
     for (const s of cardStacks) for (const c of s.cards) c.tweenFrom = null;
     // Recompute win state from foundation counts (snapshot doesn't store it).
@@ -787,6 +811,16 @@ function gameRender()
     for (const s of cardStacks)
         if (s.isEmpty() || s.type !== StackType.Cascade)
             drawSlotOutline(s);
+
+    // Dead-stock indicator: the pass limit is reached and the stock can no
+    // longer be recycled. Draw a red ✕ over the empty stock slot.
+    if (stockStack && stockStack.isEmpty() && recyclesUsed >= maxRecycles())
+    {
+        const x = new Color(1, 0.3, 0.3, 0.7);
+        const len = CARD_SIZE.x * 0.55, t = 0.45;
+        drawRect(stockStack.pos, vec2(len, t), x, PI / 4);
+        drawRect(stockStack.pos, vec2(len, t), x, -PI / 4);
+    }
 
     // Compute per-card tint for this frame. Color-coded:
     //   blue  = "this would lift if you click" (hover, hand empty)
