@@ -12,6 +12,7 @@
 <body>
   <script src="../dist/littlejs.js?1780012197793"></script>
   <script src="../templates/gameFx.js?1780012197793"></script>
+  <script src="../templates/textureGenerator.js?1780012197793"></script>
   <script src="../templates/menus.js?1780012197793"></script>
   <script>
   'use strict';
@@ -42,6 +43,27 @@
   const HOME_Y      = 16;
 
   const frogSize = vec2(.75, .75);
+
+  // ---- Texture atlas ----
+  // Every moving entity is blitted from a 16-tile / 500px atlas built in
+  // gameInit. Car bodies are painted in grayscale ("base") so drawTile's
+  // color multiply tints them to a random hue; a second "detail" tile
+  // (windows / lights / trim, in true colors) blits on top with no tint.
+  const sprites = {};
+
+  // World-space render footprints the body tiles are drawn at (the tiles are
+  // square 500px; tiny vertical squish from non-square footprints is fine for
+  // these stylized shapes). Wheels are a separate shared tile placed at axles.
+  const carRender = {
+    sedan:  vec2(2.0, 1.10),
+    wagon:  vec2(2.2, 1.12),
+    sports: vec2(1.7, 0.95),
+    bus:    vec2(3.3, 1.30),
+  };
+  const TRUCK_CAB     = vec2(1.10, 1.18);
+  const TRUCK_TRAILER = vec2(1.70, 1.24);
+  const TRUCK_GAP     = .05;
+  const TIRE_SIZE     = vec2(.62, .62);
 
   const homeSlots = 5;
   const homeXs = Array.from({length: homeSlots}, (_,i)=>
@@ -330,6 +352,8 @@
     cameraScale = 28;
     setCameraPos(vec2(LEVEL_W/2, LEVEL_H/2));
 
+    buildAtlas();
+
     frog = {
       grid: vec2(Math.floor(LEVEL_W/2), 1),
       pos: vec2(),
@@ -504,7 +528,198 @@
   }
 
   // ------------------------------------------------------------
+  // Atlas paint functions — each fills the 500x500 tile. Cars/trucks face
+  // RIGHT (front + headlights at large x); they're mirrored when moving left.
+  // Bodies are grayscale (white = full tint, darker grays = baked shading).
+
+  function carBaseGrad(ctx, top, bot) {
+    const g = ctx.createLinearGradient(0, top, 0, bot);
+    g.addColorStop(0,  '#ffffff');
+    g.addColorStop(.5, '#e8e8e8');
+    g.addColorStop(1,  '#a6a6a6');
+    return g;
+  }
+
+  function paintSedanBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#454545'; ctx.lineWidth = 14;
+    ctx.fillStyle = carBaseGrad(ctx, 110, 390);
+    ctx.beginPath(); ctx.roundRect(150, 118, 205, 122, [78,78,12,12]); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(28, 212, 444, 168, [55,78,55,55]); ctx.fill(); ctx.stroke();
+  }
+  function paintSedanDetail(ctx) {
+    ctx.fillStyle = '#bfe6ff';
+    ctx.beginPath(); ctx.roundRect(168, 138, 168, 80, [48,48,8,8]); ctx.fill();
+    ctx.fillStyle = 'rgba(70,86,98,.5)'; ctx.fillRect(246, 138, 12, 80);
+    ctx.fillStyle = '#fff1a0'; ctx.beginPath(); ctx.roundRect(442, 248, 26, 54, 9); ctx.fill();
+    ctx.fillStyle = '#ff4736'; ctx.beginPath(); ctx.roundRect(33, 252, 24, 50, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(40,44,48,.35)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(250, 232); ctx.lineTo(250, 372); ctx.stroke();
+  }
+
+  function paintWagonBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#454545'; ctx.lineWidth = 14;
+    ctx.fillStyle = carBaseGrad(ctx, 100, 390);
+    ctx.beginPath(); ctx.roundRect(72, 108, 298, 134, [34,82,12,12]); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(28, 210, 444, 172, [55,60,55,55]); ctx.fill(); ctx.stroke();
+  }
+  function paintWagonDetail(ctx) {
+    ctx.fillStyle = '#bfe6ff';
+    ctx.beginPath(); ctx.roundRect(90, 130, 128, 88, [26,10,8,8]); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(238, 130, 118, 88, [10,44,8,8]); ctx.fill();
+    ctx.fillStyle = 'rgba(70,86,98,.5)'; ctx.fillRect(224, 128, 14, 92);
+    ctx.fillStyle = '#fff1a0'; ctx.beginPath(); ctx.roundRect(442, 250, 26, 52, 9); ctx.fill();
+    ctx.fillStyle = '#ff4736'; ctx.beginPath(); ctx.roundRect(33, 250, 24, 52, 9); ctx.fill();
+    ctx.fillStyle = 'rgba(40,44,48,.5)'; ctx.fillRect(40, 344, 420, 14);
+  }
+
+  function paintSportsBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 14;
+    ctx.fillStyle = carBaseGrad(ctx, 180, 380);
+    ctx.beginPath(); ctx.roundRect(175, 196, 170, 72, [54,32,8,8]); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(24, 250, 452, 130, [70,92,52,52]); ctx.fill(); ctx.stroke();
+  }
+  function paintSportsDetail(ctx) {
+    ctx.fillStyle = '#bfe6ff';
+    ctx.beginPath(); ctx.roundRect(190, 210, 140, 48, [36,24,6,6]); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(40, 300, 420, 20);
+    ctx.fillStyle = '#fff1a0'; ctx.beginPath(); ctx.roundRect(446, 286, 22, 48, 8); ctx.fill();
+    ctx.fillStyle = '#ff4736'; ctx.beginPath(); ctx.roundRect(33, 290, 22, 44, 8); ctx.fill();
+  }
+
+  function paintBusBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#4a4a4a'; ctx.lineWidth = 14;
+    ctx.fillStyle = carBaseGrad(ctx, 70, 400);
+    ctx.beginPath(); ctx.roundRect(24, 78, 452, 316, [60,60,50,50]); ctx.fill(); ctx.stroke();
+  }
+  function paintBusDetail(ctx) {
+    ctx.fillStyle = '#bfe6ff';
+    ctx.beginPath(); ctx.roundRect(44, 120, 412, 108, 16); ctx.fill();
+    ctx.fillStyle = 'rgba(70,86,98,.55)';
+    for (let i = 1; i < 5; i++) ctx.fillRect(44 + i*82, 118, 12, 112);
+    ctx.fillStyle = '#2b3138'; ctx.beginPath(); ctx.roundRect(40, 250, 70, 130, [8,8,40,8]); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(34, 300, 432, 16);
+    ctx.fillStyle = '#fff1a0'; ctx.beginPath(); ctx.roundRect(446, 330, 24, 44, 8); ctx.fill();
+  }
+
+  function paintCabBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#454545'; ctx.lineWidth = 16;
+    ctx.fillStyle = carBaseGrad(ctx, 80, 400);
+    ctx.beginPath(); ctx.roundRect(60, 90, 380, 300, [70,70,40,40]); ctx.fill(); ctx.stroke();
+  }
+  function paintCabDetail(ctx) {
+    ctx.fillStyle = '#bfe6ff';
+    ctx.beginPath(); ctx.roundRect(250, 120, 170, 120, [20,46,10,10]); ctx.fill();
+    ctx.fillStyle = '#fff1a0'; ctx.beginPath(); ctx.roundRect(410, 300, 30, 62, 10); ctx.fill();
+    ctx.fillStyle = 'rgba(40,44,48,.6)'; ctx.fillRect(404, 250, 40, 42);
+  }
+
+  function paintTrailerBase(ctx) {
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#454545'; ctx.lineWidth = 16;
+    ctx.fillStyle = carBaseGrad(ctx, 70, 410);
+    ctx.beginPath(); ctx.roundRect(30, 80, 440, 320, [36,36,30,30]); ctx.fill(); ctx.stroke();
+  }
+  function paintTrailerDetail(ctx) {
+    ctx.strokeStyle = 'rgba(40,44,48,.4)'; ctx.lineWidth = 8;
+    for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(30 + i*88, 92); ctx.lineTo(30 + i*88, 390); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(40,44,48,.55)'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.roundRect(44, 96, 96, 290, 12); ctx.stroke();
+  }
+
+  function paintTire(ctx) {
+    ctx.fillStyle = '#161616'; ctx.beginPath(); ctx.arc(250, 250, 232, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#383838'; ctx.beginPath(); ctx.arc(250, 250, 150, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#9a9a9a'; ctx.beginPath(); ctx.arc(250, 250, 92, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#5a5a5a'; ctx.beginPath(); ctx.arc(250, 250, 36, 0, Math.PI*2); ctx.fill();
+  }
+
+  function paintLog(ctx) {
+    ctx.lineJoin = 'round';
+    const g = ctx.createLinearGradient(0, 80, 0, 420);
+    g.addColorStop(0, '#a9743f'); g.addColorStop(.5, '#8a5a2c'); g.addColorStop(1, '#5f3c1c');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(18, 90, 464, 320, 44); ctx.fill();
+    ctx.strokeStyle = '#4a2e15'; ctx.lineWidth = 12; ctx.stroke();
+    // bark grooves
+    ctx.strokeStyle = 'rgba(60,38,18,.5)'; ctx.lineWidth = 9;
+    for (const gx of [165, 250, 335]) { ctx.beginPath(); ctx.moveTo(gx, 104); ctx.lineTo(gx, 396); ctx.stroke(); }
+    // cut-face rings at both ends
+    const rings = [['#7a4f27',1],['#9a6a38',.74],['#b5854c',.5],['#caa06a',.26]];
+    for (const ex of [78, 422])
+      for (const [col, k] of rings) {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.ellipse(ex, 250, 52*k, 150*k, 0, 0, Math.PI*2); ctx.fill();
+      }
+  }
+
+  function paintFrog(ctx) {
+    // painted facing UP (head at small y); rotated by facing at draw time
+    ctx.lineJoin = 'round';
+    const green = '#54b62e', dark = '#2f7a1a', light = '#7fd94f';
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(118, 360, 72, 96, -.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(382, 360, 72, 96,  .5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(132, 198, 46, 78, -.3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(368, 198, 46, 78,  .3, 0, Math.PI*2); ctx.fill();
+    const bg = ctx.createRadialGradient(250, 220, 36, 250, 255, 200);
+    bg.addColorStop(0, light); bg.addColorStop(1, green);
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.ellipse(250, 262, 150, 180, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = dark; ctx.lineWidth = 10; ctx.stroke();
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(202, 300, 21, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(298, 300, 21, 0, Math.PI*2); ctx.fill();
+    for (const ex of [185, 315]) {
+      ctx.fillStyle = green; ctx.beginPath(); ctx.arc(ex, 122, 66, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = dark; ctx.lineWidth = 8; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, 126, 42, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex, 116, 21, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex - 9, 107, 8, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  function paintLily(ctx) {
+    const g = ctx.createRadialGradient(250, 225, 30, 250, 250, 230);
+    g.addColorStop(0, '#5aa64a'); g.addColorStop(1, '#2f6b28');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(250, 250, 226, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#234f1e'; ctx.lineWidth = 14; ctx.stroke();
+    // cut the wedge notch out so the water behind shows through
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.moveTo(250, 250); ctx.lineTo(182, 504); ctx.lineTo(318, 504); ctx.closePath(); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    // radial veins
+    ctx.strokeStyle = 'rgba(20,60,18,.5)'; ctx.lineWidth = 8;
+    for (let i = 0; i < 7; i++) {
+      const a = -Math.PI/2 + (i-3)*.6;
+      ctx.beginPath(); ctx.moveTo(250, 250);
+      ctx.lineTo(250 + Math.cos(a)*210, 250 + Math.sin(a)*210); ctx.stroke();
+    }
+  }
+
+  function buildAtlas() {
+    initDrawToTexture();
+    sprites.sedanBase     = drawToTexture(0,  paintSedanBase,     'white sedan body, side view, tintable');
+    sprites.sedanDetail   = drawToTexture(1,  paintSedanDetail,   'sedan blue windows, yellow headlight, red taillight overlay');
+    sprites.wagonBase     = drawToTexture(2,  paintWagonBase,     'white station-wagon body with long roof, tintable');
+    sprites.wagonDetail   = drawToTexture(3,  paintWagonDetail,   'wagon two side windows + trim + lights overlay');
+    sprites.sportsBase    = drawToTexture(4,  paintSportsBase,    'white low sleek sports-car body, tintable');
+    sprites.sportsDetail  = drawToTexture(5,  paintSportsDetail,  'sports car windshield, white racing stripe, lights overlay');
+    sprites.cabBase       = drawToTexture(6,  paintCabBase,       'white truck cab box, tintable');
+    sprites.cabDetail     = drawToTexture(7,  paintCabDetail,     'truck cab windshield, headlight, grille overlay');
+    sprites.trailerBase   = drawToTexture(8,  paintTrailerBase,   'white truck trailer / cargo box, tintable');
+    sprites.trailerDetail = drawToTexture(9,  paintTrailerDetail, 'trailer panel seams and rear-door frame overlay');
+    sprites.busBase       = drawToTexture(10, paintBusBase,       'white tall bus body, tintable');
+    sprites.busDetail     = drawToTexture(11, paintBusDetail,     'bus window row, door, stripe, headlight overlay');
+    sprites.tire          = drawToTexture(12, paintTire,          'black rubber tire with gray hub, top wheel');
+    sprites.log           = drawToTexture(13, paintLog,           'brown floating log with bark grooves and cut-face rings');
+    sprites.frog          = drawToTexture(14, paintFrog,          'green cartoon frog from above, big eyes, facing up');
+    sprites.lily          = drawToTexture(15, paintLily,          'green lily pad with notch, top view');
+  }
+
+  // ------------------------------------------------------------
   // Rendering
+
+  function drawTire(x, y) { drawTile(vec2(x, y), TIRE_SIZE, sprites.tire, WHITE); }
 
   function drawLaneBackground() {
     // Extend visuals well beyond playable area so wraparound is invisible.
@@ -576,10 +791,7 @@
     for (let i=0;i<homeSlots;i++) {
       const p = vec2(homeXs[i]+.5, HOME_Y+.5);
       // lily pad
-      drawEllipse(p, vec2(1.4, .8),  hsl(95/360,.5,.30));
-      drawEllipse(p, vec2(1.1, .55), hsl(95/360,.55,.38));
-      // notch
-      drawRect(p.add(vec2(0,-.05)), vec2(.18, .8), hsl(205/360,.55,.27));
+      drawTile(p, vec2(1.6, 1.0), sprites.lily, WHITE);
       if (reached[i]) {
         // same renderer as the player frog, just facing up with no hop.
         // Per-pad breathing phase so they don't all inhale in lockstep.
@@ -607,183 +819,61 @@
 
   function drawCar(c) {
     const bumpY = carBumpY(c);
-    const w = c.size.x, h = c.size.y;
-    const x = c.pos.x, y0 = c.pos.y;
-    const y = y0 + bumpY;
-    const pos = vec2(x, y);
-    const dir = c.dir; // 1 right, -1 left
+    const x = c.pos.x, y = c.pos.y + bumpY;
+    const dir = c.dir;            // 1 right, -1 left
+    const mir = dir < 0;          // tiles are painted facing right
 
     // shadow stays on the road as the ground reference
-    drawRect(vec2(x, y0 - .42), vec2(w*.95, .12), hsl(0,0,0,.35));
+    drawRect(vec2(x, c.pos.y - .42), vec2(c.size.x*.96, .14), hsl(0,0,0,.35));
 
-    if (c.kind === 'bus') {
-      drawRect(pos, vec2(w, h*.92), c.color);
-      drawRect(pos.add(vec2(0, h*.18)), vec2(w*.88, h*.38), hsl(200/360,.5,.8,.85));
-      // window dividers
-      for (let i=-2; i<=2; i++)
-        drawRect(pos.add(vec2(i*w*.16, h*.18)), vec2(.05, h*.38), hsl(0,0,.1));
-      // door at back
-      drawRect(pos.add(vec2(-dir*w*.32, -.04)), vec2(.12, h*.55), hsl(0,0,.08));
-      // stripe
-      drawRect(pos.add(vec2(0, -h*.18)), vec2(w*.94, .06), hsl(0,0,1,.4));
-    }
-    else if (c.kind === 'truck') {
-      // cargo box (back)
-      drawRect(pos.add(vec2(-dir*w*.22, 0)), vec2(w*.55, h*.95), hsl(0,0,.85));
-      drawRect(pos.add(vec2(-dir*w*.22, 0)), vec2(w*.55, h*.95), hsl(0,0,.85), .04, hsl(0,0,.3));
-      // panel lines on cargo
-      drawRect(pos.add(vec2(-dir*w*.22, 0)), vec2(.05, h*.85), hsl(0,0,.35));
-      // cab
-      drawRect(pos.add(vec2(dir*w*.30, 0)), vec2(w*.4, h*.95), c.color);
-      drawRect(pos.add(vec2(dir*w*.32, h*.18)), vec2(w*.28, h*.32), hsl(200/360,.5,.85,.9));
-    }
-    else if (c.kind === 'sports') {
-      // sleek low car: lower body wider, cabin smaller
-      drawRect(pos, vec2(w, h*.55), c.color);
-      drawRect(pos.add(vec2(-dir*w*.05, h*.18)), vec2(w*.55, h*.32), hsl(0,0,.05));
-      // racing stripe
-      drawRect(pos, vec2(w, .08), hsl(0,0,1,.6));
-    }
-    else if (c.kind === 'wagon') {
-      drawRect(pos, vec2(w, h*.92), c.color);
-      drawRect(pos.add(vec2(0, h*.18)), vec2(w*.78, h*.32), hsl(200/360,.5,.85,.9));
-      // pillar between front/back windows
-      drawRect(pos.add(vec2(0, h*.18)), vec2(.06, h*.32), c.color);
-      // side trim
-      drawRect(pos.add(vec2(0, -h*.18)), vec2(w*.88, .05), hsl(0,0,.1));
-    }
-    else {
-      // sedan
-      drawRect(pos, vec2(w, h*.85), c.color);
-      drawRect(pos.add(vec2(0, h*.18)), vec2(w*.65, h*.3), hsl(200/360,.5,.85,.9));
-      drawRect(pos.add(vec2(-dir*.05, h*.18)), vec2(.05, h*.3), c.color);
+    if (c.kind === 'truck') {
+      // cab on the leading side, trailer trailing; tires under both
+      const total = TRUCK_CAB.x + TRUCK_GAP + TRUCK_TRAILER.x;
+      const cabX = x + dir * (total/2 - TRUCK_CAB.x/2);
+      const trX  = x - dir * (total/2 - TRUCK_TRAILER.x/2);
+      const wy   = y - .50;
+      drawTire(cabX + dir*TRUCK_CAB.x*.20, wy);   // cab front axle
+      drawTire(trX  - dir*TRUCK_TRAILER.x*.30, wy); // trailer rear axle
+      drawTire(trX  + dir*TRUCK_TRAILER.x*.10, wy); // trailer mid axle
+      drawTile(vec2(trX, y),  TRUCK_TRAILER, sprites.trailerBase,   c.color, 0, mir);
+      drawTile(vec2(trX, y),  TRUCK_TRAILER, sprites.trailerDetail, WHITE,   0, mir);
+      drawTile(vec2(cabX, y), TRUCK_CAB,     sprites.cabBase,       c.color, 0, mir);
+      drawTile(vec2(cabX, y), TRUCK_CAB,     sprites.cabDetail,     WHITE,   0, mir);
+      return;
     }
 
-    // wheels (front + back) — bump along with the body
-    const wy = y - h*.42;
-    drawCircle(vec2(x - w*.32, wy), .30, hsl(0,0,.08));
-    drawCircle(vec2(x + w*.32, wy), .30, hsl(0,0,.08));
-    drawCircle(vec2(x - w*.32, wy), .14, hsl(0,0,.45));
-    drawCircle(vec2(x + w*.32, wy), .14, hsl(0,0,.45));
-    // truck/bus extra wheels
-    if (c.kind === 'truck' || c.kind === 'bus') {
-      const xMid = x + (c.kind==='truck' ? -dir*w*.05 : 0);
-      drawCircle(vec2(xMid, wy), .30, hsl(0,0,.08));
-      drawCircle(vec2(xMid, wy), .14, hsl(0,0,.45));
-    }
-
-    // headlights / taillights (only on horizontal cars; ours all are)
-    const fx = x + dir * w*.5;
-    drawCircle(vec2(fx, y - .12), .11, hsl(55/360,.95,.78));
-    drawCircle(vec2(fx, y + .12), .11, hsl(55/360,.95,.78));
-    const bx = x - dir * w*.5;
-    drawCircle(vec2(bx, y - .12), .08, hsl(0,.85,.55));
-    drawCircle(vec2(bx, y + .12), .08, hsl(0,.85,.55));
+    const r = carRender[c.kind];
+    const wy = y - r.y*.42;
+    drawTire(x - r.x*.30, wy);
+    drawTire(x + r.x*.30, wy);
+    drawTile(vec2(x, y), r, sprites[c.kind + 'Base'],   c.color, 0, mir);
+    drawTile(vec2(x, y), r, sprites[c.kind + 'Detail'], WHITE,   0, mir);
   }
 
   function drawLog(l) {
     const bumpY = logBumpY(l);
-    const w = l.size.x, h = l.size.y;
-    const x = l.pos.x, y0 = l.pos.y;
-    const y = y0 + bumpY;
+    const w = l.size.x, x = l.pos.x, y = l.pos.y + bumpY;
 
     // soft water shadow stays at the water surface
-    drawEllipse(vec2(x, y0 - .35), vec2(w*.95, .25), hsl(0,0,0,.30));
+    drawEllipse(vec2(x, l.pos.y - .35), vec2(w*.95, .25), hsl(0,0,0,.30));
 
-    // base log body (floats)
-    drawRect(vec2(x, y), vec2(w, h), l.color);
-    // top highlight band
-    drawRect(vec2(x, y + h*.22), vec2(w*.96, h*.18), hsl(28/360,.55,.46));
-    // bottom shadow band
-    drawRect(vec2(x, y - h*.30), vec2(w*.96, h*.15), hsl(28/360,.5,.20));
-
-    // end caps with concentric rings
-    const ringColors = [
-      hsl(28/360,.45,.22),
-      hsl(28/360,.5, .32),
-      hsl(28/360,.55,.42),
-      hsl(28/360,.55,.55),
-    ];
-    for (const side of [-1, 1]) {
-      const ex = x + side*(w/2 - .05);
-      drawEllipse(vec2(ex, y), vec2(.35, h*.98), ringColors[0]);
-      drawEllipse(vec2(ex, y), vec2(.25, h*.7),  ringColors[1]);
-      drawEllipse(vec2(ex, y), vec2(.16, h*.45), ringColors[2]);
-      drawEllipse(vec2(ex, y), vec2(.07, h*.20), ringColors[3]);
-    }
-
-    // bark knots/grooves (stable per log via seed)
-    const knots = 3;
-    for (let i=0; i<knots; i++) {
-      const t = (((l.seed * 11) + i*97) % 100) / 100;
-      const ox = (t - .5) * (w - .8);
-      drawRect(vec2(x + ox, y + .02), vec2(.06, h*.65), hsl(28/360,.5,.22));
-    }
-    // a single knot
-    const kt = ((l.seed * 31) % 100) / 100;
-    const kox = (kt - .5) * (w - 1.0);
-    drawCircle(vec2(x + kox, y + .05), .14, hsl(28/360,.6,.18));
-    drawCircle(vec2(x + kox, y + .05), .07, hsl(28/360,.5,.30));
+    drawTile(vec2(x, y), vec2(w, .98), sprites.log, WHITE);
   }
 
   function drawFrog(basePos = frog.pos, facing = frog.facing, hopAnimT = frog.hopAnim, breathPhase = 0) {
     const hopArc = Math.sin(hopAnimT * Math.PI);  // 0..1..0
     const p = basePos.add(vec2(0, hopArc * .25));
 
-    // Breathing — body scales ±5% around its normal size on a slow cycle.
-    // Eye sizes stay constant; their positions move outward as the body grows.
+    // Breathing scales the body ±5%; the hop adds a little extra puff.
     const breath = Math.sin(time * 1.8 + breathPhase) * .05;
-    const bs = 1 + breath;
+    const s = 1.35 * (1 + breath) * (1 + hopArc * .12);
 
-    const f = facing;
-    const perp = vec2(-f.y, f.x);
-
-    const green     = hsl(105/360,.75,.42);
-    const greenDark = hsl(105/360,.80,.27);
-
-    // shadow — always visible, sits on the ground below the body.
-    // Anchored to basePos so it doesn't rise with the hop, grounding the frog.
+    // shadow — anchored to basePos so it stays grounded during the hop
     drawEllipse(basePos.add(vec2(0,-.42)), vec2(1.10, .34),
       hsl(0,0,0, .42 - hopArc*.12));
 
-    // back legs (sticking out behind, splayed) — scale with breath
-    const back = vec2(-f.x*.30*bs, -f.y*.30*bs);
-    const legL = p.add(back).add(perp.scale( .22*bs));
-    const legR = p.add(back).add(perp.scale(-.22*bs));
-    drawCircle(legL, .26, greenDark);
-    drawCircle(legR, .26, greenDark);
-    drawCircle(legL, .18, green);
-    drawCircle(legR, .18, green);
-
-    // body — slight stretch in direction of motion when hopping, plus breath
-    const stretch = 1 + hopArc * .15;
-    const squish  = 1 - hopArc * .10;
-    const horiz   = Math.abs(f.x) > 0;
-    const bw = (horiz ? stretch : squish) * .8 * bs;
-    const bh = (horiz ? squish  : stretch) * .8 * bs;
-    drawEllipse(p, vec2(bw, bh), green);
-
-    // two small symmetric back spots — scale outward with breath
-    drawCircle(p.add(perp.scale( .18*bs)), .07, greenDark);
-    drawCircle(p.add(perp.scale(-.18*bs)), .07, greenDark);
-
-    // eyes — big cartoony bumps on the front-top of the head (~2x).
-    // Size stays constant; position adjusts outward as the body breathes.
-    const eyeFwd = p.add(vec2(f.x*.20*bs, f.y*.20*bs));
-    const eyeL2  = eyeFwd.add(perp.scale( .24*bs));
-    const eyeR2  = eyeFwd.add(perp.scale(-.24*bs));
-    // green eye bumps
-    drawCircle(eyeL2, .42, green);
-    drawCircle(eyeR2, .42, green);
-    // whites
-    drawCircle(eyeL2.add(vec2(0,.04)), .30, hsl(0,0,1));
-    drawCircle(eyeR2.add(vec2(0,.04)), .30, hsl(0,0,1));
-    // pupils — look forward
-    drawCircle(eyeL2.add(vec2(f.x*.06, f.y*.06 + .04)), .14, hsl(0,0,0));
-    drawCircle(eyeR2.add(vec2(f.x*.06, f.y*.06 + .04)), .14, hsl(0,0,0));
-    // shiny highlights
-    drawCircle(eyeL2.add(vec2(f.x*.06 - .05, f.y*.06 + .11)), .05, hsl(0,0,1));
-    drawCircle(eyeR2.add(vec2(f.x*.06 - .05, f.y*.06 + .11)), .05, hsl(0,0,1));
+    // frog tile is painted facing up; rotate it to point along `facing`
+    drawTile(p, vec2(s, s), sprites.frog, WHITE, facing.angle());
   }
 
   function gameRender() {
