@@ -60,6 +60,59 @@ function setBestTime(d, seconds)
     saveData({bestTimes});
 }
 
+// In-progress game persistence ----------------------------------------------
+// The live round is stored under the save blob's `game` key (sibling to
+// bestTimes). It exists only while a round is unfinished; win/loss/quit clear
+// it so a reload returns to the title. saveDirty is set by the mutating
+// actions and flushed once per frame in gameUpdatePost, so a flood/chord's
+// many internal reveals cause just one write.
+let saveDirty = false;
+
+function saveGame()
+{
+    // only persist a live, unfinished round
+    if (!isPlaying() || gameOver || gameWon) return;
+    saveData({game: {
+        boardW, boardH, mineCount, difficulty,
+        firstClick, revealedCount,
+        elapsed: nowTime() - startTime,
+        mines:    Array.from(mines),
+        nums:     Array.from(nums),
+        revealed: Array.from(revealed),
+        flagged:  Array.from(flagged),
+    }});
+}
+
+function clearSavedGame()
+{
+    saveData({game: null});
+}
+
+// Restore a previously saved round. Returns true on success, false when there
+// is no save or it fails a basic shape check.
+function loadSavedGame()
+{
+    const g = getSaveData().game;
+    if (!g) return false;
+    const n = g.boardW * g.boardH;
+    if (!Array.isArray(g.mines) || g.mines.length !== n) return false;
+
+    difficulty = g.difficulty;
+    setDifficulty(g.boardW, g.boardH, g.mineCount);
+
+    mines    = Uint8Array.from(g.mines);
+    nums     = Uint8Array.from(g.nums);
+    revealed = Uint8Array.from(g.revealed);
+    flagged  = Uint8Array.from(g.flagged);
+
+    firstClick    = !!g.firstClick;
+    revealedCount = g.revealedCount|0;
+    gameOver = gameWon = revealAll = newBest = false;
+    startTime = nowTime() - (+g.elapsed || 0);
+    endTime = startTime;
+    return true;
+}
+
 // sounds
 let sReveal, sFlag, sUnflag, sBoom, sWin;
 
@@ -142,6 +195,7 @@ function revealCell(x,y)
     const i = idx(x,y);
     if (revealed[i] || flagged[i]) return;
 
+    saveDirty = true;
     revealed[i] = 1;
     revealedCount++;
 
@@ -239,6 +293,7 @@ function toggleFlag(x,y)
     const i = idx(x,y);
     if (revealed[i]) return;
     flagged[i] = flagged[i] ? 0 : 1;
+    saveDirty = true;
     const snd = flagged[i] ? sFlag : sUnflag;
     snd && snd.play();
 }
@@ -393,6 +448,7 @@ async function gameInit()
         difficulty = id;
         setDifficulty(w, h, m);
         resetGame();
+        clearSavedGame();
         setPlaying(true);
         hideMenu('title');
     };
@@ -442,12 +498,17 @@ async function gameInit()
     });
 
     createPauseMenu({
-        onRestart: resetGame,
+        onRestart: () =>
+        {
+            resetGame();
+            clearSavedGame();
+        },
         onQuit: () =>
         {
             clearSubmenuStack();
             hideAllMenus();
             setPlaying(false);
+            clearSavedGame();
             setupAttractBoard();
             showMenu('title');
         },
@@ -455,8 +516,19 @@ async function gameInit()
 
     installDefaultToolbar();
 
-    // open straight to the title menu
-    showMenu('title');
+    // persist the live round when the tab is hidden or closed so the latest
+    // board state and elapsed time survive a reload (saveGame no-ops unless a
+    // round is actually in progress)
+    document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+    window.addEventListener('pagehide', saveGame);
+
+    // resume the most recently played round if one was saved; otherwise show
+    // the title over the attract backdrop built by setupAttractBoard above.
+    // loadSavedGame overwrites that backdrop with the real saved board.
+    if (loadSavedGame())
+        setPlaying(true);
+    else
+        showMenu('title');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -467,7 +539,10 @@ function gameUpdate()
 
     // restart
     if (keyWasPressed('KeyR'))
+    {
         resetGame();
+        clearSavedGame();
+    }
 
     const c = pickCellFromMouse();
     if (!c) return;
@@ -509,6 +584,16 @@ function gameUpdate()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
+    // flush save state once per frame after all reveals/flags settle: clear it
+    // on a finished round so a reload returns to the title, otherwise persist
+    if (saveDirty)
+    {
+        saveDirty = false;
+        if (gameOver || gameWon)
+            clearSavedGame();
+        else
+            saveGame();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
