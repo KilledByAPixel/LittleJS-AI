@@ -97,14 +97,10 @@ const dirtPebble = hsl(.08,.25,.10,.35);
 
 // bird colors (simple shaded body)
 const birdBase     = hsl(.14,.85,.55);
-const birdOutline  = hsl(.14,.65,.25);
+const birdOutline  = hsl(.09,.70,.10);
 const birdHighlight= hsl(.14,.55,.95,.30);
 const birdWing     = hsl(.1,.8,.45);
 const birdWingDk   = hsl(.1,.85,.25,.22);
-
-// particles
-const puffLight = hsl(.12,.45,.95,.75);
-const puffDark  = hsl(.14,.35,.25,.35);
 
 // game state
 const STATE_READY = 0;
@@ -118,10 +114,6 @@ let birdPos;
 let birdVelY;
 let pipeTimer;
 let pipes;
-
-// particles
-let particles;
-let particleTimer;
 
 // scenery
 let bgScrollX;
@@ -149,8 +141,6 @@ function resetRun(toReady=true)
     birdVelY = 0;
     pipeTimer = 0;
     pipes = [];
-    particles = [];
-    particleTimer = 0;
     bgScrollX = 0;
     state = toReady ? STATE_READY : STATE_PLAY;
 }
@@ -185,46 +175,35 @@ function killBird()
     birdVelY = 0; // freeze bird motion on death
     sfxHit.play();
 
-    // burst of particles on hit
-    emitBurst(14, 6);
+    // crash burst using the engine particle emitter (feathers/puff)
+    new ParticleEmitter(
+        birdPos,            // pos
+        0,                  // angle
+        .6,                 // emitSize (circle diameter)
+        .1,                 // emitTime (short one-shot burst)
+        180,                // emitRate (~18 particles over the burst)
+        PI,                 // emitConeAngle (full circle)
+        undefined,          // tileInfo (untextured)
+        hsl(.12,.95,.70),   // colorStartA
+        hsl(.04,.90,.55),   // colorStartB
+        hsl(.12,.95,.70,0), // colorEndA (fade to clear)
+        hsl(.04,.90,.55,0), // colorEndB
+        .6,                 // particleTime
+        .5,                 // sizeStart
+        .05,                // sizeEnd
+        .3,                 // speed (world units per FRAME)
+        .3,                 // angleSpeed
+        .92,                // damping
+        .95,                // angleDamping
+        0,                  // gravityScale (gravity is handled manually)
+        PI,                 // particleConeAngle
+        .25,                // fadeRate
+        .4,                 // randomness
+        false,              // collideTiles
+        false               // additive
+    );
 
     submitBestScore(score);
-}
-
-function emitParticle(pos, vel, life, size, color)
-{
-    particles.push({ pos, vel, life, size, color, startLife: life });
-}
-
-function emitBurst(count=10, speed=5)
-{
-    // emit around the bird (used for crash)
-    for (let i=0; i<count; ++i)
-    {
-        const a = rand(PI*2);
-        const v = vec2(Math.cos(a), Math.sin(a)).scale(rand(speed*.5, speed));
-        emitParticle(birdPos, v, rand(.35,.65), rand(.10,.20), i&1 ? puffLight : puffDark);
-    }
-}
-
-function emitFlapPuff()
-{
-    // emit behind the bird in local space
-    const tilt = -clamp(birdVelY / 12, -1, 1) * .5;
-    const forward = rotateVec(vec2(1,0), tilt);
-    const up = rotateVec(vec2(0,1), tilt);
-
-    const base = birdPos
-        .add(scaleVec(forward, -birdRadius*1.05))
-        .add(scaleVec(up, -0.10));
-
-    for (let i=0; i<6; ++i)
-    {
-        const spread = rand(-.9,.9);
-        const dir = forward.scale(-1).add(up.scale(spread)).normalize();
-        const v = dir.scale(rand(3.5, 7)).add(vec2(rand(-.6,.6), rand(-.4,.4)));
-        emitParticle(base.add(vec2(rand(-.1,.1), rand(-.1,.1))), v, rand(.25,.50), rand(.22,.36), i&1 ? puffLight : puffDark);
-    }
 }
 
 // rotate a Vector2 by angle (radians) using LittleJS convention: clockwise is positive
@@ -601,40 +580,6 @@ function gameUpdate()
     if (state === STATE_PLAY)
         bgScrollX += pipeSpeed * dt;
 
-    // update particles
-    if (particles.length)
-    {
-        const freeze = state === STATE_DEAD;
-        for (const p of particles)
-        {
-            p.life -= dt;
-            if (!freeze)
-            {
-                p.pos = p.pos.add(p.vel.scale(dt));
-                // gentle drag and slight rise for a floaty puff feel
-                p.vel = p.vel.scale(Math.pow(.06, dt)).add(vec2(0, 2.5*dt));
-            }
-        }
-        particles = particles.filter(p=>p.life>0);
-    }
-
-    // tiny continuous trail while flying
-    if (state === STATE_PLAY)
-    {
-        particleTimer -= dt;
-        if (particleTimer <= 0)
-        {
-            particleTimer += .045;
-            // a small, subtle puff
-            const tilt = -clamp(birdVelY / 12, -1, 1) * .5;
-            const forward = rotateVec(vec2(1,0), tilt);
-            const up = rotateVec(vec2(0,1), tilt);
-            const base = birdPos.add(scaleVec(forward, -birdRadius*1.0)).add(scaleVec(up, -0.08));
-            const v = forward.scale(-rand(1.5, 3.2)).add(up.scale(rand(-.5,.5)));
-            emitParticle(base, v, rand(.25,.40), rand(.18,.28), puffDark);
-        }
-    }
-
     // start / flap / restart
     if (inputJumpPressed())
     {
@@ -651,7 +596,6 @@ function gameUpdate()
         {
             birdVelY = flapVelocity;
             sfxFlap.play();
-            emitFlapPuff();
         }
 
         if (state === STATE_DEAD)
@@ -805,15 +749,6 @@ function gameRender()
     // pipes
     for (const p of pipes)
         drawPipe(p);
-
-    // particles (behind bird)
-    for (const p of particles)
-    {
-        const t = clamp(p.life / p.startLife, 0, 1);
-        const r = (p.size*(.6 + (1-t))) * 2;
-        const c = (p.color === puffLight) ? hsl(.12,.45,.95,.55*t) : hsl(.14,.35,.25,.35*t);
-        drawCircle(p.pos, r, c);
-    }
 
     // ground (green base)
     const groundHeight = 1.2;
