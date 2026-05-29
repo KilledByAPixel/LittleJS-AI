@@ -277,13 +277,16 @@ class Machine extends EngineObject
         this.reels = [];                 // current displayed symbols (objects from BALANCE.symbols)
         for (let i=0;i<BALANCE.reelCount;++i) this.reels.push(rollSymbol());
         this.flash = 0;                  // win flash amount (0..1)
-        // reel-spin animation state
+        // reel-spin animation state (per reel): a vertical scroll where the
+        // incoming symbol slides down from the top while the current exits the
+        // bottom; masked above/below so only the slot window shows.
         this.spinning = false;
-        this.finalReels = [];            // decided result, revealed as reels stop
+        this.spinSilent = false;         // demon auto-spins are silent; manual clicks tick
+        this.finalReels = [];            // decided result, slid into place as reels stop
+        this.reelNext = [];              // incoming symbol above each reel
+        this.reelScroll = [];            // 0..1 scroll progress within the current step
         this.reelStop = [];              // per-reel stop Timers (staggered L->R)
         this.reelStopped = [];           // per-reel locked flag
-        this.cycleClock = 0;             // throttles the blur symbol-swap
-        this.spinSilent = false;         // demon auto-spins are silent; manual clicks tick
     }
     update()
     {
@@ -299,42 +302,47 @@ class Machine extends EngineObject
         if (this.spinning) return;   // ignore re-triggers mid-spin
         const wildChance = this.wildCount * BALANCE.wildChancePerWild;
         this.finalReels = [];
-        for (let i=0;i<BALANCE.reelCount;++i)
-            this.finalReels.push(rand() < wildChance ? '__WILD__' : rollSymbol());
-        this.spinning = true;
-        this.spinSilent = silent;
-        this.cycleClock = 0;
+        this.reelNext = [];
+        this.reelScroll = [];
         this.reelStop = [];
         this.reelStopped = [];
         for (let i=0;i<BALANCE.reelCount;++i)
         {
-            this.reelStop.push(new Timer(0.35 + i*0.18));   // staggered stop
+            this.finalReels.push(rand() < wildChance ? '__WILD__' : rollSymbol());
+            this.reelNext.push(rollSymbol());               // first incoming symbol
+            this.reelScroll.push(0);
+            this.reelStop.push(new Timer(0.4 + i*0.22));    // staggered stop L->R
             this.reelStopped.push(false);
         }
+        this.spinning = true;
+        this.spinSilent = silent;
         if (!silent) sfxSpin.play(this.pos);   // spin-start whir
     }
     updateSpin()
     {
-        this.cycleClock += timeDelta;
-        const cycle = this.cycleClock >= 0.05;   // ~20Hz blur swap
-        if (cycle) this.cycleClock = 0;
-        let allStopped = true;
+        const REEL_SPEED = 9;   // symbol-steps per second while whirring
         for (let i=0;i<BALANCE.reelCount;++i)
         {
             if (this.reelStopped[i]) continue;
-            if (this.reelStop[i].elapsed())
+            this.reelScroll[i] += timeDelta * REEL_SPEED;
+            // each completed step commits the incoming symbol and queues the next
+            while (this.reelScroll[i] >= 1 && !this.reelStopped[i])
             {
-                this.reelStopped[i] = true;
-                this.reels[i] = this.finalReels[i];        // lock to result
-                if (!this.spinSilent) sfxSpin.play(this.pos, 0.5);   // reel-stop tick
-            }
-            else
-            {
-                allStopped = false;
-                if (cycle) this.reels[i] = rollSymbol();   // cycling blur
+                this.reelScroll[i] -= 1;
+                this.reels[i] = this.reelNext[i];           // incoming -> current
+                if (this.reelStop[i].elapsed() && this.reels[i] === this.finalReels[i])
+                {
+                    // landed on the result after the stop time -> lock it in
+                    this.reelStopped[i] = true;
+                    this.reelScroll[i] = 0;
+                    if (!this.spinSilent) sfxSpin.play(this.pos, 0.5);   // reel-stop tick
+                }
+                else
+                    // past the stop time force the result in so it slides to a stop
+                    this.reelNext[i] = this.reelStop[i].elapsed() ? this.finalReels[i] : rollSymbol();
             }
         }
-        if (allStopped) { this.spinning = false; this.resolveWin(); }
+        if (this.reelStopped.every(s => s)) { this.spinning = false; this.resolveWin(); }
     }
     resolveWin()
     {
@@ -369,16 +377,37 @@ class Machine extends EngineObject
         // cabinet
         drawRect(this.pos, this.size, this.flash > 0 ? hsl(0,0,1,this.flash) : hsl(.85,.4,.25));
         drawRect(this.pos, this.size.scale(0.96), hsl(.85,.3,.15));
-        // reels
+
         const slotW = this.size.x / (BALANCE.reelCount+1);
-        for (let i=0;i<this.reels.length;++i)
+        const windowH = slotW*0.9;            // visible slot-window height (one symbol)
+        const rowY = this.pos.y + 0.6;        // vertical center of the reel row
+        const symSize = vec2(slotW*0.8);
+        const drawSym = (sym, x, y) =>
         {
-            const rp = this.pos.add(vec2((i-(this.reels.length-1)/2)*slotW, 0.6));
-            drawRect(rp, vec2(slotW*0.9, slotW*0.9), hsl(0,0,.95));
-            const tileIndex = this.reels[i] === '__WILD__' ? wildTileIndex() : symbolTileIndex(this.reels[i]);
-            drawTile(rp, vec2(slotW*0.8), tile(tileIndex));
+            const idx = sym === '__WILD__' ? wildTileIndex() : symbolTileIndex(sym);
+            drawTile(vec2(x, y), symSize, tile(idx));
+        };
+        // reel windows + (scrolling) symbols
+        for (let i=0;i<BALANCE.reelCount;++i)
+        {
+            const x = this.pos.x + (i-(BALANCE.reelCount-1)/2)*slotW;
+            drawRect(vec2(x, rowY), vec2(slotW*0.9, windowH), hsl(0,0,.95));   // window bg
+            if (this.spinning && !this.reelStopped[i])
+            {
+                const p = this.reelScroll[i];                         // 0..1 within the step
+                drawSym(this.reels[i],    x, rowY - p*windowH);       // current exits the bottom
+                drawSym(this.reelNext[i], x, rowY + (1-p)*windowH);   // incoming slides in from top
+            }
+            else
+                drawSym(this.reels[i], x, rowY);                      // settled
         }
-        // level label
+        // mask bars (cabinet-colored) hide the scroll above/below the window row,
+        // so the slot reads like a real reel spinning behind a window.
+        const maskH = windowH*1.6, maskW = this.size.x*0.95;
+        drawRect(vec2(this.pos.x, rowY + windowH/2 + maskH/2), vec2(maskW, maskH), hsl(.85,.3,.15));
+        drawRect(vec2(this.pos.x, rowY - windowH/2 - maskH/2), vec2(maskW, maskH), hsl(.85,.3,.15));
+
+        // level label (after masks so it's never covered)
         drawText('Lv ' + this.level, this.pos.add(vec2(0, -this.size.y/2+0.6)), 0.8, hsl(0,0,1));
     }
 }
@@ -688,26 +717,9 @@ async function gameInit()
         activate: () => sound_activate.play(),
     });
 
-    // ----- title menu -----
-    // Shown immediately at the end of gameInit (no click-to-reveal step).
-    // dismissable: false so Esc/B can't strand the player in a "no menu,
-    // not playing" state — the only ways out are the action buttons.
-    // onStart wires gamepad Start to launch PLAY directly without the
-    // player having to navigate to the PLAY item first.
-    const playFromTitle = () => { setPlaying(true); titleMenu.hide(); };
-    const titleMenu = createMenu({
-        id: 'title',
-        title: 'SLOT DEMON',
-        subtitle: 'Run the casino in Hell',
-        dismissable: false,
-        onStart: playFromTitle,
-        items: [
-            {type:'button', label:'PLAY',    onClick: playFromTitle},
-            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
-            {type:'button', label:'MEDALS',  onClick: () => pushMenu('medals')},
-            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
-        ],
-    });
+    // No title screen — Slot Demon boots straight into play (see setPlaying at
+    // the end of gameInit). The only menu is OPTIONS, opened from the toolbar ☰,
+    // which links out to MEDALS and ABOUT.
 
     // ----- medals menu (grid demo + MenuMedal integration) -----
     // MenuMedal extends LittleJS's Medal — same persistence, same `medals`
@@ -744,13 +756,11 @@ async function gameInit()
         ],
     });
 
-    // ----- options menu (shared between title and pause) -----
-    // Demonstrates separators grouping audio / display / back.
-    // The `persist:'key'` flag on slider / checkbox / color / input items
-    // auto-loads from localStorage on init and auto-saves on every change.
-    // onChange also fires once at init time with the resolved value, so
-    // the consumer's effect (e.g. setSoundVolume) applies the saved value
-    // before the first menu sound plays.
+    // ----- options menu (the only menu; opened from the toolbar ☰) -----
+    // `persist:'key'` on slider/checkbox auto-loads from localStorage on init
+    // and auto-saves on change; onChange also fires once at init with the
+    // resolved value so the effect (setSoundVolume / setScreenShakeEnabled)
+    // applies the saved value immediately. MEDALS / ABOUT are pushed as sub-menus.
     createMenu({
         id: 'options',
         title: 'OPTIONS',
@@ -765,14 +775,10 @@ async function gameInit()
                 onChange: v => setScreenShakeEnabled(v)},
             {type:'button',   label:'FULLSCREEN', onClick: toggleFullscreen},
             {type:'separator'},
-            // Return to the title screen. Idle game: quitting KEEPS progress
-            // (save first); the existing pit stays as the frozen backdrop.
-            {type:'button',   label:'QUIT TO TITLE', onClick: () => showConfirmDialog({
-                message:'Quit to title? Your progress is kept.', title:'QUIT',
-                onYes: () => { saveGame(); clearSubmenuStack(); quitToTitle(); } })},
+            {type:'button',   label:'MEDALS', onClick: () => pushMenu('medals')},
+            {type:'button',   label:'ABOUT',  onClick: () => pushMenu('about')},
             {type:'separator'},
-            // Explicit progress wipe (QUIT keeps the save; this is the only
-            // path that erases it). newGame() resets state, saveGame() persists
+            // Explicit progress wipe. newGame() resets state, saveGame() persists
             // the fresh state over the old blob.
             {type:'button',   label:'RESET GAME', title:'Erase all progress and start over',
                 onClick: () => showConfirmDialog({
@@ -806,9 +812,8 @@ async function gameInit()
 
     // ----- toolbar (mute / fullscreen / menu, top-right) -----
     // No pause menu — an idle game has no reason to pause. The ☰ button opens
-    // OPTIONS (settings: volume, shake, quit, reset) during play instead of a
-    // pause menu, and closes any open menu when one is up. mute + fullscreen are
-    // the standard helpers. The button is auto-grayed while the title is on top.
+    // OPTIONS (volume, shake, medals, about, reset), and closes any open menu
+    // when one is up. mute + fullscreen are the standard helpers.
     installDefaultToolbar({
         onHamburger: () =>
         {
@@ -817,11 +822,8 @@ async function gameInit()
         },
     });
 
-    // Restore saved progress (or start fresh if there's no save) so the pit
-    // renders as a frozen backdrop behind the title menu (menus.js freezes
-    // gameUpdate while the title is up, but gameRender still runs — the
-    // desired frozen-backdrop behavior). Options (volume/shake) are restored
-    // separately by the menu persist: items, not here.
+    // Restore saved progress (or start fresh if there's no save). Options
+    // (volume/shake) are restored separately by the menu persist: items.
     loadGame();
 
     // ----- live-balancing tweakables (press ~ to toggle the panel) -----
@@ -838,11 +840,11 @@ async function gameInit()
     tweak('BALANCE.payoutBase',   {min:1,     max:20});
     tweakEngineDefaults();
 
-    // Autosave cadence: while playing, persist every few seconds (and on QUIT).
+    // Autosave cadence: while playing, persist every few seconds.
     saveTimer = new Timer(5);
 
-    // Show the title menu immediately — no click-to-reveal step.
-    showMenu('title');
+    // No title screen — boot straight into the game.
+    setPlaying(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
