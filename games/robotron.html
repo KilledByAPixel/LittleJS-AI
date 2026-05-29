@@ -2497,6 +2497,7 @@ function fitCameraToArena()
 function gameInit()
 {
     saveDataInit('robotron');
+    setOrientationLock('landscape');
     // Let the canvas grow with the window. canvasMaxSize caps the internal resolution.
     canvasMaxSize = vec2(2048, 2048);
     cameraPos = vec2(0);

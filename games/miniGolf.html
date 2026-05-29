@@ -707,6 +707,7 @@ function canShoot()
 async function gameInit()
 {
     saveDataInit('miniGolf');
+    setOrientationLock('landscape');
     // setup box2d first!
     await box2dInit();
 

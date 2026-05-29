@@ -571,6 +571,7 @@ function createPlatforms()
 function gameInit()
 {
     saveDataInit('joust');
+    setOrientationLock('landscape');
     setCanvasFixedSize(vec2(1280, 720));
     cameraPos = vec2(LEVEL_WIDTH / 2, LEVEL_HEIGHT / 2);
     

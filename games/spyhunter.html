@@ -1078,6 +1078,7 @@ function runSanityTests()
 async function gameInit()
 {
     saveDataInit('spyhunter');
+    setOrientationLock('landscape');
     setCanvasFixedSize(vec2(1280, 720));
     runSanityTests();
     resetGame();

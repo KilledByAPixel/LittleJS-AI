@@ -531,6 +531,7 @@ function buildMenus()
 
 function gameInit()
 {
+    setOrientationLock('landscape');
     // low-res + pixelated for a 2600-ish vibe
     setCanvasFixedSize(vec2(640, 360));
     setCanvasPixelated(true);

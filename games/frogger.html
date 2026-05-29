@@ -486,6 +486,7 @@
 
   function gameInit() {
     saveDataInit('frogger');
+    setOrientationLock('landscape');
     setCanvasFixedSize(vec2(960, 540));
     cameraScale = 28;
     setCameraPos(vec2(LEVEL_W/2, LEVEL_H/2));

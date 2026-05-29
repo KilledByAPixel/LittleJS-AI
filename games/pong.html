@@ -263,6 +263,7 @@ showEngineVersion = false; // Hide engine version console display
     {
             // prime the save blob before any persisted menu items are built
             saveDataInit('Pong');
+            setOrientationLock('landscape');
 
             // fixed canvas for consistent feel
             setCanvasFixedSize(vec2(1280, 720));
@@ -299,7 +300,7 @@ showEngineVersion = false; // Hide engine version console display
     {
             if (typeof createMenu !== 'function') return;
 
-            installAutoPause();
+            installAutoPause(() => isPlaying());
 
             createTitleMenu({
                     title: 'PONG',

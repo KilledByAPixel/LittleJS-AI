@@ -1148,6 +1148,7 @@ function enemyHitsPlayer()
 async function gameInit()
 {
     saveDataInit('defender');
+    setOrientationLock('landscape');
     initSounds();
     setSoundVolume(.6);
     // Only pause when a menu surfaces during gameplay. Title-screen menus

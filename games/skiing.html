@@ -569,6 +569,7 @@ function resetGame()
 async function gameInit()
 {
     saveDataInit('skiing');
+    setOrientationLock('landscape');
     setCanvasFixedSize(vec2(1440, 900));
     cameraPos = vec2(0, 0);
 

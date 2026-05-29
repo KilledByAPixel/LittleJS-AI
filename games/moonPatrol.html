@@ -221,6 +221,7 @@ function fire()
 function gameInit()
 {
     saveDataInit('moonPatrol');
+    setOrientationLock('landscape');
     document.addEventListener('contextmenu', e => e.preventDefault());
 
     setCanvasFixedSize(vec2(1280, 720));

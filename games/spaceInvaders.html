@@ -801,6 +801,7 @@ function createBarriers()
 function gameInit()
 {
     saveDataInit('spaceInvaders');
+    setOrientationLock('landscape');
     setCanvasFixedSize(vec2(960, 540));
     setCameraPos(levelSize.scale(.5));
     cameraScale = 16; // pixels per world unit

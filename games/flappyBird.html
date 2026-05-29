@@ -551,6 +551,7 @@ function buildMenus()
 async function gameInit()
 {
     saveDataInit('flappyBird');
+    setOrientationLock('landscape');
     // fixed resolution for consistent feel
     setCanvasFixedSize(vec2(900, 540));
     cameraScale = 32;

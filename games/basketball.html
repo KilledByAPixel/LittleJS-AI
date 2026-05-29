@@ -375,6 +375,7 @@ function updateHoopMotion()
 async function gameInit()
 {
     saveDataInit('basketball');
+    setOrientationLock('landscape');
     canvasClearColor = COLOR_BG;
     setSoundVolume(.7);
     // Title has its own attract-mode behind the menu — leave it animating.

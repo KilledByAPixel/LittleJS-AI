@@ -809,6 +809,7 @@ function buildMenus()
 function gameInit()
 {
     saveDataInit('geometryDash');
+    setOrientationLock('landscape');
     const sd = getSaveData();
     unlocked = sd.unlocked ?? {classic: 1, remix: 1};
     unlocked.classic = unlocked.classic ?? 1;

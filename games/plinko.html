@@ -418,6 +418,7 @@ function resetGame()
 async function gameInit()
 {
     saveDataInit('plinko');
+    setOrientationLock('landscape');
     // Box2D first — every body needs the world to exist.
     await box2dInit();
 

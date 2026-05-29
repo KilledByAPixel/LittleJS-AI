@@ -648,6 +648,7 @@ function startPlay()
 async function gameInit()
 {
     saveDataInit('pool');
+    setOrientationLock('landscape');
     bestShots = getSaveData().bestShots ?? 0;
 
     await box2dInit();

@@ -617,6 +617,7 @@ function quitToTitleWithCleanup()
 async function gameInit()
 {
     saveDataInit('breakout');
+    setOrientationLock('landscape');
     cameraPos = levelSize.scale(.5);
 
     sfxBounce = new SoundGenerator({ volume: .6, frequency: 400, release: .06, shapeCurve: 1.6 });
