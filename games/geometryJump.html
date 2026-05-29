@@ -542,6 +542,16 @@ function drawBackground()
     const pulse = .05 + .025 * (Math.sin(time * 2.4) * .5 + .5);
     const hue = pal.bg + .04 * Math.sin(time * .15);
     drawRect(cameraPos, camSize.scale(1.05), hsl(hue, .5, pulse));
+
+    // slight grid, sky only (the floor draws on top so the grid stops at the ground line)
+    const left  = Math.floor(cameraPos.x - camSize.x/2) - 1;
+    const right = Math.ceil(cameraPos.x + camSize.x/2) + 1;
+    const top   = Math.ceil(cameraPos.y + camSize.y/2) + 1;
+    const gridColor = hsl(0, 0, 1, .06);
+    for (let x = left; x <= right; ++x)
+        drawLine(vec2(x, 0), vec2(x, top), .025, gridColor);
+    for (let y = 0; y <= top; ++y)
+        drawLine(vec2(left, y), vec2(right, y), .025, gridColor);
 }
 
 function drawFloor()
