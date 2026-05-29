@@ -1307,6 +1307,8 @@ function showWelcome(pushHistory = true) {
         if (pushHistory && wasGame) history.pushState(null, '', clean);
         else history.replaceState(null, '', clean);
     }
+    // Clear the search so returning to the library always shows the full list.
+    if (searchEl.value) { searchEl.value = ''; renderList(); }
     for (const c of listEl.querySelectorAll('.card')) c.classList.remove('selected');
     buildWelcome(); // refresh continue button in case last-game changed
 }
