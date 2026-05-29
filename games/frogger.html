@@ -111,7 +111,9 @@
   let gameOverHoldTimer = 0; // seconds before gameOver menu surfaces
   // Per-crossing countdown: drains while the current frog is mid-crossing;
   // hitting zero costs a life. Shrinks per level for added late-game pressure.
-  let crossTimer = 0, crossTimerMax = 1;
+  // It does NOT start draining until the player makes the first hop, so there's
+  // no pressure to move immediately at spawn / after a death.
+  let crossTimer = 0, crossTimerMax = 1, crossStarted = false;
   function levelCrossTime() { return Math.max(8, 22 - (level-1)*1.5); }
 
   // Score (reset each new game). Points: forward hops, frog home, time bonus,
@@ -154,9 +156,10 @@
       level = 1;
       buildLanes();
     }
-    // fresh crossing timer for the new frog
+    // fresh crossing timer for the new frog — paused until the first hop
     crossTimerMax = levelCrossTime();
     crossTimer = crossTimerMax;
+    crossStarted = false;
   }
 
   function buildLanes() {
@@ -316,6 +319,7 @@
     frog.facing = vec2(dx, dy);
     frog.hopAnim = 1;
     sHop.play(frog.pos);
+    crossStarted = true;   // first hop starts the crossing countdown
 
     // Score forward progress only (net-new rows), so hopping back and forth
     // can't farm points.
@@ -657,8 +661,8 @@
     frogWorldChecks();
 
     // Crossing countdown — runs only while the live frog is in play (not during
-    // the respawn freeze). Running out costs a life, same as any other death.
-    if (!respawnTimer.active()) {
+    // the respawn freeze) and only once the player has made the first hop.
+    if (!respawnTimer.active() && crossStarted) {
       const before = crossTimer;
       crossTimer -= DT;
       // low-time warning: a tick once per second while under 3s
