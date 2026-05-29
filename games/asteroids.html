@@ -834,7 +834,7 @@ function gameInit()
     }
 
     setSoundVolume(.8);
-    installAutoPause();
+    installAutoPause(() => isPlaying());   // title screen stays live so the attract rocks keep tumbling
 
     buildMenus();
     spawnAttractField();

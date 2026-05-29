@@ -334,43 +334,61 @@ showEngineVersion = false; // Hide engine version console display
     function gameUpdate()
     {
             if (bindPauseKey({when: () => isPlaying() && !gameOver})) return;
-            if (!isPlaying()) return;
+
+            // On the title screen we run an AI-vs-AI demo rally behind the menu:
+            // both paddles auto-play and a point just restarts the rally (no
+            // scoring), so the field looks alive instead of frozen.
+            const demo = !isPlaying();
 
             // Reset camera to origin each frame so the gameFx screen-shake plugin
             // (between gameUpdate and gameUpdatePost) can nudge cameraPos cleanly.
             setCameraPos(vec2(0, 0));
 
-            if (keyWasPressed('KeyR'))
+            if (!demo)
             {
-                    scoreL = scoreR = 0;
-                    resetRound(true);
-            }
-
-            if (keyWasPressed('KeyT'))
-                    aiRight = !aiRight;
-
-            if (keyWasPressed('Space') || mouseWasPressed(0))
-            {
-                    if (gameOver)
+                    if (keyWasPressed('KeyR'))
                     {
                             scoreL = scoreR = 0;
                             resetRound(true);
                     }
-                    serve();
+
+                    if (keyWasPressed('KeyT'))
+                            aiRight = !aiRight;
+
+                    if (keyWasPressed('Space') || mouseWasPressed(0))
+                    {
+                            if (gameOver)
+                            {
+                                    scoreL = scoreR = 0;
+                                    resetRound(true);
+                            }
+                            serve();
+                    }
             }
+            else if (waitingForServe)
+                    serve();   // auto-serve to keep the demo rally going
 
             // remember where the paddles were so we can measure their speed (for ball spin)
             const prevLeftY = left.pos.y, prevRightY = right.pos.y;
 
-            // Paddle input — mouse takes priority, keyboard still works
-            const keyDir = keyDirection().y;
-            if (keyDir)
-                    left.pos.y += keyDir * paddleSpeed * timeDelta;
+            // Left paddle — player-controlled in play, tracking AI in the demo
+            if (demo)
+            {
+                    const desired = clamp((ball.pos.y - left.pos.y) * 5, -paddleSpeed, paddleSpeed);
+                    left.pos.y += desired * timeDelta;
+            }
             else
-                    left.pos.y = mousePos.y;
+            {
+                    // mouse takes priority, keyboard still works
+                    const keyDir = keyDirection().y;
+                    if (keyDir)
+                            left.pos.y += keyDir * paddleSpeed * timeDelta;
+                    else
+                            left.pos.y = mousePos.y;
+            }
             clampPaddleY(left);
 
-            if (!aiRight)
+            if (!aiRight && !demo)
             {
                     right.pos.y += keyDirection().y * paddleSpeed * timeDelta;
             }
@@ -473,11 +491,11 @@ showEngineVersion = false; // Hide engine version console display
             if (dangerLevel > 0)
                     addScreenShake(.02 * dangerLevel, .05); // low continuous rumble at top speed
 
-            // Scoring
+            // Scoring (in the demo, a point just restarts the rally — no score)
             if (ball.pos.x < -halfField.x - 2)
-                    addScore(false);
+                    demo ? resetRound(false) : addScore(false);
             else if (ball.pos.x > halfField.x + 2)
-                    addScore(true);
+                    demo ? resetRound(true) : addScore(true);
     }
 
     function gameUpdatePost()
