@@ -32,8 +32,6 @@
  let combo = 0;
  let gameOver = false;
 
- // playing state — gates gameplay update from menu/title states
-
  // visual feedback (don't affect gameplay timing)
  let particles = [];
  let clearFlashTimer = 0;
@@ -579,13 +577,10 @@ function spawnClearParticles(cellX, cellY, colorIndex)
              0.55,
              hsl(.12, 1, .65, a), 0.14, withAlpha(BLACK, a));
      }
-
  }
 
  ///////////////////////////////////////////////////////////////////////////////
  // MENU UI (menus.js)
-
-
 
  function buildMenus()
  {

@@ -342,15 +342,13 @@ class Car extends Box2dObject
         this.aiLaneOffset = 0;
         this.bumpCooldown = 0;
         this.steerInput = 0;   // smoothed steering input for front-wheel rendering
-        this.lastSpeed = 0;    // captured pre-step speed, used by beginContact for bump SFX
     }
 
     forward() { return vec2().setAngle(this.angle, 1); }
 
     update()
     {
-        // NOTE: super.update() (Box2dObject sync from body) is deliberately NOT called
-        // in Task 1 — manual physics is still authoritative. Task 2 will rewrite this.
+        // super.update() (Box2dObject body sync) deliberately NOT called — manual physics is authoritative.
         if (this.finished || !raceStarted) return;
         this.prevPos = this.pos.copy();
 

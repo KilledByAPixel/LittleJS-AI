@@ -58,8 +58,6 @@ let nextPill = null;
 let linkIdGen = 1;
 let state = 'play';       // play | gameover | win
 
-// menu / session state
-
 // drop / lock
 let fallAcc = 0;
 let lockTimer = -1;
@@ -77,7 +75,6 @@ let postClearPause = 0;
 // particles
 let particles = [];
 
-// flash for "you can't spawn" style indicators (unused for now)
 const sfxMove     = new SoundGenerator({volume:.22, frequency:520, release:.03, randomness:.02});
 const sfxRotate   = new SoundGenerator({volume:.35, frequency:720, release:.05, slide:-.4, randomness:.03});
 const sfxLock     = new SoundGenerator({volume:.35, frequency:180, release:.08, noise:.05, randomness:.02});

@@ -52,11 +52,8 @@ const bgTopWarm = {h:.10,s:.70,l:.70};
 const bgBotWarm = {h:.08,s:.85,l:.90};
 
 // scenery
-// scenery
 const sunCore   = hsl(.12,.85,.62);
-// remove translucent glow/godrays (solid sun only)
 const sunRim    = hsl(.12,.75,.72);
-const rayColor  = hsl(.12,.65,.95, 0); // unused (kept for compatibility)
 
 const grassFarA = hsl(.28,.45,.40,.65);
 const grassFarB = hsl(.28,.55,.30,.65);
@@ -72,14 +69,8 @@ const farMount2  = hsl(.60,.22,.55);
 const midMount   = hsl(.56,.28,.52);
 const midMount2  = hsl(.56,.30,.46);
 
-// improved mountain palette (closer layer + snow)
 const nearMount   = hsl(.54,.32,.42);
 const nearMount2  = hsl(.54,.34,.36);
-// (simple mountains)
-const mountShadow = hsl(.56,.35,.20,.16);
-const mountFog    = hsl(.55,.35,.92,.14);
-const snowColor   = hsl(0,0,1,.55);
-const snowShade   = hsl(.55,.20,.90,.30);
 
 // pipe colors (base + light highlight + dark shadow for a tube look)
 const pipeBase   = hsl(.33,.70,.35);
@@ -93,7 +84,6 @@ const groundTop = hsl(.12,.55,.45);
 const dirtBase = hsl(.09,.55,.28);
 const dirtShade= hsl(.09,.65,.18);
 const dirtTop  = hsl(.11,.55,.38);
-const dirtPebble = hsl(.08,.25,.10,.35);
 
 // bird colors (simple shaded body)
 const birdBase     = hsl(.14,.85,.55);
@@ -206,10 +196,9 @@ function killBird()
     submitBestScore(score);
 }
 
-// rotate a Vector2 by angle (radians) using LittleJS convention: clockwise is positive
+// rotate a Vector2 by angle (radians) using LittleJS clockwise-positive convention
 function rotateVec(v, a)
 {
-    // standard math rotation is CCW-positive, so we use the clockwise form
     const c = Math.cos(a), s = Math.sin(a);
     return vec2(v.x*c + v.y*s, -v.x*s + v.y*c);
 }
@@ -475,7 +464,6 @@ function drawScenery()
     // solid sun (no translucent glow/rays)
     drawCircle(sunPos, 2.85, sunRim);
     drawCircle(sunPos, 2.55, sunCore);
-
 
     // clouds (behind mountains, cull offscreen copies)
     {
@@ -771,8 +759,6 @@ function gameRender()
         drawRect(center, vec2(worldSize.x*3, dirtH), dirtBase);
         drawRect(center.add(vec2(0, -.25)), vec2(worldSize.x*3, dirtH*.55), dirtShade);
         drawRect(vec2(0, dirtY), vec2(worldSize.x*3, .18), dirtTop);
-
-        // (removed pebbles to avoid flicker)
     }
 
     // bird (circle + simple wing)

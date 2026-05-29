@@ -16,9 +16,9 @@ showEngineVersion = false; // Hide engine version console display
 // Untextured primitives only: cube auto-runs, jump over spikes/blocks.
 
 // Tunables (fixed 60fps; do not multiply by dt)
-const RUN_SPEED   = .13;   // world units per frame (faster)   // world units per frame (a bit faster)
-const GRAVITY     = -.03;  // units per frame^2 (slower fall/floatier arc)  // units per frame^2
-const JUMP_VEL    = .52;   // lower jump height  // tuned w/ GRAVITY to keep ~same jump height   // units per frame
+const RUN_SPEED   = .13;   // world units per frame
+const GRAVITY     = -.03;  // units per frame^2 (floaty arc)
+const JUMP_VEL    = .52;   // tuned w/ GRAVITY for jump height
 const MAX_FALL    = -1.0;  // cap fall speed so drops don't get too snappy
 const FLOOR_Y     = 0;
 
@@ -403,11 +403,8 @@ function playerStep()
             continue;
 
         const blockTop    = b.pos.y + b.size.y/2;
-        const blockBottom = b.pos.y - b.size.y/2;
         const prevBottom  = prev.y - halfY;
-        const prevTop     = prev.y + halfY;
         const currBottom  = player.pos.y - halfY;
-        const currTop     = player.pos.y + halfY;
 
         const comingFromAbove = prevBottom >= blockTop - 1e-6;
         const passingTop      = currBottom < blockTop;
@@ -809,7 +806,6 @@ function gameInit()
     unlocked = sd.unlocked ?? {classic: 1, remix: 1};
     unlocked.classic = unlocked.classic ?? 1;
     unlocked.remix   = unlocked.remix   ?? 1;
-    // called once after the engine starts up
     setShowSplashScreen(false);
     setCanvasFixedSize(vec2(1280, 720));
     cameraScale = 64;
@@ -831,7 +827,6 @@ function gameUpdate()
     if (bindPauseKey({when: () => isPlaying() && state === 'play'})) return;
     if (!isPlaying()) return;
 
-    // called every frame at 60 frames per second
     if (state !== 'play')
     {
         updateParticles();
@@ -859,7 +854,6 @@ function gameUpdate()
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdatePost()
 {
-    // called after physics and objects are updated
     // setup camera and prepare for render
     const lookAhead = 7.2;
     const targetX = player.pos.x + lookAhead;
@@ -871,7 +865,6 @@ function gameUpdatePost()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRender()
 {
-    // called before objects are rendered
     drawBackground();
 
     // finish portal first so its base sits behind the ground
@@ -922,7 +915,7 @@ function gameRenderPost()
 
     // level readout (left of the bar)
     drawTextScreen(`LEVEL ${levelIndex+1}/${TOTAL_LEVELS}`, vec2(left - 70, by + 1), 22, hsl(.9,.8,.7), 3, hsl(0,0,0,.7), 'center', undefined, 'bold');
-    
+
     if (state === 'dead')
     {
         drawTextScreen('CRASH!', vec2(mainCanvasSize.x/2, mainCanvasSize.y/2 - 60), 110, hsl(0, .9, .6), 10, hsl(0,0,0,.8));

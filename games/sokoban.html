@@ -29,7 +29,6 @@ const TARGET = 3;
 const BOX = 4;
 const BOX_ON_TARGET = 5;
 const PLAYER = 6;
-const PLAYER_ON_TARGET = 7;
 
 // Colors
 const COLOR_WALL = rgb(.25, .2, .18);
@@ -38,7 +37,6 @@ const COLOR_TARGET = hsl(.0, .7, .5);
 const COLOR_BOX = hsl(.08, .75, .5);
 const COLOR_BOX_ON_TARGET = hsl(.33, .8, .45);
 const COLOR_PLAYER = hsl(.58, .85, .55);
-const COLOR_PLAYER_DARK = hsl(.58, .75, .35);
 
 // Game state
 let currentLevel = 0;
@@ -650,30 +648,6 @@ function checkWin()
 function nextLevel()
 {
     loadLevel(currentLevel + 1);
-}
-
-function drawTile3D(pos, size, baseColor, isRaised = false)
-{
-    const hi = baseColor.lerp(rgb(1,1,1), .2);
-    const sh = baseColor.lerp(rgb(0,0,0), .25);
-    
-    if (isRaised)
-    {
-        // Draw shadow
-        drawRect(pos.add(vec2(.08, -.08)), vec2(size), rgb(0,0,0,.3));
-        
-        // Draw raised block
-        const depth = .15;
-        drawRect(pos.add(vec2(0, -depth/2)), vec2(size, size - depth), sh);
-        drawRect(pos.add(vec2(0, depth)), vec2(size), baseColor);
-        
-        // Highlight on top
-        drawRect(pos.add(vec2(0, depth + size/4)), vec2(size * .9, size * .3), hi);
-    }
-    else
-    {
-        drawRect(pos, vec2(size), baseColor);
-    }
 }
 
 function drawBox(pos, onTarget)

@@ -41,7 +41,6 @@ const FIELD_MAX_X = FIELD_RIGHT - BUBBLE_R;
 
 const TOP_Y    = 8;
 const SHOOT_Y  = -8;
-const BOTTOM_Y = SHOOT_Y;
 const LOSE_Y   = TOP_Y - (ROWS_VISIBLE-1)*ROW_STEP_Y;
 
 // Pop / fall FX tuning
@@ -570,8 +569,6 @@ function endGame()
 function gameInit()
 {
     saveDataInit('snood');
-    // called once after the engine starts up
-    //setCanvasMaxSize(vec2(1280, 720));
     // Canvas clear matches the panel tint so any area outside the play rectangle
     // (above the wall, beside the panel, etc.) blends in instead of reading as a black bar.
     setCanvasClearColor(hsl(.6, .18, .14));
@@ -875,7 +872,6 @@ function gameRenderPost()
     // shooter + arrow-style aim
     const shooterPos = vec2(0, SHOOT_Y);
     const dir = vec2(Math.cos(aimAngle), Math.sin(aimAngle));
-    const aimStart = shooterPos.add(dir.scale(BUBBLE_R)); // start just outside the shooter bubble
     const aimEnd = shooterPos.add(dir.scale(2));
     const aimColor = hsl(0, 0, 1);
     const arrowWidth = .1;

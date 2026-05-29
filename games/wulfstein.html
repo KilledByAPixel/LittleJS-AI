@@ -664,7 +664,6 @@ let sndShoot, sndHurt, sndAlert, sndEnemyShoot, sndEnemyDie, sndVictory, sndWall
 
 ///////////////////////////////////////////////////////////////////////////////
 
-
 // Pick a random walkable (floor) tile within `radius` cells of `center`.
 // Returns the tile center in world coords, or null if none found.
 function pickRandomWalkableNear(center, radius)
@@ -869,7 +868,7 @@ async function gameInit()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-let mouseSensitivityDefault = .002; 
+let mouseSensitivityDefault = .002;
 let mouseSensitivity = mouseSensitivityDefault;      // radians per screen-pixel of mouse movement
 let invertX = false;
 let bobPhase = 0, bobAmount = 0;

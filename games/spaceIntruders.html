@@ -532,7 +532,6 @@ class Bullet extends RectObject
     }
     render()
     {
-        // Thinner, taller bullets
         drawRect(this.pos, this.size, this.color);
     }
 }
@@ -806,7 +805,6 @@ function gameInit()
     setCameraPos(levelSize.scale(.5));
     cameraScale = 16; // pixels per world unit
 
-
     setSoundVolume(.8);
     // Title screen runs an attract-mode demo (animated wave / falling
     // letters), so don't pause the engine while it's up — only pause once
@@ -925,7 +923,6 @@ function initTitleScreen()
         const alien = new Alien(vec2(worldX, worldY), row);
         alien.titleSpeed = rand(0.02, 0.06);
         alien.titlePhase = rand(0, PI*2);
-        alien.titleScale = rand(0.8, 1.4);
         titleAliens.push(alien);
     }
 }
@@ -1029,7 +1026,6 @@ function gameUpdatePost()
 
 function gameRender()
 {
-    // Pure black background
     drawRect(cameraPos, levelSize.add(vec2(20,20)), rgb(0,0,0));
 
     if (titleScreen)
@@ -1267,8 +1263,6 @@ function renderTitleScreen()
     ctx.fillText('INTRUDERS', w/2, titleY + 80);
     
     ctx.shadowBlur = 0;
-
-    // (CLICK TO START removed — the menus.js title menu owns the PLAY button.)
 }
 
 // ------------------------------------------------------------

@@ -20,14 +20,7 @@ cameraScale = 32;
 ///////////////////////////////////////////////////////////////////////////////
 // Game Constants
 
-const GAME_WIDTH = 40;
-const GAME_HEIGHT = 30;
-
 const PLAYER_SIZE = vec2(.8, 1.2);
-
-const LANE_WIDTH = 2.5;
-const NUM_LANES = 6;
-const WORLD_WIDTH = NUM_LANES * LANE_WIDTH;
 
 const MAX_SPEED = 80;        // maximum speed (4x faster)
 const ACCELERATION = 40;     // how fast you accelerate
@@ -38,18 +31,12 @@ const JUMP_POWER = 12;       // jump velocity
 const GRAVITY = -25;         // gravity when in air
 const AIR_TIME = .6;         // how long jumps last
 
-const GATE_SPACING = 12;     // distance between slalom gates
-const GATE_WIDTH = 2.8;      // width of gate opening
-const GATE_SCORE = 100;
-
-const OBSTACLE_SPACING = 8;  // average distance between obstacles
 const OBSTACLE_SPAWN_RADIUS = 35; // spawn obstacles this far ahead
 
 ///////////////////////////////////////////////////////////////////////////////
 // Game State
 
 let player;
-let scrollSpeed = 0;
 let score = 0;
 let distance = 0;
 let gameTime = 0;
@@ -57,17 +44,12 @@ let gameState = 'playing'; // 'playing', 'crashed'
 let gameStarted = false;
 
 let obstacles = [];  // {pos, size, type: 'tree'|'rock'|'bump'|'ramp'}
-let gates = [];      // {pos, leftX, rightX, passed, missed}
 let particles = [];  // snow spray particles
 
-let nextGateY = -20;
-let treeSpawnTimer = 0;
-
 let snowTimer = 0;
-let bgLines = [];  // background slope lines
 
 // sounds
-let sfxWoosh, sfxGate, sfxCrash, sfxStart;
+let sfxWoosh, sfxCrash, sfxStart;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Player
@@ -371,21 +353,6 @@ function spawnObstaclesAround(centerPos)
     }
 }
 
-function spawnGate(y)
-{
-    const laneOffset = (Math.random() * (NUM_LANES - 2) | 0) * LANE_WIDTH - WORLD_WIDTH / 2 + LANE_WIDTH * 1.5;
-    const leftX = laneOffset - GATE_WIDTH / 2;
-    const rightX = laneOffset + GATE_WIDTH / 2;
-    
-    gates.push({
-        pos: vec2(laneOffset, y),
-        leftX: leftX,
-        rightX: rightX,
-        passed: false,
-        missed: false
-    });
-}
-
 function updateObstacles()
 {
     // spawn obstacles around player
@@ -424,11 +391,6 @@ function updateObstacles()
             }
         }
     }
-}
-
-function updateGates()
-{
-    // gates are disabled for now in SkiFree mode
 }
 
 function renderBgLines()
@@ -548,20 +510,14 @@ function renderParticles()
 function resetGame()
 {
     player = new Player();
-    scrollSpeed = 0;
     score = 0;
     distance = 0;
     gameTime = 0;
     gameState = 'playing';
     gameStarted = true;
-    
+
     obstacles = [];
-    gates = [];
     particles = [];
-    bgLines = [];
-    
-    nextGateY = -20;
-    treeSpawnTimer = 0;
     snowTimer = 0;
 
     // spawn initial obstacles around spawn
@@ -580,13 +536,12 @@ async function gameInit()
 
     // sounds
     sfxWoosh = new SoundGenerator({frequency: 180, release: .15, noise: .1, volume: .3});
-    sfxGate = new SoundGenerator({frequency: 660, release: .08, pitchJump: 220, pitchJumpTime: .03, volume: .5});
     sfxCrash = new SoundGenerator({frequency: 120, release: .4, noise: .3, volume: .6});
     sfxStart = new SoundGenerator({frequency: 440, release: .15, slide: .3, volume: .4});
 
     buildMenus();
     // Set up the world so the title screen shows the actual start state
-    // (skier at the top, gates/obstacles laid out), frozen behind the
+    // (skier at the top, obstacles laid out), frozen behind the
     // menu via installAutoPause.
     resetGame();
     showMenu('title');
@@ -653,7 +608,6 @@ function gameUpdate()
 
         player.update();
         updateObstacles();
-        updateGates();
         updateParticles();
     }
 }

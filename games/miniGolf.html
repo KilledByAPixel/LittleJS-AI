@@ -516,7 +516,7 @@ function createMovingBumper(pos, size, angle, moveAxis, moveRange, moveSpeed)
     b.bumperSize = size;
     b.bumperAngle = angle;
     b.render = function() { drawHazardBumper(this.pos, this.bumperSize, this.bumperAngle); };
-    
+
     // Store movement info on the object
     movingObstacles.push({
         obj: b,
@@ -822,14 +822,14 @@ function gameUpdate()
             const previewScale = 8;
             const courseW = COURSE_SIZE.x * previewScale;
             const courseH = COURSE_SIZE.y * previewScale;
-            
+
             for (let i = 0; i < 9; i++)
             {
                 const col = i % gridSize;
                 const row = (i / gridSize) | 0;
                 const cx = startX + col * cellW + cellW/2;
                 const cy = startY + row * cellH + cellH/2;
-                
+
                 // Check if mouse is within the course preview area
                 if (mousePosScreen.x > cx - courseW/2 && mousePosScreen.x < cx + courseW/2 &&
                     mousePosScreen.y > cy - courseH/2 && mousePosScreen.y < cy + courseH/2)
@@ -934,7 +934,7 @@ function gameUpdatePost()
 {
     // center camera
     setCameraPos(vec2());
-    
+
     // Animate moving obstacles
     for (const m of movingObstacles)
     {
@@ -947,7 +947,7 @@ function gameUpdatePost()
             newPos.y += offset;
         m.obj.setTransform(newPos, m.obj.angle);
     }
-    
+
     // Rapid slowdown when ball is moving slowly but not yet stopped
     if (ball && !completeTimer.isSet())
     {

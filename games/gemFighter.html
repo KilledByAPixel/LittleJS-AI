@@ -1454,56 +1454,6 @@ function drawBoardGems(board, boardIndex)
     }
 }
 
-function drawPortrait(character, pos, sizePx, ctx)
-{
-    const c = character.color;
-    const s = sizePx;
-    ctx = ctx || mainContext;
-    const r = s * .5;
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    if (character.portrait === 'circle')
-    {
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2);
-        ctx.fillStyle = c.toString(); ctx.fill();
-    }
-    else if (character.portrait === 'triangle')
-    {
-        ctx.beginPath();
-        ctx.moveTo(0, -r);
-        ctx.lineTo(r*.95, r*.7);
-        ctx.lineTo(-r*.95, r*.7);
-        ctx.closePath();
-        ctx.fillStyle = c.toString(); ctx.fill();
-    }
-    else if (character.portrait === 'diamond')
-    {
-        ctx.beginPath();
-        ctx.moveTo(0, -r);
-        ctx.lineTo(r, 0);
-        ctx.lineTo(0, r);
-        ctx.lineTo(-r, 0);
-        ctx.closePath();
-        ctx.fillStyle = c.toString(); ctx.fill();
-    }
-    else if (character.portrait === 'star')
-    {
-        const pts = 5;
-        ctx.beginPath();
-        for (let i = 0; i < pts * 2; i++)
-        {
-            const angle = (i / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
-            const radius = (i % 2 === 0) ? r : r * 0.45;
-            const x = Math.cos(angle) * radius;
-            const y = Math.sin(angle) * radius;
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.fillStyle = c.toString(); ctx.fill();
-    }
-    ctx.restore();
-}
-
 // Small canvas-2D color glyph for the NEXT preview (matches the in-board glyphs).
 function drawSimpleGlyph(ctx, ci, cx, cy, sz)
 {
@@ -1610,19 +1560,6 @@ function renderParticles()
         const c = p.color;
         drawCircle(p.pos, size, rgb(c.r, c.g, c.b, alpha));
     }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Piece generation (placeholder random; replaced by shared sequence in Task 14)
-
-function makeRandomPiece()
-{
-    const mk = () => {
-        const isCrash = randInt(100) < 18;
-        const c = randInt(4);
-        return isCrash ? gemCrash(c) : gemRegular(c);
-    };
-    return { a: mk(), b: mk() };
 }
 
 ///////////////////////////////////////////////////////////////////////////////

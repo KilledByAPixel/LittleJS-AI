@@ -98,8 +98,6 @@ let debugShowStats = false;
 let spriteAtlas;
 
 // sprite drawing helpers
-function drawEllipseSprite(pos, size=vec2(1), color=WHITE)
-{ drawTile(pos, size, spriteAtlas.circle, color); }
 function drawCircleSprite(pos, size=1, color=WHITE)
 { drawTile(pos, vec2(size), spriteAtlas.circle, color); }
 function drawDotSprite(pos, size=1, color=WHITE)
@@ -111,12 +109,7 @@ function drawDotSprite(pos, size=1, color=WHITE)
 const sfx = { play: function(){} };
 const sfxSelect  = sfx;
 const sfxSend    = sfx;
-const sfxHit     = sfx;
 const sfxCapture = sfx;
-const sfxWin     = sfx;
-const sfxLose    = sfx;
-const sfxBuy     = sfx;
-const sfxNope    = sfx;
 
 // -------------------------------------------------------------
 // Planet stats
@@ -419,12 +412,6 @@ function renderStarfield()
 // Rendering helpers
 
 const lightDir = vec2(-.7, .5).normalize();
-
-function rotate2(v, a)
-{
-    const c = Math.cos(a), s = Math.sin(a);
-    return vec2(v.x*c - v.y*s, v.x*s + v.y*c);
-}
 
 function drawWedge(pos, dir, size, color)
 {
@@ -1041,10 +1028,6 @@ function gameUpdate()
             // Only allow drag from player planets
             dragSource = hover.owner == OWNER_PLAYER ? hover : null;
             dragTarget = null;
-            
-            // Reset to 50% on every click
-            //dragPercent = .5;
-            //sendPreset = 3;
         }
     }
 

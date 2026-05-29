@@ -106,7 +106,6 @@ function isInBounds(row, col)
     return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
 }
 
-
 function getFlipsForState(board, row, col, player)
 {
     if (board[row][col] !== DISC_EMPTY) return [];
@@ -647,7 +646,7 @@ function drawBoard()
         );
     }
     
-    // Last move highlight (drawn BEFORE discs so it's under them but above board) (drawn BEFORE discs so it's under them but above board)
+    // Last move highlight (drawn BEFORE discs so it's under them but above board)
     if (lastMove && !gameOver)
     {
         const pos = getCellWorldPos(lastMove.row, lastMove.col);
@@ -738,8 +737,9 @@ function drawUI()
     // Undo availability
     if (moveHistory.length > 0 && !gameOver)
     {
-        drawTextScreen(`U: Undo (${moveHistory.length})`, vec2(30, 145), 18, 
-            rgb(0.6, 0.8, 1), 2, BLACK, 'left');    }
+        drawTextScreen(`U: Undo (${moveHistory.length})`, vec2(30, 145), 18,
+            rgb(0.6, 0.8, 1), 2, BLACK, 'left');
+    }
     
     // Game over message
     if (gameOver)
@@ -892,8 +892,6 @@ function refreshDifficultyUI()
     title?.getItem('vsAI')?.setLabel(`PLAYER VS AI · ${upper}`);
     title?.getItem('aiVsAi')?.setLabel(`AI VS AI · ${upper}`);
 }
-
-
 
 function quitToTitleWithCleanup()
 {

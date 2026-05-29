@@ -22,15 +22,12 @@ function distanceAngle(a, b)
     return d - PI;
 }
 
-
-// -------------------------------------------------------------------------
 // Combat-style mini prototype (Atari 2600 inspired)
 
 const ARENA_SIZE = vec2(60, 34);
 
 const TANK_RADIUS = 1.2;
 const TANK_BODY   = vec2(2.3, 1.6);
-const TANK_BARREL = vec2(1.7, .35);
 
 const BULLET_RADIUS = .35;
 const BULLET_SPEED  = 1.15;   // per frame (60fps)
@@ -52,8 +49,6 @@ let scores = [0,0];
 let aiEnabled = true; // one player is AI by default
 let roundTimer = 0;
 let pausedLocal = false;
-
-// menu / session state
 
 // sounds (lazy)
 let sShoot, sBounce, sHit, sBlip;

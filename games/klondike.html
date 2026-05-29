@@ -161,8 +161,6 @@ let recyclesUsed = 0;        // times the waste has been recycled this game (par
 let lastClick = { card: null, time: -1 };
 let history = null;          // CardHistory (created in gameInit)
 
-
-
 async function gameInit()
 {
     saveDataInit('klondike');
@@ -654,8 +652,8 @@ function gameRender()
     if (!cardStacks.length) return;
 
     // Empty-slot outlines (back layer): every cascade slot, plus the top-row
-    // stacks (stock / waste / foundations) whether or not they hold cards.
-    // Empty-slot outlines (back layer) — see cardSlotVisible() in cards.js.
+    // stacks (stock / waste / foundations) whether or not they hold cards. See
+    // cardSlotVisible() in cards.js.
     for (const s of cardStacks)
         if (cardSlotVisible(s))
             drawCardSlot(s.pos, s.type === StackType.Foundation);

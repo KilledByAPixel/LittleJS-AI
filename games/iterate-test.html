@@ -19,18 +19,11 @@ gravity = vec2(0, 0);
 cameraPos = vec2(0, 0);
 cameraScale = 64;
 
-///////////////////////////////////////////////////////////////////////////////
-// TEXTURE ATLAS TEMPLATE
-//
-// Builds a 4x4 atlas of 500px tiles entirely from canvas draw ops via the
-// textureGenerator module. Press S to save the atlas PNG + prompt blob,
-// press L to swap to an "atlas.png" sitting next to this file.
+// Texture atlas: builds 500px tiles from canvas draw ops. S = save PNG + prompt, L = load atlas.png.
 
 const sprites = {};
 
-///////////////////////////////////////////////////////////////////////////////
-// SPRITE PAINTERS — each fills the 500x500 drawable area of a tile.
-// (0,0) is the tile's drawable top-left; clipping is handled by the module.
+// Sprite painters — each fills the 500x500 drawable area of a tile.
 
 function paintCircle(ctx)
 {

@@ -78,7 +78,6 @@ let boss = null;
 let mouseMode = false; // true = follow mouse, false = keyboard only
 let mountains = []; // scrolling terrain
 
-
 // Sounds
 let sfxShoot, sfxEnemyShoot, sfxExplosion, sfxPowerup, sfxHit, sfxBomb, sfxBoss;
 
@@ -139,7 +138,6 @@ function initStars()
 function initMountains()
 {
     mountains = [];
-    // Create a series of mountain peaks
     let x = -WORLD_WIDTH/2 - 5;
     while (x < WORLD_WIDTH/2 + 20)
     {
@@ -162,13 +160,12 @@ function updateMountains(dt)
         m.x -= SCROLL_SPEED * dt;
     }
 
-    // Remove mountains that go off screen left and add new ones on right
+    // Remove mountains that scroll off the left and spawn new ones on the right
     while (mountains.length > 0 && mountains[0].x + mountains[0].width < -WORLD_WIDTH/2 - 5)
     {
         mountains.shift();
     }
 
-    // Add new mountains on the right
     if (mountains.length > 0)
     {
         const last = mountains[mountains.length - 1];
@@ -193,7 +190,6 @@ function renderMountains()
     // Draw base ground
     drawRect(vec2(0, baseY - 1), vec2(WORLD_WIDTH + 10, 2), hsl(.6, .4, .1));
 
-    // Draw mountains as triangular shapes
     for (const m of mountains)
     {
         const cx = m.x + m.width/2;
@@ -204,7 +200,7 @@ function renderMountains()
         ];
         drawPoly(points, m.color);
 
-        // Highlight on left side
+        // Highlight on the left face
         const highlightPoints = [
             vec2(m.x, baseY),
             vec2(cx, baseY + m.height),
@@ -256,7 +252,7 @@ function updatePlayer(dt)
 
     // Movement
     const speed = PLAYER_SPEED * (1 + speedLevel * 0.25);
-    
+
     // gamepad: read left stick (analog + d-pad merged); any stick input switches to direct-control mode
     const stick = gamepadStick(0);
     const stickActive = stick.lengthSquared() > .04;
@@ -274,10 +270,10 @@ function updatePlayer(dt)
         const targetPos = mousePos;
         const diff = targetPos.subtract(player.pos);
         const dist = diff.length();
-        
+
         if (dist > 0.1)
         {
-            // Move at 3x speed toward mouse, or snap if close
+            // Move at 3x speed toward mouse, clamped so it snaps when close
             const moveSpeed = min(speed * 3 * dt, dist);
             player.pos = player.pos.add(diff.normalize().scale(moveSpeed));
         }
@@ -305,13 +301,13 @@ function updatePlayer(dt)
 
     // Shooting
     fireTimer -= dt;
-    
+
     // Mouse click switches to mouse mode
     if (mouseIsDown(0))
     {
         mouseMode = true;
     }
-    
+
     // Fire: A (held) also fires; gamepad does not flip into mouseMode
     if ((keyIsDown('Space') || keyIsDown('KeyZ') || mouseIsDown(0) || gamepadIsDown(0)) && fireTimer <= 0)
     {
@@ -968,14 +964,12 @@ function spawnPowerup(pos)
 function updatePowerups(dt)
 {
     const POWERUP_GRAVITY = -18; // Gravity pulling down
-    
+
     for (let i = powerups.length - 1; i >= 0; i--)
     {
         const p = powerups[i];
-        
-        // Apply gravity
+
         p.vel.y += POWERUP_GRAVITY * dt;
-        
         p.pos = p.pos.add(p.vel.scale(dt));
         p.bobPhase += dt * 4;
 
@@ -992,19 +986,17 @@ function updatePowerups(dt)
             const b = bullets[j];
             if (b.isPlayer && !b.isMissile && p.pos.distance(b.pos) < p.size + b.size)
             {
-                // Bounce upward! Keep X velocity minimal (just slight scroll)
-                p.vel.x = -SCROLL_SPEED; // Match scroll speed so it stays in place
-                p.vel.y = rand(12, 18); // Bounce up
-                
+                // Bounce upward, matching scroll speed in X so it stays in place
+                p.vel.x = -SCROLL_SPEED;
+                p.vel.y = rand(12, 18);
+
                 p.bounceCount++;
-                
-                // Check if this bounce gives a power-up
+
                 if (p.bounceCount >= p.nextPowerupBounce)
                 {
-                    // Give a real power-up for this bounce only
+                    // Give a real power-up for this bounce only, then schedule the next one 3-5 bounces away
                     p.currentType = POWERUP_TYPES[p.powerupIndex % POWERUP_TYPES.length];
                     p.powerupIndex++;
-                    // Set next power-up to be 3-5 bounces away
                     p.nextPowerupBounce = p.bounceCount + randInt(3, 6);
                 }
                 else
@@ -1012,10 +1004,9 @@ function updatePowerups(dt)
                     // Back to points
                     p.currentType = -1;
                 }
-                
-                // Remove the bullet
+
                 bullets.splice(j, 1);
-                
+
                 // Particles
                 const color = p.currentType >= 0 ? POWER_COLORS[p.currentType] : hsl(0, 0, .8);
                 spawnParticles(p.pos, color, 4);
@@ -1086,7 +1077,7 @@ function renderPowerups()
     {
         const bobY = Math.sin(p.bobPhase) * .2;
         const pos = p.pos.add(vec2(0, bobY));
-        
+
         const type = p.currentType;
         const isPowerup = type >= 0;
         const color = isPowerup ? POWER_COLORS[type] : hsl(0, 0, .6);
@@ -1105,7 +1096,7 @@ function renderPowerups()
 
         // Letter
         drawText(letter, pos, p.size * .8, hsl(0, 0, 1), .2, hsl(0, 0, 0));
-        
+
         // Show powerup name when active
         if (isPowerup)
         {

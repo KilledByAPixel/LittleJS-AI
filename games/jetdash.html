@@ -756,17 +756,6 @@ class Player extends EngineObject
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Pause the engine whenever any menu (including alert/confirm dialogs) is
-// visible. setMenuVisibilityCallback fires for every show/hide, so we don't
-// have to wire onShow/onHide on each individual menu — and we can't miss
-// dialogs created internally by showAlertDialog / showConfirmDialog. Without
-// this, alert dialogs leave paused=false, letting gameUpdate run on the same
-// frame as a menu Esc and re-open pause on top of the surfaced menu.
-
-// HUD toolbar is always visible now; isPlaying is still tracked because
-// gameplay code uses it for pause / input gating.
-
-
 async function gameInit()
 {
     saveDataInit('jetpackDash');
@@ -875,7 +864,6 @@ async function gameInit()
     sndMissileWarn   = new SoundGenerator({ frequency: 1100, release: 0.06, volume: 0.3 });
     sndMissileLaunch = new SoundGenerator({ frequency: 240,  release: 0.4,  volume: 0.5, slide: -3 });
     sndHit           = new SoundGenerator({ frequency: 110,  release: 0.3,  volume: 0.7, noise: 0.7 });
-
 
     // ----- title menu -----
     // dismissable: true lets the player Esc / B back to the canvas prompt;

@@ -75,7 +75,7 @@ let missShakeTimer = 0; // remaining seconds of post-miss shake (gates game-over
 let waveBannerText, waveBannerTimer;
 
 // Sounds
-let sfxCatch, sfxMiss, sfxFuse, sfxClear, sfxBucketUp, sfxStep;
+let sfxCatch, sfxMiss, sfxFuse, sfxClear, sfxBucketUp;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HELPERS
@@ -580,7 +580,6 @@ function drawBuckets() {
         // Rim
         drawRect(vec2(bucketX, cy + h/2), vec2(halfW * 2 + 0.2, 0.2), hsl(.55, .65, .72));
         drawRect(vec2(bucketX, cy + h/2 + 0.05), vec2(halfW * 2 + 0.3, 0.08), hsl(.55, .75, .88));
-
     }
 }
 

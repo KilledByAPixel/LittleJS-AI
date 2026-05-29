@@ -55,20 +55,6 @@
 
     const BONUS_LIFE_AT = 12000;
 
-    // semicircle polygon for the mushroom cap — flat bottom (y=0), arc above
-    const MUSHROOM_CAP_RADIUS = .6;
-    const MUSHROOM_CAP_POINTS = (() => {
-            const pts = [];
-            const segments = 16;
-            for (let i = 0; i <= segments; ++i)
-            {
-                    const a = i / segments * Math.PI;
-                    pts.push(vec2(-MUSHROOM_CAP_RADIUS * Math.cos(a),
-                                                MUSHROOM_CAP_RADIUS * Math.sin(a)));
-            }
-            return pts;
-    })();
-
     ///////////////////////////////////////////////////////////////////////////////
     // Game state
     let player;
@@ -104,19 +90,6 @@
     function clampCell(c) { c.x = clamp(c.x|0, 0, gridSize.x-1); c.y = clamp(c.y|0, 0, gridSize.y-1); return c; }
     function posToCell(pos) { return clampCell(vec2(pos.x|0, pos.y|0)); }
     function cellCenter(cell) { return vec2(cell.x + .5, cell.y + .5); }
-
-    function inBoundsCell(cell)
-    {
-            return cell.x >= 0 && cell.x < gridSize.x && cell.y >= 0 && cell.y < gridSize.y;
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////
-    // Render helpers (fake outline by drawing a slightly larger black rect first)
-    function drawOutlinedRect(pos, size, color, outline=rgb(0,0,0,.9))
-    {
-            drawRect(pos, size.add(vec2(.12)), outline);
-            drawRect(pos, size, color);
-    }
 
     ///////////////////////////////////////////////////////////////////////////////
     // Scoring

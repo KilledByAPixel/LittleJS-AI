@@ -52,7 +52,6 @@ const CAMERA_LOOKAHEAD = 4.0;     // player nearer the center of the screen
 // Score multiplier (1x -> 2x -> 3x; civilian kill resets to 1x)
 const MULT_KILLS_TO_2X = 3;
 const MULT_KILLS_TO_3X = 7;
-const MULT_MAX = 3;
 
 // Extra life milestone
 const EXTRA_LIFE_INTERVAL = 10000;
@@ -1399,7 +1398,6 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function drawHudColumn(label, value, x, valueColor)
 {
-    const W = mainCanvasSize.x;
     const H = mainCanvasSize.y;
     const labelY = H - HUD_HEIGHT + 18;
     const valueY = H - 18;

@@ -53,7 +53,6 @@ let whiteCaptures = 0;  // stones white has captured (black stones removed)
 // Ko: store the board hash (JSON string) BEFORE the previous player's last
 // move so we can reject moves that recreate it.
 let previousBoardHash = null; // board state before the opponent's last move
-let boardHashBeforeMove = null; // scratch used during move processing
 
 let gameMode  = 'pvp'; // 'pvp' | 'ai' | 'aivai'
 let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' — loaded in gameInit
@@ -93,7 +92,6 @@ function initBoard()
     blackCaptures = 0;
     whiteCaptures = 0;
     previousBoardHash = null;
-    boardHashBeforeMove = null;
     placingStone  = null;
     hoverIntersection = null;
     aiGeneration++;
@@ -643,8 +641,6 @@ function drawUI()
 
 ///////////////////////////////////////////////////////////////////////////////
 // GAME FLOW
-
-
 
 function startGame(mode)
 {

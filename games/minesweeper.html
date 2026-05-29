@@ -522,7 +522,6 @@ function gameRender()
     const scaleY = (mainCanvasSize.y - margin) / boardSize.y;
     cameraScale = max(16, min(scaleX, scaleY));
 
-
     // background (avoid drawRectGradient for compatibility)
     drawRect(cameraPos, getCameraSize(), hsl(0,0,.12));
 

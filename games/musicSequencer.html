@@ -34,10 +34,7 @@ paused = false;
 
 const stepCount = 8, trackCount = 16, sequencer = [];
 const buttonSize = vec2(68, 28);
-// Center the labels-plus-grid block on the canvas (canvas-center coords).
-// X: labels at step=-1, cells at step 0..stepCount-1, total stepCount+1 columns;
-// center of that range is (stepCount-1)/2, but we want labels visible too,
-// so shift right by half a button so label column doesn't go off the left.
+// Center labels+grid on the canvas; X shifted right half a button so the label column (step=-1) stays on-screen.
 const gridOrigin = vec2(buttonSize.x * (1 - stepCount/2), buttonSize.y * (0.5 - trackCount/2));
 const customSlotCount = 4, drumCount = 4;
 const customSounds = [null, null, null, null];
@@ -78,8 +75,8 @@ function loadState()
 
 const sound_piano = new Sound([.3,0,220,,.1]);
 const sound_drumKick  = new Sound([3,,99,,,.02,,,,,,,,2]);
-const sound_drumSnare = new Sound([.8,,,,,.09,,,,,,,,5,,,,,,,70]); // Loaded Sound 8388
-const sound_drumClap  = new Sound([4,0,2100,,,.02,1,.07,-35,,,,,,,,.01,.25]); // wood hit - Copy 1
+const sound_drumSnare = new Sound([.8,,,,,.09,,,,,,,,5,,,,,,,70]);
+const sound_drumClap  = new Sound([4,0,2100,,,.02,1,.07,-35,,,,,,,,.01,.25]);
 const sound_drumHat   = new Sound([,,1e3,,,.01,4,,,,,,,,,,,,,,4e3]);
 
 const majorScale = [0,2,4,5,7,9,11];

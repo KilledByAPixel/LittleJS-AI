@@ -889,11 +889,6 @@ function chooseFrightDir(dirs, g)
     return best;
 }
 
-function randomChoice(a)
-{
-    return a[randInt(a.length)];
-}
-
 // -----------------------------------------------------------------------------
 // Collisions + life
 
@@ -986,13 +981,6 @@ function isWallXY(x, y)
     return walls[x + y*gridW];
 }
 
-function setWallXY(x, y, v)
-{
-    if (x < 0 || y < 0 || x >= gridW || y >= gridH)
-        return;
-    walls[x + y*gridW] = v ? 1 : 0;
-}
-
 // -----------------------------------------------------------------------------
 // Drawing helpers
 
@@ -1031,7 +1019,6 @@ function drawPac(p)
     }
     drawPoly(points, rgb(1, .92, 0), 0, rgb(0,0,0), p.pos, faceAngle);
 }
-
 
 // Build the ghost body outline once — dome on top, scalloped 3-hump bottom.
 const _ghostShape = (() =>
