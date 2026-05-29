@@ -1135,7 +1135,9 @@ function buildWelcome() {
         quick.appendChild(cont);
     }
 
-    const playable = GAMES.filter(g => g.category !== 'test');
+    // Random skips test stubs AND under-construction games — it should only
+    // surface finished, playable titles.
+    const playable = GAMES.filter(g => g.category !== 'test' && g.category !== 'construction');
     const rand = document.createElement('button');
     rand.className = 'quick-btn';
     rand.innerHTML = '<span class="icon">🎲</span>Random Game';
