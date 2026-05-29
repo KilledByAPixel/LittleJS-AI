@@ -51,8 +51,6 @@ showEngineVersion = false; // Hide engine version console display
 
     let crtEnabled = true;           // CRT post-process toggle (options menu)
 
-    const FONT = 'monospace';        // engine-style font for canvas HUD text
-
     let scoreL = 0;
     let scoreR = 0;
 
@@ -274,7 +272,7 @@ showEngineVersion = false; // Hide engine version console display
             cameraScale = 32;
 
             // CRT vibe over the whole frame (scanlines, bloom, curvature, chromatic aberration)
-            new PostProcessPlugin(tvShader, true);
+            new PostProcessPlugin(tvShader);
             applyCrt(); // default the shader's uEnable uniform on (uniforms default to 0 = bypass)
 
             // Sounds (simple, punchy)
@@ -581,8 +579,8 @@ showEngineVersion = false; // Hide engine version console display
             const rSize  = 80 * (1 + rightScoreFlash * .6);
             const lTxtC  = colorLerp(hsl(0, 0, 1), COLOR_L, leftScoreFlash);
             const rTxtC  = colorLerp(hsl(0, 0, 1), COLOR_R, rightScoreFlash);
-            drawTextScreen(`${scoreL}`, vec2(cx - 90, 60), lSize, lTxtC, 6, hsl(0,0,0), 'center', FONT);
-            drawTextScreen(`${scoreR}`, vec2(cx + 90, 60), rSize, rTxtC, 6, hsl(0,0,0), 'center', FONT);
+            engineImageFont.drawTextScreen(`${scoreL}`, vec2(cx - 90, 70), lSize, true, lTxtC);
+            engineImageFont.drawTextScreen(`${scoreR}`, vec2(cx + 90, 70), rSize, true, rTxtC);
 
             // hints
             const lines = [];
@@ -600,7 +598,7 @@ showEngineVersion = false; // Hide engine version console display
             let y = mainCanvasSize.y - 120;
             for (const s of lines)
             {
-                    drawTextScreen(s, vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0), 'center', FONT);
+                    engineImageFont.drawTextScreen(s, vec2(x, y), 26, true, hsl(0,0,1));
                     y += 28;
             }
     }
