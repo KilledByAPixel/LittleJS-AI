@@ -183,9 +183,6 @@ function buildLevel()
         prevWasCeiling = !!pd.ceiling;
     }
     endX = x + 6;       // clear run-out to the finish line
-
-    // decorative under-floor tiles (skipped by collision + draw)
-    for (let i = 0; i < endX + 12; ++i) addBlock(i, -1, 1, 1);
 }
 
 function wantJump()
@@ -541,45 +538,31 @@ function drawBackground()
 {
     const camSize = getCameraSize();
 
-    // sky (slow beat pulse + gentle hue drift around the level palette)
-    const pulse = .12 + .03 * (Math.sin(time * 2.4) * .5 + .5);
+    // clean dark sky: slow beat pulse + gentle hue drift around the level palette
+    const pulse = .05 + .025 * (Math.sin(time * 2.4) * .5 + .5);
     const hue = pal.bg + .04 * Math.sin(time * .15);
     drawRect(cameraPos, camSize.scale(1.05), hsl(hue, .5, pulse));
-
-    // parallax stripes
-    const left = cameraPos.x - camSize.x/2;
-    const right = cameraPos.x + camSize.x/2;
-    const stripeH = camSize.y;
-    const t = time;
-    for (let i=0; i<14; ++i)
-    {
-        const x = left + ((i*6 + t*1.2) % (camSize.x + 30));
-        const pos = vec2(x, cameraPos.y);
-        drawRect(pos, vec2(1.5, stripeH), hsl(pal.bg, .45, .16, .14));
-    }
-
-    // subtle grid
-    const gx0 = Math.floor(left) - 1;
-    const gx1 = Math.ceil(right) + 1;
-    const gy0 = Math.floor(cameraPos.y - camSize.y/2) - 1;
-    const gy1 = Math.ceil(cameraPos.y + camSize.y/2) + 1;
-    for (let x=gx0; x<=gx1; ++x)
-        drawLine(vec2(x, gy0), vec2(x, gy1), .03, hsl(0,0,1,.06));
-    for (let y=gy0; y<=gy1; ++y)
-        drawLine(vec2(gx0, y), vec2(gx1, y), .03, hsl(0,0,1,.06));
 }
 
 function drawFloor()
 {
     const camSize = getCameraSize();
     const w = camSize.x + 10;
+    const left = cameraPos.x - w/2;
+    const right = cameraPos.x + w/2;
     const centerX = cameraPos.x;
+    const depth = camSize.y + 24;       // extend far below the play line so no background shows
 
-    // floor slab
-    drawRect(vec2(centerX, -0.5), vec2(w, 1), hsl(pal.bg, .25, .07));
+    // solid ground: one uniform color all the way down, brighter than the dark sky
+    drawRect(vec2(centerX, -depth/2), vec2(w, depth), hsl(pal.block, .45, .2));
 
-    // top edge
-    drawLine(vec2(centerX - w/2, 0), vec2(centerX + w/2, 0), .08, hsl(0,0,1,.22));
+    // world-anchored vertical lines scroll past the camera for a speed cue
+    for (let gx = Math.floor(left); gx <= Math.ceil(right); ++gx)
+        drawLine(vec2(gx, 0), vec2(gx, -4), .04, hsl(pal.block, .5, .35, .12));
+
+    // glowing top edge: tinted glow then a crisp white lip
+    drawRect(vec2(centerX, 0), vec2(w, .2), hsl(pal.block, .9, .6, .35));
+    drawLine(vec2(left, 0), vec2(right, 0), .08, hsl(0,0,1,.35));
 }
 
 function drawPlayer()
@@ -618,10 +601,12 @@ function drawTrail()
 
 function drawFinish()
 {
-    // glowing goal portal at the end of the level
+    const pulse = .5 + .5*Math.sin(time*4);
+
+    // glowing goal portal at the end of the level (drawn behind the floor so its base tucks under the ground)
     for (let i=4; i>=1; --i)
-        drawRect(vec2(endX, 3.5), vec2(.45*i, 8), hsl(.33, .9, .55, .1));
-    drawRect(vec2(endX, 3.5), vec2(.4, 8), hsl(.33, 1, .65, .85));
+        drawRect(vec2(endX, 3.5), vec2(.45*i, 8), hsl(.33, .9, .55, .1 + .04*pulse));
+    drawRect(vec2(endX, 3.5), vec2(.4, 8), hsl(.33, 1, .65, .82 + .12*pulse));
 
     // checker flag band near the top of the pole
     for (let i=0; i<5; ++i)
@@ -878,6 +863,10 @@ function gameRender()
 {
     // called before objects are rendered
     drawBackground();
+
+    // finish portal first so its base sits behind the ground
+    drawFinish();
+
     drawFloor();
 
     // draw solids
@@ -892,7 +881,6 @@ function gameRender()
     for (const s of spikes)
         drawSpike(s);
 
-    drawFinish();
     drawTrail();
     drawParticles();
     drawPlayer();
