@@ -33,15 +33,25 @@ showEngineVersion = false; // Hide engine version console display
     const paddleSpeed = 18;
     const aiSpeed     = 14;          // capped so fast, wide shots can beat the AI
 
-    const ballStartSpeed  = 13;      // serve speed at the start of each rally
+    const ballStartSpeed  = 17;      // serve speed at the start of each rally
     const ballSpeedup     = 5.2;     // added to ball speed on every paddle hit
     const maxBallSpeed    = 42;      // rally speed ceiling
     const maxBounceAngle  = 1.15;    // ~66 deg off horizontal at the paddle edges
 
-    let left = { pos: vec2(-halfField.x + 2.2, 0) };
-    let right = { pos: vec2( halfField.x - 2.2, 0) };
+    // ball spin (curveball): a moving paddle imparts spin that bends the ball's path
+    const spinGain   = .085;    // paddle vertical speed -> spin (rad/sec)
+    const maxSpin    = 3.2;     // cap on imparted spin
+    const spinDecay  = 1.6;     // how fast spin bleeds off per second
+
+    let left = { pos: vec2(-halfField.x + 2.2, 0), vy: 0 };
+    let right = { pos: vec2( halfField.x - 2.2, 0), vy: 0 };
 
     let ball = { pos: vec2(0,0), vel: vec2(0,0) };
+    let ballSpin = 0;                // current curveball spin (rad/sec), bends the ball's path
+
+    let crtEnabled = true;           // CRT post-process toggle (options menu)
+
+    const FONT = 'monospace';        // engine-style font for canvas HUD text
 
     let scoreL = 0;
     let scoreR = 0;
@@ -144,6 +154,10 @@ showEngineVersion = false; // Hide engine version console display
             const speed = min(ball.vel.length() + ballSpeedup, maxBallSpeed);
             ball.vel = vec2(dirX * Math.cos(angle), Math.sin(angle)).scale(speed);
 
+            // a moving paddle slices the ball, imparting spin that curves its flight
+            // (sign chosen so the ball curves in the direction the paddle was moving)
+            ballSpin = clamp(-paddle.vy * spinGain * dirX, -maxSpin, maxSpin);
+
             ballSquash = 1; // snappy stretch on the way out
     }
 
@@ -178,6 +192,7 @@ showEngineVersion = false; // Hide engine version console display
     {
             ball.pos = vec2(0, 0);
             ball.vel = vec2(0, 0);
+            ballSpin = 0;
             waitingForServe = true;
             gameOver = false;
 
@@ -232,8 +247,25 @@ showEngineVersion = false; // Hide engine version console display
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // LittleJS Callbacks
 
+    // Push the CRT on/off state into the post-process shader's uEnable uniform.
+    // Call ONLY between frames (init / menu toggle) — never mid-render: changing the
+    // active GL program while the engine has a pending geometry batch makes that batch
+    // flush through the wrong shader and corrupts the whole scene. We restore the
+    // engine's instanced shader afterward so the next frame draws normally.
+    function applyCrt()
+    {
+            if (!postProcess || !postProcess.shader || !glContext) return;
+            glContext.useProgram(postProcess.shader);
+            const loc = glContext.getUniformLocation(postProcess.shader, 'uEnable');
+            if (loc) glContext.uniform1f(loc, crtEnabled ? 1 : 0);
+            glSetInstancedMode(true); // rebind the engine's sprite shader
+    }
+
     function gameInit()
     {
+            // prime the save blob before any persisted menu items are built
+            saveDataInit('Pong');
+
             // fixed canvas for consistent feel
             setCanvasFixedSize(vec2(1280, 720));
 
@@ -243,6 +275,7 @@ showEngineVersion = false; // Hide engine version console display
 
             // CRT vibe over the whole frame (scanlines, bloom, curvature, chromatic aberration)
             new PostProcessPlugin(tvShader, true);
+            applyCrt(); // default the shader's uEnable uniform on (uniforms default to 0 = bypass)
 
             // Sounds (simple, punchy)
             sfxPaddle = new SoundGenerator({ volume:.7, frequency:520, release:.07, shapeCurve:1.8, randomness:.08 });
@@ -275,11 +308,25 @@ showEngineVersion = false; // Hide engine version console display
                     subtitle: '',
                     onPlay: startGame,
                     revealOnClick: false,
+                    items: [
+                            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+                    ],
             });
 
             createPauseMenu({
                     onRestart: startGame,
                     onQuit:    quitToTitle,
+                    extraItems: [
+                            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+                    ],
+            });
+
+            createOptionsMenu({
+                    extraItems: [
+                            {type:'separator'},
+                            {type:'checkbox', id:'crt', label:'CRT EFFECT', value:true,
+                                    persist:'crt', onChange: v => { crtEnabled = v; applyCrt(); }},
+                    ],
             });
 
             installDefaultToolbar();
@@ -312,6 +359,9 @@ showEngineVersion = false; // Hide engine version console display
                     }
                     serve();
             }
+
+            // remember where the paddles were so we can measure their speed (for ball spin)
+            const prevLeftY = left.pos.y, prevRightY = right.pos.y;
 
             // Paddle input — mouse takes priority, keyboard still works
             const keyDir = keyDirection().y;
@@ -354,11 +404,22 @@ showEngineVersion = false; // Hide engine version console display
             }
             clampPaddleY(right);
 
+            // paddle vertical speed this frame (clamped so a fast mouse flick can't over-spin)
+            left.vy  = clamp((left.pos.y  - prevLeftY)  / timeDelta, -paddleSpeed, paddleSpeed);
+            right.vy = clamp((right.pos.y - prevRightY) / timeDelta, -paddleSpeed, paddleSpeed);
+
             // Ball update
             if (waitingForServe || gameOver)
                     return;
 
             ball.pos = ball.pos.add(ball.vel.scale(timeDelta));
+
+            // spin curves the ball: rotate its velocity, then let the spin bleed off
+            if (ballSpin)
+            {
+                    ball.vel = ball.vel.rotate(ballSpin * timeDelta);
+                    ballSpin -= ballSpin * spinDecay * timeDelta;
+            }
 
             // Wall bounce
             const yLimit = halfField.y - ballSize.y/2;
@@ -520,8 +581,8 @@ showEngineVersion = false; // Hide engine version console display
             const rSize  = 80 * (1 + rightScoreFlash * .6);
             const lTxtC  = colorLerp(hsl(0, 0, 1), COLOR_L, leftScoreFlash);
             const rTxtC  = colorLerp(hsl(0, 0, 1), COLOR_R, rightScoreFlash);
-            drawTextScreen(`${scoreL}`, vec2(cx - 90, 60), lSize, lTxtC, 6, hsl(0,0,0));
-            drawTextScreen(`${scoreR}`, vec2(cx + 90, 60), rSize, rTxtC, 6, hsl(0,0,0));
+            drawTextScreen(`${scoreL}`, vec2(cx - 90, 60), lSize, lTxtC, 6, hsl(0,0,0), 'center', FONT);
+            drawTextScreen(`${scoreR}`, vec2(cx + 90, 60), rSize, rTxtC, 6, hsl(0,0,0), 'center', FONT);
 
             // hints
             const lines = [];
@@ -539,7 +600,7 @@ showEngineVersion = false; // Hide engine version console display
             let y = mainCanvasSize.y - 120;
             for (const s of lines)
             {
-                    drawTextScreen(s, vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0));
+                    drawTextScreen(s, vec2(x, y), 26, hsl(0,0,1), 4, hsl(0,0,0), 'center', FONT);
                     y += 28;
             }
     }
@@ -549,6 +610,8 @@ showEngineVersion = false; // Hide engine version console display
     // barrel curvature + chromatic aberration + neon bloom + static + scanlines + vignette.
     // (includeMainCanvas=true pulls the HUD/menus through the shader too — kept mild so text stays readable.)
     const tvShader = `
+    uniform float uEnable; // 0 = bypass the CRT effect (options toggle)
+
     float hash(vec2 p)
     {
         p = fract(p * .3197);
@@ -558,6 +621,9 @@ showEngineVersion = false; // Hide engine version console display
     void mainImage(out vec4 c, vec2 p)
     {
         p /= iResolution.xy;
+
+        // bypass to a clean pass-through when the CRT effect is disabled
+        if (uEnable < .5) { c = texture(iChannel0, p); return; }
 
         // subtle CRT barrel curvature
         vec2 cuv = p - .5;
