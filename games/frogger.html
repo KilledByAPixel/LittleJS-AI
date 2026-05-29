@@ -86,6 +86,11 @@
 
   // Game state
   let frog, cars = [], logs = [];
+  // Pre-rendered static background (road/river/grass/hedges/lily pads). The
+  // camera never moves, so this is rendered once into an offscreen canvas
+  // layer and blitted as a single quad each frame. Only ripples + reached
+  // frogs stay dynamic.
+  let bgLayer = null;
   // Short-lived death particles. The player vanishes on death and these
   // play in its place — same effect for road and water, just a different hue.
   let particles = [];
@@ -135,25 +140,32 @@
     const speedScale = (1 + (level-1) * .12) * .5;
 
     // ---- Cars ----
+    // Each lane keeps its own direction + speed (cars in a lane share speed so
+    // they stay evenly spaced and never overlap), but EVERY individual car
+    // picks a random type — so a lane is a mix of vehicles, re-rolled each
+    // buildLanes (new game / level). Collision width comes from the kind.
     const carKinds = ['sedan','wagon','sports','truck','bus'];
+    const CAR_W = { sedan:2.0, wagon:2.2, sports:2.0, truck:2.7, bus:3.3 };
     const roadDefs = [
-      {y:4, dir: 1, speed: 5.5, count: 3, w: 2.0, kind:'sedan'},
-      {y:5, dir:-1, speed: 7.0, count: 3, w: 2.2, kind:'wagon'},
-      {y:6, dir: 1, speed: 8.5, count: 3, w: 1.6, kind:'sports'},
-      {y:7, dir:-1, speed: 6.0, count: 3, w: 2.8, kind:'truck'},
-      {y:8, dir: 1, speed: 7.8, count: 2, w: 3.2, kind:'bus'},
+      {y:4, dir: 1, speed: 5.5, count: 3},
+      {y:5, dir:-1, speed: 7.0, count: 3},
+      {y:6, dir: 1, speed: 8.5, count: 3},
+      {y:7, dir:-1, speed: 6.0, count: 3},
+      {y:8, dir: 1, speed: 7.8, count: 2},
     ];
     for (const d of roadDefs) {
       const totalSpan = LEVEL_W + OFFSCREEN_PAD*2;
       for (let i=0; i<d.count; i++) {
+        const kind = carKinds[Math.floor(rand() * carKinds.length)];
+        const w = CAR_W[kind];
         const x = -OFFSCREEN_PAD + (i * totalSpan / d.count) + rand(0, 2);
         cars.push({
           pos: vec2(x, d.y + .5),
-          size: vec2(d.w, .85),
+          size: vec2(w, .85),
           vx: d.dir * d.speed * speedScale,
           dir: d.dir,
-          kind: d.kind,
-          color: hsl(((d.y*37 + i*61) % 360)/360, .85, .55),
+          kind,
+          color: hsl(rand(), .8, .55),
           seed: rand(0, 1000),
         });
       }
@@ -734,82 +746,105 @@
 
   function drawTire(x, y) { drawTile(vec2(x, y), TIRE_SIZE, sprites.tire, WHITE); }
 
-  function drawLaneBackground() {
+  // Paint the STATIC background into a 2D context. All the engine's world-space
+  // draw helpers accept (..., useWebGL=false, screenSpace=false, context), which
+  // routes them through worldToScreen into the given canvas — so the same code
+  // that drew on-screen now renders once into the offscreen layer.
+  function paintStaticBackground(ctx) {
+    const rect = (p,s,c) => drawRect(p, s, c, 0, false, false, ctx);
+    const circ = (p,d,c) => drawCircle(p, d, c, 0, undefined, false, false, ctx);
+
     // Extend visuals well beyond playable area so wraparound is invisible.
     const W = LEVEL_W + OFFSCREEN_PAD*2 + 8;
     const cx = LEVEL_W/2;
 
     // start/median grass base layer covers the whole screen
-    drawRect(vec2(cx, LEVEL_H/2), vec2(W, LEVEL_H+2), hsl(120/360,.45,.22));
+    rect(vec2(cx, LEVEL_H/2), vec2(W, LEVEL_H+2), hsl(120/360,.45,.22));
 
     // Road
     const roadH = (ROAD_MAX_Y - ROAD_MIN_Y + 1);
-    drawRect(vec2(cx, ROAD_MIN_Y + roadH/2), vec2(W, roadH), hsl(0,0,.15));
+    rect(vec2(cx, ROAD_MIN_Y + roadH/2), vec2(W, roadH), hsl(0,0,.15));
 
     // road edge curbs
-    drawRect(vec2(cx, ROAD_MIN_Y), vec2(W, .12), hsl(0,0,.85));
-    drawRect(vec2(cx, ROAD_MAX_Y+1), vec2(W, .12), hsl(0,0,.85));
+    rect(vec2(cx, ROAD_MIN_Y), vec2(W, .12), hsl(0,0,.85));
+    rect(vec2(cx, ROAD_MAX_Y+1), vec2(W, .12), hsl(0,0,.85));
 
     // dashed lane separators
     for (let y=ROAD_MIN_Y+1; y<=ROAD_MAX_Y; y++) {
       for (let x = -OFFSCREEN_PAD; x < LEVEL_W + OFFSCREEN_PAD; x += 1.4) {
-        drawRect(vec2(x + .35, y), vec2(.7, .07), hsl(50/360,.85,.55,.85));
+        rect(vec2(x + .35, y), vec2(.7, .07), hsl(50/360,.85,.55,.85));
       }
     }
 
     // River
     const riverH = (LEVEL_H - RIVER_MIN_Y);
-    drawRect(vec2(cx, RIVER_MIN_Y + riverH/2), vec2(W, riverH), hsl(205/360,.65,.30));
-
-    // moving ripples
-    for (let i=0; i<28; i++) {
-      const baseX = (i*1.5) % LEVEL_W;
-      const x = baseX + Math.sin(time*.4 + i*1.7) * .4;
-      const y = RIVER_MIN_Y + .3 + ((i*1.13) % (riverH - .6));
-      drawRect(vec2(x, y), vec2(.5, .06), hsl(0,0,1,.20));
-    }
+    rect(vec2(cx, RIVER_MIN_Y + riverH/2), vec2(W, riverH), hsl(205/360,.65,.30));
 
     // banks
-    drawRect(vec2(cx, RIVER_MIN_Y), vec2(W, .18), hsl(35/360,.5,.35));
-    drawRect(vec2(cx, RIVER_MAX_Y+1), vec2(W, .18), hsl(35/360,.5,.35));
+    rect(vec2(cx, RIVER_MIN_Y), vec2(W, .18), hsl(35/360,.5,.35));
+    rect(vec2(cx, RIVER_MAX_Y+1), vec2(W, .18), hsl(35/360,.5,.35));
 
     // grass tufts on median
     for (let i=0; i<12; i++) {
       const x = (i*2.7 + (i%3)*.7) % LEVEL_W;
       const y = 9.5 + ((i%2)?.4:-.4);
-      drawCircle(vec2(x, y), .18, hsl(120/360,.6,.32));
+      circ(vec2(x, y), .18, hsl(120/360,.6,.32));
     }
     // tufts on start grass
     for (let i=0; i<14; i++) {
       const x = (i*2.3 + 1.1) % LEVEL_W;
       const y = 1 + ((i%3)*.8);
-      drawCircle(vec2(x, y), .15, hsl(120/360,.6,.32));
+      circ(vec2(x, y), .15, hsl(120/360,.6,.32));
     }
 
     // home row (still water)
-    drawRect(vec2(cx, HOME_Y+.5), vec2(W, 1), hsl(205/360,.55,.27));
+    rect(vec2(cx, HOME_Y+.5), vec2(W, 1), hsl(205/360,.55,.27));
 
     // hedges between home slots
     for (let i=0; i<=homeSlots; i++) {
       const x0 = i===0 ? -OFFSCREEN_PAD : homeXs[i-1] + 1.4;
       const x1 = i===homeSlots ? LEVEL_W + OFFSCREEN_PAD : homeXs[i] - .4;
       const w = x1 - x0;
-      drawRect(vec2(x0 + w/2, HOME_Y+.5), vec2(w, 1), hsl(120/360,.6,.18));
+      rect(vec2(x0 + w/2, HOME_Y+.5), vec2(w, 1), hsl(120/360,.6,.18));
       for (let j=0; j<Math.floor(w*1.2); j++) {
-        drawCircle(vec2(x0 + (j+.5)*w/(w*1.2|0), HOME_Y + .85 + (j%2)*.05), .15, hsl(120/360,.7,.26));
+        circ(vec2(x0 + (j+.5)*w/(w*1.2|0), HOME_Y + .85 + (j%2)*.05), .15, hsl(120/360,.7,.26));
       }
     }
 
-    // home pads (lily pads)
+    // home pads (lily pads) — static; the reached-home frogs animate on top
     for (let i=0;i<homeSlots;i++) {
       const p = vec2(homeXs[i]+.5, HOME_Y+.5);
-      // lily pad
-      drawTile(p, vec2(1.6, 1.0), sprites.lily, WHITE);
-      if (reached[i]) {
-        // same renderer as the player frog, just facing up with no hop.
-        // Per-pad breathing phase so they don't all inhale in lockstep.
-        drawFrog(p, vec2(0, 1), 0, i * 1.7);
-      }
+      drawTile(p, vec2(1.6, 1.0), sprites.lily, WHITE, 0, false, undefined, false, false, ctx);
+    }
+  }
+
+  // Build the offscreen background once (lazily, on first render, when the
+  // camera + canvas size are settled). Camera is fixed, so it's never rebuilt.
+  function ensureBackground() {
+    if (bgLayer) return;
+    bgLayer = new CanvasLayer(vec2(), vec2(1), 0, 0, mainCanvasSize.copy(), true);
+    bgLayer.render = () => {};   // we blit it ourselves in gameRender (draw order)
+    paintStaticBackground(bgLayer.context);
+    bgLayer.updateWebGL();
+  }
+
+  // Animated water ripples — the one thing on the background that still moves.
+  function drawWaterRipples() {
+    const riverH = LEVEL_H - RIVER_MIN_Y;
+    for (let i=0; i<28; i++) {
+      const baseX = (i*1.5) % LEVEL_W;
+      const x = baseX + Math.sin(time*.4 + i*1.7) * .4;
+      const y = RIVER_MIN_Y + .3 + ((i*1.13) % (riverH - .6));
+      drawRect(vec2(x, y), vec2(.5, .06), hsl(0,0,1,.20));
+    }
+  }
+
+  // Breathing frogs sitting on filled home pads (drawn live, not cached).
+  function drawHomeFrogs() {
+    for (let i=0;i<homeSlots;i++) {
+      if (!reached[i]) continue;
+      // Per-pad breathing phase so they don't all inhale in lockstep.
+      drawFrog(vec2(homeXs[i]+.5, HOME_Y+.5), vec2(0, 1), 0, i * 1.7);
     }
   }
 
@@ -871,9 +906,7 @@
     const bumpY = logBumpY(l);
     const w = l.size.x, x = l.pos.x, y = l.pos.y + bumpY;
 
-    // soft water shadow stays at the water surface
-    drawEllipse(vec2(x, l.pos.y - .35), vec2(w*.95, .25), hsl(0,0,0,.30));
-
+    // no shadow — logs float on the water
     drawTile(vec2(x, y), vec2(w, .98), sprites.log, WHITE);
   }
 
@@ -885,8 +918,10 @@
     const breath = Math.sin(time * 1.8 + breathPhase) * .05;
     const s = 1.35 * (1 + breath) * (1 + hopArc * .12);
 
-    // shadow — anchored to basePos so it stays grounded during the hop
-    drawEllipse(basePos.add(vec2(0,-.42)), vec2(1.10, .34),
+    // shadow — anchored to basePos so it stays grounded during the hop.
+    // When facing down the legs are at the top, so put the shadow up there.
+    const shadowY = facing.y < 0 ? .42 : -.42;
+    drawEllipse(basePos.add(vec2(0, shadowY)), vec2(1.10, .34),
       hsl(0,0,0, .42 - hopArc*.12));
 
     // frog tile is painted facing up; rotate it to point along `facing`
@@ -907,7 +942,12 @@
   }
 
   function gameRender() {
-    drawLaneBackground();
+    // Pre-rendered static background blitted as one screen-space quad.
+    ensureBackground();
+    bgLayer.draw(mainCanvasSize.scale(.5), mainCanvasSize, WHITE, 0, false, undefined, true);
+    drawWaterRipples();
+    drawHomeFrogs();
+
     // Draw back-to-front: higher-y (further back) first so lower-y obstacles
     // overlap and read as nearer the viewer.
     const byDepth = (a, b) => b.pos.y - a.pos.y;
