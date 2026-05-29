@@ -719,9 +719,9 @@ const PATTERN_KEN = [
 
 const CHARACTERS = [
     { id:'ryu',    name:'RYO',     pattern: PATTERN_RYU,    multiplier: 1.0, portrait:'circle',   color: rgb(.9,.9,.95) },
-    { id:'ken',    name:'KANE',     pattern: PATTERN_KEN,    multiplier: 1.0, portrait:'triangle', color: rgb(1,.55,.15) },
+    { id:'ken',    name:'KEZ',     pattern: PATTERN_KEN,    multiplier: 1.0, portrait:'triangle', color: rgb(1,.55,.15) },
     { id:'chunli', name:'CHIN-LU', pattern: PATTERN_CHUNLI, multiplier: 1.2, portrait:'diamond',  color: rgb(.35,.65,1) },
-    { id:'sakura', name:'SAKI',  pattern: PATTERN_SAKURA, multiplier: 1.0, portrait:'star',     color: rgb(1,.5,.75) },
+    { id:'sakura', name:'SOKARA',  pattern: PATTERN_SAKURA, multiplier: 1.0, portrait:'star',     color: rgb(1,.5,.75) },
 ];
 
 function characterById(id) { return CHARACTERS.find(c => c.id === id); }
@@ -1104,6 +1104,7 @@ class Board
 let p1Board, p2Board;
 let p1Controller, p2Controller;
 let currentMatch;
+let demoBoards = null;   // decorative gem-filled boards shown behind the title/menus
 let controllers;
 let sMove, sRotate, sSoft, sLock, sClear, sCrash, sCountTick, sAllClear, sCounterLand, sGameOver;
 
@@ -2339,6 +2340,7 @@ function quitToTitleWithCleanup()
         matchState = 'title';
         currentMatch = null;
         p1Board = null; p2Board = null;
+        spawnDemoBoards();   // fresh decorative gems behind the title
     });
 }
 
@@ -2504,9 +2506,33 @@ async function gameInit()
     sGameOver  = new SoundGenerator({frequency:120,release:.6,volume:.9,slide:-.5,noise:.1});
 
     matchState = 'title';
+    spawnDemoBoards();
     showMenu('title');
 
     runUnitTests();
+}
+
+// Build a board partially filled with random regular gems for the title-screen
+// backdrop. No crash/counter gems, so nothing can ever detonate — and demo
+// boards are never resolved/updated, just rendered. mergePowerGems is run once
+// so same-color blocks form proper power-gem rectangles (with connectors).
+function makeDemoBoard(character)
+{
+    const b = new Board(character);
+    for (let x = 0; x < BOARD_W; x++)
+    {
+        const h = randInt(4, 9);   // 4..8 gems tall, uneven columns
+        for (let y = 0; y < h; y++)
+            b.grid[x][y] = gemRegular(randInt(4));
+    }
+    mergePowerGems(b.grid);
+    b.active = null;
+    return b;
+}
+
+function spawnDemoBoards()
+{
+    demoBoards = [makeDemoBoard(CHARACTERS[0]), makeDemoBoard(CHARACTERS[1])];
 }
 
 function startMatch(p1Char, p2Char, seed, aiDifficulty)
@@ -2544,8 +2570,18 @@ function gameRender()
     drawRectGradient(cameraPos, getCameraSize(), BLACK, rgb(.2,.2,.2));
     drawBoardFrame(0);
     drawBoardFrame(1);
-    if (p1Board) drawBoardGems(p1Board, 0);
-    if (p2Board) drawBoardGems(p2Board, 1);
+    if (p1Board)
+    {
+        // a match is live (playing or round-over) — show the real boards
+        drawBoardGems(p1Board, 0);
+        if (p2Board) drawBoardGems(p2Board, 1);
+    }
+    else if (demoBoards)
+    {
+        // title / menus — show decorative gems so the playfields aren't empty
+        drawBoardGems(demoBoards[0], 0);
+        drawBoardGems(demoBoards[1], 1);
+    }
     renderParticles();
 }
 function gameRenderPost()
