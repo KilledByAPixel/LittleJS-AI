@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.15';
+const engineVersion = '1.18.15.2';
 
 /** Frames per second to update
  *  @type {number}
@@ -164,7 +164,7 @@ function engineAddPlugin(update, render, glContextLost, glContextRestored)
  *    ['tiles.png', 'tilesLevel.png']       // images to load
  *  );
  *  @memberof Engine */
-async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, imageSources=[], rootElement=document.body)
+async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, imageSources=[], rootElement)
 {
     showEngineVersion && console.log(`${engineName} Engine v${engineVersion}`);
     ASSERT(!mainContext, 'engine already initialized');
@@ -172,6 +172,11 @@ async function engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, game
     // double-register listeners / double-add canvases on a second call
     if (mainContext) return;
     ASSERT(isArray(imageSources), 'pass in images as array');
+
+    // ensure body exists for minimal HTML where the script runs before <body> is parsed
+    if (!document.body)
+        document.documentElement.appendChild(document.createElement('body'));
+    rootElement ||= document.body;
 
     // allow passing in empty functions
     gameInit       ||= ()=>{};
@@ -617,7 +622,7 @@ let debugKey = 'Escape';
 let debugOverlay = false;
 
 // Engine internal variables not exposed to documentation
-let debugPrimitives = [], debugPhysics = false, debugRaycast = false, debugParticles = false, debugGamepads = false, debugTakeScreenshot;
+let debugPrimitives = [], debugPhysics = false, debugRaycast = false, debugParticles = false, debugGamepads = false, debugSound = false, debugTakeScreenshot;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Debug helper functions
@@ -857,6 +862,8 @@ function debugUpdate()
             debugRaycast = !debugRaycast;
         if (keyWasPressed('Digit5'))
             debugScreenshot();
+        if (keyWasPressed('Digit7'))
+            debugSound = !debugSound;
     }
     if (debugVideoCaptureIsActive())
     {
@@ -1087,6 +1094,8 @@ function debugRender()
             debugContext.fillStyle = '#fff';
             debugContext.fillText('5: Save Screenshot', x, y += h);
             debugContext.fillText('6: Toggle Video Capture', x, y += h);
+            debugContext.fillStyle = debugSound ? '#f00' : '#fff';
+            debugContext.fillText('7: Debug Sound', x, y += h);
 
             let keysPressed = '';
             let mousePressed = '';
@@ -1121,6 +1130,7 @@ function debugRender()
             debugContext.fillText(debugParticles ? 'Debug Particles' : '', x, y += h);
             debugContext.fillText(debugRaycast ? 'Debug Raycasts' : '', x, y += h);
             debugContext.fillText(debugGamepads ? 'Debug Gamepads' : '', x, y += h);
+            debugContext.fillText(debugSound ? 'Debug Sound' : '', x, y += h);
         }
 
         debugContext.restore();
@@ -3458,10 +3468,10 @@ class EngineObject
             if (pa)
             {
                 const c = cos(-pa), s = sin(-pa);
-                this.pos = new Vector2(lx*c - ly*s + pp.x, lx*s + ly*c + pp.y);
+                this.pos.set(lx*c - ly*s + pp.x, lx*s + ly*c + pp.y);
             }
             else
-                this.pos = new Vector2(lx + pp.x, ly + pp.y);
+                this.pos.set(lx + pp.x, ly + pp.y);
             this.angle = mirror*this.localAngle + pa;
         }
 
@@ -3692,6 +3702,9 @@ class EngineObject
         // default object render
         drawTile(this.pos, this.drawSize || this.size, this.tileInfo, this.color, this.angle, this.mirror, this.additiveColor);
     }
+
+    /** Optional hook called during the light system plugin's lightmap pass to draw this object's lightmap contribution. Does nothing by default. */
+    renderLight() {}
 
     /** Destroy this object, destroy its children, detach its parent, and mark it for removal
      *  @param {boolean} [immediate] - should attached effects be allowed to die off? */
@@ -4197,11 +4210,12 @@ function drawTile(pos, size=vec2(1), tileInfo, color=WHITE,
         // normal canvas 2D rendering method (slower)
         ++drawCount;
         ++primitiveCount;
-        size = new Vector2(size.x, -size.y); // flip upside down sprites
         drawCanvas2D(pos, size, angle, mirror, (context)=>
         {
             if (textureInfo)
             {
+                // un-flip Y so the image renders right-side up under drawCanvas2D's Y flip
+                context.scale(1, -1);
                 // calculate uvs and render
                 const x = tileInfo.pos.x,  y = tileInfo.pos.y;
                 const w = tileInfo.size.x, h = tileInfo.size.y;
@@ -4209,7 +4223,7 @@ function drawTile(pos, size=vec2(1), tileInfo, color=WHITE,
             }
             else
             {
-                // if no tile info, use untextured rect
+                // if no tile info, use untextured rect (Y-symmetric, no compensation needed)
                 const c = additiveColor ? color.add(additiveColor) : color;
                 context.fillStyle = c.toString();
                 context.fillRect(-.5, -.5, 1, 1);
@@ -4283,11 +4297,10 @@ function drawRectGradient(pos, size, colorTop=WHITE, colorBottom=CLEAR_WHITE, an
         // normal canvas 2D rendering method (slower)
         ++drawCount;
         ++primitiveCount;
-        size = new Vector2(size.x, -size.y); // fix upside down sprites
         drawCanvas2D(pos, size, angle, false, (context)=>
         {
-            // if no tile info, use untextured rect
-            const gradient = context.createLinearGradient(0, -.5, 0, .5);
+            // gradient endpoints are flipped to match the Y flip inside drawCanvas2D
+            const gradient = context.createLinearGradient(0, .5, 0, -.5);
             gradient.addColorStop(0, colorTop.toString());
             gradient.addColorStop(1, colorBottom.toString());
             context.fillStyle = gradient;
@@ -4706,7 +4719,10 @@ function drawCircleGradient(pos, size=1, colorInner=WHITE, colorOuter=CLEAR_WHIT
  * @memberof Draw
  */
 
-/** Draw directly to a 2d canvas context in world space
+/** Draw directly to a 2d canvas context in world space.
+ *  The Y axis is flipped so world-Y-up coordinates render right-side up
+ *  (matches the WebGL path). Callers whose drawing depends on Y direction
+ *  (e.g. linear gradients) should flip their own Y endpoints accordingly.
  *  @param {Vector2}  pos
  *  @param {Vector2}  size
  *  @param {number}   angle
@@ -6268,7 +6284,7 @@ class Sound
      *  @param {number}  [randomnessScale] - How much to scale pitch randomness
      *  @param {boolean} [loop] - Should the sound loop?
      *  @param {boolean} [paused] - Should the sound start paused
-     *  @return {SoundInstance} - The audio source node
+     *  @return {SoundInstance} - The sound instance, or undefined if sound is disabled, not loaded, or running in headless mode
      */
     play(pos, volume=1, pitch=1, randomnessScale=1, loop=false, paused=false)
     {
@@ -6299,9 +6315,23 @@ class Sound
             pan = worldToScreen(pos).x * 2/mainCanvas.width - 1;
         }
         
-        // Create and return sound instance
+        // Create sound instance
         const rate = pitch + pitch * this.randomness*randomnessScale*rand(-1,1);
-        return new SoundInstance(this, volume, rate, pan, loop, paused);
+        const instance = new SoundInstance(this, volume, rate, pan, loop, paused);
+
+        if (debug && debugSound && pos)
+        {
+            // visualize where positioned sounds play and their falloff range
+            debugCircle(pos, .5, '#0ff', .5, true);
+            if (this.range)
+            {
+                debugCircle(pos, 2*this.range, '#0ff', .5);            // silent radius
+                debugCircle(pos, 2*this.range*this.taper, '#0ff', .5); // full volume radius
+            }
+            debugText('vol '+volume.toFixed(2)+' pitch '+rate.toFixed(2), pos, .5, '#0ff', .5);
+        }
+
+        return instance;
     }
     
     /** Play a music track that loops by default
@@ -6667,6 +6697,10 @@ function playSamples(sampleChannels, volume=1, rate=1, pan=0, loop=false, sample
     // play and return sound
     const startOffset = offset * rate;
     source.start(0, startOffset);
+
+    if (debug && debugSound)
+        LOG('sound', 'vol', volume.toFixed(2), 'rate', rate.toFixed(2), 'pan', pan.toFixed(2), loop ? 'loop' : '');
+
     return source;
 }
 
@@ -7500,6 +7534,11 @@ class TileCollisionLayer extends TileLayer
         // check any tiles in the area for collision
         const posX = pos.x - this.pos.x;
         const posY = pos.y - this.pos.y;
+        // reject AABBs entirely past either edge; without this, the negative
+        // side leaks into row/col 0 because minX/minY clamp to 0 and the
+        // point-test floor below forces maxX/maxY up to 1
+        if (posX + size.x/2 < 0 || posX - size.x/2 > this.size.x) return false;
+        if (posY + size.y/2 < 0 || posY - size.y/2 > this.size.y) return false;
         const minX = max(posX - size.x/2|0, 0);
         const minY = max(posY - size.y/2|0, 0);
         // ensure at least one cell is visited even when size is 0 and pos
@@ -7618,10 +7657,10 @@ class ParticleEmitter extends EngineObject
      *  @param {number} [particleTime]      - How long particles live
      *  @param {number} [sizeStart]         - How big are particles at start
      *  @param {number} [sizeEnd]           - How big are particles at end
-     *  @param {number} [speed]             - How fast are particles when spawned
-     *  @param {number} [angleSpeed]        - How fast are particles rotating
-     *  @param {number} [damping]           - How much to dampen particle speed
-     *  @param {number} [angleDamping]      - How much to dampen particle angular speed
+     *  @param {number} [speed]             - How fast are particles when spawned, in world units per frame (at 60fps, so multiply units/sec by 1/60)
+     *  @param {number} [angleSpeed]        - How fast are particles rotating, in radians per frame (at 60fps)
+     *  @param {number} [damping]           - How much to dampen particle speed, per-frame velocity multiplier (1 = no damping, .9 = lose 10% speed each frame)
+     *  @param {number} [angleDamping]      - How much to dampen particle angular speed, per-frame multiplier (1 = no damping)
      *  @param {number} [gravityScale]      - How much gravity effect particles
      *  @param {number} [particleConeAngle] - Cone for start particle angle
      *  @param {number} [fadeRate]          - Fraction of life spent fading: half at fade-in (start), half at fade-out (end). e.g. .2 = 10% fade-in, 80% full opacity, 10% fade-out
@@ -7696,13 +7735,13 @@ class ParticleEmitter extends EngineObject
         this.sizeStart         = sizeStart;
         /** @property {number} - How big are particles at end */
         this.sizeEnd           = sizeEnd;
-        /** @property {number} - How fast are particles when spawned */
+        /** @property {number} - Particle speed when spawned, in world units per frame (at 60fps) */
         this.speed             = speed;
-        /** @property {number} - How fast are particles rotating */
+        /** @property {number} - Particle angular speed when spawned, in radians per frame (at 60fps) */
         this.angleSpeed        = angleSpeed;
-        /** @property {number} - How much to dampen particle speed */
+        /** @property {number} - Per-frame velocity multiplier (1 = no damping, .9 = lose 10% speed each frame) */
         this.damping           = damping;
-        /** @property {number} - How much to dampen particle angular speed */
+        /** @property {number} - Per-frame angular velocity multiplier (1 = no damping) */
         this.angleDamping      = angleDamping;
         /** @property {number} - How much gravity affects particles */
         this.gravityScale      = gravityScale;
@@ -7771,12 +7810,16 @@ class ParticleEmitter extends EngineObject
         else if (this.particles.length === 0)
             this.destroy(true);
             
-        // update and remove destroyed particles
-        this.particles = this.particles.filter((p)=>
+        // update and remove destroyed particles in place to avoid per-frame array allocation
+        const particles = this.particles;
+        let alive = 0;
+        for (let i = 0; i < particles.length; ++i)
         {
+            const p = particles[i];
             p.update();
-            return !p.destroyed;
-        });
+            if (!p.destroyed) particles[alive++] = p;
+        }
+        particles.length = alive;
 
         if (debugParticles)
         {
@@ -8058,7 +8101,7 @@ class Particle
         {
             // in local space of emitter
             const a = emitter.angle;
-            const c = cos(a), s = sin(a);
+            const c = cos(-a), s = sin(-a);
             pos.set(emitter.pos.x + pos.x*c - pos.y*s,
                 emitter.pos.y + pos.x*s + pos.y*c);
             angle += a;
@@ -8066,8 +8109,8 @@ class Particle
         if (trailScale)
         {
             // trail style particles
-            const velocity = localSpace ? 
-                this.velocity.rotate(-emitter.angle) : this.velocity;
+            const velocity = localSpace ?
+                this.velocity.rotate(emitter.angle) : this.velocity;
             const speed = velocity.length();
             if (speed)
             {
@@ -9229,7 +9272,15 @@ function medalsInit(saveName)
     // check if medals are unlocked
     medalsSaveName = saveName;
     if (!debugMedals)
-        medalsForEach(medal=> medal.unlocked = !!localStorage[medal.storageKey()]);
+    {
+        let saved = {};
+        try { saved = JSON.parse(localStorage[saveName] || '{}'); }
+        catch (e) { saved = {}; }
+        medalsForEach(medal => {
+            medal.unlocked = !!(saved[medal.id] && saved[medal.id].unlocked);
+        });
+        medalsSave();
+    }
 
     // engine automatically renders medals
     engineAddPlugin(undefined, medalsRender);
@@ -9272,6 +9323,31 @@ function medalsInit(saveName)
  *  @memberof Medals */
 function medalsForEach(callback)
 { Object.values(medals).forEach(medal=>callback(medal)); }
+
+/** Reset all medals to locked and persist the cleared catalog
+ *  @memberof Medals */
+function medalsReset()
+{
+    medalsForEach(medal => medal.unlocked = false);
+    medalsSave();
+}
+
+function medalsSave()
+{
+    if (!medalsSaveName) return;
+    const data = {};
+    medalsForEach(medal => {
+        const entry = {
+            name: medal.name,
+            description: medal.description,
+            icon: medal.icon,
+            unlocked: medal.unlocked,
+        };
+        if (medal.image) entry.src = medal.image.src;
+        data[medal.id] = entry;
+    });
+    localStorage[medalsSaveName] = JSON.stringify(data);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -9330,9 +9406,9 @@ class Medal
     {
         if (medalsPreventUnlock || this.unlocked) return;
 
-        // save the medal
         ASSERT(medalsSaveName, 'save name must be set');
-        localStorage[this.storageKey()] = this.unlocked = true;
+        this.unlocked = true;
+        medalsSave();
         medalsDisplayQueue.push(this);
     }
 
@@ -9390,8 +9466,6 @@ class Medal
             drawTextScreen(this.icon, pos, size*.7, BLACK);
     }
 
-    // Get local storage key used by the medal
-    storageKey() { return medalsSaveName + '_' + this.id; }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -9776,6 +9850,335 @@ class PostProcessPlugin
         }
     }
 }
+/**
+ * LittleJS Light System Plugin
+ * - Adds 2D dynamic lighting to the scene
+ * - Lights are first-class EngineObjects (the Light class)
+ * - Each Light draws a soft falloff blob of its color into a shared lightmap
+ * - Lights accumulate ADDITIVELY in the lightmap (red + blue = magenta)
+ * - The lightmap is then MULTIPLIED with the scene during composite, so unlit
+ *   areas go to the ambient color and lit areas show the scene tinted by the
+ *   accumulated light color
+ * - Draw the world at full brightness — the lightmap does the darkening
+ * - Any EngineObject may override renderLight() to additively contribute to the
+ *   lightmap (e.g. emissive lava tiles, weapon flashes, glowing crystals)
+ * - Must be constructed BEFORE PostProcessPlugin so post-process sees lit pixels
+ * @namespace LightSystem
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** Global Light System plugin object
+ *  @type {LightSystemPlugin}
+ *  @memberof LightSystem */
+let lightSystem;
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * LightSystemPlugin
+ * - Owns the offscreen lightmap texture, falloff/composite shaders, and the
+ *   per-frame render pass that multiplies the lightmap onto the WebGL scene
+ * - The composite is MULTIPLICATIVE: unlit areas get the ambient color, lit
+ *   areas show the scene tinted by the accumulated light color. So you should
+ *   draw your world at full brightness — the lightmap handles the darkening.
+ * @memberof LightSystem
+ */
+class LightSystemPlugin
+{
+    /** Create the global light system plugin.
+     *  @param {Vector2} [textureSize]  - Size of the lightmap texture (defaults to mainCanvasSize)
+     *  @param {Color}   [ambientColor] - Color applied to unlit areas of the scene (defaults to BLACK = pitch dark). Set a small RGB like rgb(0.1,0.1,0.15) for a faint "moonlight" baseline so unlit areas aren't fully black.
+     *  @example
+     *  // simplest usage
+     *  new LightSystemPlugin();
+     */
+    constructor(textureSize, ambientColor)
+    {
+        ASSERT(!lightSystem, 'LightSystemPlugin already initialized');
+        ASSERT(!postProcess, 'LightSystemPlugin must be created before PostProcessPlugin');
+        lightSystem = this;
+
+        /** @property {boolean} - When false, the render pass is skipped entirely */
+        this.enabled = true;
+        /** @property {Color} - Baseline color applied to unlit areas of the scene. Defaults to BLACK (pitch dark). Set to a small RGB for a faint ambient. The lightmap is cleared to this color each frame, then lights add on top, then the result multiplies the scene. */
+        this.ambientColor = (ambientColor || BLACK).copy();
+        /** @property {Vector2} - Size of the lightmap texture (set at construction; falls back to mainCanvasSize at init time) */
+        this.textureSize = textureSize ? textureSize.copy() : undefined;
+
+        /** @property {WebGLTexture} - The lightmap texture */
+        this.texture = undefined;
+        /** @property {WebGLProgram} - Shader for drawing per-Light falloff blobs into the lightmap */
+        this.lightShader = undefined;
+        /** @property {WebGLProgram} - Shader for compositing the lightmap over the main scene */
+        this.compositeShader = undefined;
+        /** @property {WebGLVertexArrayObject} - Vertex array object for the light shader */
+        this.lightVAO = undefined;
+        /** @property {WebGLVertexArrayObject} - Vertex array object for the composite shader */
+        this.compositeVAO = undefined;
+
+        initLightSystem();
+        engineAddPlugin(undefined, lightSystemRender,
+            lightSystemContextLost, lightSystemContextRestored);
+
+        function initLightSystem()
+        {
+            if (headlessMode) return;
+            if (!glEnable)
+            {
+                console.warn('LightSystemPlugin: WebGL not enabled!');
+                return;
+            }
+
+            // resolve texture size default at init time (mainCanvasSize may
+            // not be set yet at the moment the constructor first ran)
+            if (!lightSystem.textureSize)
+                lightSystem.textureSize = mainCanvasSize.copy();
+
+            // allocate the lightmap texture with null data at textureSize
+            lightSystem.texture = glContext.createTexture();
+            glContext.bindTexture(glContext.TEXTURE_2D, lightSystem.texture);
+            glContext.texImage2D(glContext.TEXTURE_2D, 0, glContext.RGBA,
+                lightSystem.textureSize.x, lightSystem.textureSize.y, 0,
+                glContext.RGBA, glContext.UNSIGNED_BYTE, null);
+            glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MAG_FILTER, glContext.LINEAR);
+            glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, glContext.LINEAR);
+            glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, glContext.CLAMP_TO_EDGE);
+            glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, glContext.CLAMP_TO_EDGE);
+
+            // light falloff shader: one quad per Light, fragment computes radial falloff
+            lightSystem.lightShader = glCreateProgram(
+                '#version 300 es\n' +
+                'precision highp float;'+
+                'uniform mat4 m;'+
+                'uniform vec2 lightPos;'+
+                'uniform float radius;'+
+                'in vec2 g;'+              // unit quad geometry [0..1]
+                'out vec2 vWorldPos;'+
+                'void main(){'+
+                'vec2 worldP=lightPos+(g-.5)*2.*radius;'+
+                'gl_Position=m*vec4(worldP,1,1);'+
+                'vWorldPos=worldP;'+
+                '}'
+                ,
+                '#version 300 es\n' +
+                'precision highp float;'+
+                'uniform vec2 lightPos;'+
+                'uniform float radius;'+
+                'uniform float fadeRange;'+
+                'uniform vec4 color;'+
+                'in vec2 vWorldPos;'+
+                'out vec4 c;'+
+                'void main(){'+
+                'float dist=distance(vWorldPos,lightPos);'+
+                'float t=clamp((radius-dist)/max(fadeRange,1e-6),0.,1.);'+
+                'c=vec4(color.rgb*t*color.a,1.);'+
+                '}'
+            );
+
+            // composite shader: fullscreen quad, samples the lightmap
+            lightSystem.compositeShader = glCreateProgram(
+                '#version 300 es\n' +
+                'precision highp float;'+
+                'in vec2 p;'+
+                'void main(){'+
+                'gl_Position=vec4(p+p-1.,1,1);'+
+                '}'
+                ,
+                '#version 300 es\n' +
+                'precision highp float;'+
+                'uniform sampler2D s;'+
+                'uniform vec3 iResolution;'+
+                'out vec4 c;'+
+                'void main(){'+
+                'vec2 uv=gl_FragCoord.xy/iResolution.xy;'+
+                'c=vec4(texture(s,uv).rgb,1.);'+
+                '}'
+            );
+
+            // VAO for the per-Light quad — reuses the engine unit triangle-strip
+            lightSystem.lightVAO = glContext.createVertexArray();
+            glContext.bindVertexArray(lightSystem.lightVAO);
+            glContext.bindBuffer(glContext.ARRAY_BUFFER, glGeometryBuffer);
+            const gLight = glContext.getAttribLocation(lightSystem.lightShader, 'g');
+            glContext.enableVertexAttribArray(gLight);
+            glContext.vertexAttribPointer(gLight, 2, glContext.FLOAT, false, 8, 0);
+
+            // VAO for the composite fullscreen quad — same buffer, attribute named 'p'
+            lightSystem.compositeVAO = glContext.createVertexArray();
+            glContext.bindVertexArray(lightSystem.compositeVAO);
+            glContext.bindBuffer(glContext.ARRAY_BUFFER, glGeometryBuffer);
+            const pComp = glContext.getAttribLocation(lightSystem.compositeShader, 'p');
+            glContext.enableVertexAttribArray(pComp);
+            glContext.vertexAttribPointer(pComp, 2, glContext.FLOAT, false, 8, 0);
+        }
+        function lightSystemRender()
+        {
+            if (headlessMode || !glEnable) return;
+            if (!lightSystem.enabled) return;
+            if (!lightSystem.texture) return;     // init failed or context lost
+
+            // 1. flush any in-flight sprite batch from earlier render passes
+            glFlush();
+            const prevAdditive = glAdditive;
+
+            // 2. bind lightmap as render target, clear to ambientColor
+            const ac = lightSystem.ambientColor;
+            glContext.bindFramebuffer(glContext.FRAMEBUFFER, glFramebuffer);
+            glContext.framebufferTexture2D(glContext.FRAMEBUFFER,
+                glContext.COLOR_ATTACHMENT0, glContext.TEXTURE_2D, lightSystem.texture, 0);
+            glContext.viewport(0, 0, lightSystem.textureSize.x, lightSystem.textureSize.y);
+            glContext.clearColor(ac.r, ac.g, ac.b, ac.a);
+            glContext.clear(glContext.COLOR_BUFFER_BIT);
+
+            // 3. walk engineObjects calling renderLight() — additive blend
+            //    (lightmap accumulates raw additive color contributions)
+            setBlendMode(true);
+            glContext.enable(glContext.BLEND);
+            glContext.blendFunc(glContext.ONE, glContext.ONE);
+
+            for (const o of engineObjects)
+                o.destroyed || o.renderLight();
+
+            // 4. drain any sprite-batched draws (e.g. drawTile inside a
+            //    custom renderLight override) so they hit the FBO, not the
+            //    canvas after we unbind
+            glFlush();
+            glContext.bindFramebuffer(glContext.FRAMEBUFFER, null);
+            glContext.viewport(0, 0, mainCanvasSize.x, mainCanvasSize.y);
+
+            // 5. composite: fullscreen quad, multiplicative blend onto glCanvas
+            //    (scene * lightmap — unlit areas go to black, lit areas are
+            //    the scene tinted by the accumulated light color)
+            glContext.useProgram(lightSystem.compositeShader);
+            glContext.bindVertexArray(lightSystem.compositeVAO);
+            glContext.activeTexture(glContext.TEXTURE0);
+            glContext.bindTexture(glContext.TEXTURE_2D, lightSystem.texture);
+            const cs = lightSystem.compositeShader;
+            glContext.uniform1i(glContext.getUniformLocation(cs, 's'), 0);
+            glContext.uniform3f(glContext.getUniformLocation(cs, 'iResolution'),
+                mainCanvas.width, mainCanvas.height, 1);
+            glContext.blendFunc(glContext.DST_COLOR, glContext.ZERO);
+            glContext.drawArrays(glContext.TRIANGLE_STRIP, 0, 4);
+
+            // 6. restore engine state so subsequent draws use the engine's
+            //    tracked texture binding (otherwise glSetTexture would think
+            //    the prior texture was still bound when actually the lightmap
+            //    is, and any debug text / future draw could sample the lightmap)
+            if (glActiveTexture)
+                glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture);
+            setBlendMode(prevAdditive);
+            glSetInstancedMode(true);
+        }
+        function lightSystemContextLost()
+        {
+            lightSystem.texture = undefined;
+            lightSystem.lightShader = undefined;
+            lightSystem.compositeShader = undefined;
+            lightSystem.lightVAO = undefined;
+            lightSystem.compositeVAO = undefined;
+            LOG('LightSystemPlugin: WebGL context lost');
+        }
+        function lightSystemContextRestored()
+        {
+            initLightSystem();
+            LOG('LightSystemPlugin: WebGL context restored');
+        }
+    }
+
+    /** Draw a single Light's falloff blob into the currently bound lightmap.
+     *  Called by Light.renderLight() during the plugin's render pass.
+     *  @param {Light} light */
+    drawLight(light)
+    {
+        if (headlessMode || !glEnable || !this.lightShader) return;
+
+        // drain any sprite-batched draws queued by a previous custom
+        // renderLight() override (e.g. drawRect inside a LavaTile). They were
+        // queued in the engine's instanced-vertex format and must flush with
+        // the engine's shader+VAO bound — NOT this plugin's light shader.
+        glFlush();
+
+        glContext.useProgram(this.lightShader);
+        glContext.bindVertexArray(this.lightVAO);
+
+        // re-apply the engine camera transform onto this shader. Divide by
+        // mainCanvasSize (not textureSize) so world→NDC matches the main
+        // pass; the viewport handles the lightmap's actual resolution.
+        // No y-flip here: the composite samples this FBO with
+        // gl_FragCoord/iResolution (origin bottom-left), so storing world
+        // +Y at the top of the texture lines up with the canvas convention.
+        const s = vec2(2*cameraScale).divide(mainCanvasSize);
+        const rotatedCam = cameraPos.rotate(-cameraAngle);
+        const p = vec2(-1).subtract(rotatedCam.multiply(s));
+        const ca = cos(cameraAngle);
+        const sa = sin(cameraAngle);
+        const transform = [
+            s.x  * ca,  s.y * sa, 0, 0,
+            -s.x * sa,  s.y * ca, 0, 0,
+            1,          1,        1, 0,
+            p.x,        p.y,      0, 1];
+
+        const ls = this.lightShader;
+        glContext.uniformMatrix4fv(glContext.getUniformLocation(ls, 'm'), false, transform);
+        glContext.uniform2f(glContext.getUniformLocation(ls, 'lightPos'), light.pos.x, light.pos.y);
+        glContext.uniform1f(glContext.getUniformLocation(ls, 'radius'), light.radius);
+        glContext.uniform1f(glContext.getUniformLocation(ls, 'fadeRange'), light.fadeRange);
+        const c = light.color;
+        glContext.uniform4f(glContext.getUniformLocation(ls, 'color'), c.r, c.g, c.b, c.a);
+
+        glContext.drawArrays(glContext.TRIANGLE_STRIP, 0, 4);
+
+        // restore engine's instanced shader+VAO so subsequent renderLight()
+        // overrides that batch through drawRect/drawTile work correctly
+        glSetInstancedMode(true);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * A Light is an EngineObject that contributes a soft additive blob of color
+ * to the LightSystem plugin's lightmap.
+ * @extends EngineObject
+ * @memberof LightSystem
+ * @example
+ * new Light(vec2(5, 5), 4, rgb(1, 0.5, 0));        // orange light, full soft blob
+ * new Light(vec2(0, 0), 8, rgb(1, 1, 1), 2);       // white core with 2-unit soft halo
+ */
+class Light extends EngineObject
+{
+    /** Create a light object and add it to the engine object list
+     *  @param {Vector2} pos - World space position
+     *  @param {number} radius - Total extent of the light in world units
+     *  @param {Color} [color] - Color of the light; alpha modulates intensity
+     *  @param {number} [fadeRange] - Width of the soft edge in world units (defaults to radius) */
+    constructor(pos, radius, color, fadeRange)
+    {
+        super(pos, vec2(1), undefined, 0, color);
+        ASSERT(isNumber(radius) && radius >= 0, 'Light radius must be a non-negative number');
+        ASSERT(fadeRange === undefined || (isNumber(fadeRange) && fadeRange >= 0),
+            'Light fadeRange must be a non-negative number when provided');
+
+        /** @property {number} - Total extent of the light in world units */
+        this.radius = radius;
+        /** @property {number} - Width of the soft edge in world units */
+        this.fadeRange = fadeRange === undefined ? radius : fadeRange;
+    }
+
+    /** Lights are invisible in the main render pass — they only contribute
+     *  to the lightmap via renderLight(). */
+    render() {}
+
+    /** Draw this light's falloff blob into the lightmap.
+     *  Called by LightSystemPlugin during its render pass. No-op when the
+     *  plugin or WebGL is unavailable. */
+    renderLight()
+    {
+        lightSystem && lightSystem.drawLight(this);
+    }
+}
+
 /**
  * LittleJS ZzFXM Plugin
  * @namespace ZzFXM
@@ -11823,23 +12226,19 @@ class Box2dObject extends EngineObject
 
         function box2dCreatePolygonShape(points)
         {
-            function box2dCreatePointList(points)
-            {
-                const buffer = box2d.instance._malloc(points.length * 8);
-                for (let i=0, offset=0; i<points.length; ++i)
-                {
-                    box2d.instance.HEAPF32[buffer + offset >> 2] = points[i].x;
-                    offset += 4;
-                    box2d.instance.HEAPF32[buffer + offset >> 2] = points[i].y;
-                    offset += 4;
-                }
-                return box2d.instance.wrapPointer(buffer, box2d.instance.b2Vec2);
-            }
-
             ASSERT(3 <= points.length && points.length <= 8);
+            const buffer = box2d.instance._malloc(points.length * 8);
+            for (let i=0, offset=0; i<points.length; ++i)
+            {
+                box2d.instance.HEAPF32[buffer + offset >> 2] = points[i].x;
+                offset += 4;
+                box2d.instance.HEAPF32[buffer + offset >> 2] = points[i].y;
+                offset += 4;
+            }
+            const box2dPoints = box2d.instance.wrapPointer(buffer, box2d.instance.b2Vec2);
             const shape = new box2d.instance.b2PolygonShape();
-            const box2dPoints = box2dCreatePointList(points);
             shape.Set(box2dPoints, points.length);
+            box2d.instance._free(buffer);
             return shape;
         }
 
@@ -13821,6 +14220,55 @@ function drawThreeSlice(pos, size, startTile, color, borderSize=1, additiveColor
         drawTile(pos.add(cornerPos.rotate(rotateAngle)), cornerSize, cornerTile, color, a, false, additiveColor, useWebGL, screenSpace, context);
     }
 }
+
+/** Draw a crescent / moon-phase shape built from a polygon
+ *  Routes through drawPoly, so it supports WebGL, screen space, color, and outlines
+ *  @param {Vector2} pos - Center position
+ *  @param {number}  [radius] - Outer radius of the crescent
+ *  @param {number}  [percent] - Moon phase over a full cycle (0=new, .25=first quarter, .5=full, .75=last quarter), wraps
+ *  @param {Color}   [color] - Fill color
+ *  @param {number}  [angle] - Angle to rotate by
+ *  @param {boolean} [invert] - Flip which side is illuminated
+ *  @param {number}  [lineWidth] - Outline width, 0 for no outline
+ *  @param {Color}   [lineColor] - Outline color
+ *  @param {number}  [sides=glCircleSides] - Number of sides for a full circle (halved per arc)
+ *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
+ *  @param {boolean} [screenSpace] - Use screen space coordinates
+ *  @param {CanvasRenderingContext2D} [context] - Canvas context to use
+ *  @memberof DrawUtilities */
+function drawCrescent(pos, radius=1, percent=0, color=WHITE, angle=0, invert=false, lineWidth=0, lineColor=BLACK, sides=glCircleSides, useWebGL=glEnable, screenSpace=false, context)
+{
+    ASSERT(isVector2(pos), 'pos must be a vec2');
+    ASSERT(isNumber(radius) && isNumber(percent), 'radius and percent must be numbers');
+    ASSERT(isColor(color) && isColor(lineColor), 'color is invalid');
+
+    // map phase to a signed terminator curve: -1 new, 0 half, 1 full
+    let p = mod(percent*4, 4); // quarter phase 0..4
+    if (p >= 2)                // second half of cycle flips orientation
+        angle += PI;
+    p = p <= 2 ? p-1 : 3-p;
+    if (invert)                // flip the illuminated side
+    {
+        p = -p;
+        angle += PI;
+    }
+
+    // build the crescent: outer semicircle, then inner half-ellipse traced back
+    const points = [];
+    const segs = max(3, sides>>1);
+    for (let i=0; i<=segs; i++)
+    {
+        const t = i/segs*PI;
+        points.push(vec2(radius*cos(t), radius*sin(t)));
+    }
+    for (let i=segs; i>=0; i--)
+    {
+        const t = i/segs*PI;
+        points.push(vec2(radius*cos(t), -radius*p*sin(t)));
+    }
+    drawPoly(points, color, lineWidth, lineColor, pos, angle, useWebGL, screenSpace, context);
+}
+
 /**
  * LittleJS Tween System Plugin
  * - Lightweight tweens for numbers, Vector2, Color, or any .lerp-able type
