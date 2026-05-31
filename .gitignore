@@ -1,6 +1,10 @@
 # node files
 node_modules
 
+# game build artifacts
+games/*/build/
+games/*/*.zip
+
 # local files
 local/
 temp/

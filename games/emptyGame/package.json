@@ -1,0 +1,13 @@
+{
+    "name": "littlejs-game",
+    "version": "1.0.0",
+    "private": true,
+    "description": "A LittleJS game starter with a single-file zip build",
+    "scripts": {
+        "build": "node build.mjs"
+    },
+    "devDependencies": {
+        "bestzip": "^2.2.1",
+        "terser": "^5.31.0"
+    }
+}

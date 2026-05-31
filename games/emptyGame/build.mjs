@@ -1,5 +1,11 @@
-/** 
+/**
  * LittleJS Build System
+ * - Concatenates the engine + game source into one file
+ * - Minifies with terser, inlines into a single index.html, then zips it
+ * - Run with: npm run build  (or: node build.mjs)
+ *
+ * To use this for your own game, copy this file + package.json into your game
+ * folder and edit the CONFIG block below.
  */
 
 'use strict';
@@ -11,31 +17,41 @@ import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PROGRAM_TITLE = 'Little JS Game';
-const PROGRAM_NAME = 'game';
-const BUILD_FOLDER = join(__dirname, 'build');
-const USE_ROADROLLER = false; // enable for extra compression
+///////////////////////////////////////////////////////////////////////////////
+// CONFIG - edit these for your game
+
+const PROGRAM_TITLE = 'Little JS Game'; // <title> in the built html
+const PROGRAM_NAME  = 'game';           // output zip name (game.zip)
+
+// source files concatenated in order (use the global release build of the engine)
 const sourceFiles =
 [
-    join(__dirname, '../dist/littlejs.release.js'),
+    join(__dirname, '../../dist/littlejs.release.js'),
     join(__dirname, 'game.js'),
-    // add your game's files here
+    // add your game's source files here
 ];
+
+// data files copied into the build and bundled into the zip
 const dataFiles =
 [
     'tiles.png',
     // add your game's data files here
 ];
 
+///////////////////////////////////////////////////////////////////////////////
+
+const BUILD_FOLDER = join(__dirname, 'build');
+const ZIP_PATH = join(__dirname, `${PROGRAM_NAME}.zip`);
+
 console.log(`Building ${PROGRAM_NAME}...`);
 const startTime = Date.now();
 
-// remove old files and setup build folder
+// remove old output and set up a fresh build folder
 fs.rmSync(BUILD_FOLDER, { recursive: true, force: true });
-fs.rmSync(join(__dirname, `${PROGRAM_NAME}.zip`), { force: true });
+fs.rmSync(ZIP_PATH, { force: true });
 fs.mkdirSync(BUILD_FOLDER);
 
-// copy data files
+// copy data files into the build folder
 for (const file of dataFiles)
     fs.copyFileSync(join(__dirname, file), join(BUILD_FOLDER, file));
 
@@ -47,7 +63,7 @@ Build
 );
 
 console.log('');
-console.log(`Build Completed in ${((Date.now() - startTime)/1e3).toFixed(2)} seconds!`);
+console.log(`Build completed in ${((Date.now() - startTime)/1e3).toFixed(2)} seconds!`);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -55,12 +71,12 @@ console.log(`Build Completed in ${((Date.now() - startTime)/1e3).toFixed(2)} sec
 // - each build step is a callback that accepts a single filename
 function Build(outputFile, files=[], buildSteps=[])
 {
-    // copy files into a buffer
+    // concatenate source files into one buffer
     let buffer = '';
     for (const file of files)
         buffer += fs.readFileSync(file) + '\n';
 
-    // output file
+    // write the combined output file
     fs.writeFileSync(outputFile, buffer, {flag: 'w+'});
 
     // execute build steps in order
@@ -78,8 +94,8 @@ function htmlBuildStep(filename)
 {
     console.log('Building html...');
 
-    // create html file
-    let buffer = ''
+    // inline the minified script into a single html file
+    let buffer = '';
     buffer += '<!DOCTYPE html>';
     buffer += '<head>';
     buffer += `<title>${PROGRAM_TITLE}</title>`;
@@ -94,11 +110,11 @@ function htmlBuildStep(filename)
     fs.writeFileSync(join(BUILD_FOLDER, 'index.html'), buffer, {flag: 'w+'});
 }
 
-function zipBuildStep(filename)
+function zipBuildStep()
 {
     console.log('Zipping...');
     const sources = ['index.html', ...dataFiles];
-    const sourceList = sources.join(' ');
-    execSync(`npx bestzip ../${PROGRAM_NAME}.zip ${sourceList}`, {cwd:BUILD_FOLDER, stdio: 'inherit'});
-    console.log(`Size of ${PROGRAM_NAME}.zip: ${fs.statSync(join(__dirname, `${PROGRAM_NAME}.zip`)).size} bytes`);
+    execSync(`npx bestzip ../${PROGRAM_NAME}.zip ${sources.join(' ')}`,
+        {cwd: BUILD_FOLDER, stdio: 'inherit'});
+    console.log(`Size of ${PROGRAM_NAME}.zip: ${fs.statSync(ZIP_PATH).size} bytes`);
 }
