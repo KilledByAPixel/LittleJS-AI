@@ -322,17 +322,14 @@ const DEFAULT_ICON_NAMES = [
 // (glow/spark build their own white radial gradients).
 const _defaultIconDrawers = (() =>
 {
-    const TAU = PI * 2;
-    const WHITE = '#fff';
-
-    function poly(ctx, x, y, r, sides, rot = -PI / 2)
+    function poly(ctx, x, y, r, sides, rot=0)
     {
         ctx.beginPath();
-        for (let k = 0; k < sides; k++)
+        for (let k = sides; k--;)
         {
-            const a = rot + k * (TAU / sides);
-            const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-            k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            const a = rot + k * (2*PI / sides);
+            const px = x + Math.sin(a) * r, py = y - Math.cos(a) * r;
+            ctx.lineTo(px, py);
         }
         ctx.closePath();
     }
@@ -340,12 +337,13 @@ const _defaultIconDrawers = (() =>
     function starPath(ctx, x, y, ro, ri, points, rot = -PI / 2)
     {
         ctx.beginPath();
-        for (let k = 0; k < points * 2; k++)
+        for (let k = points * 2; k--;)
         {
             const rr = k & 1 ? ri : ro;
             const a = rot + k * (PI / points);
-            const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
-            k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            const px = x + Math.cos(a) * rr;
+            const py = y + Math.sin(a) * rr;
+            ctx.lineTo(px, py);
         }
         ctx.closePath();
     }
@@ -353,7 +351,6 @@ const _defaultIconDrawers = (() =>
     function roundRectPath(ctx, x, y, w, h, r)
     {
         ctx.beginPath();
-        if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
         ctx.moveTo(x + r, y);
         ctx.arcTo(x + w, y, x + w, y + h, r);
         ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -365,131 +362,99 @@ const _defaultIconDrawers = (() =>
     function circle(ctx, x, y, r)
     {
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, TAU);
+        ctx.arc(x, y, r, 0, 9);
         ctx.fill();
     }
 
     function droplet(ctx, x, y, r)
     {
         // point at top, round bulb at the bottom
-        const by = y + .3 * r, br = .62 * r; // bulb center y, bulb radius
+        const by = y + .3 * r, br = .6 * r; // bulb center y, bulb radius
         ctx.beginPath();
         ctx.moveTo(x, y - r);
-        ctx.bezierCurveTo(x + .3 * r, y - .55 * r, x + br, y - .1 * r, x + br, by);
-        ctx.arc(x, by, br, 0, PI); // rounded bottom: right -> bottom -> left
-        ctx.bezierCurveTo(x - br, y - .1 * r, x - .3 * r, y - .55 * r, x, y - r);
+        ctx.bezierCurveTo(x + .3 * r, y - .5 * r, x + br, y - .1 * r, x + br, by);
+        ctx.arc(x, by, br, 0, PI); // rounded bottom
+        ctx.bezierCurveTo(x - br, y - .1 * r, x - .3 * r, y - .5 * r, x, y - r);
         ctx.closePath();
         ctx.fill();
     }
 
     function roundSquare(ctx, x, y, r)
     {
-        const s = r * .86;
-        roundRectPath(ctx, x - s, y - s, s * 2, s * 2, r * .38);
+        roundRectPath(ctx, x - r, y - r, r*2, r*2, r*.4);
         ctx.fill();
     }
 
     function triangle(ctx, x, y, r)
     {
-        ctx.beginPath();
-        ctx.moveTo(x, y - r);
-        ctx.lineTo(x + r * .9, y + r * .72);
-        ctx.lineTo(x - r * .9, y + r * .72);
-        ctx.closePath();
+        poly(ctx, x, y, r, 3);
         ctx.fill();
     }
 
     function diamond(ctx, x, y, r)
     {
-        poly(ctx, x, y, r * 1.07, 4, -PI / 2);
+        poly(ctx, x, y, r, 4);
         ctx.fill();
     }
 
     function pentagon(ctx, x, y, r)
     {
-        poly(ctx, x, y, r, 5, -PI / 2);
+        poly(ctx, x, y, r, 5);
         ctx.fill();
     }
 
     function hexagon(ctx, x, y, r)
     {
-        poly(ctx, x, y, r, 6, 0); // flat-top
+        poly(ctx, x, y, r, 6, PI/2);
         ctx.fill();
     }
 
     function ring(ctx, x, y, r)
     {
-        ctx.lineWidth = r * .31;
         ctx.beginPath();
-        ctx.arc(x, y, r * .83, 0, TAU);
-        ctx.stroke();
+        ctx.arc(x, y, r, 0, 9);
+        ctx.arc(x, y, r*.7, 9, 0, true);
+        ctx.fill();
     }
 
     function glow(ctx, x, y, r)
     {
-        const R = r * 1.14;
-        const g = ctx.createRadialGradient(x, y, 0, x, y, R);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, 'rgba(255,255,255,1)');
-        g.addColorStop(.38, 'rgba(255,255,255,0.55)');
         g.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(x, y, R, 0, TAU);
+        ctx.arc(x, y, r, 0, 9);
         ctx.fill();
     }
 
     function burst(ctx, x, y, r)
     {
-        // jagged 10-point starburst for impacts / explosions
-        starPath(ctx, x, y, r, r * .42, 10);
+        starPath(ctx, x, y, r, r/2, 10);
         ctx.fill();
     }
 
     function spark(ctx, x, y, r)
     {
-        // faint round glow behind the sparkle
-        const gr = r * .48;
-        const g = ctx.createRadialGradient(x, y, 0, x, y, gr);
-        g.addColorStop(0, 'rgba(255,255,255,0.5)');
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(x, y, gr, 0, TAU);
-        ctx.fill();
-
-        // thin 4-point star on top
-        ctx.fillStyle = WHITE;
-        const o = r * 1.07, i = r * .2;
-        ctx.beginPath();
-        ctx.moveTo(x, y - o);
-        ctx.lineTo(x + i, y - i);
-        ctx.lineTo(x + o, y);
-        ctx.lineTo(x + i, y + i);
-        ctx.lineTo(x, y + o);
-        ctx.lineTo(x - i, y + i);
-        ctx.lineTo(x - o, y);
-        ctx.lineTo(x - i, y - i);
-        ctx.closePath();
+        starPath(ctx, x, y, r, r/4, 4);
         ctx.fill();
     }
 
     function star(ctx, x, y, r)
     {
-        starPath(ctx, x, y, r * 1.03, r * .41, 5);
+        starPath(ctx, x, y, r, r*.4, 5);
         ctx.fill();
     }
 
     function heart(ctx, x, y, r)
     {
-        // Heart centred on (x,y) and scaled by r, so it positions and sizes
-        // like every other icon. Reshape it by tweaking these fractions of r:
-        const width    = .92; // half-width — how far the lobes reach sideways
-        const topCtrl  = .92; // how high / round the lobe humps bulge up
-        const dip      = .40; // depth of the notch between the two lobes
-        const shoulder = .46; // height where the outer sides begin
-        const tip      = .9; // how far the bottom point drops
+        const width    = 1;   // diameter of heart
+        const topCtrl  = .92; // lobe humps bulge
+        const dip      = .40; // depth of the notch
+        const shoulder = .46; // outer sides begin height
+        const tip      = .9;  // bottom point drop
 
-        // map a normalized (nx,ny) offset (in units of r) to a canvas point
+        // create the heart shape
         const p = (nx, ny) => [x + nx * r, y + ny * r];
         ctx.beginPath();
         ctx.moveTo(...p(0, -dip));
@@ -503,7 +468,8 @@ const _defaultIconDrawers = (() =>
 
     function plus(ctx, x, y, r)
     {
-        const a = r * .28, b = r; // arm half-width, arm extent
+        const a = r * .3; // arm half-width
+        const b = r;      // arm extent
         ctx.beginPath();
         ctx.moveTo(x - a, y - b);
         ctx.lineTo(x + a, y - b);
@@ -523,29 +489,27 @@ const _defaultIconDrawers = (() =>
 
     function arrow(ctx, x, y, r)
     {
-        const s = r / 29;
         ctx.beginPath();
-        ctx.moveTo(x, y - 29 * s);
-        ctx.lineTo(x + 23 * s, y - 2 * s);
-        ctx.lineTo(x + 9 * s, y - 2 * s);
-        ctx.lineTo(x + 9 * s, y + 29 * s);
-        ctx.lineTo(x - 9 * s, y + 29 * s);
-        ctx.lineTo(x - 9 * s, y - 2 * s);
-        ctx.lineTo(x - 23 * s, y - 2 * s);
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + .8 * r, y - .1 * r);
+        ctx.lineTo(x + .3 * r, y - .1 * r);
+        ctx.lineTo(x + .3 * r, y + r);
+        ctx.lineTo(x - .3 * r, y + r);
+        ctx.lineTo(x - .3 * r, y - .1 * r);
+        ctx.lineTo(x - .8 * r, y - .1 * r);
         ctx.closePath();
         ctx.fill();
     }
 
     function bolt(ctx, x, y, r)
     {
-        const s = r / 29;
         ctx.beginPath();
-        ctx.moveTo(x + 4 * s, y - 29 * s);
-        ctx.lineTo(x - 13 * s, y + 4 * s);
-        ctx.lineTo(x - 1 * s, y + 4 * s);
-        ctx.lineTo(x - 7 * s, y + 29 * s);
-        ctx.lineTo(x + 15 * s, y - 6 * s);
-        ctx.lineTo(x + 2 * s, y - 6 * s);
+        ctx.moveTo(x + .25 * r, y - r);
+        ctx.lineTo(x -  .5 * r, y + .15 * r);
+        ctx.lineTo(x -  .1 * r, y + .15 * r);
+        ctx.lineTo(x - .25 * r, y + r);
+        ctx.lineTo(x +  .5 * r, y -  .2 * r);
+        ctx.lineTo(x +  .1 * r, y -  .2 * r);
         ctx.closePath();
         ctx.fill();
     }
