@@ -3,11 +3,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body style="background:#000">
-<script src="../dist/littlejs.js?1780079206468"></script>
-<script src="menus.js?1780079206468"></script>
-<script src="gameFx.js?1780079206468"></script>
-<script src="textureGenerator.js?1780079206468"></script>
-<script src="tweakables.js?1780079206468"></script>
+<script src="../dist/littlejs.js?1780207168309"></script>
+<script src="menus.js?1780207168309"></script>
+<script src="gameFx.js?1780207168309"></script>
+<script src="textureGenerator.js?1780207168309"></script>
+<script src="tweakables.js?1780207168309"></script>
 <script>
 'use strict';
 
@@ -143,14 +143,6 @@ async function gameInit()
     setMenuVisibilityCallback(v => paused = v);
 
     sfxPlace = new SoundGenerator({frequency: 440, release: 0.05, volume: 0.3});
-
-    // Global UI sounds for menu navigation / activation.
-    const sound_select   = new Sound([.5,,910,,,.02,2,.07,-5,-33,,,,,,,,.25]);
-    const sound_activate = new Sound([.7,,30,.01,,.02,1,3.4,94,,,,,,,,,.67]);
-    setMenuSounds({
-        select:   () => sound_select.play(),
-        activate: () => sound_activate.play(),
-    });
 
     // ----- title menu -----
     // Two play modes, so raw createMenu (createTitleMenu assumes one PLAY).

@@ -1,0 +1,81 @@
+<!DOCTYPE html><head>
+<title>LittleJS Default Icon Atlas</title>
+<meta charset="utf-8">
+</head><body style="background:#000">
+<script src="../dist/littlejs.js?1780207168309"></script>
+<script src="gameFx.js?1780207168309"></script>
+<script src="textureGenerator.js?1780207168309"></script>
+<script src="tweakables.js?1780207168309"></script>
+<script>
+'use strict';
+
+// engine settings, do not remove
+debugWatermark = false;
+showEngineVersion = false;
+paused = false;
+tilesPixelated = false;
+
+// engine settings, customize if necessary
+gravity = vec2(0, 0);
+cameraPos = vec2(0, 0);
+cameraScale = 64;
+
+///////////////////////////////////////////////////////////////////////////////
+// DEFAULT ICON ATLAS DEMO
+//
+// Bakes the 16 built-in white icons with one initDefaultAtlas() call, then
+// shows them in a 4x4 grid each tinted a different hue (to demonstrate that
+// the white sprites recolour per-instance) alongside the full atlas sheet.
+
+let icons;
+
+async function gameInit()
+{
+    icons = initDefaultAtlas();
+    canvasClearColor = hsl(.62, .25, .12);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate() {}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdatePost() {}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRender()
+{
+    // full atlas sheet on the right
+    const atlasView = vec2(5);
+    const fullAtlas = new TileInfo(vec2(), vec2(2048));
+    const atlasPos = vec2(4, .5);
+    drawRect(atlasPos, atlasView.add(vec2(.3)), hsl(0, 0, .15));
+    drawTile(atlasPos, atlasView, fullAtlas, WHITE);
+    drawText('ATLAS SHEET', vec2(4, -2.5), .42, WHITE);
+
+    // 4x4 grid of icons on the left, each tinted a different hue, pulsing size
+    const names = Object.keys(icons);
+    const gridX = -5.5, gridY = 3.2, step = 1.7;
+    for (let i = 0; i < names.length; ++i)
+    {
+        const col = i % 4, row = i / 4 | 0;
+        const pos = vec2(gridX + col * step, gridY - row * step);
+        const tint = hsl(i / names.length + time/9, .8, .6);
+        const s = 1.2 + .2 * Math.sin(time * 3 + i);
+        drawTile(pos, vec2(s), icons[names[i]], tint);
+        drawText(names[i], pos.add(vec2(0, -.8)), .26, WHITE);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRenderPost()
+{
+    drawTextScreen('Default Icon Atlas',
+        vec2(mainCanvasSize.x / 2, 60), 50, WHITE, 4, BLACK);
+    drawTextScreen('16 built-in white icons — tint any of them per-instance',
+        vec2(mainCanvasSize.x / 2, 110), 24, hsl(0, 0, .7), 2, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+
+</script></body></html>

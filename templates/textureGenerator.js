@@ -11,6 +11,10 @@
 // saveAtlasImage()/saveAtlasPrompt() export the sheet + prompt.
 // useAtlasImage(url) swaps in an AI-generated 2048 image without
 // invalidating already-returned TileInfos.
+// initDefaultAtlas() bakes 16 built-in white-on-transparent icons (circle,
+// droplet, ... bolt) into tiles 0-15 and returns a name->TileInfo map, ready
+// to tint per-instance via drawTile's color arg. drawDefaultIcon(name,
+// tileIndex, scale) paints a single named icon into any tile.
 // showAtlas(true|false) pins the live atlas canvas to the
 // top-right of the page for visual debugging.
 
@@ -288,4 +292,299 @@ function showAtlas(visible = true)
     {
         atlasCanvas.parentNode.removeChild(atlasCanvas);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// DEFAULT ICON ATLAS
+//
+// 16 white-on-transparent icons that any prototype can bake in one call. Icons
+// are drawn pure white so games tint them per-instance via drawTile's color
+// arg: drawTile(pos, size, icons.star, RED). The private drawers + path helpers
+// live inside the IIFE below so generic names (circle, poly, ...) never leak
+// to global scope; only DEFAULT_ICON_NAMES, drawDefaultIcon, and
+// initDefaultAtlas are public.
+//
+// Tile order (row-major, 0..15):
+//   0 circle     1 glow      2 ring       3 roundSquare
+//   4 triangle   5 diamond   6 pentagon   7 hexagon
+//   8 droplet    9 heart    10 plus      11 arrow
+//  12 burst     13 spark    14 star      15 bolt
+
+const DEFAULT_ICON_NAMES = [
+    'circle', 'glow',  'ring', 'roundSquare',
+    'triangle', 'diamond', 'pentagon', 'hexagon',
+    'heart', 'droplet', 'plus', 'arrow', 
+    'spark', 'star', 'burst', 'bolt',
+];
+
+// Private registry: name -> fn(ctx, x, y, r). Each draws a white icon centred
+// at (x,y) with nominal radius r, using the ctx's current white fill/stroke
+// (glow/spark build their own white radial gradients).
+const _defaultIconDrawers = (() =>
+{
+    const TAU = PI * 2;
+    const WHITE = '#fff';
+
+    function poly(ctx, x, y, r, sides, rot = -PI / 2)
+    {
+        ctx.beginPath();
+        for (let k = 0; k < sides; k++)
+        {
+            const a = rot + k * (TAU / sides);
+            const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+            k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath();
+    }
+
+    function starPath(ctx, x, y, ro, ri, points, rot = -PI / 2)
+    {
+        ctx.beginPath();
+        for (let k = 0; k < points * 2; k++)
+        {
+            const rr = k & 1 ? ri : ro;
+            const a = rot + k * (PI / points);
+            const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+            k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath();
+    }
+
+    function roundRectPath(ctx, x, y, w, h, r)
+    {
+        ctx.beginPath();
+        if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+    }
+
+    function circle(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.fill();
+    }
+
+    function droplet(ctx, x, y, r)
+    {
+        // point at top, round bulb at the bottom
+        const by = y + .3 * r, br = .62 * r; // bulb center y, bulb radius
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.bezierCurveTo(x + .3 * r, y - .55 * r, x + br, y - .1 * r, x + br, by);
+        ctx.arc(x, by, br, 0, PI); // rounded bottom: right -> bottom -> left
+        ctx.bezierCurveTo(x - br, y - .1 * r, x - .3 * r, y - .55 * r, x, y - r);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function roundSquare(ctx, x, y, r)
+    {
+        const s = r * .86;
+        roundRectPath(ctx, x - s, y - s, s * 2, s * 2, r * .38);
+        ctx.fill();
+    }
+
+    function triangle(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r * .9, y + r * .72);
+        ctx.lineTo(x - r * .9, y + r * .72);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function diamond(ctx, x, y, r)
+    {
+        poly(ctx, x, y, r * 1.07, 4, -PI / 2);
+        ctx.fill();
+    }
+
+    function pentagon(ctx, x, y, r)
+    {
+        poly(ctx, x, y, r, 5, -PI / 2);
+        ctx.fill();
+    }
+
+    function hexagon(ctx, x, y, r)
+    {
+        poly(ctx, x, y, r, 6, 0); // flat-top
+        ctx.fill();
+    }
+
+    function ring(ctx, x, y, r)
+    {
+        ctx.lineWidth = r * .31;
+        ctx.beginPath();
+        ctx.arc(x, y, r * .83, 0, TAU);
+        ctx.stroke();
+    }
+
+    function glow(ctx, x, y, r)
+    {
+        const R = r * 1.14;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, R);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(.38, 'rgba(255,255,255,0.55)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, R, 0, TAU);
+        ctx.fill();
+    }
+
+    function burst(ctx, x, y, r)
+    {
+        // jagged 10-point starburst for impacts / explosions
+        starPath(ctx, x, y, r, r * .42, 10);
+        ctx.fill();
+    }
+
+    function spark(ctx, x, y, r)
+    {
+        // faint round glow behind the sparkle
+        const gr = r * .48;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, gr);
+        g.addColorStop(0, 'rgba(255,255,255,0.5)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, gr, 0, TAU);
+        ctx.fill();
+
+        // thin 4-point star on top
+        ctx.fillStyle = WHITE;
+        const o = r * 1.07, i = r * .2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - o);
+        ctx.lineTo(x + i, y - i);
+        ctx.lineTo(x + o, y);
+        ctx.lineTo(x + i, y + i);
+        ctx.lineTo(x, y + o);
+        ctx.lineTo(x - i, y + i);
+        ctx.lineTo(x - o, y);
+        ctx.lineTo(x - i, y - i);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function star(ctx, x, y, r)
+    {
+        starPath(ctx, x, y, r * 1.03, r * .41, 5);
+        ctx.fill();
+    }
+
+    function heart(ctx, x, y, r)
+    {
+        // Heart centred on (x,y) and scaled by r, so it positions and sizes
+        // like every other icon. Reshape it by tweaking these fractions of r:
+        const width    = .92; // half-width — how far the lobes reach sideways
+        const topCtrl  = .92; // how high / round the lobe humps bulge up
+        const dip      = .40; // depth of the notch between the two lobes
+        const shoulder = .46; // height where the outer sides begin
+        const tip      = .9; // how far the bottom point drops
+
+        // map a normalized (nx,ny) offset (in units of r) to a canvas point
+        const p = (nx, ny) => [x + nx * r, y + ny * r];
+        ctx.beginPath();
+        ctx.moveTo(...p(0, -dip));
+        ctx.bezierCurveTo(...p(0, -topCtrl), ...p(-width, -topCtrl), ...p(-width, -shoulder));
+        ctx.bezierCurveTo(...p(-width, 0), ...p(0, tip * .9), ...p(0, tip));
+        ctx.bezierCurveTo(...p(0, tip * .9), ...p(width, 0), ...p(width, -shoulder));
+        ctx.bezierCurveTo(...p(width, -topCtrl), ...p(0, -topCtrl), ...p(0, -dip));
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function plus(ctx, x, y, r)
+    {
+        const a = r * .28, b = r; // arm half-width, arm extent
+        ctx.beginPath();
+        ctx.moveTo(x - a, y - b);
+        ctx.lineTo(x + a, y - b);
+        ctx.lineTo(x + a, y - a);
+        ctx.lineTo(x + b, y - a);
+        ctx.lineTo(x + b, y + a);
+        ctx.lineTo(x + a, y + a);
+        ctx.lineTo(x + a, y + b);
+        ctx.lineTo(x - a, y + b);
+        ctx.lineTo(x - a, y + a);
+        ctx.lineTo(x - b, y + a);
+        ctx.lineTo(x - b, y - a);
+        ctx.lineTo(x - a, y - a);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function arrow(ctx, x, y, r)
+    {
+        const s = r / 29;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 29 * s);
+        ctx.lineTo(x + 23 * s, y - 2 * s);
+        ctx.lineTo(x + 9 * s, y - 2 * s);
+        ctx.lineTo(x + 9 * s, y + 29 * s);
+        ctx.lineTo(x - 9 * s, y + 29 * s);
+        ctx.lineTo(x - 9 * s, y - 2 * s);
+        ctx.lineTo(x - 23 * s, y - 2 * s);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function bolt(ctx, x, y, r)
+    {
+        const s = r / 29;
+        ctx.beginPath();
+        ctx.moveTo(x + 4 * s, y - 29 * s);
+        ctx.lineTo(x - 13 * s, y + 4 * s);
+        ctx.lineTo(x - 1 * s, y + 4 * s);
+        ctx.lineTo(x - 7 * s, y + 29 * s);
+        ctx.lineTo(x + 15 * s, y - 6 * s);
+        ctx.lineTo(x + 2 * s, y - 6 * s);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    return {
+        circle, droplet, roundSquare, triangle,
+        diamond, pentagon, hexagon, ring,
+        glow, burst, spark, star,
+        heart, plus, arrow, bolt,
+    };
+})();
+
+// Draw one named white icon into a tile; returns its TileInfo (like
+// drawToTexture). scale tweaks icon size within the tile (1 = default). The
+// /1.15 headroom keeps the soft glow (which reaches r*1.14) inside the tile.
+function drawDefaultIcon(name, tileIndex, scale = 1)
+{
+    const fn = _defaultIconDrawers[name];
+    ASSERT(fn, 'unknown default icon: ' + name);
+    return drawToTexture(tileIndex, ctx =>
+    {
+        const c = TILE_SIZE / 2;
+        const r = c / 1.15 * scale;
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = '#fff';
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        fn(ctx, c, c, r);
+    }, name);
+}
+
+// Build the 16 default icons into tiles 0-15 and return a name->TileInfo map.
+// Auto-inits a 4x4 atlas if none exists; if an atlas was already created (e.g.
+// initDrawToTexture(8)), reuses it and leaves tiles 16+ free for custom sprites.
+function initDefaultAtlas(scale = 1)
+{
+    if (!atlasCtx) initDrawToTexture(4);
+    const icons = {};
+    for (let i = 0; i < DEFAULT_ICON_NAMES.length; ++i)
+        icons[DEFAULT_ICON_NAMES[i]] = drawDefaultIcon(DEFAULT_ICON_NAMES[i], i, scale);
+    return icons;
 }
