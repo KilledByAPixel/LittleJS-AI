@@ -1,104 +1,127 @@
-You are a helpful assistant for building small playable prototypes using the LittleJS game engine.
+You are a helpful assistant for building playable LittleJS games with Claude.
 
 Core goals
-- Turn a simple game idea into a working LittleJS prototype quickly.
-- Keep scope small. Prefer a minimal playable loop over extra features.
+- Turn a game idea into a working LittleJS game quickly.
+- Keep scope right-sized: get a fun playable core loop first, then expand.
 - Work in short iterations. After each step, suggest the next small step.
 
+Project structure and workflow
+- This repo is not focused on single-file game prototypes anymore.
+- Each game should live in its own folder under `games/`.
+- Standard starter layout for a new game:
+  - `games/<gameName>/index.html`
+  - `games/<gameName>/game.js`
+- It is fine (and expected) to add more files for larger games, for example:
+  - `games/<gameName>/constants.js`
+  - `games/<gameName>/player.js`
+  - `games/<gameName>/ui.js`
+- Prefer modular game code over one giant script block.
+- No build step or bundler unless the user explicitly asks for one.
+
+Template selection for new games
+- Recommend a template before generating files.
+- Start from `templates/emptyGame/` when the user wants a clean scratch start:
+  - Uses `index.html` + `game.js` and ES modules.
+- Use `templates/game.html` for a quick default non-physics starter.
+- Use `templates/boardGame.html` for turn-based grid/board games.
+- Use `templates/box2dGame.html` for Box2D physics games.
+- Use `templates/menuGame.html` when the game needs title/pause/options UI.
+- Use `templates/textureGame.html` for procedural sprite-atlas workflows.
+- Use `templates/tweakableGame.html` for runtime tuning workflows.
+- Use `templates/uiGame.html` when canvas UI widgets are required.
+
+When scaffolding from templates into `games/<gameName>/`
+- Keep the game in its own folder under `games/`.
+- Ensure script paths are correct from the new folder location.
+- For classic script templates copied from `templates/*.html`, paths usually become:
+  - `../../dist/littlejs.js`
+  - `../../dist/box2d.wasm.js` (if Box2D)
+  - `../../templates/menus.js`
+  - `../../templates/gameFx.js`
+  - `../../templates/textureGenerator.js`
+  - `../../templates/tweakables.js`
+- For the ES module starter (`templates/emptyGame/`), keep `game.js` importing:
+  - `../../dist/littlejs.esm.js`
+- If you copy a single-file template, split gameplay code into `game.js` (and additional modules) unless the user explicitly requests staying single-file.
+
 Project constraints
-- Indent with 4 spaces, not 2 and not tabs. Adjust spacing for paren/continuation alignment where it helps readability. No need to proactively reformat existing files.
-- One self-contained HTML file per prototype. No build step, no bundler.
-- Start from templates/game.html (or templates/boardGame.html for grid games, templates/box2dGame.html for Box2D physics, templates/menuGame.html for prototypes with title/pause/options menus). Also read other templates as reference for features the prototype needs — templates/uiGame.html for canvas-drawn menus/sliders/dialogs (UISystemPlugin), templates/textureGame.html for procedural sprites, templates/tweakableGame.html for live value tweaking.
-- Write each new prototype as its own .html file in games/ (named after the game).
-- Do not include any other libraries, only littlejs.
-- Do not change the html or css, only write JavaScript. Exception: when using templates/menus.js, HTML/CSS edits for menu UI (item DOM, CSS-variable reskins on `#littlejs-menus`) are allowed — menus.js renders DOM, not canvas.
-- No external assets (no images, textures, spritesheets, audio files).
-- Use the menus.js helper (defined in templates/menus.js, loaded via a script tag in templates/menuGame.html) for all front-end UI: title screens, pause menus, options, confirm/alert dialogs, medal grids, level select, corner toolbars (HUD buttons, mute, fullscreen). Do not hand-roll DOM menus and do not draw menu UI on the canvas. When copying templates/menuGame.html into games/, change the `<script src="menus.js">` path to `<script src="../templates/menus.js">`.
-- Use SoundGenerator class and screen-shake helpers (defined in templates/gameFx.js, loaded via a script tag in every template). For screen shake: addScreenShake(amount, duration) — `amount` in world units, `duration` in seconds. setScreenShakeEnabled(b) / isScreenShakeEnabled() for an options checkbox. The helper registers itself as an engine plugin, so games don't need to wire any per-frame update. When copying a template into games/, change the `<script src="gameFx.js">` path to `<script src="../templates/gameFx.js">`.
-- Use the textureGenerator module (defined in templates/textureGenerator.js, loaded via a script tag in every template) to build sprite atlases from canvas 2D draw ops. Call `initDrawToTexture()` once in gameInit, then `drawToTexture(tileIndex, drawFn, description)` for each sprite (16 tiles available, indexed 0-15; drawFn paints in a 500x500 pixel space). `saveAtlasImage()` and `saveAtlasPrompt()` export the sheet + an AI prompt; `useAtlasImage(url)` swaps to a precached AI-generated 2048x2048 atlas. When copying a template into games/, change the `<script src="textureGenerator.js">` path to `<script src="../templates/textureGenerator.js">`. For prototypes that don't need sprites, solid-color primitives (rects, circles, lines) are still fine.
-- Use the tweakables module (defined in templates/tweakables.js, loaded via a script tag in every template) to mark globals as runtime-tweakable. Call `tweak('path', options)` (e.g. `tweak('jumpPower', {min:1, max:30})`) — the system reads/writes `window.path` (dotted paths supported) and renders sliders/checkboxes/color pickers in an HTML overlay (press ~ to toggle). Auto-detected types: number, boolean, `Color`, `Vector2`. Pass `{min, max}` for a slider; without a range you get a free-form number input. `tweakEngineDefaults()` registers common engine globals (gravity, cameraScale, soundVolume, glEnable, paused, debugOverlay) and appends a divider. Call `tweakDivider('Label')` (label optional) to add your own section breaks. Values persist to localStorage per page; the panel has Copy (paste-ready `tweak()` lines) and Reset (restore code defaults) buttons. Tweakables target globals set once at startup — globals reassigned every frame by game logic will clobber the tweak. When copying a template into games/, change the `<script src="tweakables.js">` path to `<script src="../templates/tweakables.js">`. To see all types in action, see templates/tweakableGame.html.
-- Persisted settings (menu options, mute state, dev tweaks, per-game custom data like high scores) live in three localStorage keys per game, all written through engine `readSaveData` / `writeSaveData`: `'<GameName>'` (player-facing — menu `persist:` items land under `blob.options[key]`, plus any keys games write themselves via `saveData(patch)`), `'<GameName>.tweaks'` (dev tweakables — owned by tweakables.js), and `'littlejs.global'` (site-wide settings like mute). Call `saveDataInit('GameName')` once at the top of `gameInit` — before any `medalsInit`, menu construction, `tweak()` call, or `getSaveData`/`saveData` call — to prime the cached blobs. Public API in menus.js: `saveDataInit(name)`, `getSaveData()` (returns the cached blob; treat as read-only), `saveData(patch)` (shallow-merges `patch` into the blob and writes — passing `{options:{...}}` REPLACES the options section, so write top-level game fields like `{bestScore: 999}` and let `persist:` handle options). The `persist:` key on a menu item is now a flat sub-key into `blob.options` (e.g. `persist:'volume'` stores under `blob.options.volume`); do NOT include the game-name prefix, the blob is already namespaced. Medals are NOT in the blob — `Medal` / `medalsInit` keep their existing per-medal-key storage.
-- Use LittleJS built-ins instead of writing your own helpers. Before writing ANY utility function — collision check, coordinate conversion, vector math, drawing wrapper — search [dist/littlejs.js](dist/littlejs.js) for an equivalent. The engine ships ready-made versions of nearly everything games need. Commonly reinvented (don't):
-  - **AABB collision**: `isOverlapping(posA, sizeA, posB, sizeB)` — not a hand-rolled `overlapAABB`.
-  - **Coordinate conversion**: `screenToWorld(pos)`, `worldToScreen(pos)`, `screenToWorldDelta(v)`, `worldToScreenDelta(v)`, `screenToWorldTransform(pos, size, angle)`.
-  - **Mouse position**: `mousePos` is already in world space; `mousePosScreen` is in screen pixels. Do not write a `getMouseWorld()` wrapper.
-  - **Screen-space drawing**: `drawRect` and `drawTile` take a `screenSpace` boolean — `drawRect(pos, size, color, angle, useWebGL, true)` draws in screen pixels. Do not write a `drawRectScreen` helper. `drawTextScreen(text, pos, size, …)` already handles screen-space text.
-  - **Math globals**: `clamp`, `lerp`, `min`, `max`, `abs`, `mod`, `sign`, `smoothStep`, `rand`, `randInt`, `randVec2`, `randColor`, `PI` are all globals — don't alias `Math.*` or repeat `Math.PI`.
-  - **Vector2 methods**: `.add/.subtract/.scale/.normalize(len)/.length()/.lengthSquared()/.distance(b)/.angle()/.rotate(a)/.dot(b)/.copy()` are all defined — never write `Math.sqrt(dx*dx+dy*dy)` manually.
-  - **Screen culling**: `isOnScreen(pos, size)`.
-  - **Camera dims**: `getCameraSize()` returns visible world dimensions; for auto-fitting an arena, `cameraScale = min(mainCanvasSize.x / arenaW, mainCanvasSize.y / arenaH)`.
-  - **Direction input**: `keyDirection()` (8-way arrows+WASD), `gamepadStick(0|1)` (analog).
-  - **Touch dual-stick**: the engine ships a built-in on-screen gamepad with two virtual analog sticks — never hand-roll a touch joystick. In gameInit set `touchGamepadEnable = true`, `touchGamepadAnalog = true`, and `touchGamepadButtonCount = 1` (face-button area becomes the right analog stick — perfect for twin-stick shooters). Then read it via the same `gamepadStick(0)` / `gamepadStick(1)` — the engine merges touch + physical gamepad into the same API, so no `isTouchDevice` branching in gameplay code. Other tunables: `touchGamepadSize`, `touchGamepadAlpha`, `touchGamepadDisplayTime`. See [roboRescue.html](https://github.com/KilledByAPixel/LittleJSArcade/blob/main/games/roboRescue.html) in the LittleJS Arcade for a working setup.
-  - **Debug-key remap**: `setDebugKey(key)`. menus.js auto-moves it off Escape so games loading menus.js don't have to call this themselves.
-  - **Sounds**: `new Sound([...zzfx])` for UI/menu sfx, `SoundGenerator` for gameplay sfx. Never write raw WebAudio code.
-  Rule of thumb: if you're writing a 1–5 line helper that touches positions, sizes, angles, colors, or input — grep `dist/littlejs.js` first. It almost certainly exists.
-- Use Timer class for keeping track of timed events
-- Prefer to use LittleJS world space drawing functions.
-- Use `keyDirection()` for ANY directional keyboard input — it returns `vec2(right-left, up-down)` and handles arrows + WASD together (engine flag `inputWASDEmulateDirection` is on by default). Reserve `keyIsDown()` for non-directional keys like jump, run, action. NEVER write the manual pair `keyIsDown('ArrowLeft') || keyIsDown('KeyA')` (or any arrow/WASD combination) — that's an antipattern. Common rewrites:
-  - 8-dir movement vec → `let move = keyDirection();` (do NOT build `vec2((right?1:0)-(left?1:0), ...)` by hand).
-  - One-axis paddle / steering → `keyDirection().x` (sign gives direction, magnitude is 0 or 1).
-  - Boolean "is up held" → `keyDirection().y > 0`; "is down held" → `keyDirection().y < 0`.
-  - Mixing with stick: call `keyDirection()` once into a const, then combine with `gamepadStick(0)` — e.g. `const dir = keyDirection(); const leftDown = dir.x < 0 || stick.x < -.3;`.
-- For tile-based collision (platformers, top-down grids, anything with solid walls in a regular grid), use the engine's tile collision system — do NOT reinvent it. Create one `TileCollisionLayer` in buildLevel (`new TileCollisionLayer(vec2(), vec2(LEVEL_W, LEVEL_H), null, 0, false)` — passing `null` as tileInfo when you have no atlas), populate cells with `layer.setCollisionData(vec2(x, y), tileType)`, then on each entity set `setCollision(false, false, true, false)` (collide with tiles, ignore other objects) and override `collideWithTile(tileData, pos)` to filter which tile types act solid. The engine then auto-resolves entity-vs-tile collision in `updatePhysics` AND the debug-physics overlay (press 1 with debug overlay open) lights up — both are free if you wire it up, both are broken if you write your own tile lookup.
-- For custom feel (variable gravity, SMB-style coyote/buffer/jump-cut, etc.) keep the auto-resolution but opt out of the engine's own motion: `damping = 1`, `friction = 1`, `restitution = 0`, `gravityScale = 0`. Apply your own per-frame velocity/gravity in `update()`; the engine still moves `pos += velocity` and resolves collisions for you. `this.groundObject` (set by the engine on landing, cleared on next frame's friction step) is the standard onGround flag. For "wasFalling" to pick the right axis, set global `gravity` to a small negative-y value (e.g. `vec2(0, -.001)`) — sign is what matters.
-- Do tile reactions (block break, ? block contents, ladder pass-through, one-way platforms) inside `collideWithTile(tileData, pos)`. The `pos` arg is the tile's integer index corner (not center); compute `d = pos.y - this.pos.y` — `d > 0` means tile is above (head bump), `d < 0` means below (landing). Modify the tile (`setTile`/`clearCollisionData`), spawn objects, play sfx, and `return false` if the tile should now be passable (zero `velocity.y` yourself to stop the jump); `return true` to keep it solid. The engine calls `collideWithTile` multiple times per physics step (newPos, oldPos, axis-only) so debounce one-shot effects via a `Set` on the player cleared in `update()`. See [jumpman.html](https://github.com/KilledByAPixel/LittleJSArcade/blob/main/games/jumpman.html) in the LittleJS Arcade for ? block / brick / Big-Mario brick-break.
+- Indent with 4 spaces, not 2 and not tabs.
+- Adjust spacing for alignment where it helps readability.
+- No need to proactively reformat existing files.
+- Do not include other libraries unless the user asks.
+- No external assets by default (images, spritesheets, audio files) unless requested.
+- Prefer LittleJS built-ins and helpers over custom utility rewrites.
+
+UI and helper modules
+- Use `templates/menus.js` for front-end menu UI (title/pause/options/dialogs/toolbars).
+- Do not hand-roll DOM menu systems when `menus.js` already covers it.
+- Use `SoundGenerator` and screen-shake helpers from `templates/gameFx.js`.
+- Use `templates/textureGenerator.js` for generated texture atlases.
+- Use `templates/tweakables.js` for runtime tweak controls and persistence.
+
+Save-data and state conventions
+- Persisted settings and game data should use `readSaveData`/`writeSaveData` flows.
+- Call `saveDataInit('GameName')` at the top of `gameInit` before menu/tweak/medal setup.
+- Use menu item `persist:` keys for options, and top-level save fields for game-specific stats.
+
+LittleJS best-practice rules
+- Before writing utility helpers, check whether LittleJS already provides them.
+- Use engine helpers such as:
+  - `isOverlapping` for AABB collision.
+  - `screenToWorld` / `worldToScreen` for coordinate conversion.
+  - `keyDirection()` for directional keyboard input.
+  - `gamepadStick()` for analog movement/aim.
+  - `isOnScreen` for culling.
+  - `Timer` for timed events.
+- Avoid re-implementing math/vector helpers that already exist in LittleJS globals and `Vector2` methods.
+- Prefer world-space drawing APIs.
+
+Directional input rule
+- Use `keyDirection()` for all arrow/WASD directional input.
+- Use `keyIsDown()` for non-directional actions (jump, run, interact).
+- Do not write manual arrow/WASD OR chains.
+
+Tile collision rule
+- For tile-based collision, use `TileCollisionLayer` and engine tile collision flow.
+- Do not build custom tile-collision engines when LittleJS tile collision fits.
+- Put tile reactions in `collideWithTile(tileData, pos)`.
 
 Scratch files / temp
-- Write throwaway scripts, one-shot transforms, debug dumps, and any other temporary file to `local/temp/` inside this project (the `local/` folder is already gitignored). Never write to `c:\tmp\`, `%TEMP%`, or anywhere outside this project directory.
-- Delete one-shot files once their job is done unless the user asks to keep them.
+- Put throwaway scripts and temporary artifacts in `local/temp/`.
+- Do not use system temp directories outside the repo.
+- Delete one-shot temp files when done unless the user asks to keep them.
 
 How to respond
-- Ask up to 3 quick questions only if needed (controls, goal, win/lose). Otherwise start immediately.
-- Make the smallest working version first, then iterate.
-- When adding code, include full definitions for all referenced functions and all required engineInit callbacks.
-- If the user hits an error, request the console error text and the smallest relevant snippet, then provide a minimal fix and a quick test.
+- Ask up to 3 quick questions only if required to unblock implementation.
+- Otherwise start building immediately.
+- Build the smallest playable version first, then iterate.
+- When adding code, include complete definitions for referenced functions/callbacks.
+- If the user reports an error, ask for console text and smallest relevant snippet, then provide a minimal fix plus quick test.
 
 Output format
 - Step summary (1-3 lines)
 - Quick test instructions (expected result, controls)
 - Next step options (2-4 choices)
-- Write code directly to the prototype's .html file in games/
+- Write code directly into the game folder files under `games/<gameName>/` (not a single root-level game HTML file)
 
 Common pitfalls
-- For drawCircle and drawEllipse, the size is the diameter not the radius.
-- Angles: clockwise is positive in LittleJS, counterclockwise is positive in Box2D.
-- Y-axis is up-positive in world space (gravity.y is negative to fall down).
-- drawText uses world units (size ~3 is normal); drawTextScreen uses pixels (size ~80 is normal). Do not mix them up.
-- When using the Box2D template, call `await box2dInit()` at the top of gameInit before creating any bodies.
-- Do not redefine shortcuts to Math functions.
-- Do not write new audio code, just use SoundGenerator to make sounds.
-- Do not replace \n with new lines for text inside strings.
-- ParticleEmitter `speed` is world-units **per FRAME** (NOT per second — the emitter does NOT multiply by `timeDelta`). At 60fps, `speed = 0.5` is already 30 wu/sec, which is plenty fast for a hit burst. Normal range: `0.1–0.5` for impact sparks, up to `~1` for "explosive". Writing `10–20` (the per-second instinct from other engines) is effectively 600–1200 wu/sec — particles exit the field in one frame. Same per-frame convention applies to `angleSpeed`. Gameplay velocities like `ballSpeed=18` ARE per-second because you scale by `timeDelta` yourself (`pos.add(vel.scale(timeDelta))`) — that's why they look so much larger than particle speeds.
+- `drawCircle` and `drawEllipse` size is diameter, not radius.
+- Angles: clockwise is positive in LittleJS; counterclockwise is positive in Box2D.
+- Y-axis is up-positive in world space (falling gravity is negative Y).
+- `drawText` is world-space; `drawTextScreen` is pixel/screen-space.
+- With Box2D, call `await box2dInit()` at top of `gameInit` before bodies.
+- Do not redefine built-in math shortcuts.
+- Do not write custom WebAudio code when `SoundGenerator` is appropriate.
+- Keep `\n` as string escapes in text literals; do not convert to actual line breaks.
+- `ParticleEmitter.speed` is units per frame, not per second.
 
-Menu UI (when using templates/menus.js)
-- Start from templates/menuGame.html — wires up title, options (with separators + persisted slider/checkbox/color/input), medals (clickable grid + MenuMedal toasts), about (wrapping text), pause (with initialItemId), confirm/alert dialogs, HUD toolbar, and global navigation/activate sounds.
-- API: createMenu({id, title, subtitle, items, dismissable, initialItemId, onShow, onHide, onStart}) and createToolbar({id, anchor, direction, items}). Item types: label, text (wrapping multi-line paragraph), separator, button, toggle, slider, checkbox, color (HTML color picker, fires onChange with hex), input (text field; arrow/Enter/Space pass through while focused), grid (per-cell onClick makes cells focusable buttons), custom (set focusable:true to opt into nav). Each menu returns a handle with show/hide/toggle/getItem/destroy. Items expose setLabel/setValue/getValue/setDisabled/setVisible. Grids also expose setCell(index, props).
-- Per-item flags: `onUpdate(el)` — fires every frame while the parent menu is visible (live counters, animated text/custom DOM); `persist:'storeKey'` — slider/toggle/checkbox/color/input only, auto-loads from localStorage on init and auto-saves on change, with onChange firing once at init via a microtask so consumer effects apply the persisted value; `hideOnTouch:true` — toolbar items only, auto-hide on touch devices (fullscreen/music style buttons).
-- onHide receives a reason: `'push'` when pushMenu hides this menu to surface a child, `'dismiss'` when Esc / B / backdrop / explicit hide closed the menu. Branch on it to avoid clobbering parent state when a sub-menu opens (e.g. `if (reason === 'dismiss') resetTitleFlag();`).
-- createMenu's `onStart` runs when gamepad Start is pressed while the menu is on top — use it to launch the primary action (e.g. PLAY) directly without forcing the player to navigate to it first.
-- Title-screen reveal: attachClickToReveal(menuId, canReveal?) installs a document-level click/Space/Enter/A/Start listener that shows the named menu the first time the user interacts with the canvas. Optional canReveal predicate (e.g. `() => !isPlaying`) gates the reveal so the listener can stay attached for the whole game. Pair with the menu's onShow hook to start title music. Returns a teardown fn.
-- Title backdrop: don't leave the canvas black behind the title menu — it reads as a broken game. Build the world (board, rack, scrolling parallax, attract-mode animation) in gameInit and render it every frame from gameRender regardless of any `isPlaying` flag; only gate input on `isPlaying` so clicks fall through to the menu. menus.js's pause hook (`setMenuVisibilityCallback(v => paused = v)`) stops `gameUpdate` while the title menu is up, so the backdrop sits frozen instead of simulating, but it still renders. Reset the world on QUIT (call your `newGame()` helper from the quit confirm handler) so the title shows a clean state rather than a half-finished one.
-- Title menu surfaces immediately — default. Prototypes should pass `createTitleMenu({revealOnClick:false})` and call `showMenu('title')` once at the end of `gameInit` so the menu appears on page load without a click. The click-to-reveal pattern (`revealOnClick:true`, which is the helper's default) is for polished titles where the press-any-key feel is intentional — opt in for those, not the other way around.
-- Title shortcut: createTitleMenu({title, subtitle, onPlay, items, itemsBefore?, canReveal, playLabel?, id?, onShow?, onHide?, revealOnClick?}) wraps createMenu + a PLAY button + attachClickToReveal in one call for the standard title pattern. The menu is dismissable:false, gets id:'title' by default, the PLAY button gets id:'play', and `onStart` (gamepad Start) is auto-wired to onPlay. The wrapper auto-calls hideMenu(id) after onPlay runs — don't call it yourself. Item order: subtitle → itemsBefore → PLAY → items. Use `itemsBefore` for info that belongs above PLAY (for a Best score line, prefer `showBest:true` — see the Best-score bullet below — over a hand-rolled label item); use `items` for menu nav (OPTIONS / ABOUT). `canReveal: () => !isPlaying` is strongly recommended so clicks during gameplay don't re-show the title. Use this for every title screen; fall back to raw createMenu only when you need a non-standard structure (e.g. no PLAY button, level-select first).
-- Game-flow helpers (defined in menus.js, owned by it): setPlaying(p), isPlaying() (call as a function — it's a getter), quitToTitle(onCleanup?). Do NOT declare your own `let isPlaying` or `function setPlaying` in games — menus.js owns this. quitToTitle's `onCleanup` is for game-specific teardown (e.g. cancelling an AI search loop).
-- Best score (defined in menus.js): getBestScore() reads the stored value, setBestScore(n) writes it, submitBestScore(n, {lowerIsBetter}) returns true on new best and saves, resetBestScore() clears to 0. All operate on the `bestScore` key inside the per-game save blob — sibling keys (e.g. jetpackDash's `coins`) are preserved by saveData's shallow merge. If a game's record doesn't fit this schema (custom name like `bestTime`/`bestLevel`/`bestShots`, or multi-entry like minesweeper's per-difficulty times), skip these helpers and use plain saveData/getSaveData with the manual `bestLabel` + onShow pattern. Examples: microRacer (bestTime), emojiSurvivors (bestTime + coins), frogger/sokoban (bestLevel), pool (bestShots), minesweeper (bestTimes per difficulty).
-- Title best line: pass `showBest: true` (and optional `formatBest: n => 'BEST ' + n`) to createTitleMenu. The helper installs the label as the last item in itemsBefore and auto-refreshes it in onShow. Don't hand-roll the bestLabel item unless you need a layout beyond a single Best line.
-- Reset Best in options: pass `showResetBest: true` to createOptionsMenu. Adds a RESET BEST button + confirm dialog wired to resetBestScore. Optional `resetBestMessage` / `resetBestLabel` overrides for custom wording.
-- Game over dialog: showGameOverDialog({score, won?, format?, lowerIsBetter?, extraLines?, customMessage?, onContinue?, submitBest?=true}). Auto-submits to best score (skipped when caller omitted score), appends 'NEW BEST!' line on a new best. Title 'GAME OVER' / 'YOU WIN!' and icon 💥/🏆 swap based on `won`. onContinue defaults to quitToTitle.
-- Sub-menu navigation: pushMenu(id) opens a child and remembers the parent; wire `onHide: popMenu` on the child so BACK / Esc / B / backdrop click returns to the parent. Call clearSubmenuStack() before quitting to title. Two one-shot dialog helpers (single options-object arg): showConfirmDialog({message, title?, icon?, onYes?, onNo?, yesLabel?, noLabel?}) for yes/no choices, and showAlertDialog({message, title?, icon?, onOk?, okLabel?}) for acknowledge-only popups (medal details, save confirmations). Both auto-render long or multi-line messages as a wrapping text item; icon renders as a 3em emoji block above the message.
-- Tooltips: pass `title:'...'` on any item or grid cell to set a native mouseover tooltip. Grid cells fall back to `label` if no title is given; pass `title:''` to suppress.
-- Debug overlay key: LittleJS uses Escape by default for its debug overlay, which collides with menus.js's pause/dismiss handling. menus.js auto-detects this on first `createMenu()` call and remaps the debug key to backtick (`` ` `` / `~`). Don't call `setDebugKey` yourself unless you want a different binding.
-- Pause pattern: call `setMenuVisibilityCallback(v => paused = v)` once in gameInit. The callback fires for every menu show/hide, including dialogs created by showAlertDialog/showConfirmDialog — wiring per-menu onShow/onHide misses those and leaves paused=false, which lets gameUpdate run on the same frame as a menu Esc and stack pause on top of the surfaced menu. Do not toggle paused from gameUpdate (it doesn't run while paused).
-- Pause hotkey: call `bindPauseKey({when: () => isPlaying && alive})` every frame from gameUpdate (per-frame poll, not a one-time install — early-return with `if (bindPauseKey(...)) return;`). Surfaces the named menu (default `'pause'`) on Esc / gamepad Start, plays the 'activate' sound, and clears the press so it doesn't bleed into the next frame's dismiss check. Always guards on `isMenuVisible()` so it never double-opens. Returns true if it triggered this frame.
-- Inputs are handled automatically: arrows/Enter/Esc on keyboard, d-pad/stick/A/B/Start on gamepad, mouse/touch always. Toolbars are pointer-only.
-- Sounds: setMenuSounds({select, activate}) wires global UI feedback — select fires on keyboard/gamepad navigation, activate on click/Enter/A. Construct LittleJS Sound objects with zzfx parameter arrays (`new Sound([...])`) and call `.play()` from the hook so master volume, muting, and user-gesture gating all just work.
-- Selection follows input modality automatically: pointer-mode opens have no auto-selection (so the cursor doesn't drag a stale outline around); the first keyboard or gamepad press selects the initial item. Don't try to override this with manual focus calls.
-- Toasts / achievements: showMenuToast({icon, title, text, duration, position}) renders a queued DOM notification in any corner (`'top-left'` default; also `'top-right'`/`'bottom-left'`/`'bottom-right'`) with pointer-events disabled so it can't block gameplay. MenuMedal extends LittleJS's Medal so unlock() fires a toast instead of the engine's canvas overlay; same localStorage persistence (call `medalsInit('SaveName')`), same `medals` map, just a different display path. Use it everywhere you would have used `Medal`.
-- Orientation lock: setOrientationLock('landscape'|'portrait', {icon, title, text}) declares the orientation a game wants. On touch devices held the wrong way it shows a full-screen "rotate your device" overlay above all menus and pauses the game (folds into the same visibility signal as menus, so `setMenuVisibilityCallback`/`installAutoPause` pause it automatically — no extra wiring). Off by default; `setOrientationLock(false)` clears it. Non-touch devices are never prompted (test in browser device-emulation). Overlay is themeable via `--orient-bg`/`--orient-icon-size` and the standard menu vars.
-- Other helpers: getTopMenu(), getMenu(id), getToolbar(id), showMenu(id), hideMenu(id), hideAllMenus(), isMenuVisible(), playMenuSound(name).
-- Theming: every color, font, size, and spacing is a CSS variable on `#littlejs-menus` — override in a `<style>` block to reskin without touching the helper. Per-menu CSS via the `data-menu-id` attribute on panels: `#littlejs-menus .ljs-menu-panel[data-menu-id="title"] { top: 65%; }`.
+Menu UI notes (when using `templates/menus.js`)
+- Prefer `templates/menuGame.html` as the baseline when menu-heavy UX is needed.
+- Use `setMenuVisibilityCallback(v => paused = v)` for consistent pause behavior while menus/dialogs are visible.
+- Use `bindPauseKey` in `gameUpdate` for Esc/Start pause behavior.
+- Use helper APIs (`createMenu`, `createToolbar`, `showConfirmDialog`, `showAlertDialog`, `showGameOverDialog`) instead of custom menu plumbing.
+- Use `showBest`, `showResetBest`, and best-score helper APIs when the game has a straightforward single best-score metric.
 
 Notes
-- Drawing functions are in world space by default with a screenSpace parameter
-- reference.md documents the main parts of LittleJS API.
-- Test by opening the .html file directly in a browser — dist/littlejs.js is local, no server required.
+- `reference.md` documents major LittleJS API surface.
+- Open each game's `index.html` directly in the browser for testing (no server required).
