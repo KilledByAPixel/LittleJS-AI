@@ -161,9 +161,10 @@ function buildGame(gameName)
     fs.rmSync(ZIP_PATH, { force: true });
     fs.mkdirSync(BUILD_FOLDER);
 
-    // copy data files into the build folder
+    // copy data files into the build folder (flattened to basename so files from
+    // outside the game folder, e.g. ../../dist/box2d.wasm.js, land beside the page)
     for (const file of dataFiles)
-        fs.copyFileSync(join(gameDir, file), join(BUILD_FOLDER, file));
+        fs.copyFileSync(join(gameDir, file), join(BUILD_FOLDER, basename(file)));
 
     // basenames of the build inputs the dev index.html loads via <script src>
     // (engine + sources), normalized so the dev engine tag matches the release
@@ -203,7 +204,7 @@ function buildGame(gameName)
     function zipBuildStep()
     {
         console.log('Zipping...');
-        const sources = ['index.html', ...dataFiles];
+        const sources = ['index.html', ...dataFiles.map(f => basename(f))];
         execSync(`npx bestzip ../${name}.zip ${sources.join(' ')}`,
             {cwd: BUILD_FOLDER, stdio: 'inherit'});
         console.log(`Size of ${name}.zip: ${fs.statSync(ZIP_PATH).size} bytes`);
