@@ -60,8 +60,8 @@ function gameRender()
         const col = i % 4, row = i / 4 | 0;
         const pos = vec2(gridX + col * step, gridY - row * step);
         const tint = hsl(i / names.length + time/9, .8, .6);
-        const s = 1.2 + .2 * Math.sin(time * 3 + i);
-        drawTile(pos, vec2(s), icons[names[i]], tint);
+        const s = 1.2 + .5 * Math.sin(time * 3 + i);
+        drawTile(pos, vec2(s), icons[names[i]], tint, time/8);
         drawText(names[i], pos.add(vec2(0, -.8)), .26, WHITE);
     }
 }
