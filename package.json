@@ -6,6 +6,7 @@
     "scripts": {
         "build:emptyGame": "node build.mjs emptyGame",
         "build:pong": "node build.mjs pong",
+        "build:box2dGame": "node build.mjs box2dGame",
         "build:all": "node build.mjs --all"
     },
     "devDependencies": {
