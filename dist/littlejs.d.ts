@@ -510,14 +510,23 @@ declare module "littlejsengine" {
      *  - Supports left analog stick, 4 face buttons and start button (button 9)
      *  - setTouchGamepadButtonCount(1) to use face buttons as right analog stick
      *  - Analog stick buttons 10 and 11 are also activated when virtual sticks are touched
-    
+     *  - Rendered as a full-viewport HTML/SVG overlay, so controls may sit outside the game canvas
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
     export let touchGamepadEnable: boolean;
+    /** True if touches outside the gamepad controls should still drive mouse/touch input
+     *  - When false (the default), enabling the touch gamepad suppresses touch-to-mouse input entirely
+     *  - Set true to also pass touches outside the controls through to the game as mouse/touch input
+     *  - Touches on the gamepad controls never drive the mouse regardless of this setting
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let touchGamepadPassthrough: boolean;
     /** Size of center button if touch gamepad should have start button in the center
      *  - Prevents activating when pressed near virtual stick or face buttons
      *  - When the game is paused, any touch will press the button
+     *  - Measured in viewport CSS pixels
      *  @type {number}
      *  @default
      *  @memberof Settings */
@@ -540,22 +549,14 @@ declare module "littlejsengine" {
     export let touchGamepadAnalog: boolean;
     /** True if touch gamepad directional controls should float to where you press
      *  - Only affects analog sticks and dpads, not face buttons
-     *  - The left stick uses the left half of the screen, or the whole screen if there are no face buttons (touchGamepadButtonCount is 0)
-     *  - The right stick uses the right half of the screen when it is enabled (touchGamepadButtonCount is 1)
+     *  - Directional controls re-anchor to where you press within the bottom ~60% of their screen half; the top ~40% passes through to the game
+     *  - The right side floats only when it acts as the right analog stick (touchGamepadButtonCount is 1)
      *  - A center button (touchGamepadCenterButtonSize) still works since it ignores touches near the sticks
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
     export let touchGamepadFloating: boolean;
-    /** Distance in pixels from the top of the screen where a floating stick will not re-anchor
-     *  - Prevents the stick base from being placed too close to the top, where there is no room to push up
-     *  - A stick that is already held can still be dragged up into this margin
-     *  - Set to 0 to allow the stick to anchor anywhere
-     *  @type {number}
-     *  @default
-     *  @memberof Settings */
-    export let touchGamepadFloatingTopMargin: number;
-    /** Size of virtual gamepad for touch devices in pixels
+    /** Size of virtual gamepad for touch devices in viewport CSS pixels
      *  @type {number}
      *  @default
      *  @memberof Settings */
@@ -570,6 +571,12 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let touchGamepadDisplayTime: number;
+    /** Duration in ms to vibrate when a touch gamepad face button or start button is pressed
+     *  - Set to 0 to disable, also requires vibrateEnable and hardware support (ignored on iOS)
+     *  @type {number}
+     *  @default
+     *  @memberof Settings */
+    export let touchGamepadVibration: number;
     /** Allow vibration hardware if it exists
      *  @type {boolean}
      *  @default
@@ -739,6 +746,10 @@ declare module "littlejsengine" {
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setTouchGamepadEnable(enable: boolean): void;
+    /** Set if touches outside the gamepad controls should still drive mouse/touch input
+     *  @param {boolean} passthrough
+     *  @memberof Settings */
+    export function setTouchGamepadPassthrough(passthrough: boolean): void;
     /** Set if touch gamepad should have start button in the center
      *  - Set size to enable the center button
      *  - When the game is paused, any touch will press the button
@@ -761,10 +772,6 @@ declare module "littlejsengine" {
      *  @param {boolean} floating
      *  @memberof Settings */
     export function setTouchGamepadFloating(floating: boolean): void;
-    /** Set the distance from the top of the screen where a floating stick will not re-anchor
-     *  @param {number} margin
-     *  @memberof Settings */
-    export function setTouchGamepadFloatingTopMargin(margin: number): void;
     /** Set size of virtual gamepad for touch devices in pixels
      *  @param {number} size
      *  @memberof Settings */
@@ -777,6 +784,10 @@ declare module "littlejsengine" {
      *  @param {number} time
      *  @memberof Settings */
     export function setTouchGamepadDisplayTime(time: number): void;
+    /** Set duration in ms to vibrate when a touch gamepad face or start button is pressed (0 disables)
+     *  @param {number} ms
+     *  @memberof Settings */
+    export function setTouchGamepadVibration(ms: number): void;
     /** Set to allow vibration hardware if it exists
      *  @param {boolean} enable
      *  @memberof Settings */
