@@ -25,6 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROGRAM_TITLE = 'Little JS Game'; // <title> in the built html
 const PROGRAM_NAME  = 'game';           // output zip name (game.zip)
+const KEEP_INTERMEDIATE = false;        // keep the un-inlined build/index.js (for debugging)
 
 // source files concatenated in order (use the global release build of the engine)
 const sourceFiles =
@@ -44,6 +45,7 @@ const dataFiles =
 ///////////////////////////////////////////////////////////////////////////////
 
 const BUILD_FOLDER = join(__dirname, 'build');
+const SCRIPT_FILE = join(BUILD_FOLDER, 'index.js'); // intermediate, inlined into index.html
 const ZIP_PATH = join(__dirname, `${PROGRAM_NAME}.zip`);
 
 console.log(`Building ${PROGRAM_NAME}...`);
@@ -60,10 +62,14 @@ for (const file of dataFiles)
 
 Build
 (
-    join(BUILD_FOLDER, 'index.js'),
+    SCRIPT_FILE,
     sourceFiles,
     [minifyBuildStep, htmlBuildStep, zipBuildStep]
 );
+
+// leave the build folder matching the zip contents (drop the intermediate script)
+if (!KEEP_INTERMEDIATE)
+    fs.rmSync(SCRIPT_FILE, { force: true });
 
 console.log('');
 console.log(`Build completed in ${((Date.now() - startTime)/1e3).toFixed(2)} seconds!`);
