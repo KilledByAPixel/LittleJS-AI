@@ -4,7 +4,8 @@
     "private": true,
     "description": "AI-assisted LittleJS toolkit: starter, templates, helper modules, and a single-file zip build shared across all games.",
     "scripts": {
-        "build:emptyGame": "node games/emptyGame/build.mjs"
+        "build:emptyGame": "node build.mjs emptyGame",
+        "build:pong": "node build.mjs pong"
     },
     "devDependencies": {
         "bestzip": "^2.2.1",

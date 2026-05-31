@@ -12,7 +12,7 @@ Project structure and workflow
 - Standard starter layout for a new game:
   - `games/<gameName>/index.html`
   - `games/<gameName>/game.js`
-  - `games/<gameName>/build.mjs` (optional single-file zip build; carried over from the starter)
+  - `games/<gameName>/build.json` (build config for the shared root build script; carried over from the starter)
 - It is fine (and expected) to add more files for larger games, for example:
   - `games/<gameName>/constants.js`
   - `games/<gameName>/player.js`
@@ -25,9 +25,13 @@ Project structure and workflow
 
 Build (optional, for distributable single-file zips)
 - Build tools (terser, bestzip) install ONCE at the repo root: `npm install`.
-- Build a game from its folder: `node games/<gameName>/build.mjs` (or `npm run build:emptyGame`).
-- The build concatenates `dist/littlejs.release.js` + the game's source files, minifies, inlines
-  into one `index.html`, and zips it. Edit the CONFIG block in `build.mjs` to add source/data files.
+- Build a game from the repo root: `node build.mjs <gameName>` (or `npm run build:emptyGame`).
+- The single root `build.mjs` reads `games/<gameName>/build.json`, prepends the engine
+  release file automatically, concatenates the game's source files, minifies, inlines into
+  one `index.html`, and zips it. Edit `build.json` to add source/data files. Fields:
+  `sources` (required, ordered), `data` (zipped alongside), `name` (zip name, defaults to
+  folder), `title` (html title, defaults to name), `engine` (override path or `false`),
+  `keepIntermediate` (keep `build/index.js`).
 - Output (`build/`, `*.zip`) is gitignored. Dev never requires the build — it is only for shipping.
 
 Template selection for new games
