@@ -8,15 +8,15 @@ debugWatermark = false;
 const fieldSize = vec2(38, 22);
 const paddleSize = vec2(0.7, 4);
 const ballSize = vec2(0.7, 0.7);
-const paddleSpeed = 0.45;
 const aiSpeed = 0.3;
 const ballSpeed = 0.35;
-const serveSpeed = 0.3;
 
 let leftY;
 let rightY;
 let ball;
 let ballVel;
+let waitingToServe;
+let serveDir;
 let leftScore;
 let rightScore;
 let half;
@@ -27,7 +27,9 @@ let limitY;
 function resetBall(dir)
 {
     ball = vec2(0, 0);
-    ballVel = vec2(dir, rand(-0.5, 0.5)).normalize(serveSpeed);
+    ballVel = vec2();
+    waitingToServe = true;
+    serveDir = dir;
 }
 
 function gameInit()
@@ -44,9 +46,19 @@ function gameUpdate()
     leftX = -half.x + 1.5;
     rightX = half.x - 1.5;
 
-    leftY = clamp(leftY + keyDirection().y * paddleSpeed, -limitY, limitY);
+    leftY = clamp(mousePos.y, -limitY, limitY);
 
     rightY = clamp(rightY + clamp(ball.y - rightY, -aiSpeed, aiSpeed), -limitY, limitY);
+
+    if (waitingToServe)
+    {
+        if (mouseWasPressed(0))
+        {
+            ballVel = vec2(serveDir, rand(-0.5, 0.5)).normalize(ballSpeed);
+            waitingToServe = false;
+        }
+        return;
+    }
 
     ball = ball.add(ballVel);
 
@@ -67,7 +79,7 @@ function gameUpdate()
     if (ballVel.x > 0 && isOverlapping(ball, ballSize, vec2(rightX, rightY), paddleSize))
         bounceOffPaddle(rightX - (paddleSize.x + ballSize.x) / 2, rightY, -1);
 
-    if (ball.x < -half.x)
+    if (ball.x < -half.x*1.5)
     {
         ++rightScore;
         resetBall(1);
@@ -106,7 +118,8 @@ function gameRenderPost()
     const cx = mainCanvasSize.x / 2;
     drawTextScreen(leftScore, vec2(cx - 100, 70), 70, WHITE);
     drawTextScreen(rightScore, vec2(cx + 100, 70), 70, WHITE);
-    drawTextScreen('W/S or Up/Down', vec2(cx, mainCanvasSize.y - 34), 24, WHITE);
+    if (waitingToServe)
+        drawTextScreen('Click to serve', vec2(cx, mainCanvasSize.y - 90), 70, WHITE);
 }
 
 engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
