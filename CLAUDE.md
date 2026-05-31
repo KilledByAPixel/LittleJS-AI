@@ -26,6 +26,8 @@ Project structure and workflow
 Build (optional, for distributable single-file zips)
 - Build tools (terser, bestzip) install ONCE at the repo root: `npm install`.
 - Build a game from the repo root: `node build.mjs <gameName>` (or `npm run build:emptyGame`).
+- Build every game that has a `build.json`: `node build.mjs --all` (or `npm run build:all`).
+  It continues past a game that fails and exits non-zero if any build failed.
 - The single root `build.mjs` reads `games/<gameName>/build.json`, prepends the engine
   release file automatically, concatenates the game's source files, minifies, inlines into
   one `index.html`, and zips it. Edit `build.json` to add source/data files. Fields:
