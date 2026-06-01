@@ -16,11 +16,21 @@ Project constraints
 - Use the provided index.html as a starting point.
 - Do not include any other libraries, only littlejs.
 - Do not change the html or css, only write JavaScript.
-- No external assets (no images, textures, spritesheets, audio files).
-- Untextured only: use solid-color primitives (rects, circles, lines). Do not use sprite/texture APIs.
+- No external asset files (no image, spritesheet, or audio files to load).
+- A sprite atlas of 16 white shape icons is pre-built in index.html. Draw recolorable sprites with drawTile; do not load external textures or hand-roll your own atlas.
 - Use SoundGenerator class provided in index.html to make sound effects.
 - Use LittleJS provided math functions and Vector2 math when possible.
 - Prefer to use LittleJS world space drawing functions.
+
+Sprite atlas (pre-built in index.html)
+- gameInit already calls `icons = initDefaultAtlas()`, baking 16 white shape tiles into one texture. The `icons` variable is a name->tile map ready to use.
+- Draw a shape with `drawTile(pos, size, icons.NAME, color)`. `size` is a vec2 of the full diameter (not radius); `color` tints the white icon to any hue.
+- Icon names: circle, glow, ring, roundSquare, triangle, diamond, pentagon, hexagon, spark, star, burst, plus, heart, droplet, bolt, arrow.
+- Prefer atlas tiles over drawCircle/drawEllipse/drawPoly for round and polygon shapes: each is a single batched quad, recolorable for free, and they all share one texture batch (much faster with many entities).
+- For additive glow/FX use the glow or spark icon with an additiveColor whose alpha is 0, e.g. `drawTile(pos, size, icons.glow, color, 0, false, new Color(1,1,1,0))`.
+- drawRect, drawLine, and drawText still work for rectangles, lines, and text. drawRect is already a single quad, so it is fine to keep using.
+- Do not rebuild or replace the atlas; just draw from the `icons` map.
+- The atlas helper lives in index.html only. The Box2D starter (indexBox2d.html) renders bodies as solid-color shapes.
 
 How to respond
 - Ask up to 3 quick questions only if needed (controls, goal, win/lose). Otherwise start immediately.
