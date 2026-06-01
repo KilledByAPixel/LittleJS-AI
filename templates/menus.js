@@ -21,6 +21,11 @@
 //       items:[ {type:'button', label:'☰', onClick: () => m.show()} ],
 //   });
 //
+// Toolbar config: id, anchor ('top-right' default | 'top-left' | 'bottom-*'),
+//   direction ('horizontal' default | 'vertical'), landscapeStack (default
+//   false — opt in to flip a horizontal toolbar to a vertical stack in
+//   landscape only; corner item stays in its corner), items.
+//
 // Item types:  label, text (wrapping paragraph), separator, button, toggle,
 //              slider, checkbox, color (HTML5 picker), input (text field;
 //              arrow/Enter/Space are passed to the field while focused),
@@ -347,7 +352,7 @@ function createMenu(config)
 //       ],
 //       items: [                        // rendered AFTER PLAY
 //           {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
-//           {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+//           {type:'button', label:'HELP',    onClick: () => pushMenu('help')},
 //       ],
 //   });
 //
@@ -434,11 +439,19 @@ function createToolbar(config)
         id:        null,
         anchor:    'top-right',
         direction: 'horizontal',
+        // landscapeStack: opt-in responsive flip. When true, a normally
+        // horizontal toolbar stacks vertically in landscape orientation
+        // (where the canvas is letterboxed with room in the side gutter)
+        // and stays horizontal in portrait. The corner item (e.g. the
+        // hamburger) stays pinned to its corner — see the CSS rules. No-op
+        // on toolbars built with direction:'vertical'.
+        landscapeStack: false,
         items:     [],
     }, config);
 
     const el = document.createElement('div');
     el.className = 'ljs-menu-toolbar anchor-' + cfg.anchor + ' dir-' + cfg.direction;
+    if (cfg.landscapeStack) el.classList.add('ljs-toolbar-landscape-stack');
     el.classList.add('ljs-hidden');              // start hidden; user calls show()
     menuSystemRoot.appendChild(el);
 
@@ -512,6 +525,7 @@ function installDefaultToolbar(opts)
         id:               'hud',
         anchor:           'top-right',
         direction:        'horizontal',
+        landscapeStack:   false,  // stack vertically in landscape (see createToolbar)
         mute:             true,
         fullscreen:       true,
         panelButton:      true,   // grid library button — touch + in-launcher only
@@ -604,6 +618,7 @@ function installDefaultToolbar(opts)
         id:        opts.id,
         anchor:    opts.anchor,
         direction: opts.direction,
+        landscapeStack: opts.landscapeStack,
         items,
     });
     toolbar.show();
@@ -706,7 +721,7 @@ function _arcadePanelHandshake(onConfirm)
 //       onQuit:    quitToTitle,               // adds QUIT TO TITLE (with confirm)
 //       extraItems: [                         // inserted between RESTART and QUIT
 //           {type:'button', label:'OPTIONS',     onClick: () => pushMenu('options')},
-//           {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('about')},
+//           {type:'button', label:'HOW TO PLAY', onClick: () => pushMenu('help')},
 //       ],
 //   });
 //
@@ -830,10 +845,44 @@ function createOptionsMenu(opts)
         items.push({type:'button', label: opts.resetBestLabel,
             onClick: () => showConfirmDialog({
                 message: opts.resetBestMessage,
+                // Resetting is not a navigation — keep the back chain so YES
+                // returns to this options menu instead of closing to nothing.
+                keepStack: true,
                 onYes: () => resetBestScore(),
             })});
     }
 
+    items.push({type:'separator'});
+    items.push({type:'button', label: opts.backLabel,
+        onClick: () => hideMenu(opts.id)});
+
+    return createMenu({
+        id:     opts.id,
+        title:  opts.title,
+        onHide: popMenu,
+        items,
+    });
+}
+
+// Build a simple read-only info menu (how-to-play / HELP). Mirrors the
+// hand-rolled `createMenu({id:'help', ...})` pattern many games use inline: a
+// wrapping text paragraph, optional extra items (e.g. a controls line), then a
+// separator and BACK button. Opened via pushMenu('help'); returns via popMenu.
+//   createHelpMenu({title, text, extraItems, id, backLabel})
+function createHelpMenu(opts)
+{
+    opts = Object.assign({
+        id:        'help',
+        title:     'HELP',
+        text:      'A LittleJS prototype.',
+        extraItems: [],
+        backLabel: 'BACK',
+    }, opts || {});
+
+    const items = [];
+    if (opts.text)
+        items.push({type:'text', text: opts.text});
+    items.push(...opts.extraItems);
     items.push({type:'separator'});
     items.push({type:'button', label: opts.backLabel,
         onClick: () => hideMenu(opts.id)});
@@ -1243,10 +1292,17 @@ function showGameOverDialog(opts)
 // NO closes the dialog and restores the parent.
 //
 //   showConfirmDialog({message, title?, icon?, onYes?, onNo?,
-//                      yesLabel?, noLabel?})
+//                      yesLabel?, noLabel?, keepStack?})
 //
 // `dismissable` is false — Esc/B/Start/backdrop all do nothing, forcing
 // an explicit choice. yesLabel / noLabel default to 'YES' / 'NO'.
+//
+// `keepStack:true` — for confirms whose YES is NOT a navigation (e.g. RESET
+// BEST / RESET PROGRESS, where the user should land back on the menu they
+// came from). YES then behaves like NO for navigation: it leaves the submenu
+// stack intact so closing the dialog restores the parent menu, and runs onYes
+// for its side effect only. Without it, YES wipes the back chain and a
+// non-navigating onYes leaves no menu visible at all.
 
 function showConfirmDialog(opts)
 {
@@ -1267,7 +1323,10 @@ function showConfirmDialog(opts)
         : {type:'label', text: message});
     items.push({type:'button', id:'yes', label: opts.yesLabel || 'YES', onClick: () =>
     {
-        clearSubmenuStack();   // YES means caller decides what's next
+        // By default YES means the caller decides what's next, so wipe the
+        // back chain. keepStack:true leaves it intact so destroy -> onHide ->
+        // popMenu restores the parent menu (see keepStack note above).
+        if (!opts.keepStack) clearSubmenuStack();
         dialog.destroy();
         if (opts.onYes) opts.onYes();
     }});
@@ -1948,6 +2007,18 @@ button.ljs-grid-cell { cursor: pointer; }
 .ljs-menu-toolbar.anchor-bottom-left  { bottom: var(--toolbar-margin); left: var(--toolbar-margin); }
 .ljs-menu-toolbar.anchor-bottom-right { bottom: var(--toolbar-margin); right: var(--toolbar-margin); }
 .ljs-menu-toolbar.dir-vertical { flex-direction: column; }
+/* landscapeStack: opt-in responsive flip (set via createToolbar). A horizontal
+   toolbar stacks vertically in landscape (canvas is letterboxed, side gutter has
+   room) and stays horizontal in portrait. The column direction is chosen per
+   anchor so the item that sits in the corner horizontally — last child for the
+   right anchors, first child for the left — stays pinned to that same corner
+   when stacked (e.g. the top-right hamburger stays at the top, buttons below). */
+@media (orientation: landscape) {
+    .ljs-menu-toolbar.ljs-toolbar-landscape-stack.anchor-top-right,
+    .ljs-menu-toolbar.ljs-toolbar-landscape-stack.anchor-bottom-left  { flex-direction: column-reverse; }
+    .ljs-menu-toolbar.ljs-toolbar-landscape-stack.anchor-top-left,
+    .ljs-menu-toolbar.ljs-toolbar-landscape-stack.anchor-bottom-right { flex-direction: column; }
+}
 /* iOS top-URL-bar browsers (see the ios-topbar tag) overlap fixed top content
    in PORTRAIT; drop the top toolbar + the rotate-overlay button clear of the
    bar. Landscape hides the bar, and desktop/Safari never get the class. */

@@ -1,19 +1,19 @@
 <!DOCTYPE html><head>
 <title>LittleJS Default Icon Atlas</title>
 <meta charset="utf-8">
-</head><body style="background:#000">
-<script src="../dist/littlejs.js?1780207168309"></script>
-<script src="gameFx.js?1780207168309"></script>
-<script src="textureGenerator.js?1780207168309"></script>
-<script src="tweakables.js?1780207168309"></script>
+</head>
+<script src="engineLoader.js?1780292569262"></script>
+<script src="gameFx.js?1780292569262"></script>
+<script src="textureGenerator.js?1780292569262"></script>
+<script src="tweakables.js?1780292569262"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
+tilesPixelated = false; // Disable pixelation
 paused = false;
-tilesPixelated = false;
 
 // engine settings, customize if necessary
 gravity = vec2(0, 0);
@@ -48,7 +48,7 @@ function gameRender()
     const atlasView = vec2(5);
     const fullAtlas = new TileInfo(vec2(), vec2(2048));
     const atlasPos = vec2(4, .5);
-    drawRect(atlasPos, atlasView.add(vec2(.3)), hsl(0, 0, .15));
+    drawRect(atlasPos, atlasView.add(vec2(.3)), hsl(0, 0, .5));
     drawTile(atlasPos, atlasView, fullAtlas, WHITE);
     drawText('ATLAS SHEET', vec2(4, -2.5), .42, WHITE);
 

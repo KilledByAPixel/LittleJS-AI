@@ -1,25 +1,24 @@
 <!DOCTYPE html><head>
 <title>LittleJS Playing Cards Template</title>
 <meta charset="utf-8">
-</head><body style="background:#000">
-<script src="../dist/littlejs.js?1780207168309"></script>
-<script src="gameFx.js?1780207168309"></script>
-<script src="textureGenerator.js?1780207168309"></script>
-<script src="cards.js?1780207168309"></script>
+</head>
+<script src="engineLoader.js?1780292569262"></script>
+<script src="menus.js?1780292569262"></script>
+<script src="gameFx.js?1780292569262"></script>
+<script src="textureGenerator.js?1780292569262"></script>
+<script src="cards.js?1780292569262"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
+tilesPixelated = false; // Disable pixelation
 paused = false;
-tilesPixelated = false;
 
 // engine settings, customize if necessary
-gravity = vec2(0, 0);
-cameraPos = vec2(0, 0);
 cameraScale = 32;
-canvasMaxSize = vec2(2048, 2048);
+canvasMaxSize = vec2(2048);
 canvasClearColor = new Color().setHex('#264d40');   // felt green
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -82,7 +81,12 @@ function setupLayout()
     const tableH  = topY - bottomY + TOP_MARGIN + 1;
     cameraScale   = min(mainCanvasSize.x / tableW, mainCanvasSize.y / tableH);
     const viewH   = mainCanvasSize.y / cameraScale;
-    cameraPos     = vec2(0, topY + TOP_MARGIN - viewH/2);
+    // Spare vertical height only appears when the camera is fit to WIDTH
+    // (portrait); split it evenly above and below so the board centers
+    // vertically, leaving room up top for the toolbar. In landscape viewH ==
+    // tableH so spareY is 0 and this top-anchors exactly as before.
+    const spareY  = max(0, viewH - tableH);
+    cameraPos     = vec2(0, topY + TOP_MARGIN + spareY/2 - viewH/2);
 }
 
 function buildTable()
@@ -118,6 +122,13 @@ function buildTable()
 
     handStack    = new CardStack(vec2(0, 0), StackType.Tableau);
     pickupOrigin = null;
+}
+
+// Reshuffle, redeal, and reseed undo history — a fresh game from scratch.
+function newGame()
+{
+    buildTable();
+    history.reset();
 }
 
 // Topmost card / empty stack under `worldPoint` (see cardAtPoint in cards.js).
@@ -180,13 +191,58 @@ async function gameInit()
     initCardAtlas();   // default look (matches games/freecell.html)
     setupLayout();
     history = new CardHistory({ serialize: snapshot, deserialize: loadState });
-    buildTable();
-    history.reset();   // seed the initial snapshot
+
+    // Prime the save blobs before any menu construction so persist: items
+    // (e.g. the OPTIONS volume slider) can read their stored values on init.
+    saveDataInit('Playing Cards');
+
+    // One callback drives `paused` for every menu, including dialogs — when
+    // the title or pause menu is up, gameUpdate is paused while the dealt
+    // board keeps rendering as a frozen backdrop.
+    setMenuVisibilityCallback(v => paused = v);
+
+    // ----- title menu (surfaces immediately, no click-to-reveal) -----
+    createTitleMenu({
+        title:    'PLAYING CARDS',
+        subtitle: 'A rules-free card table',
+        revealOnClick: false,
+        canReveal: () => !isPlaying(),
+        onPlay:   () => setPlaying(true),
+        items: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+        ],
+    });
+
+    // ----- options (VOLUME slider; stays in sync with the toolbar mute) -----
+    createOptionsMenu();
+
+    // ----- pause menu (opened by the toolbar hamburger and Esc / Start) -----
+    // RESTART reshuffles; QUIT returns to the title with a freshly dealt
+    // board behind it.
+    createPauseMenu({
+        onRestart: newGame,
+        extraItems: [
+            {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
+        ],
+        onQuit: () => quitToTitle(newGame),
+    });
+
+    // ----- default HUD toolbar (mute / fullscreen / hamburger) -----
+    installDefaultToolbar({
+        landscapeStack:true, // stack the toolbar vertically in landscape to leave more horizontal room for the board
+    });
+
+    newGame();           // deal the initial board (also seeds undo history)
+    showMenu('title');   // surface the title menu on load
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameUpdate()
 {
+    // Esc / gamepad Start opens the pause menu while playing.
+    if (bindPauseKey({when: () => isPlaying()})) return;
+    if (!isPlaying()) return;
+
     // Pickup / stock-deal on press.
     if (mouseWasPressed(0) && handStack.isEmpty())
     {
@@ -238,7 +294,7 @@ function gameUpdate()
     const shift = keyIsDown('ShiftLeft') || keyIsDown('ShiftRight');
     if (keyWasPressed('KeyZ')) shift ? history.redoMove() : history.undoMove();
     if (keyWasPressed('KeyY')) history.redoMove();
-    if (keyWasPressed('KeyR')) { buildTable(); history.reset(); }
+    if (keyWasPressed('KeyR')) newGame();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -277,7 +333,7 @@ function gameRender()
 
     // Hover highlight on the tail that would lift if clicked.
     const HOVER    = new Color(0.55, 0.8, 1.0, 0.4);
-    const hoverSet = handStack.isEmpty()
+    const hoverSet = (handStack.isEmpty() && isPlaying())
         ? new Set(pickableTail(stackUnderPoint(mousePos))) : null;
     const tintFor  = c => (hoverSet && hoverSet.has(c)) ? HOVER : null;
 
@@ -298,16 +354,29 @@ function gameRender()
         drawCardShape(c.pos.add(vec2(0.25, -0.25)), CARD_SIZE.add(vec2(0.1, 0.1)), shadow);
     for (const c of handStack.cards)
         drawAnyCard(c, c.pos, null);
+
+    // --- TEMP: suit alignment check — hold T to overlay all four suits at the
+    // view center, each a distinct translucent color. Where they align you get
+    // a neutral blend; any offset shows as a coloured fringe. Delete this block
+    // when done. (♥ red, ♠ green, ♦ blue, ♣ yellow.)
+    if (keyIsDown('KeyT'))
+    {
+        const tints = [new Color(1,0,0,.5), new Color(0,1,0,.5),
+                       new Color(0,.4,1,.5), new Color(1,1,0,.5)];
+        for (let i = 0; i < 4; ++i)
+            drawTile(cameraPos, vec2(20), _cardSprites.suits[i], tints[i]);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    drawTextScreen('Playing Cards Template',
-        vec2(mainCanvasSize.x / 2, 60), 50, WHITE, 4, BLACK);
-    drawTextScreen(
-        'Click stock = deal/recycle   Drag = move   Right-click = flip   Z/Y = undo/redo   R = reshuffle',
-        vec2(mainCanvasSize.x / 2, 110), 22, hsl(0, 0, .85), 2, BLACK);
+    // Controls hint along the bottom while playing — the title menu shows
+    // the game name, so no on-canvas banner is needed on the title screen.
+    if (isPlaying())
+        drawTextScreen(
+            'Click stock = deal/recycle   Drag = move   Right-click = flip   Z/Y = undo/redo   R = reshuffle',
+            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 40), 22, hsl(0, 0, .85), 2, BLACK);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -44,11 +44,11 @@ const _CARD_DEFAULT_BLACK = new Color(0.05, 0.05, 0.05);
 // size.x / CARD_SIZE.x so glyphs stay proportional.
 const _CARD_CORNER_RANK_OFFSET = vec2(1.0, 1.0);
 const _CARD_CORNER_RANK_SIZE   = vec2(1.8);
-const _CARD_CORNER_SUIT_OFFSET = vec2(2.0, 1.0);
+const _CARD_CORNER_SUIT_OFFSET = vec2(2.05, .95);
 const _CARD_CORNER_SUIT_SIZE   = vec2(1.4);
-const _CARD_PIP_SIZE           = vec2(1.4);
+const _CARD_PIP_SIZE           = vec2(1.3);
 const _CARD_PIP_SPREAD_X       = 1.2;
-const _CARD_PIP_SPREAD_Y       = 1.6;
+const _CARD_PIP_SPREAD_Y       = 1.7;
 
 // --- Internal state ---
 let _cardSprites  = null;     // { ranks:[13], suits:[4], bg, tint, back } of TileInfos
@@ -94,6 +94,10 @@ function initCardAtlas(options = {})
         'card-shaped solid-white silhouette for tint overlays');
     _cardSprites.back = drawToTexture(26, paintBack,
         'card back design');
+
+    // De-halo the white tiles (ranks, suits, tint mask) but keep the card
+    // front (24) and back (26) — those have intentional dark/coloured art.
+    whitenAtlasAlpha([24, 26]);
 }
 
 // Draws a face-up card. options: { size, angle, tint }
@@ -182,18 +186,96 @@ function _paintRankTile(label)
         // "10" is the only two-char rank — shrink so it fits.
         const size = label.length > 1 ? 160 : 200;
         ctx.font = 'bold ' + size + 'px sans-serif';
-        ctx.fillText(label, 125, 130);
+        ctx.fillText(label, 125, 130, 160);
     };
 }
 
+// --- Vector suit shapes ------------------------------------------------------
+// Each draws one white suit centered in the 250x250 suit tile. drawCard tints
+// them red (hearts/diamonds) or black (spades/clubs) per instance.
+
+// Lobed body shared by heart (point down) and spade (point up). The bezier
+// construction mirrors the engine's default-atlas heart icon.
+function _suitLobed(ctx, cx, cy, rx, ry, pointDown)
+{
+    const sy = pointDown ? 1 : -1;
+    const topCtrl = .92, dip = .35, shoulder = .46, tip = .9, w = 1;
+    const p = (nx, ny) => [cx + nx * rx, cy + sy * ny * ry];
+    ctx.beginPath();
+    ctx.moveTo(...p(0, -dip));
+    ctx.bezierCurveTo(...p(0, -topCtrl), ...p(-w, -topCtrl), ...p(-w, -shoulder));
+    ctx.bezierCurveTo(...p(-w, 0), ...p(0, tip * .9), ...p(0, tip));
+    ctx.bezierCurveTo(...p(0, tip * .9), ...p(w, 0), ...p(w, -shoulder));
+    ctx.bezierCurveTo(...p(w, -topCtrl), ...p(0, -topCtrl), ...p(0, -dip));
+    ctx.closePath();
+    ctx.fill();
+}
+
+// Flared stem used by spade and club: narrow at the top, widening to the base.
+function _suitStem(ctx, cx, topY, baseY, halfW)
+{
+    const h = baseY - topY;
+    ctx.beginPath();
+    ctx.moveTo(cx, topY);
+    ctx.bezierCurveTo(cx + halfW * .2, topY + h * .5, cx + halfW * .7, baseY - h * .15, cx + halfW, baseY);
+    ctx.lineTo(cx - halfW, baseY);
+    ctx.bezierCurveTo(cx - halfW * .7, baseY - h * .15, cx - halfW * .2, topY + h * .5, cx, topY);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function _suitHeart(ctx)
+{
+    _suitLobed(ctx, 125, 122, 72, 110, true);
+}
+
+function _suitSpade(ctx)
+{
+    _suitLobed(ctx, 125, 100, 72, 86, false);
+    _suitStem(ctx, 125, 138, 210, 44);
+}
+
+function _suitDiamond(ctx)
+{
+    const cx = 125, cy = 125, hw = 72, hh = 100;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - hh);
+    ctx.lineTo(cx + hw, cy);
+    ctx.lineTo(cx, cy + hh);
+    ctx.lineTo(cx - hw, cy);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function _suitClub(ctx)
+{
+    const cx = 125, cy = 115, R = 105, lobeR = 39;
+    const lobe = (px, py, r=lobeR) => { ctx.beginPath(); ctx.arc(px, py, r, 0, 2 * PI); ctx.fill(); };
+    const w = .4;
+    lobe(cx, cy - .48 * R);            // top lobe
+    lobe(cx - w * R, cy + .16 * R);  // lower-left lobe
+    lobe(cx + w * R, cy + .16 * R);  // lower-right lobe
+    lobe(cx, cy, lobeR*.7); // cover center gap
+    _suitStem(ctx, cx, cy + .14 * R, 210, 42);
+}
+
+// Map the four standard suit glyphs to vector drawers so the default deck uses
+// crisp canvas shapes instead of font text (which renders inconsistently across
+// platforms and may show as a color emoji). A custom suitGlyphs override that
+// isn't one of these four falls back to text rendering.
+const _CARD_SUIT_DRAWERS = { '♥': _suitHeart, '♠': _suitSpade, '♦': _suitDiamond, '♣': _suitClub };
+
 function _paintSuitTile(glyph)
 {
+    const drawer = _CARD_SUIT_DRAWERS[glyph];
     return ctx =>
     {
         ctx.fillStyle = '#fff';
+        if (drawer)
+            return drawer(ctx);
+        // Fallback for custom (non-standard) suit glyphs.
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        // Force a text-style suit, not a color emoji rendering.
         ctx.font = '210px "Arial Unicode MS", "DejaVu Sans", sans-serif';
         ctx.fillText(glyph, 125, 135);
     };
@@ -455,18 +537,46 @@ function shuffledDeck()
     return deck;
 }
 
-// Draws a faint empty-slot outline at `pos`. `subtle` uses a lighter look
-// (e.g. foundations) than the default tableau slot.
-function drawCardSlot(pos, subtle = false)
+// Draws a faint empty-slot outline at `pos`. Pass `foundation = true` for the
+// home/foundation look: a warm gold frame plus a faint four-suit marker, so it
+// reads clearly differently from the neutral free-cell / tableau slot (which
+// is a plain white-outlined dark slot).
+function drawCardSlot(pos, foundation = false)
 {
-    const fill   = new Color(0, 0, 0, subtle ? 0.18 : 0.30);
-    const stroke = new Color(1, 1, 1, subtle ? 0.55 : 0.30);
-    drawRect(pos, CARD_SIZE, fill);
-    const t = 0.12;   // outline = 4 thin rects (drawRect has no outline param)
-    drawRect(vec2(pos.x, pos.y + CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
-    drawRect(vec2(pos.x, pos.y - CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
-    drawRect(vec2(pos.x - CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
-    drawRect(vec2(pos.x + CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
+    // 4-rect outline (drawRect has no stroke param). `t` = line thickness.
+    const outline = (stroke, t) =>
+    {
+        drawRect(vec2(pos.x, pos.y + CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+        drawRect(vec2(pos.x, pos.y - CARD_SIZE.y/2), vec2(CARD_SIZE.x, t), stroke);
+        drawRect(vec2(pos.x - CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
+        drawRect(vec2(pos.x + CARD_SIZE.x/2, pos.y), vec2(t, CARD_SIZE.y), stroke);
+    };
+
+    if (foundation)
+    {
+        // Gold frame + faint warm fill — a distinct hue from the free cells,
+        // not just a brightness tweak.
+        drawRect(pos, CARD_SIZE, new Color(0.85, 0.65, 0.15, 0.16));
+        outline(new Color(1.0, 0.82, 0.30, 0.80), 0.18);
+
+        // Faint 2×2 cluster of the four suit pips — the classic "build all
+        // four suits here" marker. Needs the atlas; skip if not built yet.
+        if (_cardSprites)
+        {
+            const pipColor = new Color(1, 0.95, 0.8, 0.10);
+            const dx = CARD_SIZE.x * 0.22, dy = CARD_SIZE.y * 0.22;
+            const ps = vec2(2.1);
+            drawTile(pos.add(vec2(-dx,  dy)), ps, _cardSprites.suits[0], pipColor);
+            drawTile(pos.add(vec2( dx,  dy)), ps, _cardSprites.suits[1], pipColor);
+            drawTile(pos.add(vec2(-dx, -dy)), ps, _cardSprites.suits[2], pipColor);
+            drawTile(pos.add(vec2( dx, -dy)), ps, _cardSprites.suits[3], pipColor);
+        }
+        return;
+    }
+
+    // Neutral slot (free cells, tableau): dark fill, plain white outline.
+    drawRect(pos, CARD_SIZE, new Color(0, 0, 0, 0.30));
+    outline(new Color(1, 1, 1, 0.30), 0.12);
 }
 
 // Clears finished tweens. Call once per frame (e.g. gameUpdatePost) with the

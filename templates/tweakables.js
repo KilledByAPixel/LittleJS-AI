@@ -1,7 +1,7 @@
 'use strict';
 
 // AI can use this module to mark globals as tweakable so they can be
-// changed live in an HTML overlay panel. Toggle the panel with ~ (backtick).
+// changed live in an HTML overlay panel. Toggle the panel with \ (backslash).
 //
 // Usage:
 //   tweak('jumpPower');                          // number, no slider
@@ -188,7 +188,7 @@ function initTweakSystem()
 
 function onTweakKey(e)
 {
-    if (e.code !== 'Backquote') return;
+    if (e.code !== 'Backslash') return;
     if (tweakPanelEl.contains(document.activeElement)) return;
     e.preventDefault();
     tweakPanelVisible = !tweakPanelVisible;

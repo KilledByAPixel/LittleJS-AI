@@ -2,32 +2,31 @@
 <title>LittleJS Board Game Template</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-</head><body style="background:#000">
-<script src="../dist/littlejs.js?1780207168309"></script>
-<script src="menus.js?1780207168309"></script>
-<script src="gameFx.js?1780207168309"></script>
-<script src="textureGenerator.js?1780207168309"></script>
-<script src="tweakables.js?1780207168309"></script>
+</head>
+<script src="engineLoader.js?1780292569262"></script>
+<script src="menus.js?1780292569262"></script>
+<script src="gameFx.js?1780292569262"></script>
+<script src="textureGenerator.js?1780292569262"></script>
+<script src="tweakables.js?1780292569262"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
+tilesPixelated = false; // Disable pixelation
 paused = false;
 
 // engine settings, customize if necessary
-gravity = vec2(0, 0);
-cameraPos = vec2(0, 0);
-cameraScale = 42;
-canvasMaxSize = vec2(2048, 2048);
+canvasFixedSize = vec2(1920, 1080);
+cameraScale = 62;
 
 ///////////////////////////////////////////////////////////////////////////////
 // BOARD GAME TEMPLATE
 // Two-player turn-based game on an NxN grid. Fork this file, then replace
 // placePiece(), aiMove(), and the piece-rendering loop in gameRender() with
 // the rules and visuals of your game. Menus (title / pause / options /
-// about / confirm) are wired via menus.js — see templates/menuGame.html for
+// help / confirm) are wired via menus.js — see templates/menuGame.html for
 // the canonical menu demo.
 
 const BOARD_SIZE = 8;
@@ -133,7 +132,6 @@ function quitToTitle()
 
 async function gameInit()
 {
-    setCanvasFixedSize(vec2(720, 720));
     canvasClearColor = new Color().setHex('#0d0d14');
     setSoundVolume(.8);
 
@@ -156,7 +154,7 @@ async function gameInit()
             {type:'button', label:'PLAYER VS AI',     onClick: () => startGame('ai')},
             {type:'button', label:'PLAYER VS PLAYER', onClick: () => startGame('pvp')},
             {type:'button', label:'OPTIONS',          onClick: () => pushMenu('options')},
-            {type:'button', label:'ABOUT',            onClick: () => pushMenu('about')},
+            {type:'button', label:'HELP',             onClick: () => pushMenu('help')},
         ],
     });
 
@@ -175,17 +173,17 @@ async function gameInit()
         ],
     });
 
-    // ----- about menu -----
+    // ----- help menu -----
     createMenu({
-        id: 'about',
-        title: 'ABOUT',
+        id: 'help',
+        title: 'HELP',
         onHide: popMenu,
         items: [
             {type:'text', text:'A template for turn-based two-player board games on an NxN grid. ' +
                 'Fork this file and replace placePiece(), aiMove(), and the piece-rendering ' +
                 'loop in gameRender() with the rules and visuals of your game.'},
             {type:'separator'},
-            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+            {type:'button', label:'BACK', onClick: () => hideMenu('help')},
         ],
     });
 
@@ -207,7 +205,7 @@ async function gameInit()
 
     // ----- HUD toolbar (always visible — hamburger grays out while
     // the title menu is on top, since pause is meaningless before play).
-    installDefaultToolbar();
+    installDefaultToolbar({landscapeStack:true});
 
     initBoard();
     setPlaying(false);
@@ -286,7 +284,7 @@ function gameRenderPost()
     if (isPlaying())
     {
         drawTextScreen('R: Restart',
-            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 30), 22,
+            vec2(mainCanvasSize.x / 2, mainCanvasSize.y - 50), 42,
             rgb(0.7, 0.7, 0.7), 2, BLACK);
     }
 }

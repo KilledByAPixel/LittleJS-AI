@@ -1,18 +1,19 @@
 <!DOCTYPE html><head>
 <title>LittleJS Tweakables Template</title>
 <meta charset="utf-8">
-</head><body style="background:#000">
-<script src="../dist/littlejs.js?1780207168309"></script>
-<script src="gameFx.js?1780207168309"></script>
-<script src="textureGenerator.js?1780207168309"></script>
-<script src="menus.js?1780207168309"></script>
-<script src="tweakables.js?1780207168309"></script>
+</head>
+<script src="engineLoader.js?1780292569262"></script>
+<script src="gameFx.js?1780292569262"></script>
+<script src="textureGenerator.js?1780292569262"></script>
+<script src="menus.js?1780292569262"></script>
+<script src="tweakables.js?1780292569262"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
+tilesPixelated = false; // Disable pixelation
 paused = false;
 
 // engine settings, customize if necessary
@@ -22,7 +23,7 @@ cameraScale = 32;
 
 ///////////////////////////////////////////////////////////////////////////////
 // TWEAKABLES TEMPLATE
-// Press ~ (backtick) to open the tweakables panel.
+// Press \ (backslash) to open the tweakables panel.
 // Demonstrates every tweakable type in one small bouncing-ball scene.
 
 // game state — these globals are tweakables
@@ -122,7 +123,7 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    drawTextScreen('Press ~ to tweak.  Click to launch the ball.',
+    drawTextScreen('Press \\ to tweak.  Click to launch the ball.',
         vec2(mainCanvasSize.x/2, 30), 24,
         hsl(0, 0, 1), 4, hsl(0, 0, 0));
 }

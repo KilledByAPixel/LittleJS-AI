@@ -227,6 +227,67 @@ function flushAtlas()
     textureInfos[0].createWebGLTexture();
 }
 
+// Force every texel's RGB to white, keeping the alpha channel, then re-upload
+// the atlas + regenerate mipmaps. This is the real cure for the dark halo on a
+// WHITE-only atlas (e.g. the default icons): the fringe comes from bilinear
+// filtering and mipmap downsampling averaging the white icon edge with the
+// transparent surround, whose RGB is (0,0,0) — so the colour drifts toward
+// black. With RGB white EVERYWHERE no average can darken, and because alpha
+// stays a true 0 in the transparent region it also contributes nothing under
+// additive blending (no faint square like the 1/255 trick had).
+//
+// The trick that makes this possible: we upload the ImageData straight to the
+// GPU. You can't fix it on the canvas itself — a 2D canvas is premultiplied,
+// so any pixel with alpha 0 has its RGB forced back to black the instant it
+// touches the canvas (putImageData included). ImageData / texImage2D is NOT
+// premultiplied (UNPACK_PREMULTIPLY_ALPHA is off in LittleJS), so white-at-
+// alpha-0 survives all the way into the texture.
+//
+// Only valid for a uniformly white atlas — it overwrites colour. Call it AFTER
+// all white tiles are painted; if you later draw more tiles, call it again
+// (a normal flush re-uploads the black-RGB canvas and undoes this).
+//
+// `ignoreTiles` (optional array of tile indices) lets a mixed atlas keep some
+// tiles' real colours: pixels inside those tiles' cells are left untouched, so
+// a sprite that WANTS a dark outline (e.g. a card front's thin black border or
+// a coloured card back) survives while the surrounding white tiles still get
+// de-haloed. Omit it for the original whole-atlas behaviour.
+function whitenAtlasAlpha(ignoreTiles = [])
+{
+    flushAtlas(); // make sure the GL texture exists / is current first
+    if (!glContext || !textureInfos[0].glTexture) return; // canvas2D: no GL halo
+
+    const image = atlasCtx.getImageData(0, 0, ATLAS_SIZE, ATLAS_SIZE);
+    const d = image.data;
+    if (!ignoreTiles.length)
+    {
+        for (let i = 0; i < d.length; i += 4)
+            d[i] = d[i+1] = d[i+2] = 255; // white RGB, leave d[i+3] (alpha) alone
+    }
+    else
+    {
+        // Whiten every pixel except those falling inside an ignored tile's cell.
+        const skip = new Set(ignoreTiles);
+        for (let py = 0; py < ATLAS_SIZE; ++py)
+        {
+            const rowTile = (py / TILE_STRIDE | 0) * TILE_COLS;
+            for (let px = 0; px < ATLAS_SIZE; ++px)
+            {
+                if (skip.has(rowTile + (px / TILE_STRIDE | 0))) continue;
+                const i = (py * ATLAS_SIZE + px) * 4;
+                d[i] = d[i+1] = d[i+2] = 255; // white RGB, leave alpha alone
+            }
+        }
+    }
+
+    glContext.bindTexture(glContext.TEXTURE_2D, textureInfos[0].glTexture);
+    glContext.texImage2D(glContext.TEXTURE_2D, 0, glContext.RGBA,
+        glContext.RGBA, glContext.UNSIGNED_BYTE, image);
+    if (!tilesPixelated && isPowerOfTwo(ATLAS_SIZE))
+        glContext.generateMipmap(glContext.TEXTURE_2D); // white RGB -> clean mips
+    glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture); // restore engine binding
+}
+
 function saveAtlasImage(filename = 'atlas')
 {
     flushAtlas();
@@ -283,7 +344,7 @@ function showAtlas(visible = true)
     if (visible)
     {
         atlasCanvas.style.cssText =
-            'position:fixed;top:8px;right:8px;width:25vmin;height:25vmin;' +
+            'position:fixed;top:8px;right:8px;width:50vmin;height:50vmin;' +
             'border:2px solid #f0a;pointer-events:none;z-index:9999;' +
             'background:rgba(128,128,128,.5);image-rendering:auto;';
         document.body.appendChild(atlasCanvas);
@@ -430,7 +491,7 @@ const _defaultIconDrawers = (() =>
 
     function burst(ctx, x, y, r)
     {
-        starPath(ctx, x, y, r, r/2, 10);
+        starPath(ctx, x, y, r, r*.7, 10);
         ctx.fill();
     }
 
@@ -550,5 +611,6 @@ function initDefaultAtlas(scale = 1)
     const icons = {};
     for (let i = 0; i < DEFAULT_ICON_NAMES.length; ++i)
         icons[DEFAULT_ICON_NAMES[i]] = drawDefaultIcon(DEFAULT_ICON_NAMES[i], i, scale);
+    whitenAtlasAlpha(); // white RGB everywhere -> no dark halo, true alpha-0 elsewhere
     return icons;
 }

@@ -17,15 +17,16 @@
 }
 */
 </style>
-</head><body style="background:#000">
-<script src="../dist/littlejs.js?1780207168309"></script>
-<script src="menus.js?1780207168309"></script>
+</head>
+<script src="engineLoader.js?1780292569262"></script>
+<script src="menus.js?1780292569262"></script>
 <script>
 'use strict';
 
 // engine settings, do not remove
 debugWatermark = false;
 showEngineVersion = false;
+tilesPixelated = false; // Disable pixelation
 paused = false;
 
 // engine settings, customize if necessary
@@ -34,7 +35,7 @@ cameraPos = vec2(0, 0);
 cameraScale = 32;
 // Default LittleJS canvas cap is 1920x1080 — raise it so the canvas
 // fills modern high-res monitors instead of letterboxing.
-canvasMaxSize = vec2(2048, 2048);
+canvasMaxSize = vec2(2048);
 
 ///////////////////////////////////////////////////////////////////////////////
 // MENU SYSTEM TEMPLATE
@@ -90,7 +91,7 @@ async function gameInit()
             {type:'button', label:'PLAY',    onClick: playFromTitle},
             {type:'button', label:'OPTIONS', onClick: () => pushMenu('options')},
             {type:'button', label:'MEDALS',  onClick: () => pushMenu('medals')},
-            {type:'button', label:'ABOUT',   onClick: () => pushMenu('about')},
+            {type:'button', label:'HELP',    onClick: () => pushMenu('help')},
         ],
     });
 
@@ -176,10 +177,10 @@ async function gameInit()
         ],
     });
 
-    // ----- about menu (demos the `text` item: wrapping multi-line paragraph) -----
+    // ----- help menu (demos the `text` item: wrapping multi-line paragraph) -----
     createMenu({
-        id: 'about',
-        title: 'ABOUT',
+        id: 'help',
+        title: 'HELP',
         onHide: popMenu,
         items: [
             {type:'label', text:'menus.js demo'},
@@ -189,7 +190,7 @@ async function gameInit()
                 'custom.\n\nKeyboard, gamepad, mouse and touch input are all wired ' +
                 'automatically.'},
             {type:'separator'},
-            {type:'button', label:'BACK', onClick: () => hideMenu('about')},
+            {type:'button', label:'BACK', onClick: () => hideMenu('help')},
         ],
     });
 
