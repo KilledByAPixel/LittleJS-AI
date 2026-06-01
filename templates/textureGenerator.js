@@ -584,8 +584,7 @@ const _defaultIconDrawers = (() =>
 })();
 
 // Draw one named white icon into a tile; returns its TileInfo (like
-// drawToTexture). scale tweaks icon size within the tile (1 = default). The
-// /1.15 headroom keeps the soft glow (which reaches r*1.14) inside the tile.
+// drawToTexture). scale tweaks icon size within the tile (1 = default).
 function drawDefaultIcon(name, tileIndex, scale = 1)
 {
     const fn = _defaultIconDrawers[name];
