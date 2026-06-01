@@ -67,6 +67,22 @@ const _CARD_INSET    = 16;                                        // transparent
 const _CARD_SILH_PX  = _CARD_TILE_PX - 2 * _CARD_INSET;           // painted silhouette = 218
 const _CARD_BG_SCALE = _CARD_TILE_PX / _CARD_SILH_PX;             // ~1.147 render compensation
 
+// textureGenerator decouples the paint space from tile resolution: paint fns
+// now draw in a fixed 500-unit (DRAW_SIZE) space scaled to fill the tile,
+// regardless of TILE_SIZE. These painters were authored in the older
+// 250-unit space (back when an 8-col tile WAS 250px), so each one is scaled
+// up by 500/250 to fill the contract. Without this, cards paint into a
+// quarter of the tile and render at half size. See drawToTexture's scale().
+const _CARD_PAINT_SCALE = 500 / _CARD_TILE_PX;
+function _cardPaint(fn)
+{
+    return (ctx, tileIndex) =>
+    {
+        ctx.scale(_CARD_PAINT_SCALE, _CARD_PAINT_SCALE);
+        return fn(ctx, tileIndex);
+    };
+}
+
 // =============================================================================
 // PUBLIC API
 // =============================================================================
@@ -84,15 +100,15 @@ function initCardAtlas(options = {})
     _cardSprites = { ranks: [], suits: [], bg: null, tint: null, back: null };
     for (let i = 0; i < 13; ++i)
         _cardSprites.ranks.push(drawToTexture(i,
-            _paintRankTile(rankLabels[i]), 'card rank ' + rankLabels[i]));
+            _cardPaint(_paintRankTile(rankLabels[i])), 'card rank ' + rankLabels[i]));
     for (let i = 0; i < 4; ++i)
         _cardSprites.suits.push(drawToTexture(16 + i,
-            _paintSuitTile(suitGlyphs[i]), 'card suit ' + suitGlyphs[i]));
-    _cardSprites.bg = drawToTexture(24, _paintCardBg,
+            _cardPaint(_paintSuitTile(suitGlyphs[i])), 'card suit ' + suitGlyphs[i]));
+    _cardSprites.bg = drawToTexture(24, _cardPaint(_paintCardBg),
         'card front, rounded white rectangle with thin dark border');
-    _cardSprites.tint = drawToTexture(25, _paintTintShape,
+    _cardSprites.tint = drawToTexture(25, _cardPaint(_paintTintShape),
         'card-shaped solid-white silhouette for tint overlays');
-    _cardSprites.back = drawToTexture(26, paintBack,
+    _cardSprites.back = drawToTexture(26, _cardPaint(paintBack),
         'card back design');
 
     // De-halo the white tiles (ranks, suits, tint mask) but keep the card

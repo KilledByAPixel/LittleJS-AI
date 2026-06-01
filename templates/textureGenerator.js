@@ -1,16 +1,20 @@
 'use strict';
 
 // AI can use this module to build a sprite atlas from canvas 2D draw ops.
-// initDrawToTexture(cols) builds a cols x cols grid inside a 2048 atlas.
-// cols=4 (default) gives 16 tiles of 488px with 12px gutters. cols=8 gives
-// 64 tiles of 244px with 6px gutters. Only 4 and 8 are supported. Paint
-// functions always draw in a fixed 500x500 space (see DRAW_SIZE) regardless
-// of the actual tile resolution. initDrawToTexture() replaces
-// textureInfos[0]. drawToTexture() paints a tile and returns a TileInfo.
+// initDrawToTexture(cols) builds a cols x cols grid inside the atlas. The atlas
+// is 4096px when the GPU's MAX_TEXTURE_SIZE allows (near-universal on WebGL2)
+// and 2048px otherwise — see pickAtlasSize(). cols=4 (default) gives 16 tiles,
+// cols=8 gives 64 tiles; only 4 and 8 are supported. Tile pixel sizes scale
+// with the atlas (e.g. cols=4 -> 1000px tiles at 4096, 488px at 2048). Paint
+// functions always draw in a fixed DRAW_SIZE (500) space scaled to the tile,
+// so the atlas resolution / gutter / tile pixel size can change without
+// touching paint code.
+// initDrawToTexture() replaces textureInfos[0]. drawToTexture() paints a tile
+// and returns a TileInfo.
 // drawTextToTexture() is the shortcut for the common "centre an emoji or
 // short string in a tile" case, with optional hue-shift recolour.
 // saveAtlasImage()/saveAtlasPrompt() export the sheet + prompt.
-// useAtlasImage(url) swaps in an AI-generated 2048 image without
+// useAtlasImage(url) swaps in an AI-generated atlas image without
 // invalidating already-returned TileInfos.
 // initDefaultAtlas() bakes 16 built-in white-on-transparent icons (circle,
 // droplet, ... bolt) into tiles 0-15 and returns a name->TileInfo map, ready
@@ -19,7 +23,23 @@
 // showAtlas(true|false) pins the live atlas canvas to the
 // top-right of the page for visual debugging.
 
-const ATLAS_SIZE = 2048;
+// Atlas pixel resolution. Starts at 2048 (the WebGL-guaranteed minimum) but
+// initDrawToTexture upgrades it to 4096 when the GPU reports it can sample a
+// texture that large. Paint fns are unaffected — they always draw in DRAW_SIZE
+// space, which drawToTexture scales to the tile.
+let ATLAS_SIZE = 2048;
+
+// Pick the atlas resolution: prefer 4096 for sharper sprites, but never exceed
+// what the GPU can sample. glContext is a WebGL2 context created before
+// gameInit; it's undefined only on the canvas2D fallback, where 2048 is safe.
+// Both 2048 and 4096 are powers of two, so the mipmap path stays valid.
+function pickAtlasSize()
+{
+    const preferred = 4096, fallback = 2048;
+    if (!glContext) return fallback; // canvas2D fallback, no GL to query
+    const max = glContext.getParameter(glContext.MAX_TEXTURE_SIZE);
+    return max >= preferred ? preferred : fallback;
+}
 
 // Fixed logical space every paint function draws in, regardless of the actual
 // tile resolution. drawToTexture scales DRAW_SIZE -> TILE_SIZE, so changing
@@ -51,10 +71,20 @@ function initDrawToTexture(cols = 4)
 {
     ASSERT(cols === 4 || cols === 8, 'cols must be 4 or 8');
 
+    // A generated atlas is always a high-res (2048px+) sheet, so disable the
+    // engine's nearest-neighbour pixel-art filtering for smooth sampling. Set
+    // before the TextureInfo below so its GL texture gets LINEAR magFilter +
+    // mipmaps. Games used to set this at module top-level; it now lives here so
+    // any texture-generator game gets it automatically. The engine re-reads
+    // tilesPixelated every frame in enginePreRender, and gameInit (where this
+    // runs) completes before the first render, so the timing matches.
+    tilesPixelated = false;
+
+    ATLAS_SIZE   = pickAtlasSize();               // 4096 if the GPU allows, else 2048
     TILE_COLS    = cols;
-    TILE_STRIDE  = ATLAS_SIZE / TILE_COLS;        // 512 or 256
+    TILE_STRIDE  = ATLAS_SIZE / TILE_COLS;        // 1024/512 at 4096, 512/256 at 2048
     TILE_PADDING = TILE_COLS === 4 ? 12 : 6;       // transparent moat to stop mip bleed
-    TILE_SIZE    = TILE_STRIDE - TILE_PADDING * 2; // 488 or 244
+    TILE_SIZE    = TILE_STRIDE - TILE_PADDING * 2;
     TILE_COUNT   = TILE_COLS * TILE_COLS;
 
     atlasCanvas = document.createElement('canvas');
@@ -306,7 +336,7 @@ function saveAtlasImage(filename = 'atlas')
 
 function saveAtlasPrompt(filename = 'atlas-prompt')
 {
-    let blob = 'A 2048x2048 sprite atlas, ' + TILE_COLS + 'x' + TILE_COLS +
+    let blob = 'A ' + ATLAS_SIZE + 'x' + ATLAS_SIZE + ' sprite atlas, ' + TILE_COLS + 'x' + TILE_COLS +
         ' grid of ' + TILE_SIZE + 'px tiles with ' + TILE_PADDING +
         'px gutters between tiles, transparent background. ' +
         'Tiles are numbered 0-' + (TILE_COUNT - 1) +
@@ -332,7 +362,7 @@ function useAtlasImage(url)
         img.crossOrigin = 'anonymous';
         img.onload = () =>
         {
-            // paint the loaded image into the 2048 atlasCanvas, scaling as needed
+            // paint the loaded image into the ATLAS_SIZE atlasCanvas, scaling as needed
             // so tile coordinates stay correct regardless of source image size
             atlasCtx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
             atlasCtx.drawImage(img, 0, 0, ATLAS_SIZE, ATLAS_SIZE);

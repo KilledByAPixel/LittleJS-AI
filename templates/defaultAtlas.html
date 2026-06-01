@@ -10,7 +10,6 @@
 'use strict';
 
 // engine settings, do not remove
-tilesPixelated = false; // Disable pixelation
 paused = false;
 
 // engine settings, customize if necessary
@@ -44,7 +43,7 @@ function gameRender()
 {
     // full atlas sheet on the right
     const atlasView = vec2(5);
-    const fullAtlas = new TileInfo(vec2(), vec2(2048));
+    const fullAtlas = new TileInfo(vec2(), textureInfos[0].size);
     const atlasPos = vec2(4, .5);
     drawRect(atlasPos, atlasView.add(vec2(.3)), hsl(0, 0, .5));
     drawTile(atlasPos, atlasView, fullAtlas, WHITE);
