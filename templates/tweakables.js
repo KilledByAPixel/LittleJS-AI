@@ -23,6 +23,12 @@
 // so live-tweaked values survive a refresh. Click "Copy" in the panel to
 // generate updated tweak() lines for pasting back into the source. Click
 // "Reset" to discard stored values and restore the code defaults.
+//
+// The panel only appears in debug builds (the LittleJS engine `debug`
+// global is true). In release/min builds tweak() still applies a {value:...}
+// code default so game behavior is identical, but renders no panel, binds no
+// toggle key, and ignores any localStorage-stored dev tweaks — so live
+// experiments never leak into the shipped game.
 
 const tweakRegistry = new Map();
 let tweakPanelEl = null;
@@ -36,10 +42,17 @@ let tweakStoredValues = null;
 // gameInit to opt in.
 let tweakShowEngineDefaults = false;
 
+// True only in debug builds. `debug` is the LittleJS engine global (true in
+// the debug build, false in release/min); resolved via getByPath so a missing
+// engine (loose sandbox use without LittleJS) defaults to showing the panel.
+function tweakDebugEnabled()
+{
+    const d = getByPath('debug');
+    return d === undefined ? true : !!d;
+}
+
 function tweak(path, options = {})
 {
-    initTweakSystem();
-
     const currentValue = getByPath(path);
     if (currentValue === undefined || currentValue === null)
     {
@@ -53,6 +66,11 @@ function tweak(path, options = {})
         setByPath(path, options.value);
         codeDefault = options.value;
     }
+
+    // In release/min builds keep the code default applied above but render no
+    // panel and ignore stored dev tweaks — the panel is debug-only.
+    if (!tweakDebugEnabled()) return;
+    initTweakSystem();
 
     const type = detectTweakType(codeDefault);
     if (!type)
@@ -114,6 +132,7 @@ function tweakEngineDefaults()
 
 function tweakDivider(label)
 {
+    if (!tweakDebugEnabled()) return;   // debug-only, like tweak()
     initTweakSystem();
     const div = document.createElement('div');
     const pad = label ? '4px' : '0';

@@ -24,20 +24,29 @@
 
     // Console helper for games opened standalone (the launcher defines its own copy
     // in index.html that reloads the iframe). Call from the game page's console:
-    //   littlejsBuild()            -> log the current override
+    //   littlejsBuild()            -> show the current build + available options
     //   littlejsBuild('debug')     -> run every game on the debug build (persists), reload
-    //   littlejsBuild('release'|'min')
-    //   littlejsBuild('default')   -> clear the override, reload
+    //   littlejsBuild('release')   -> back to the shipped default build (clears the override)
+    //   littlejsBuild('min')       -> minified release build
     window.littlejsBuild = function(build) {
         if (build === undefined) {
-            console.log('littlejs build override:', localStorage.getItem(KEY) || '(none — default: ' + BUILD + ')');
+            console.log(
+                '%clittlejs build:%c ' + (localStorage.getItem(KEY) || BUILD) + '%c\n' +
+                'Options: ' + Object.keys(FILES).join(', ') + '   (' + BUILD + ' = default)\n' +
+                "Switch every game with littlejsBuild('debug') / ('release') / ('min'), or littlejsDebug().",
+                'color: #f7c948; font-weight: bold;', 'color: #58a6ff; font-weight: bold;', 'color: #8b949e;'
+            );
             return;
         }
-        if (build === 'default' || build === null) localStorage.removeItem(KEY);
-        else if (FILES[build]) localStorage.setItem(KEY, build);
-        else { console.warn("littlejsBuild: use 'debug' | 'release' | 'min' | 'default'"); return; }
+        if (!FILES[build]) { console.warn("littlejsBuild: use 'debug', 'release', or 'min'"); return; }
+        // The default build needs no override → clear it; others persist.
+        if (build === BUILD) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, build);
         location.reload();
     };
+    // Short alias — littlejsDebug() turns the debug build on for every game;
+    // littlejsDebug(false) turns it back off (release default).
+    window.littlejsDebug = (on = true) => window.littlejsBuild(on ? 'debug' : 'release');
 
     let stored = null;
     try { stored = localStorage.getItem(KEY); } catch (e) {}     // private-mode / disabled storage
@@ -46,4 +55,12 @@
                 : (stored && FILES[stored]) ? stored
                 : BUILD;
     document.write('<script src="../dist/' + FILES[build] + '?' + VER + '"><\/script>');
+
+    // Centrally apply engine settings every game shared, so they don't have to be
+    // repeated in each file: silence the version/build console messages and hide the
+    // corner debug watermark. These are top-level `let`s in the engine, so they don't
+    // exist until the tag above executes — but classic scripts share one global lexical
+    // scope, so this inline script (parser-blocking, runs right after the engine is
+    // defined and before any game's engineInit) can flip them.
+    document.write('<script>showEngineVersion=false;<\/script>');
 }
