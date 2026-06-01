@@ -47,6 +47,7 @@ Pattern source — pick the closest **template** (`templates/*.html`):
 | Playing cards                          | `cardsGame.html`          | `textureGenerator.js`, `cards.js`                |
 | Title / pause / options UI             | `menuGame.html`           | `menus.js`                                        |
 | Procedural sprite atlas                | `textureGame.html`        | `textureGenerator.js`                            |
+| Shape-based / abstract / neon visuals, or many round entities (orbs, gems, asteroids, particles) | `textureGame.html` | `textureGenerator.js` — then apply the **atlas-shape-art** skill |
 | Runtime tuning controls                | `tweakableGame.html`      | `tweakables.js`                                   |
 | Canvas UI widgets                      | `uiGame.html`             | `menus.js` (+ `uiGame.html` patterns)            |
 | Sound effects + screen shake (any game)| (read `gameFx.js` API)    | `gameFx.js`                                      |
