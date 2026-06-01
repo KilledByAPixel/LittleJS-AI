@@ -20,6 +20,12 @@
 
 const ATLAS_SIZE = 2048;
 
+// Fixed logical space every paint function draws in, regardless of the actual
+// tile resolution. drawToTexture scales DRAW_SIZE -> TILE_SIZE, so changing
+// TILE_PADDING / TILE_SIZE never shifts or clips a sprite — paint fns keep
+// using 0..DRAW_SIZE coordinates (the documented 500x500 contract).
+const DRAW_SIZE = 500;
+
 let TILE_COLS, TILE_PADDING, TILE_STRIDE, TILE_SIZE, TILE_COUNT;
 let atlasCanvas, atlasCtx, atlasDirty, flushScheduled;
 const tileDescriptions = [];
@@ -46,8 +52,8 @@ function initDrawToTexture(cols = 4)
 
     TILE_COLS    = cols;
     TILE_STRIDE  = ATLAS_SIZE / TILE_COLS;        // 512 or 256
-    TILE_PADDING = TILE_COLS === 4 ? 6 : 3;
-    TILE_SIZE    = TILE_STRIDE - TILE_PADDING * 2; // 500 or 250
+    TILE_PADDING = TILE_COLS === 4 ? 12 : 6;       // transparent moat to stop mip bleed
+    TILE_SIZE    = TILE_STRIDE - TILE_PADDING * 2; // 488 or 244
     TILE_COUNT   = TILE_COLS * TILE_COLS;
 
     atlasCanvas = document.createElement('canvas');
@@ -85,6 +91,9 @@ function drawToTexture(tileIndex, drawFn, description)
     atlasCtx.beginPath();
     atlasCtx.rect(0, 0, TILE_SIZE, TILE_SIZE);
     atlasCtx.clip();
+    // paint in a fixed DRAW_SIZE space scaled to fill the tile, so paint fns are
+    // independent of TILE_SIZE (padding can change without moving sprites).
+    atlasCtx.scale(TILE_SIZE / DRAW_SIZE, TILE_SIZE / DRAW_SIZE);
     drawFn(atlasCtx, tileIndex);
     atlasCtx.restore();
 
@@ -160,13 +169,13 @@ function drawTextToTexture(tileIndex, text, options)
 
     return drawToTexture(tileIndex, ctx =>
     {
-        ctx.font = (TILE_SIZE * .96 * sizeMul) + 'px ' + font;
+        ctx.font = (DRAW_SIZE * .96 * sizeMul) + 'px ' + font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         // emoji glyphs sit a few px above the math-center of their em box —
         // nudge down so the visual centre lands at the tile centre.
-        const cx = TILE_SIZE / 2;
-        const cy = TILE_SIZE / 2 + TILE_SIZE * .04;
+        const cx = DRAW_SIZE / 2;
+        const cy = DRAW_SIZE / 2 + DRAW_SIZE * .04;
 
         // Paint the glyph once at (x,y), honouring the optional flip.
         const paint = (x, y) =>
@@ -190,7 +199,7 @@ function drawTextToTexture(tileIndex, text, options)
             // keeping its alpha shape; stamping the whole glyph (not a point)
             // at each ring offset fully covers the dilated band, so a modest
             // sample count leaves no gaps.
-            const r = outline.width * TILE_SIZE;
+            const r = outline.width * DRAW_SIZE;
             const samples = 16;
             ctx.save();
             ctx.filter = 'brightness(0)';
@@ -208,7 +217,7 @@ function drawTextToTexture(tileIndex, text, options)
                 ctx.save();
                 ctx.globalCompositeOperation = 'source-atop';
                 ctx.fillStyle = outline.color;
-                ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+                ctx.fillRect(0, 0, DRAW_SIZE, DRAW_SIZE);
                 ctx.restore();
             }
         }
@@ -591,9 +600,8 @@ function drawDefaultIcon(name, tileIndex, scale = 1)
     ASSERT(fn, 'unknown default icon: ' + name);
     return drawToTexture(tileIndex, ctx =>
     {
-        const c = TILE_SIZE / 2;
-        const headroom = .99;
-        const r = c * headroom * scale;
+        const c = DRAW_SIZE / 2;
+        const r = c * scale;
         ctx.fillStyle = '#fff';
         ctx.strokeStyle = '#fff';
         ctx.lineJoin = 'round';
