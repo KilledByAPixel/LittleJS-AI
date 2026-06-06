@@ -1517,15 +1517,16 @@ function processToastQueue(position)
 class MenuMedal extends Medal
 {
     /** Override of Medal.unlock() that routes the unlock notification to our
-     *  DOM toast queue instead of the engine's canvas display queue.
-     *  Same persistence (localStorage via storageKey()), same lookup map
-     *  (engine's `medals[id]`) — only the visual display differs. */
+     *  DOM toast queue instead of the engine's canvas display queue. Same
+     *  persistence (engine medalsSave() -> localStorage[medalsSaveName]) and
+     *  lookup map (engine's `medals[id]`) — only the visual display differs. */
     unlock()
     {
         if (this.unlocked) return;
         // Honor the engine's debug "prevent unlock" flag if it's been set.
         if (typeof medalsPreventUnlock !== 'undefined' && medalsPreventUnlock) return;
-        localStorage[this.storageKey()] = this.unlocked = true;
+        this.unlocked = true;
+        medalsSave();   // engine persists all medals as one localStorage blob
         showMenuToast({
             icon:  this.icon,
             title: this.name,

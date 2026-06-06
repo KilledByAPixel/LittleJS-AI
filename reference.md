@@ -101,6 +101,8 @@ Color.setHSLA(h=0, s=0, l=1, a=1)         // Set the color from HSLA values
 Color.HSLA()                              // Get the color in HSLA format
 Color.mutate(amount=.05, alphaAmount=0)   // Randomly diverge from this color
 Color.setHex(hex)                         // Set this color from a hex code
+Color.setAlpha(a=1)                       // Set the alpha of this color
+Color.withAlpha(a=1)                      // Get a copy of this color with the alpha set
 Color.rgbaInt()                           // Get this color as 32 bit RGBA value
 Color.toString(useAlpha=true)             // Get hex color code as a string
 
@@ -181,6 +183,7 @@ cameraScale = 32         // Scale of camera in world space
 screenToWorld(screenPos) // Convert from screen to world space coordinates
 worldToScreen(worldPos)  // Convert from world to screen space coordinates
 getCameraSize()          // Get the camera's visible area in world space
+cameraFit(center, size, worldMargin, screenInset) // Fit the camera to a world space rectangle
 
 // Display settings
 canvasMaxSize = (1920, 1080)  // The max size of the canvas

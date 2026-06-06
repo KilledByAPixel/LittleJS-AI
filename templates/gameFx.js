@@ -192,81 +192,9 @@ function _shakeUpdate()
     cameraPos = cameraPos.add(vec2(rand(-a, a), rand(-a, a)));
 }
 
-// ============================================================================
-// cameraFit — frame a world-space rectangle into the visible canvas.
-//
-// Sets cameraPos and cameraScale so the content rect (center, size) is fully
-// visible (letterbox fit, never cropped), with optional world-unit padding
-// around it and optional screen-pixel insets reserved on each edge (e.g. for a
-// HUD band). Reserved insets also recenter the content into the space that's
-// left, so a top inset pushes the content down automatically.
-//
-//   cameraFit(center, size, options) -> the cameraScale it applied
-//
-//   center   Vector2  world-space center of the content to frame
-//   size     Vector2  world-space (width, height) of the content
-//   options.margin  world UNITS of padding around the content (default 0)
-//   options.inset   screen PIXELS reserved per edge, e.g. HUD (default 0)
-//
-// margin and inset each accept three forms, "top" = +y world side / top of
-// screen (they align):
-//   number   -> uniform on all four sides
-//   Vector2  -> x = left & right, y = top & bottom
-//   object   -> {top, right, bottom, left}, any omitted side is 0
-//
-// Call it every frame from gameUpdatePost to re-fit on canvas resize (or once
-// if the canvas never changes). gameUpdatePost is the proper call site: the
-// engine runs it even while paused and before gameRender, so the camera stays
-// correct for a paused menu/title backdrop too — gameRender works but reframes
-// one frame late on resize. Assumes cameraAngle === 0 (no support for a rotated
-// camera). Bails without touching the camera if the content or the post-inset
-// viewport is degenerate.
-//
-//   // frame a board, reserving the top ~22% of the screen for a score HUD:
-//   cameraFit(vec2(0, 0), vec2(boardSize), { inset: { top: mainCanvasSize.y * .22 } });
-// ============================================================================
-
-function _padSides(p)
-{
-    // normalize a padding option to {top, right, bottom, left}
-    if (p === undefined) return { top: 0, right: 0, bottom: 0, left: 0 };
-    if (typeof p === 'number') return { top: p, right: p, bottom: p, left: p };
-    if (isVector2(p)) return { top: p.y, right: p.x, bottom: p.y, left: p.x };
-    return {
-        top:    p.top    || 0,
-        right:  p.right  || 0,
-        bottom: p.bottom || 0,
-        left:   p.left   || 0,
-    };
-}
-
-function cameraFit(center, size, options = {})
-{
-    ASSERT(isVector2(center), 'center must be a vec2');
-    ASSERT(isVector2(size), 'size must be a vec2');
-
-    const m = _padSides(options.margin);
-    const i = _padSides(options.inset);
-
-    const worldW = size.x + m.left + m.right;
-    const worldH = size.y + m.top  + m.bottom;
-    const viewW  = mainCanvasSize.x - i.left - i.right;
-    const viewH  = mainCanvasSize.y - i.top  - i.bottom;
-
-    // bail on a degenerate rect or viewport rather than NaN/Infinity the camera
-    if (!(worldW > 0) || !(worldH > 0) || !(viewW > 0) || !(viewH > 0))
-        return cameraScale;
-
-    const scale = min(viewW / worldW, viewH / worldH);
-    const rectCx = center.x + (m.right - m.left) / 2;
-    const rectCy = center.y + (m.top - m.bottom) / 2;
-
-    cameraScale = scale;
-    cameraPos = vec2(
-        rectCx - (i.left - i.right) / (2 * scale),
-        rectCy + (i.top  - i.bottom) / (2 * scale));
-    return scale;
-}
+// cameraFit(center, size, worldMargin, screenInset) is now a built-in LittleJS
+// engine function (it used to be defined here). worldMargin/screenInset each
+// accept a number, a Vector2, or a {top,right,bottom,left} object.
 
 // ============================================================================
 // Active input device — mouse vs keyboard vs gamepad, "most recently used".
@@ -308,7 +236,7 @@ function _gamepadActiveNow()
 
 function _mouseActiveNow()
 {
-    return mouseIsDown(0) || mouseIsDown(1) || mouseIsDown(2) ||
+return mouseIsDown(0) || mouseIsDown(1) || mouseIsDown(2) ||
         mouseDeltaScreen.length() > _MOUSE_MOVE_PIXELS;
 }
 
@@ -326,6 +254,160 @@ function inputDevice()        { _inputDeviceRefresh(); return _inputDevice; }
 function usingMouseInput()    { return inputDevice() === 'mouse'; }
 function usingKeyboardInput() { return inputDevice() === 'keyboard'; }
 function usingGamepadInput()  { return inputDevice() === 'gamepad'; }
+
+// ============================================================================
+// Starfield — STATELESS, seeded parallax/twinkle star background.
+//
+// Stores ONLY configuration — no per-star array. Each draw() reseeds a
+// RandomGenerator and re-derives every star's params in the same fixed order,
+// so the field is identical frame-to-frame (looks random, holds still) with
+// zero stored state. The only per-frame inputs are `time` (twinkle) and
+// `cameraPos` (screen-space parallax). Build once, then call draw() from
+// gameRender at the point the sky belongs (usually first, behind everything):
+//
+//   const sky = new Starfield(options);  // build once (e.g. in gameInit)
+//   sky.draw();                          // every frame, in gameRender
+//
+// Two space modes:
+//   world  (default)          stars sit at fixed world positions in the rect
+//                             center ± area (area = half-extents); drawn with
+//                             drawTile(tile) if a tile is given, else drawRect.
+//                             The camera moves over them naturally.
+//   screen (screenSpace:true) stars live in a virtual field of size `area` px
+//                             (default vec2(2000)) and wrap across the canvas,
+//                             scrolling by cameraPos × per-layer parallax.
+//
+// Twinkle is `base + amp · oscillate(speed)`: brightness (and size, if
+// twinkleSize) pulses between base and base+amp. For a plain `.55+.45*sin`
+// look (floor .1) use twinkleBase:.1, twinkleAmp:.9; the defaults give a
+// gentler .55..1 pulse.
+//
+// Depth via layers: pass `layers:[{count, parallax, sizeMin, sizeMax, alphaMin,
+// alphaMax, twSpeedMin, twSpeedMax, tintChance, tints:[Color,...]}, ...]`; or
+// omit `layers` and use the flat single-layer options of the same names.
+//
+// Extras: `color` sets the base star color (default WHITE). `drift` (a vec2
+// direction) + `driftSpeedMin/Max` scroll a WORLD-space field statelessly
+// (pos = base + drift*speed*time, wrapped in `area`). `unpaused:true` animates
+// from `timeReal` instead of `time`, so a title/paused backdrop keeps moving.
+// `wrap` (world units) makes a horizontal world CYLINDER: stars at worldX=0..wrap
+// scroll with the camera by per-layer `parallax` as DEPTH (1 = fixed in the world,
+// 0 = nailed to the view), wrapped seamlessly via mod(); off-screen stars cull.
+// ============================================================================
+class Starfield
+{
+    constructor({
+        seed = 1234, screenSpace = false, tile, area, center = vec2(),
+        color = WHITE,
+        count = 150, parallax = 0,
+        sizeMin = .05, sizeMax = .12, alphaMin = .6, alphaMax = 1,
+        twSpeedMin = 1, twSpeedMax = 3,
+        twinkleBase = .55, twinkleAmp = .45, twinkleSize = false,
+        tintChance = 0, tints, layers,
+        drift, driftSpeedMin = 1, driftSpeedMax = 1, unpaused = false, wrap = 0,
+    } = {})
+    {
+        this.seed        = seed || 1234;   // xorshift requires non-zero
+        this.screenSpace = screenSpace;
+        this.tile        = tile;
+        this.color       = color;
+        this.area        = area || (screenSpace ? vec2(2000) : vec2(40, 24));
+        this.center      = center;
+        this.twinkleBase = twinkleBase;
+        this.twinkleAmp  = twinkleAmp;
+        this.twinkleSize = twinkleSize;
+        this.drift       = drift;          // vec2 dir; enables stateless scroll (world mode)
+        this.unpaused    = unpaused;       // animate from timeReal (runs while paused)
+        this.wrap        = wrap;           // >0 = horizontal world cylinder of this width
+        this.layers      = layers || [{ count, parallax, sizeMin, sizeMax,
+            alphaMin, alphaMax, twSpeedMin, twSpeedMax, tintChance, tints,
+            driftSpeedMin, driftSpeedMax }];
+    }
+
+    draw()
+    {
+        const rng = new RandomGenerator(this.seed);
+        const W = mainCanvasSize.x, H = mainCanvasSize.y;
+        const screen = this.screenSpace, drift = this.drift, wrap = this.wrap;
+        const t = this.unpaused ? timeReal : time;
+        let halfVisW, yMin, yMax;
+        if (wrap)
+        {
+            const cs = getCameraSize();
+            halfVisW = cs.x/2 + 1;
+            yMin = cameraPos.y - cs.y/2 - 1;
+            yMax = cameraPos.y + cs.y/2 + 1;
+        }
+        for (const L of this.layers)
+        {
+            const par = L.parallax || 0;
+            const tints = L.tints, tintChance = L.tintChance || 0;
+            for (let i = L.count; i--;)
+            {
+                // derive this star deterministically (FIXED call order)
+                const rx = rng.float(), ry = rng.float();
+                const size    = rng.float(L.sizeMax, L.sizeMin);
+                const alpha   = rng.float(L.alphaMax, L.alphaMin);
+                const twSpeed = rng.float(L.twSpeedMax, L.twSpeedMin);
+                const twPhase = rng.float();
+                const tintRoll = rng.float();
+                const tintIdx  = tints ? rng.int(tints.length) : 0;
+                const dspeed   = drift ? rng.float(L.driftSpeedMax, L.driftSpeedMin) : 0;
+                const col = (tints && tintRoll < tintChance) ? tints[tintIdx] : this.color;
+
+                const tw = this.twinkleBase + this.twinkleAmp * oscillate(twSpeed, 1, t, twPhase);
+                const sz = size * (this.twinkleSize ? tw : 1);
+                const c  = rgb(col.r, col.g, col.b, alpha * tw);
+
+                if (screen)
+                {
+                    const sx = mod(rx*this.area.x - cameraPos.x*par, W);
+                    const sy = mod(ry*this.area.y + cameraPos.y*par, H);
+                    if (this.tile) drawTile(vec2(sx, sy), vec2(sz), this.tile, c, 0, 0, undefined, undefined, true);
+                    else           drawRect(vec2(sx, sy), vec2(sz), c, 0, true, true);
+                }
+                else
+                {
+                    let wx = this.center.x + (rx*2 - 1)*this.area.x;
+                    let wy = this.center.y + (ry*2 - 1)*this.area.y;
+                    if (wrap)
+                    {
+                        // horizontal world cylinder of width `wrap` with depth
+                        // parallax: a star at worldX = rx*wrap lags the camera by
+                        // (1 - par). par=1 sits in the world, par->0 nails it to the
+                        // view. mod() wraps the field seamlessly (handles negatives).
+                        const dx = mod(rx*wrap - cameraPos.x*par + wrap/2, wrap) - wrap/2;
+                        if (abs(dx) > halfVisW || wy < yMin || wy > yMax) continue;
+                        wx = cameraPos.x + dx;
+                    }
+                    else if (drift)
+                    {
+                        const ax = this.area.x, ay = this.area.y;
+                        wx = mod(wx + drift.x*dspeed*t - this.center.x + ax, 2*ax) + this.center.x - ax;
+                        wy = mod(wy + drift.y*dspeed*t - this.center.y + ay, 2*ay) + this.center.y - ay;
+                    }
+                    if (this.tile) drawTile(vec2(wx, wy), vec2(sz), this.tile, c);
+                    else           drawRect(vec2(wx, wy), vec2(sz), c);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// clearParticles — destroy every live ParticleEmitter (and its particles) so a
+// reset/quit leaves a clean field instead of frozen or fading particles.
+//
+// Uses immediate destroy so a trail/flame emitter that gets recreated right
+// after a reset doesn't briefly double up with the old one. Games that moved a
+// hand-rolled particle array onto ParticleEmitter call this where they used to
+// do `particles.length = 0`. Harmless (a no-op) in games with no emitters.
+// ============================================================================
+function clearParticles()
+{
+    for (const o of engineObjects)
+        if (o instanceof ParticleEmitter) o.destroy(true);
+}
 
 function gameFxUpdate()
 {

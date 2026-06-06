@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.18.17';
+const engineVersion = '1.18.17.1';
 
 /** Frames per second to update
  *  @type {number}
@@ -2233,9 +2233,24 @@ class Color
      * @return {Color} */
     setFrom(c) { return this.set(c.r, c.g, c.b, c.a); }
 
+    /** Sets the alpha of this color and returns self
+     *  @param {number} [a] - alpha
+     *  @return {Color} */
+    setAlpha(a=1)
+    {
+        this.a = a;
+        ASSERT_COLOR_VALID(this);
+        return this;
+    }
+
     /** Returns a new color that is a copy of this
      * @return {Color} */
     copy() { return new Color(this.r, this.g, this.b, this.a); }
+
+    /** Returns a copy of this color with the alpha set
+     *  @param {number} [a] - alpha
+     *  @return {Color} */
+    withAlpha(a=1) { return new Color(this.r, this.g, this.b, a); }
 
     /** Returns a copy of this color plus the color passed in
      * @param {Color} c - other color
@@ -5077,6 +5092,62 @@ function screenToWorldTransform(screenPos, screenSize, screenAngle=0)
  *  @return {Vector2}
  *  @memberof Draw */
 function getCameraSize() { return mainCanvasSize.scale(1/cameraScale); }
+
+/** Fit the camera to a rectangle in world space by setting cameraPos and cameraScale
+ *  - worldMargin pads the content rectangle in world units, so the gap scales with the content on resize
+ *  - screenInset reserves space in screen pixels on each viewport edge (for example a HUD band) and
+ *    re-centers the content away from that edge, so the reserved band stays a fixed pixel size on resize
+ *  - worldMargin and screenInset may each be a number for all sides, a Vector2 (x=left/right, y=top/bottom),
+ *    or an object with any of {top, right, bottom, left}
+ *  @param {Vector2} center - Center of the rectangle in world space
+ *  @param {Vector2} size - Size of the rectangle in world space
+ *  @param {number|Vector2|Object} [worldMargin] - World space padding added around the content rectangle
+ *  @param {number|Vector2|Object} [screenInset] - Screen space padding in pixels reserved on each viewport edge
+ *  @return {number} - The new camera scale
+ *  @memberof Draw */
+function cameraFit(center, size, worldMargin, screenInset)
+{
+    ASSERT(isVector2(center), 'center must be a vec2');
+    ASSERT(isVector2(size), 'size must be a vec2');
+
+    // pad the content
+    const margin = padSides(worldMargin);
+    const inset  = padSides(screenInset);
+    const worldW = size.x + margin.left + margin.right;
+    const worldH = size.y + margin.top  + margin.bottom;
+    const viewW  = mainCanvasSize.x - inset.left - inset.right;
+    const viewH  = mainCanvasSize.y - inset.top  - inset.bottom;
+
+    // bail on a degenerate rect or viewport rather than NaN the camera
+    if (!(worldW > 0 && worldH > 0 && viewW > 0 && viewH > 0))
+        return cameraScale;
+
+    // scale to fit the padded content
+    cameraScale = min(viewW / worldW, viewH / worldH);
+
+    // calculate offset vectors
+    const marginVector = vec2(margin.right - margin.left, margin.top - margin.bottom).scale(.5);
+    const insetVector = vec2(inset.right - inset.left, inset.top - inset.bottom).scale(.5 / cameraScale);
+
+    // apply the offsets and return camera scale
+    cameraPos = center.add(marginVector).add(insetVector);
+    return cameraScale;
+
+    function padSides(p)
+    {
+        // normalize a padding option to {top, right, bottom, left}
+        if (p === undefined || isNumber(p))
+            p = vec2(p);
+        if (isVector2(p))
+            return { top: p.y, right: p.x, bottom: p.y, left: p.x };
+        return {
+            top:    p.top    || 0,
+            right:  p.right  || 0,
+            bottom: p.bottom || 0,
+            left:   p.left   || 0,
+        };
+    }
+}
 
 /** Check if a box, point, or circle is on screen with a circle test
  *  If size is a Vector2, uses the length as diameter
@@ -10932,7 +11003,7 @@ class UISystemPlugin
             let targetPos, targetSize;
             if (o.parent)
             {
-                targetPos = o.parent.pos;
+                targetPos = o.parent.nativePos;
                 targetSize = o.parent.size;
             }
             else
@@ -10946,7 +11017,7 @@ class UISystemPlugin
             }
 
             const a = o.anchor;
-            o.pos = targetPos
+            o.nativePos = targetPos
                 .add(targetSize.multiply(a).scale(.5))   // anchor point on target
                 .subtract(o.size.multiply(a).scale(.5))  // pivot shift on self
                 .add(o.localPos);                        // user offset
@@ -11487,10 +11558,15 @@ class UIObject
         ASSERT(isVector2(pos), 'ui object pos must be a vec2');
         ASSERT(isVector2(size), 'ui object size must be a vec2');
 
-        /** @property {Vector2} - Local position of the object */
+        /** @property {Vector2} - Position you set: an offset from this object's
+         *  anchor point (the parent box, or the canvas for roots). This is the
+         *  input that controls placement — set this, not nativePos. */
         this.localPos = pos.copy();
-        /** @property {Vector2} - Screen space position of the object */
-        this.pos = pos.copy();
+        /** @property {Vector2} - Resolved position in native UI space, recomputed
+         *  every frame from localPos + anchor (and nativeHeight, if set). This is a
+         *  derived output used for drawing and hit-testing; assigning to it has no
+         *  effect since it is overwritten each frame. Set localPos instead. */
+        this.nativePos = pos.copy();
         /** @property {Vector2} - Screen space size of the object */
         this.size = size.copy();
         /** @property {Color} - Color of the object */
@@ -11625,7 +11701,7 @@ class UIObject
         const size = !isTouchDevice ? this.size :
                 this.size.add(vec2(this.extraTouchSize || 0));
         const pos = uiSystem.screenToNative(mousePosScreen);
-        return isOverlapping(this.pos, size, pos);
+        return isOverlapping(this.nativePos, size, pos);
     }
 
     /** Update the object, called automatically by plugin once each frame */
@@ -11715,7 +11791,7 @@ class UIObject
                 this.color : this.color;
         const lineWidth = this.lineWidth * (isNavigationObject ? 1.5 : 1);
         
-        uiSystem.drawRect(this.pos, this.size, color, lineWidth, lineColor, this.cornerRadius, this.gradientColor, this.shadowColor, this.shadowBlur, this.shadowOffset);
+        uiSystem.drawRect(this.nativePos, this.size, color, lineWidth, lineColor, this.cornerRadius, this.gradientColor, this.shadowColor, this.shadowBlur, this.shadowOffset);
     }
 
     /** Get the size for text with overrides and scale
@@ -11752,8 +11828,8 @@ class UIObject
         let text = 'type = ' + this.constructor.name;
         if (this.text)
             text += '\ntext = ' + this.text;
-        if (this.pos.x || this.pos.y)
-            text += '\npos = ' + this.pos;
+        if (this.nativePos.x || this.nativePos.y)
+            text += '\nnativePos = ' + this.nativePos;
         if (this.localPos.x || this.localPos.y)
             text += '\nlocalPos = ' + this.localPos;
         if (this.size.x || this.size.y)
@@ -11773,7 +11849,7 @@ class UIObject
             this.isHoverObject() ? YELLOW :
             this.disabled ? PURPLE :
             this.interactive ? RED : BLUE;
-        uiSystem.drawRect(this.pos, this.size, CLEAR_BLACK, 4, color);
+        uiSystem.drawRect(this.nativePos, this.size, CLEAR_BLACK, 4, color);
     }
 
     /** Internal function called when object is clicked
@@ -11856,7 +11932,7 @@ class UIText extends UIObject
 
         // render the text
         const textSize = this.getTextSize();
-        uiSystem.drawText(this.text, this.pos, textSize, this.textColor, this.textLineWidth, this.textLineColor, this.align, this.font, this.fontStyle, true, this.textShadow, this.shadowColor, this.shadowBlur, this.shadowOffset);
+        uiSystem.drawText(this.text, this.nativePos, textSize, this.textColor, this.textLineWidth, this.textLineColor, this.align, this.font, this.fontStyle, true, this.textShadow, this.shadowColor, this.shadowBlur, this.shadowOffset);
     }
 }
 
@@ -11951,7 +12027,7 @@ class UITextInput extends UIObject
         let text = this.text;
         if (this.isKeyInputObject()) // add a cursor to end of text
             text += timeReal%1 < .5 ?  '█' : '░';
-        uiSystem.drawText(text, this.pos, textSize, 
+        uiSystem.drawText(text, this.nativePos, textSize, 
             this.textColor, this.textLineWidth, this.textLineColor, this.align, this.font, this.fontStyle, true, this.textShadow);
     }
 }
@@ -11994,7 +12070,7 @@ class UITile extends UIObject
     }
     render()
     {
-        uiSystem.drawTile(this.pos, this.size, this.tileInfo, this.color, this.angle, this.mirror, this.shadowColor, this.shadowBlur, this.shadowOffset);
+        uiSystem.drawTile(this.nativePos, this.size, this.tileInfo, this.color, this.angle, this.mirror, this.shadowColor, this.shadowBlur, this.shadowOffset);
     }
 }
 
@@ -12033,7 +12109,7 @@ class UIButton extends UIObject
         
         // draw the text scaled to fit
         const textSize = this.getTextSize();
-        uiSystem.drawText(this.text, this.pos.add(this.textOffset), textSize, 
+        uiSystem.drawText(this.text, this.nativePos.add(this.textOffset), textSize, 
             this.textColor, this.textLineWidth, this.textLineColor, this.align, this.font, this.fontStyle, true, this.textShadow);
     }
 }
@@ -12081,13 +12157,13 @@ class UICheckbox extends UIObject
             const p = this.cornerRadius / min(this.size.x, this.size.y) * 2;
             const length = lerp(1, 2**.5/2, p) / 2;
             let s = this.size.scale(length);
-            uiSystem.drawLine(this.pos.add(s.multiply(vec2(-1))), this.pos.add(s.multiply(vec2(1))), this.lineWidth, this.lineColor);
-            uiSystem.drawLine(this.pos.add(s.multiply(vec2(-1,1))), this.pos.add(s.multiply(vec2(1,-1))), this.lineWidth, this.lineColor);
+            uiSystem.drawLine(this.nativePos.add(s.multiply(vec2(-1))), this.nativePos.add(s.multiply(vec2(1))), this.lineWidth, this.lineColor);
+            uiSystem.drawLine(this.nativePos.add(s.multiply(vec2(-1,1))), this.nativePos.add(s.multiply(vec2(1,-1))), this.lineWidth, this.lineColor);
         }
         
         // draw the text next to the checkbox
         const textSize = this.getTextSize();
-        const pos = this.pos.add(vec2(this.size.x,0));
+        const pos = this.nativePos.add(vec2(this.size.x,0));
         uiSystem.drawText(this.text, pos, textSize, 
             this.textColor, this.textLineWidth, this.textLineColor, 'left', this.font, this.fontStyle, false, this.textShadow);
     }
@@ -12143,7 +12219,7 @@ class UISlider extends UIObject
             const isHorizontal = this.size.x > this.size.y;
             const handleSize = isHorizontal ? this.size.y : this.size.x;
             const barSize = isHorizontal ? this.size.x : this.size.y;
-            const centerPos = isHorizontal ? this.pos.x : this.pos.y;
+            const centerPos = isHorizontal ? this.nativePos.x : this.nativePos.y;
 
             // check if value changed
             const handleWidth = barSize - handleSize;
@@ -12177,7 +12253,7 @@ class UISlider extends UIObject
             const minWidth = min(handleWidth, this.cornerRadius * 2);
             const progressWidth = lerp(minWidth, barWidth, this.value);
             const p = (progressWidth - barWidth) * (isHorizontal ? .5 : -.5);
-            const pos = this.pos.add(isHorizontal ? vec2(p, 0) : vec2(0, p));
+            const pos = this.nativePos.add(isHorizontal ? vec2(p, 0) : vec2(0, p));
             const color = this.disabled ? this.disabledColor : this.handleColor;
             const drawSize = isHorizontal ? 
                 vec2(progressWidth, this.size.y) : vec2(this.size.x, progressWidth);
@@ -12188,7 +12264,7 @@ class UISlider extends UIObject
             // draw the slider handle
             const value = clamp(isHorizontal ? this.value : 1 - this.value);
             const p = (barWidth - handleWidth) * (value - .5);
-            const pos = this.pos.add(isHorizontal ? vec2(p, 0) : vec2(0, p));
+            const pos = this.nativePos.add(isHorizontal ? vec2(p, 0) : vec2(0, p));
             const color = this.disabled ? this.disabledColor : this.handleColor;
             const drawSize = vec2(handleWidth);
             uiSystem.drawRect(pos, drawSize, color, this.lineWidth, this.lineColor, this.cornerRadius, this.gradientColor);
@@ -12196,7 +12272,7 @@ class UISlider extends UIObject
 
         // draw the text scaled to fit on the slider
         const textSize = this.getTextSize();
-        uiSystem.drawText(this.text, this.pos, textSize, 
+        uiSystem.drawText(this.text, this.nativePos, textSize, 
             this.textColor, this.textLineWidth, this.textLineColor, this.align, this.font, this.fontStyle, true, this.textShadow);
     }
     navigatePressed()
@@ -12335,7 +12411,7 @@ class UIVideo extends UIObject
         const context = uiSystem.uiContext;
         const s = this.size;
         context.save();
-        context.translate(this.pos.x, this.pos.y);
+        context.translate(this.nativePos.x, this.nativePos.y);
         context.drawImage(this.video, -s.x/2, -s.y/2, s.x, s.y);
         context.restore();
     }
@@ -16341,6 +16417,7 @@ export
     toggleFullscreen,
     setCursor,
     getCameraSize,
+    cameraFit,
     isOnScreen,
 
     // WebGL

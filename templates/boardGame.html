@@ -252,7 +252,7 @@ function gameUpdatePost()
     const boardWorldSize = BOARD_SIZE * CELL_SIZE;
 
     // setup camera leaving space for hud
-    cameraFit(vec2(0, 0), vec2(boardWorldSize), { margin: .5, inset: { top: 100 } });
+    cameraFit(vec2(0, 0), vec2(boardWorldSize), .5, { top: 100 });
 }
 
 function gameRender()
