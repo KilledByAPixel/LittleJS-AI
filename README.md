@@ -1,17 +1,17 @@
 # 🚂🤖 LittleJS AI
 
-*AI-assisted HTML5 game-making with LittleJS — starter templates, helper modules, and prompts. Home of the [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/): 50+ games built with these tools.*
+*An AI-assisted toolkit for making HTML5 games with [LittleJS](https://github.com/KilledByAPixel/LittleJS) — starter templates, helper modules, docs, and prompts for AI workflows. The games built with it live in the [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/).*
 
 # 🎮 [▶ Play in the LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)
 
 [LittleJS](https://github.com/KilledByAPixel/LittleJS) is a fast, lightweight, and fully open source HTML5 game engine designed for simplicity and performance.
 
-This repo is the AI-assisted LittleJS toolkit:
+This repo is the **AI-assisted LittleJS toolkit** — everything you need to build games, but not the games themselves:
 - starter templates you can fork and remix
 - helper modules for menus, sound/FX, sprites, and live tweaking
 - docs and prompts to improve LittleJS + AI workflows
 
-The finished games built with these tools live in the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** ([repo](https://github.com/KilledByAPixel/LittleJSArcade)).
+The 50+ finished games built with these tools live in their own repo: the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** ([source](https://github.com/KilledByAPixel/LittleJSArcade)).
 
 ### Want to make a game without writing code? Try the [LittleJS GPT!](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker)
 
@@ -22,7 +22,7 @@ LittleJS and everything in this repository is **MIT licensed!** See [LICENSE](LI
 ## 📚 Resources
 
 - [LittleJS Engine](https://github.com/KilledByAPixel/LittleJS) — the main LittleJS repository
-- [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/) — 50+ finished games built with these templates ([repo](https://github.com/KilledByAPixel/LittleJSArcade))
+- [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/) — 50+ finished games built with these tools, in their own repo ([source](https://github.com/KilledByAPixel/LittleJSArcade))
 - [Templates Folder](templates/) — starting templates and reusable components
 - [LittleJS GPT AI](https://chatgpt.com/g/g-67c7c080b5bc81919736bc8815836be6-littlejs-game-maker) — use ChatGPT to make games without writing any code
 
@@ -61,13 +61,14 @@ Single-file references to copy patterns from when adding a feature — not full 
 
 Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
 
-## 🕹️ Featured Games Made With AI
+## 🕹️ Built With These Tools
 
-Playable demos you can fork as starting points for your own games.
+A few favorites from the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** — every one made with the templates and helpers in this repo. Fork any of them from the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade) as a starting point for your own.
 
-Did you make a game you think should be included? Send a pull request!
+Made a game you think should be included? Send a pull request to the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade)!
 
 - 🧩 [Tetrix](https://killedbyapixel.github.io/LittleJSArcade/games/tetrix.html)
+- 🤖 [Pong](https://killedbyapixel.github.io/LittleJSArcade/games/pong.html)
 - 🤖 [Robo Rescue](https://killedbyapixel.github.io/LittleJSArcade/games/roboRescue.html)
 - 🐸 [Froggit](https://killedbyapixel.github.io/LittleJSArcade/games/froggit.html)
 - 🧛 [Emoji Survivors](https://killedbyapixel.github.io/LittleJSArcade/games/emojiSurvivors.html)
@@ -76,9 +77,6 @@ Did you make a game you think should be included? Send a pull request!
 - 🎱 [Pool](https://killedbyapixel.github.io/LittleJSArcade/games/pool.html)
 - 🃏 [Freecell](https://killedbyapixel.github.io/LittleJSArcade/games/freecell.html)
 - 👾 [Space Intruders](https://killedbyapixel.github.io/LittleJSArcade/games/spaceIntruders.html)
-- 👻 [Puc-Man](https://killedbyapixel.github.io/LittleJSArcade/games/pucMan.html)
-- 🌑 [Asterblast](https://killedbyapixel.github.io/LittleJSArcade/games/asterblast.html)
+- 👻 [Maze Munchy](https://killedbyapixel.github.io/LittleJSArcade/games/pucMan.html)
+- 🌑 [Astroblast](https://killedbyapixel.github.io/LittleJSArcade/games/asterblast.html)
 - 🔴 [Checkers](https://killedbyapixel.github.io/LittleJSArcade/games/checkers.html)
-- 🐛 [Centibug](https://killedbyapixel.github.io/LittleJSArcade/games/centibug.html)
-- 🪐 [Orbitswarm](https://killedbyapixel.github.io/LittleJSArcade/games/orbitswarm.html)
-- 💊 [Dr. Pill](https://killedbyapixel.github.io/LittleJSArcade/games/drPill.html)
