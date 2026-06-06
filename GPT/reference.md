@@ -101,6 +101,8 @@ Color.setHSLA(h=0, s=0, l=1, a=1)         // Set the color from HSLA values
 Color.HSLA()                              // Get the color in HSLA format
 Color.mutate(amount=.05, alphaAmount=0)   // Randomly diverge from this color
 Color.setHex(hex)                         // Set this color from a hex code
+Color.setAlpha(a=1)                       // Set the alpha of this color
+Color.withAlpha(a=1)                      // Get a copy of this color with the alpha set
 Color.rgbaInt()                           // Get this color as 32 bit RGBA value
 Color.toString(useAlpha=true)             // Get hex color code as a string
 
@@ -148,7 +150,7 @@ drawText(text, pos, size=1, color=WHITE, lineWidth=0, lineColor=BLACK)
 drawTextScreen(text, pos, size=1, color=WHITE, lineWidth=0, lineColor=BLACK)
 
 // Utility drawing functions
-setBlendMode(additive)
+setAdditiveBlendMode(additive)
 isFullscreen()
 toggleFullscreen()
 
@@ -181,6 +183,7 @@ cameraScale = 32         // Scale of camera in world space
 screenToWorld(screenPos) // Convert from screen to world space coordinates
 worldToScreen(worldPos)  // Convert from world to screen space coordinates
 getCameraSize()          // Get the camera's visible area in world space
+cameraFit(center, size, worldMargin, screenInset) // Fit the camera to a world space rectangle
 
 // Display settings
 canvasMaxSize = (1920, 1080)  // The max size of the canvas
@@ -268,8 +271,14 @@ mouseIsDown(button)                   // Is mouse button down?
 mouseWasPressed(button)               // Was mouse button pressed this frame?
 mouseWasReleased(button)              // Was mouse button released this frame?
 
+// Last input device (most recently used)
+lastInputDevice                       // 'mouse' | 'keyboard' | 'gamepad' (sticky while idle)
+usingMouseInput()                     // Is the mouse the most recently used device?
+usingKeyboardInput()                  // Is the keyboard the most recently used device?
+usingGamepadInput()                   // Is a gamepad the most recently used device?
+
 // Gamepad
-isUsingGamepad                        // Is user currently using gamepad?
+isUsingGamepad                        // Is a gamepad the most recently used device? (= usingGamepadInput())
 gamepadIsDown(button, gamepad=0)      // Is gamepad button down?
 gamepadWasPressed(button, gamepad=0)  // Was gamepad button pressed this frame?
 gamepadWasReleased(button, gamepad=0) // Was gamepad button released this frame?
@@ -289,6 +298,7 @@ vibrateStop()                         // Stop all vibration
 gamepadsEnable = true                 // Should gamepads be allowed?
 gamepadDirectionEmulateStick = true   // Should dpad be routed to the left analog stick?
 inputWASDEmulateDirection = true      // Should WASD keys be routed to the direction keys?
+inputMouseMoveThreshold = 2           // Screen-px mouse movement per frame that counts as mouse use
 vibrateEnable = true                  // Allow vibration hardware if it exists?
 touchGamepadEnable = false            // Should touch gamepad appear on mobile devices?
 touchGamepadAnalog = true             // Should touch gamepad be analog or 8 way dpad?
