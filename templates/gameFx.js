@@ -236,7 +236,7 @@ function _gamepadActiveNow()
 
 function _mouseActiveNow()
 {
-return mouseIsDown(0) || mouseIsDown(1) || mouseIsDown(2) ||
+    return mouseIsDown(0) || mouseIsDown(1) || mouseIsDown(2) ||
         mouseDeltaScreen.length() > _MOUSE_MOVE_PIXELS;
 }
 
