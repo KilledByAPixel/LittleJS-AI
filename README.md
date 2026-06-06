@@ -65,8 +65,6 @@ Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game
 
 A few favorites from the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** — every one made with the templates and helpers in this repo. Fork any of them from the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade) as a starting point for your own.
 
-Made a game you think should be included? Send a pull request to the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade)!
-
 - 🧩 [Tetrix](https://killedbyapixel.github.io/LittleJSArcade/games/tetrix.html)
 - 🤖 [Pong](https://killedbyapixel.github.io/LittleJSArcade/games/pong.html)
 - 🤖 [Robo Rescue](https://killedbyapixel.github.io/LittleJSArcade/games/roboRescue.html)
