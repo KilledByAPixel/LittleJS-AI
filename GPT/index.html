@@ -44,10 +44,272 @@ class SoundGenerator extends Sound
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// SPRITE ATLAS (do not remove) - bakes 16 white shape icons into one texture so
+// the AI can draw recolorable sprites with zero external assets. Call
+// initDefaultAtlas() once in gameInit to get a name->TileInfo map, then draw any
+// icon with drawTile(pos, size, icons.NAME, color). Each icon is pure white, so
+// the color argument tints it to any hue. Icon names (tiles 0-15):
+//   circle glow ring roundSquare triangle diamond pentagon hexagon
+//   spark star burst plus heart droplet bolt arrow
+
+const ATLAS_SIZE = 2048; // texture size in pixels
+const DRAW_SIZE = 500;   // fixed logical space every icon is painted in
+let TILE_COLS, TILE_PADDING, TILE_STRIDE, TILE_SIZE, TILE_COUNT;
+let atlasCanvas, atlasCtx, atlasDirty, flushScheduled;
+
+function initDrawToTexture(cols = 4)
+{
+    ASSERT(cols === 4 || cols === 8, 'cols must be 4 or 8');
+
+    TILE_COLS    = cols;
+    TILE_STRIDE  = ATLAS_SIZE / TILE_COLS;          // 512 or 256
+    TILE_PADDING = TILE_COLS === 4 ? 12 : 6;        // transparent moat to stop mip bleed
+    TILE_SIZE    = TILE_STRIDE - TILE_PADDING * 2;  // 488 or 244
+    TILE_COUNT   = TILE_COLS * TILE_COLS;
+
+    atlasCanvas = document.createElement('canvas');
+    atlasCanvas.width = atlasCanvas.height = ATLAS_SIZE;
+    atlasCtx = atlasCanvas.getContext('2d');
+
+    textureInfos[0] && textureInfos[0].destroyWebGLTexture();
+    textureInfos[0] = new TextureInfo(atlasCanvas);
+
+    setTileDefaultSize(vec2(TILE_SIZE));
+    setTileDefaultPadding(TILE_PADDING);
+    atlasDirty = flushScheduled = false;
+}
+
+function drawToTexture(tileIndex, drawFn)
+{
+    ASSERT(tileIndex >= 0 && tileIndex < TILE_COUNT, 'tileIndex out of range');
+
+    const cellX = (tileIndex % TILE_COLS) * TILE_STRIDE;
+    const cellY = (tileIndex / TILE_COLS | 0) * TILE_STRIDE;
+    const drawX = cellX + TILE_PADDING;
+    const drawY = cellY + TILE_PADDING;
+
+    atlasCtx.clearRect(cellX, cellY, TILE_STRIDE, TILE_STRIDE);
+    atlasCtx.save();
+    atlasCtx.translate(drawX, drawY);
+    atlasCtx.beginPath();
+    atlasCtx.rect(0, 0, TILE_SIZE, TILE_SIZE);
+    atlasCtx.clip();
+    // paint in a fixed DRAW_SIZE space scaled to fill the tile
+    atlasCtx.scale(TILE_SIZE / DRAW_SIZE, TILE_SIZE / DRAW_SIZE);
+    drawFn(atlasCtx, tileIndex);
+    atlasCtx.restore();
+
+    atlasDirty = true;
+    if (!flushScheduled)
+    {
+        flushScheduled = true;
+        queueMicrotask(flushAtlas);
+    }
+    return new TileInfo(vec2(drawX, drawY), vec2(TILE_SIZE), textureInfos[0], TILE_PADDING);
+}
+
+function flushAtlas()
+{
+    flushScheduled = false;
+    if (!atlasDirty) return;
+    atlasDirty = false;
+    textureInfos[0].createWebGLTexture();
+}
+
+// Force every texel RGB to white (keeping alpha) so bilinear/mipmap filtering
+// can't darken the white icon edges into a halo. Call after painting white tiles.
+function whitenAtlasAlpha()
+{
+    flushAtlas();
+    if (!glContext || !textureInfos[0].glTexture) return; // canvas2D: no GL halo
+
+    const image = atlasCtx.getImageData(0, 0, ATLAS_SIZE, ATLAS_SIZE);
+    const d = image.data;
+    for (let i = 0; i < d.length; i += 4)
+        d[i] = d[i+1] = d[i+2] = 255; // white RGB, leave alpha alone
+
+    glContext.bindTexture(glContext.TEXTURE_2D, textureInfos[0].glTexture);
+    glContext.texImage2D(glContext.TEXTURE_2D, 0, glContext.RGBA,
+        glContext.RGBA, glContext.UNSIGNED_BYTE, image);
+    if (!tilesPixelated && isPowerOfTwo(ATLAS_SIZE))
+        glContext.generateMipmap(glContext.TEXTURE_2D);
+    glContext.bindTexture(glContext.TEXTURE_2D, glActiveTexture); // restore engine binding
+}
+
+// 16 built-in white-on-transparent icons, drawn centred at (x,y) with radius r.
+const DEFAULT_ICON_NAMES = [
+    'circle', 'glow', 'ring', 'roundSquare',
+    'triangle', 'diamond', 'pentagon', 'hexagon',
+    'spark', 'star', 'burst', 'plus',
+    'heart', 'droplet', 'bolt', 'arrow',
+];
+
+const _defaultIconDrawers = (() =>
+{
+    function poly(ctx, x, y, r, sides, rot = 0)
+    {
+        ctx.beginPath();
+        for (let k = sides; k--;)
+        {
+            const a = rot + k * (2*PI / sides);
+            ctx.lineTo(x + Math.sin(a) * r, y - Math.cos(a) * r);
+        }
+        ctx.closePath();
+    }
+    function starPath(ctx, x, y, ro, ri, points, rot = -PI/2)
+    {
+        ctx.beginPath();
+        for (let k = points * 2; k--;)
+        {
+            const rr = k & 1 ? ri : ro;
+            const a = rot + k * (PI / points);
+            ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath();
+    }
+    function roundRectPath(ctx, x, y, w, h, r)
+    {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+    }
+    function circle(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 9);
+        ctx.fill();
+    }
+    function droplet(ctx, x, y, r)
+    {
+        const by = y + .3 * r, br = .6 * r;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.bezierCurveTo(x + .3 * r, y - .5 * r, x + br, y - .1 * r, x + br, by);
+        ctx.arc(x, by, br, 0, PI);
+        ctx.bezierCurveTo(x - br, y - .1 * r, x - .3 * r, y - .5 * r, x, y - r);
+        ctx.closePath();
+        ctx.fill();
+    }
+    function roundSquare(ctx, x, y, r)
+    {
+        roundRectPath(ctx, x - r, y - r, r*2, r*2, r*.4);
+        ctx.fill();
+    }
+    function triangle(ctx, x, y, r) { poly(ctx, x, y, r, 3);        ctx.fill(); }
+    function diamond(ctx, x, y, r)  { poly(ctx, x, y, r, 4);        ctx.fill(); }
+    function pentagon(ctx, x, y, r) { poly(ctx, x, y, r, 5);        ctx.fill(); }
+    function hexagon(ctx, x, y, r)  { poly(ctx, x, y, r, 6, PI/2);  ctx.fill(); }
+    function ring(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 9);
+        ctx.arc(x, y, r*.7, 9, 0, true);
+        ctx.fill();
+    }
+    function glow(ctx, x, y, r)
+    {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 9);
+        ctx.fill();
+    }
+    function burst(ctx, x, y, r) { starPath(ctx, x, y, r, r*.7, 10); ctx.fill(); }
+    function spark(ctx, x, y, r) { starPath(ctx, x, y, r, r/4, 4);   ctx.fill(); }
+    function star(ctx, x, y, r)  { starPath(ctx, x, y, r, r*.4, 5);  ctx.fill(); }
+    function heart(ctx, x, y, r)
+    {
+        const width = 1, topCtrl = .92, dip = .40, shoulder = .46, tip = .9;
+        const p = (nx, ny) => [x + nx * r, y + ny * r];
+        ctx.beginPath();
+        ctx.moveTo(...p(0, -dip));
+        ctx.bezierCurveTo(...p(0, -topCtrl), ...p(-width, -topCtrl), ...p(-width, -shoulder));
+        ctx.bezierCurveTo(...p(-width, 0), ...p(0, tip * .9), ...p(0, tip));
+        ctx.bezierCurveTo(...p(0, tip * .9), ...p(width, 0), ...p(width, -shoulder));
+        ctx.bezierCurveTo(...p(width, -topCtrl), ...p(0, -topCtrl), ...p(0, -dip));
+        ctx.closePath();
+        ctx.fill();
+    }
+    function plus(ctx, x, y, r)
+    {
+        const a = r * .3, b = r;
+        ctx.beginPath();
+        ctx.moveTo(x - a, y - b); ctx.lineTo(x + a, y - b); ctx.lineTo(x + a, y - a);
+        ctx.lineTo(x + b, y - a); ctx.lineTo(x + b, y + a); ctx.lineTo(x + a, y + a);
+        ctx.lineTo(x + a, y + b); ctx.lineTo(x - a, y + b); ctx.lineTo(x - a, y + a);
+        ctx.lineTo(x - b, y + a); ctx.lineTo(x - b, y - a); ctx.lineTo(x - a, y - a);
+        ctx.closePath();
+        ctx.fill();
+    }
+    function arrow(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + .8 * r, y - .1 * r); ctx.lineTo(x + .3 * r, y - .1 * r);
+        ctx.lineTo(x + .3 * r, y + r);      ctx.lineTo(x - .3 * r, y + r);
+        ctx.lineTo(x - .3 * r, y - .1 * r); ctx.lineTo(x - .8 * r, y - .1 * r);
+        ctx.closePath();
+        ctx.fill();
+    }
+    function bolt(ctx, x, y, r)
+    {
+        ctx.beginPath();
+        ctx.moveTo(x + .25 * r, y - r);   ctx.lineTo(x - .5 * r, y + .15 * r);
+        ctx.lineTo(x - .1 * r, y + .15 * r); ctx.lineTo(x - .25 * r, y + r);
+        ctx.lineTo(x + .5 * r, y - .2 * r);  ctx.lineTo(x + .1 * r, y - .2 * r);
+        ctx.closePath();
+        ctx.fill();
+    }
+    return {
+        circle, glow, ring, roundSquare, triangle, diamond, pentagon, hexagon,
+        spark, star, burst, plus, heart, droplet, bolt, arrow,
+    };
+})();
+
+// Paint one named white icon into a tile and return its TileInfo. scale tweaks
+// icon size within the tile (1 = default).
+function drawDefaultIcon(name, tileIndex, scale = 1)
+{
+    const fn = _defaultIconDrawers[name];
+    ASSERT(fn, 'unknown default icon: ' + name);
+    return drawToTexture(tileIndex, ctx =>
+    {
+        const c = DRAW_SIZE / 2, r = c * scale;
+        ctx.fillStyle = ctx.strokeStyle = '#fff';
+        ctx.lineJoin = ctx.lineCap = 'round';
+        fn(ctx, c, c, r);
+    });
+}
+
+// Build the 16 default icons into tiles 0-15 and return a name->TileInfo map.
+function initDefaultAtlas(scale = 1)
+{
+    if (!atlasCtx) initDrawToTexture(4);
+    const icons = {};
+    for (let i = 0; i < DEFAULT_ICON_NAMES.length; ++i)
+        icons[DEFAULT_ICON_NAMES[i]] = drawDefaultIcon(DEFAULT_ICON_NAMES[i], i, scale);
+    whitenAtlasAlpha(); // white RGB everywhere -> no dark halo
+    return icons;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// the default sprite atlas, a name->TileInfo map filled in by gameInit
+let icons;
+
+///////////////////////////////////////////////////////////////////////////////
 async function gameInit()
 {
     // called once after the engine starts up
     // setup the game
+
+    // bake the 16 default white shape icons into the sprite atlas
+    icons = initDefaultAtlas();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -73,17 +335,18 @@ function gameRender()
     // draw background gradient
     drawRectGradient(cameraPos, getCameraSize(), BLACK, hsl(0,0,.15));
 
-    // draw shapes with basic primitives (world space; color tints each shape)
-    drawCircle(vec2(-6,0), 4, RED);                // pos, diameter, color
-    drawRect(vec2(-2,0), vec2(4), YELLOW);         // pos, size, color
-    drawRegularPoly(vec2(2,0), vec2(4), 6, CYAN);  // pos, size, sides, color
-    drawRegularPoly(vec2(6,0), vec2(4), 3, GREEN); // a triangle (3 sides)
+    // draw shapes from the default sprite atlas
+    // each icon is a white tile, tinted to any color by the color argument
+    drawTile(vec2(-6,0), vec2(4), icons.circle,  RED);
+    drawTile(vec2(-2,0), vec2(4), icons.star,    YELLOW);
+    drawTile(vec2( 2,0), vec2(4), icons.heart,   hsl(.95,.7,.6));
+    drawTile(vec2( 6,0), vec2(4), icons.hexagon, CYAN);
 
-    // soft radial glow that follows the mouse (fades from center to edge)
-    drawCircleGradient(mousePos, 6, hsl(time%1,1,.5), CLEAR_WHITE);
+    // additive glow that follows the mouse (additiveColor alpha must be 0)
+    drawTile(mousePos, vec2(6), icons.glow, hsl(time%1,1,.5), 0, false, new Color(1,1,1,0));
 
     // draw world space text
-    drawText(`LittleJS Starter`, vec2(0,4), 2);
+    drawText(`LittleJS Sprite Atlas`, vec2(0,4), 2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

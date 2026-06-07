@@ -1,6 +1,6 @@
 # LittleJS Engine Quick Reference
 
-Curated API cheat sheet for building small prototypes with basic shape primitives (no external assets). For exact behavior or anything not listed here, search the full engine source `littlejs.js`.
+Curated API cheat sheet for building small prototypes with the pre-built sprite atlas + shape primitives (no external assets). For exact behavior or anything not listed here, search the full engine source `littlejs.js`.
 
 - [LittleJS on GitHub](https://github.com/KilledByAPixel/LittleJS)
 - [LittleJS Documentation](https://killedbyapixel.github.io/LittleJS/docs)
@@ -105,6 +105,12 @@ drawRegularPoly(pos, size=(1,1), sides=3, color=WHITE, lineWidth=0, lineColor=BL
 drawPoly(points, color=WHITE, lineWidth=0, lineColor=BLACK, pos, angle=0) // points = array of vec2
 drawLine(posA, posB, width=.1, color=WHITE)
 drawLineList(points, width=.1, color, wrap=false, pos, angle=0)
+
+// Sprite atlas tiles - the starter bakes 16 white icons into the `icons` map; color tints each tile
+drawTile(pos, size, tileInfo, color=WHITE, angle=0, mirror, additiveColor) // size is a vec2 (full diameter)
+// icons.NAME (a TileInfo): circle glow ring roundSquare triangle diamond pentagon hexagon
+//                          spark star burst plus heart droplet bolt arrow
+// additive glow FX: drawTile(pos, size, icons.glow, color, 0, false, new Color(1,1,1,0)) // additiveColor alpha 0
 
 // Gradients (use CLEAR_WHITE as the outer/bottom color to fade out - great for glows)
 drawCircleGradient(pos, diameter=1, colorInner=WHITE, colorOuter=CLEAR_WHITE)
