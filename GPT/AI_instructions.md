@@ -47,7 +47,7 @@ Game structure (use the engine, do not reinvent it)
       update()
       {
           this.velocity = keyDirection().scale(.2); // arrows/WASD move the player
-          super.update();                           // applies velocity, gravity, collision
+          // engine applies physics (velocity, gravity, collision) automatically - no super.update() needed
       }
       render()
       {
@@ -92,7 +92,7 @@ Common pitfalls
 - Y-axis is up-positive in world space (gravity.y must be negative to fall down).
 - drawText uses world units (size ~3 is normal); drawTextScreen uses pixels (size ~80 is normal). Do not mix them up.
 - When using the Box2D starter, call `await box2dInit()` at the top of gameInit before creating any bodies.
-- Do not redefine shortcuts to Math functions.
+- Do not name your own variables after engine globals. Names like gravity, time, frame, mousePos, cameraPos, cameraScale, the math shortcuts (sin, cos, min, max, lerp, ...), and the color constants (RED, ...) are already declared by the engine, so a top-level `let`/`const` with one of those names throws "already declared". Prefix your own globals (e.g. playerSpeed). (Names like score and level are free to use.)
 - Do not write new audio code, just use SoundGenerator to make sounds.
 - Do not replace \n with new lines for text inside strings.
 

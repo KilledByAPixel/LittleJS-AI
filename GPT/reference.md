@@ -195,7 +195,7 @@ With no `tileInfo` it draws as a colored box - override `render()` to draw a cir
 
 ```javascript
 EngineObject(pos, size=(1,1), tileInfo, angle=0, color, renderOrder=0) // tileInfo undefined = colored box
-o.update()                         // Override for per-frame logic, then call super.update()
+o.update()                         // Override for per-frame logic (engine applies physics automatically)
 o.render()                         // Override for custom drawing
 o.destroy()                        // Destroy this object and its children
 o.collideWithTile(tileData, pos)   // Override: react to tile collision
