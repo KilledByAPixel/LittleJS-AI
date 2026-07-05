@@ -60,6 +60,8 @@ Template selection for new games
 - Use `templates/textureGame.html` for procedural sprite-atlas workflows.
 - Use `templates/tweakableGame.html` for runtime tuning workflows.
 - Use `templates/uiGame.html` when canvas UI widgets are required.
+- Use `games/threejsGame/` as the reference example for 3D games with the built-in
+  three.js plugin (a mini 3D platformer folder game).
 
 When scaffolding into `games/<gameName>/`
 - Keep the game in its own folder under `games/`.
@@ -72,6 +74,26 @@ When scaffolding into `games/<gameName>/`
   - `../../templates/tweakables.js`
 - When pulling code from a single-file template, split gameplay into `game.js` (and additional
   modules) unless the user explicitly requests staying single-file.
+
+Three.js 3D rendering (built-in plugin)
+- The engine build includes a three.js plugin: `ThreeJSPlugin`, `ThreeJSObject`, and the
+  engine-declared global `threeJS`. It renders a 3D scene on a canvas behind the LittleJS
+  canvas; `games/threejsGame/` is the reference example.
+- three.js itself is not bundled. Load it at the top of an async `gameInit` (the engine
+  awaits `gameInit`, same as `box2dInit`):
+  `THREE = await import('https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js');`
+  then `new ThreeJSPlugin(THREE);`. Declare `let THREE;` at top level and do not construct
+  any `THREE.*` objects before the import completes (no top-level `new THREE.Vector3(...)`).
+- Do NOT declare `let threeJS` in game code — the engine owns that global and the plugin
+  constructor assigns it.
+- Call `setGLEnable(false)` at the top of `game.js` so the LittleJS canvas only draws
+  Canvas2D content (HUD text, particles) on top of the 3D scene.
+- By default `cameraAlign2D` locks the 3D camera to the 2D camera so the z=0 plane matches
+  LittleJS world space; set `threeJS.cameraAlign2D = false` to drive a free/chase camera.
+- Use `ThreeJSObject` so LittleJS physics drives meshes: `z` is height above the 2D plane,
+  mesh rotation syncs from `angle`, and destroying the object removes its mesh from the scene.
+- This is the accepted exception to the no-CDN rule — three.js games need internet at
+  runtime unless the user asks to ship three.js locally.
 
 Project constraints
 - Indent with 4 spaces, not 2 and not tabs.
@@ -139,6 +161,8 @@ Common pitfalls
 - Y-axis is up-positive in world space (falling gravity is negative Y).
 - `drawText` is world-space; `drawTextScreen` is pixel/screen-space.
 - With Box2D, call `await box2dInit()` at top of `gameInit` before bodies.
+- With three.js, `await import(...)` the module at the top of `gameInit` before creating
+  `ThreeJSPlugin` or any `THREE.*` objects.
 - Do not redefine built-in math shortcuts.
 - Do not write custom WebAudio code when `SoundGenerator` is appropriate.
 - Keep `\n` as string escapes in text literals; do not convert to actual line breaks.

@@ -61,6 +61,10 @@ Single-file references to copy patterns from when adding a feature — not full 
 
 Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
 
+### 🧊 Three.js 3D games
+
+The engine includes a [three.js](https://threejs.org/) plugin (`ThreeJSPlugin` + `ThreeJSObject`) that renders a 3D scene behind the LittleJS canvas — LittleJS keeps handling the input, physics, and HUD while three.js draws the world. See [games/threejsGame/](games/threejsGame/) for a mini 3D platformer demo (three.js loads from a CDN at startup, everything else works the same as any other game).
+
 ## 🕹️ Built With These Tools
 
 A few favorites from the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** — every one made with the templates and helpers in this repo. Fork any of them from the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade) as a starting point for your own.
