@@ -606,6 +606,7 @@ declare module "littlejsengine" {
      *  @memberof Settings */
     export let soundEnable: boolean;
     /** Volume scale to apply to all sound, music and speech
+     *  Use setSoundVolume to also update the audio master gain immediately
      *  @type {number}
      *  @default
      *  @memberof Settings */
@@ -1481,7 +1482,7 @@ declare module "littlejsengine" {
      */
     export class Timer {
         /** Create a timer object set time passed in
-         *  @param {number} [timeLeft] - How much time left before the timer
+         *  @param {number} [timeLeft] - How much time left before the timer is elapsed in seconds (undefined = unset)
          *  @param {boolean} [useRealTime] - Should the timer keep running even when the game is paused? (useful for UI) */
         constructor(timeLeft?: number, useRealTime?: boolean);
         useRealTime: boolean;
@@ -1691,17 +1692,17 @@ declare module "littlejsengine" {
         */
         frame(frame: number): TileInfo;
         /**
+         * Returns a tile info for an index using this tile as reference
+         * @param {Vector2|number} [index=0]
+         * @return {TileInfo}
+         */
+        index(index?: Vector2 | number): TileInfo;
+        /**
          * Set this tile to use a full image in a texture info
          * @param {TextureInfo} [textureInfo]
          * @return {TileInfo}
          */
         setFullImage(textureInfo?: TextureInfo): TileInfo;
-        /**
-         * Returns a tile info for an index using this tile as reference
-         * @param {Vector2|number} [index=0]
-         * @return {TileInfo}
-         */
-        tile(index?: Vector2 | number): TileInfo;
     }
     /**
      * Tile Info - Stores info about each texture
@@ -2660,9 +2661,9 @@ declare module "littlejsengine" {
      *  @param {number} [rate] - How quickly to speak
      *  @param {number} [pitch] - How much to change the pitch by
      *  @param {string} [language] - The language/accent to use (examples: en, it, ru, ja, zh)
-     *  @return {SpeechSynthesisUtterance} - The utterance that was spoken
+     *  @return {SpeechSynthesisUtterance|undefined} - The utterance that was spoken, or undefined if speech is unavailable
      *  @memberof Audio */
-    export function speak(text: string, volume?: number, rate?: number, pitch?: number, language?: string): SpeechSynthesisUtterance;
+    export function speak(text: string, volume?: number, rate?: number, pitch?: number, language?: string): SpeechSynthesisUtterance | undefined;
     /** Stop all queued speech
      *  @memberof Audio */
     export function speakStop(): void;
@@ -2684,7 +2685,7 @@ declare module "littlejsengine" {
      *  @param {number}   [pan] - How much to apply stereo panning
      *  @param {boolean}  [loop] - True if the sound should loop when it reaches the end
      *  @param {number}   [sampleRate=44100] - Sample rate for the sound
-     *  @param {GainNode} [gainNode] - Optional gain node for volume control while playing
+     *  @param {GainNode} [gainNode] - Optional gain node for volume control while playing (disconnected when the sound ends)
      *  @param {number}   [offset] - Offset in seconds to start playback from
      *  @param {AudioEndedCallback} [onended] - Callback for when the sound ends
      *  @return {AudioBufferSourceNode} - The source node of the sound played, may be undefined if play fails
@@ -3068,7 +3069,7 @@ declare module "littlejsengine" {
         *  @param {boolean}  [useWebGL] - Should this layer use WebGL for rendering
         */
         constructor(pos: Vector2, size: Vector2, tileInfo?: TileInfo, renderOrder?: number, useWebGL?: boolean);
-        /** @property {Array<TileLayerData>} - Default tile info for layer */
+        /** @property {Array<TileLayerData>} - Array of tile data for the layer */
         data: TileLayerData[];
         /** @property {boolean} - Is this layer using a webgl texture? */
         isUsingWebGL: boolean;
@@ -3225,8 +3226,8 @@ declare module "littlejsengine" {
      *     rgb(1,1,1,1), rgb(0,0,0,1), // colorStartA, colorStartB
      *     rgb(1,1,1,0), rgb(0,0,0,0), // colorEndA, colorEndB
      *     1, .2, .2, .1, .05,  // particleTime, sizeStart, sizeEnd, particleSpeed, particleAngleSpeed
-     *     .99, 1, 1, PI, .05,  // damping, angleDamping, gravityScale, particleCone, fadeRate,
-     *     .5, 1                // randomness, collide, additive, randomColorLinear, renderOrder
+     *     .99, 1, 1, PI, .05,  // damping, angleDamping, gravityScale, particleCone, fadeRate
+     *     .5, 1                // randomness, collide
      * );
      */
     export class ParticleEmitter extends EngineObject {
@@ -3572,7 +3573,7 @@ declare module "littlejsengine" {
      *  @memberof PostProcess */
     export let postProcess: PostProcessPlugin;
     /**
-     * UI System Global Object
+     * Post Process Plugin - Applies a full screen shader to the rendered output
      * @memberof PostProcess
      */
     export class PostProcessPlugin {
@@ -3910,8 +3911,8 @@ declare module "littlejsengine" {
          *  @return {number} */
         getNavigationDirection(): number;
         /** Get other axis navigation direction from gamepad or keyboard
-         *  @return {Vector2} */
-        getNavigationOtherDirection(): Vector2;
+         *  @return {number} */
+        getNavigationOtherDirection(): number;
         /** Get if navigation button was pressed from gamepad or keyboard
          *  @return {boolean} */
         getNavigationWasPressed(): boolean;
@@ -4111,7 +4112,7 @@ declare module "littlejsengine" {
         maxLength: number;
         text: string;
         click(): void;
-        /** Stop editing the text edited */
+        /** Stop editing the text */
         stopEditing(): void;
         /** Key down event handler if this object is being edited
          *  @param {KeyboardEvent} [e] */
@@ -4170,7 +4171,7 @@ declare module "littlejsengine" {
          *  @param {Color}   [color=uiSystem.defaultButtonColor]
          */
         constructor(pos?: Vector2, size?: Vector2, checked?: boolean, text?: string, color?: Color);
-        /** @property {boolean} - Current percentage value of this slider 0-1 */
+        /** @property {boolean} - Is the checkbox currently checked? */
         checked: boolean;
         text: string;
         click(): void;
@@ -4390,7 +4391,7 @@ declare module "littlejsengine" {
          *  @param {number} [lineWidth]
          *  @param {boolean} [useWebGL=glEnable]
          *  @param {CanvasRenderingContext2D} [context] */
-        drawFixture(fixture: any, pos: Vector2, angle: number, color?: Color, lineColor?: Color, lineWidth?: number, useWebgl: any, context?: CanvasRenderingContext2D): void;
+        drawFixture(fixture: any, pos: Vector2, angle: number, color?: Color, lineColor?: Color, lineWidth?: number, useWebGL?: boolean, context?: CanvasRenderingContext2D): void;
         /** converts a box2d vec2 to a Vector2
          *  @param {Object} v */
         vec2From(v: any): Vector2;
@@ -5706,5 +5707,69 @@ declare module "littlejsengine" {
         reset(): void;
         /** True if walkable and not blocked by cost. */
         isClear(): boolean;
+    }
+    /**
+     * LittleJS Three.js Plugin
+     * - Renders a three.js scene on a canvas behind the LittleJS canvases
+     * - The three.js module is passed in by the user, nothing is bundled
+     * - Keep canvasClearColor transparent so the 3D scene shows through
+     * - Aligned camera mode locks the 3D camera to the LittleJS 2D camera
+     * - ThreeJSObject lets LittleJS physics drive a three.js mesh
+     * - Call new ThreeJSPlugin(THREE) in gameInit to set up
+     * @namespace ThreeJS
+     */
+    /** Global ThreeJS plugin object
+     *  @type {ThreeJSPlugin}
+     *  @memberof ThreeJS */
+    export let threeJS: ThreeJSPlugin;
+    /**
+     * ThreeJS Plugin - Renders a three.js scene behind the LittleJS canvas
+     * @example
+     * // in gameInit, with three.js loaded by the user
+     * new ThreeJSPlugin(THREE);
+     * threeJS.scene.add(new THREE.AmbientLight);
+     * @memberof ThreeJS
+     */
+    export class ThreeJSPlugin {
+        /** Set up the three.js rendering layer, call in gameInit
+         *  @param {Object} THREE - The three.js module, supplied by the user
+         *  @param {number} [cameraFOV] - Vertical field of view in degrees */
+        constructor(THREE: any, cameraFOV?: number);
+        /** @property {Object} - The three.js module passed into the constructor */
+        THREE: any;
+        /** @property {Object} - The three.js renderer */
+        renderer: any;
+        /** @property {Object} - The three.js scene, add lights and meshes here */
+        scene: any;
+        /** @property {Object} - The three.js perspective camera */
+        camera: any;
+        /** @property {boolean} - Lock the camera to the LittleJS 2D camera so the z=0 plane matches world space */
+        cameraAlign2D: boolean;
+        /** Position the camera so the z=0 plane exactly matches LittleJS world space,
+         *  called automatically when cameraAlign2D is set */
+        alignCamera2D(): void;
+        /** Sync the canvas layout and render the scene, called automatically each frame */
+        render(): void;
+    }
+    /**
+     * ThreeJS Object - EngineObject that drives a three.js mesh
+     * - LittleJS physics moves the object and the mesh follows automatically
+     * - Destroying the object removes the mesh from the scene
+     * @extends EngineObject
+     * @memberof ThreeJS
+     */
+    export class ThreeJSObject extends EngineObject {
+        /** Create an engine object that drives a three.js mesh
+         *  @param {Vector2} [pos] - World space position
+         *  @param {Vector2} [size] - World space size
+         *  @param {Object} [mesh] - The three.js object3d to drive
+         *  @param {number} [z] - Mesh height above the 2D plane */
+        constructor(pos?: Vector2, size?: Vector2, mesh?: any, z?: number);
+        /** @property {Object} - The three.js object3d this object drives */
+        mesh: any;
+        /** @property {number} - Mesh height above the 2D plane */
+        z: number;
+        /** Copy this object's transform to the mesh */
+        syncMesh(): void;
     }
 }
