@@ -43,7 +43,7 @@ Games use the **global LittleJS API**: load `dist/littlejs.js` with a plain `<sc
 Each game folder includes a `build.mjs` that concatenates the engine + your source, minifies it, and produces one self-contained `index.html` plus a `.zip` (great for game jams).
 
 ```sh
-npm install                       # once, in the repo root — installs terser + bestzip
+npm install                     # once, in the repo root — installs terser + bestzip
 node games/yourGame/build.mjs   # builds games/yourGame/build/ and <name>.zip
 ```
 
@@ -69,16 +69,16 @@ The engine includes a [three.js](https://threejs.org/) plugin (`ThreeJSPlugin` +
 
 A few favorites from the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** — every one made with the templates and helpers in this repo. Fork any of them from the [Arcade repo](https://github.com/KilledByAPixel/LittleJSArcade) as a starting point for your own.
 
-- 🧩 [Tetrix](https://killedbyapixel.github.io/LittleJSArcade/games/tetrix.html)
-- 🤖 [Pong](https://killedbyapixel.github.io/LittleJSArcade/games/pong.html)
 - 🤖 [Robo Rescue](https://killedbyapixel.github.io/LittleJSArcade/games/roboRescue.html)
 - 🐸 [Froggit](https://killedbyapixel.github.io/LittleJSArcade/games/froggit.html)
+- 🧩 [Tetrix](https://killedbyapixel.github.io/LittleJSArcade/games/tetrix.html)
+- 🏓 [Pong](https://killedbyapixel.github.io/LittleJSArcade/games/pong.html)
 - 🧛 [Emoji Survivors](https://killedbyapixel.github.io/LittleJSArcade/games/emojiSurvivors.html)
 - 🏙️ [Missile Defense](https://killedbyapixel.github.io/LittleJSArcade/games/missileDefense.html)
 - ⛳ [Mini Golf](https://killedbyapixel.github.io/LittleJSArcade/games/miniGolf.html)
 - 🎱 [Pool](https://killedbyapixel.github.io/LittleJSArcade/games/pool.html)
 - 🃏 [Freecell](https://killedbyapixel.github.io/LittleJSArcade/games/freecell.html)
 - 👾 [Space Intruders](https://killedbyapixel.github.io/LittleJSArcade/games/spaceIntruders.html)
-- 👻 [Maze Munchy](https://killedbyapixel.github.io/LittleJSArcade/games/pucMan.html)
+- 👻 [Maze Munch](https://killedbyapixel.github.io/LittleJSArcade/games/pucMan.html)
 - 🌑 [Astroblast](https://killedbyapixel.github.io/LittleJSArcade/games/asterblast.html)
 - 🔴 [Checkers](https://killedbyapixel.github.io/LittleJSArcade/games/checkers.html)
