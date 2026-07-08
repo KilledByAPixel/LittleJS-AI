@@ -32,7 +32,7 @@ Clone the repo and you have everything you need to build games — from quick pr
 
 ### Start a new game
 
-1. Copy the starter folder [games/emptyGame/](games/emptyGame/) to `games/<yourGame>/`.
+1. Copy the starter folder [examples/emptyGame/](examples/emptyGame/) to `examples/<yourGame>/`.
 2. Edit `game.js` — and add more files (`player.js`, `ui.js`, `constants.js`, …) as the game grows.
 3. Open `index.html` in a web browser. That's it — it runs straight from `file://`, no server needed.
 
@@ -63,7 +63,7 @@ Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game
 
 ### 🧊 Three.js 3D games
 
-The engine includes a [three.js](https://threejs.org/) plugin (`ThreeJSPlugin` + `ThreeJSObject`) that renders a 3D scene behind the LittleJS canvas — LittleJS keeps handling the input, physics, and HUD while three.js draws the world. See [games/threejsGame/](games/threejsGame/) for a mini 3D platformer demo (three.js loads from a CDN at startup, everything else works the same as any other game).
+The engine includes a [three.js](https://threejs.org/) plugin (`ThreeJSPlugin` + `ThreeJSObject`) that renders a 3D scene behind the LittleJS canvas — LittleJS keeps handling the input, physics, and HUD while three.js draws the world. See [examples/threejsGame/](examples/threejsGame/) for a mini 3D platformer demo (three.js loads from a CDN at startup, everything else works the same as any other game).
 
 ## 🕹️ Built With These Tools
 
