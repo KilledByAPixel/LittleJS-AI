@@ -40,11 +40,12 @@ Games use the **global LittleJS API**: load `dist/littlejs.js` with a plain `<sc
 
 ### Ship a single-file build (optional)
 
-Each game folder includes a `build.mjs` that concatenates the engine + your source, minifies it, and produces one self-contained `index.html` plus a `.zip` (great for game jams).
+A single root `build.mjs` concatenates the engine + your source, minifies it, and produces one self-contained `index.html` plus a `.zip` (great for game jams).
 
 ```sh
-npm install                     # once, in the repo root — installs terser + bestzip
-node games/yourGame/build.mjs   # builds games/yourGame/build/ and <name>.zip
+npm install               # once, in the repo root — installs terser + bestzip
+node build.mjs yourGame   # builds examples/yourGame/build/ and yourGame.zip
+node build.mjs --all      # builds every game that has a build.json
 ```
 
 ### 📝 Feature templates
@@ -58,6 +59,7 @@ Single-file references to copy patterns from when adding a feature — not full 
 - [textureGame.html](templates/textureGame.html) — procedural sprite atlases from canvas draw ops
 - [tweakableGame.html](templates/tweakableGame.html) — live-tweak globals via an HTML slider overlay
 - [uiGame.html](templates/uiGame.html) — canvas-drawn UI (menus, sliders, dialogs)
+- [threejsGame.html](templates/threejsGame.html) — three.js 3D scene behind the LittleJS canvas
 
 Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
 

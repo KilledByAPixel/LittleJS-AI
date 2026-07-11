@@ -7,16 +7,16 @@ Core goals
 
 Project structure and workflow
 - This repo is built for real games (medium and large), not just single-file prototypes.
-- Each game lives in its own folder under `games/`.
-- The canonical starter is `games/emptyGame/` — copy it to `games/<gameName>/` for a new game.
+- Each game lives in its own folder under `examples/`.
+- The canonical starter is `examples/emptyGame/` — copy it to `examples/<gameName>/` for a new game.
 - Standard starter layout for a new game:
-  - `games/<gameName>/index.html`
-  - `games/<gameName>/game.js`
-  - `games/<gameName>/build.json` (build config for the shared root build script; carried over from the starter)
+  - `examples/<gameName>/index.html`
+  - `examples/<gameName>/game.js`
+  - `examples/<gameName>/build.json` (build config for the shared root build script; carried over from the starter)
 - It is fine (and expected) to add more files for larger games, for example:
-  - `games/<gameName>/constants.js`
-  - `games/<gameName>/player.js`
-  - `games/<gameName>/ui.js`
+  - `examples/<gameName>/constants.js`
+  - `examples/<gameName>/player.js`
+  - `examples/<gameName>/ui.js`
 - Prefer modular game code (multiple `.js` files) over one giant script block.
 - Use the global LittleJS API: load `../../dist/littlejs.js` with a classic `<script>` tag and
   call globals directly (`engineInit`, `drawText`, `vec2`, ...). Do NOT use ES-module imports
@@ -28,7 +28,7 @@ Build (optional, for distributable single-file zips)
 - Build a game from the repo root: `node build.mjs <gameName>` (or `npm run build:emptyGame`).
 - Build every game that has a `build.json`: `node build.mjs --all` (or `npm run build:all`).
   It continues past a game that fails and exits non-zero if any build failed.
-- The single root `build.mjs` reads `games/<gameName>/build.json`, prepends the engine
+- The single root `build.mjs` reads `examples/<gameName>/build.json`, prepends the engine
   release file automatically, concatenates the game's source files, minifies, inlines into
   one `index.html`, and zips it. Edit `build.json` to add source/data files. Fields:
   `sources` (required, ordered), `data` (zipped alongside), `name` (zip name, defaults to
@@ -49,22 +49,22 @@ Build (optional, for distributable single-file zips)
 - Output (`build/`, `*.zip`) is gitignored. Dev never requires the build — it is only for shipping.
 
 Template selection for new games
-- The default path for a real game is: copy `games/emptyGame/` to `games/<gameName>/`.
+- The default path for a real game is: copy `examples/emptyGame/` to `examples/<gameName>/`.
 - The `templates/*.html` files are single-file feature references — copy patterns OUT of them into
   the folder game's `game.js`; do not base a new game's structure on a single-file template.
 - Use `templates/game.html` for the default non-physics scaffold (shapes, text, camera).
 - Use `templates/boardGame.html` for turn-based grid/board games.
-- Use `templates/box2dGame.html` for Box2D physics patterns; `games/box2dGame/`
+- Use `templates/box2dGame.html` for Box2D physics patterns; `examples/box2dGame/`
   is a ready-made Box2D example folder (copies box2d.wasm.js/.wasm via `data`).
 - Use `templates/menuGame.html` when the game needs title/pause/options UI.
 - Use `templates/textureGame.html` for procedural sprite-atlas workflows.
 - Use `templates/tweakableGame.html` for runtime tuning workflows.
 - Use `templates/uiGame.html` when canvas UI widgets are required.
-- Use `games/threejsGame/` as the reference example for 3D games with the built-in
-  three.js plugin (a mini 3D platformer folder game).
+- Use `templates/threejsGame.html` for three.js 3D plugin patterns; `examples/threejsGame/`
+  is a ready-made 3D example folder (a mini 3D platformer).
 
-When scaffolding into `games/<gameName>/`
-- Keep the game in its own folder under `games/`.
+When scaffolding into `examples/<gameName>/`
+- Keep the game in its own folder under `examples/`.
 - Ensure script paths are correct from the new folder location (one level deeper than `templates/`):
   - `../../dist/littlejs.js`
   - `../../dist/box2d.wasm.js` (if Box2D)
@@ -78,7 +78,7 @@ When scaffolding into `games/<gameName>/`
 Three.js 3D rendering (built-in plugin)
 - The engine build includes a three.js plugin: `ThreeJSPlugin`, `ThreeJSObject`, and the
   engine-declared global `threeJS`. It renders a 3D scene on a canvas behind the LittleJS
-  canvas; `games/threejsGame/` is the reference example.
+  canvas; `examples/threejsGame/` is the reference example.
 - three.js itself is not bundled. Load it at the top of an async `gameInit` (the engine
   awaits `gameInit`, same as `box2dInit`):
   `THREE = await import('https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js');`
@@ -153,7 +153,7 @@ Output format
 - Step summary (1-3 lines)
 - Quick test instructions (expected result, controls)
 - Next step options (2-4 choices)
-- Write code directly into the game folder files under `games/<gameName>/` (not a single root-level game HTML file)
+- Write code directly into the game folder files under `examples/<gameName>/` (not a single root-level game HTML file)
 
 Common pitfalls
 - `drawCircle` and `drawEllipse` size is diameter, not radius.
