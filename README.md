@@ -1,6 +1,6 @@
 # 🚂🤖 LittleJS AI
 
-*An AI-assisted toolkit for making HTML5 games with [LittleJS](https://github.com/KilledByAPixel/LittleJS) — a Claude Code plugin, starter templates, helper modules, and docs for AI workflows. The games built with it live in the [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/).*
+*An AI-assisted toolkit for making HTML5 games with [LittleJS](https://github.com/KilledByAPixel/LittleJS) — starter templates, helper modules, agent instructions for any coding AI, and a Claude Code plugin. The games built with it live in the [LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/).*
 
 # 🎮 [▶ Play in the LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)
 

@@ -6,6 +6,14 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-09-18
+
+### Changed
+
+- **Description cut to directory length.** Among the 40 most-installed plugins the median description is 170 characters and the top one is 151; ours was about 560, and read as a wall of text. It is now one line that names what LittleJS actually is — a fast open-source HTML5 engine with WebGL rendering, physics, particles and audio built in — and ends on the same beat as before: nothing to install, nothing to reinvent. Applied identically to `plugin.json`, the marketplace entry, and the directory submission.
+- Added `displayName: "LittleJS"` to the marketplace entry so listings show the brand's capitalization. The identifier stays `littlejs`, since it is part of the install command and every skill's namespace. (Marketplace entry only — `plugin.json` is capped at eight fields.)
+- README tagline reordered to lead with the toolkit and end with the plugin, matching what the repo is: templates, helpers, agent instructions any coding AI reads, and a Claude Code plugin as one way to install it.
+
 ## [1.0.9] - 2026-09-18
 
 Changes from a second round of real-world feedback — an agent building a breakout game with 1.0.8 in Cowork, and the report it wrote afterwards.
@@ -144,7 +152,8 @@ First release. The repo itself is the plugin: `.claude-plugin/marketplace.json` 
 - `.github/copilot-instructions.md`, which described a repo layout from roughly six months earlier.
 - The `GPT/` ChatGPT package, moved to its own repo at [KilledByAPixel/LittleJS-GPT](https://github.com/KilledByAPixel/LittleJS-GPT) with its history. A marketplace install copies the whole repo, so it was shipping 680KB of unrelated files to everyone installing a game-dev plugin.
 
-[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.9...HEAD
+[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.10...HEAD
+[1.0.10]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.6...v1.0.7
