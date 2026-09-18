@@ -7,10 +7,9 @@
     "plugins": [
         {
             "name": "littlejs",
-            "displayName": "LittleJS",
             "source": "./",
             "description": "Build browser games on LittleJS, a fast open-source HTML5 engine with WebGL rendering, physics, particles and audio built in. Describe a game, get a playable project. Nothing to install, nothing to reinvent.",
-            "version": "1.0.10",
+            "version": "1.0.11",
             "author": { "name": "Frank Force", "url": "https://github.com/KilledByAPixel" },
             "homepage": "https://github.com/KilledByAPixel/LittleJS-AI",
             "repository": "https://github.com/KilledByAPixel/LittleJS-AI",

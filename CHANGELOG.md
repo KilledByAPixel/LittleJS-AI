@@ -6,12 +6,18 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-09-18
+
+### Fixed
+
+- **1.0.10 shipped a marketplace manifest that fails validation.** The `displayName` key, listed in the plugin docs as optional, is rejected by `claude plugin validate` as unrecognized — and the directory review pipeline runs that same validator. The release script checked the Python step's exit code but not the validator's, so the failure printed and the push went ahead anyway. Removed the key; the release chain now stops on a validation failure. Nothing else changed, so behaviour is identical to 1.0.9 and 1.0.10.
+
 ## [1.0.10] - 2026-09-18
 
 ### Changed
 
 - **Description cut to directory length.** Among the 40 most-installed plugins the median description is 170 characters and the top one is 151; ours was about 560, and read as a wall of text. It is now one line that names what LittleJS actually is — a fast open-source HTML5 engine with WebGL rendering, physics, particles and audio built in — and ends on the same beat as before: nothing to install, nothing to reinvent. Applied identically to `plugin.json`, the marketplace entry, and the directory submission.
-- Added `displayName: "LittleJS"` to the marketplace entry so listings show the brand's capitalization. The identifier stays `littlejs`, since it is part of the install command and every skill's namespace. (Marketplace entry only — `plugin.json` is capped at eight fields.)
+- Tried `displayName: "LittleJS"` on the marketplace entry for brand capitalization. `claude plugin validate` rejects it as an unrecognized key, so it did not ship — see 1.0.11. The identifier stays `littlejs` regardless, since it is part of the install command and every skill namespace.
 - README tagline reordered to lead with the toolkit and end with the plugin, matching what the repo is: templates, helpers, agent instructions any coding AI reads, and a Claude Code plugin as one way to install it.
 
 ## [1.0.9] - 2026-09-18
@@ -152,7 +158,8 @@ First release. The repo itself is the plugin: `.claude-plugin/marketplace.json` 
 - `.github/copilot-instructions.md`, which described a repo layout from roughly six months earlier.
 - The `GPT/` ChatGPT package, moved to its own repo at [KilledByAPixel/LittleJS-GPT](https://github.com/KilledByAPixel/LittleJS-GPT) with its history. A marketplace install copies the whole repo, so it was shipping 680KB of unrelated files to everyone installing a game-dev plugin.
 
-[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.10...HEAD
+[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.11...HEAD
+[1.0.11]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...v1.0.8
