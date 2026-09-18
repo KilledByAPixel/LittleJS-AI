@@ -1,6 +1,6 @@
 {
     "name": "littlejs-ai",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "private": true,
     "description": "AI-assisted LittleJS toolkit and Claude Code plugin. Version here tracks .claude-plugin/plugin.json, which is what actually gates plugin updates.",
     "scripts": {

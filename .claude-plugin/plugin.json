@@ -1,6 +1,6 @@
 {
     "name": "littlejs",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "description": "Make games and graphics-heavy apps with LittleJS, a fast open-source HTML5 engine. Ask for a game and get a complete playable project in seconds - 2D, Box2D physics, or three.js 3D - ready to run and share.",
     "author": { "name": "Frank Force", "url": "https://github.com/KilledByAPixel" },
     "homepage": "https://github.com/KilledByAPixel/LittleJS-AI",

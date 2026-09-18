@@ -6,6 +6,21 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-18
+
+Ships engine **1.18.30** (up from 1.18.25). This is the release that actually delivers it: the engine
+was bumped in the repo on August 18, but without a plugin version bump the cache stayed on 1.0.6 and
+every installed copy kept running 1.18.25 while fresh installs got 1.18.30. A version bump is what
+gates updates, so this is a reminder to self as much as a release note.
+
+### Added
+
+- Engine 1.18.26 through 1.18.30. New API surface, documented in `reference.md`:
+  - `backgroundCanvas` / `setBackgroundCanvas(canvas)` for compositing a plugin canvas behind the engine canvases.
+  - `createAudioBuffer(sampleChannels, sampleRate)` and `playAudioBuffer(...)` for procedurally generated audio, shareable between sounds.
+  - `gamepadAxisFilterEnable` (default on) so axes that do not rest near centre, like steering wheels, are ignored.
+- The repo's project instructions now live in `AGENTS.md`, the convention Codex, Cursor and Copilot read natively, with `CLAUDE.md` reduced to a one-line import. No effect on the plugin's skills, which never referenced either file.
+
 ## [1.0.6] - 2026-08-01
 
 Ships engine **1.18.25**, which closes both gaps this plugin's feedback surfaced upstream.
@@ -105,7 +120,8 @@ First release. The repo itself is the plugin: `.claude-plugin/marketplace.json` 
 - `.github/copilot-instructions.md`, which described a repo layout from roughly six months earlier.
 - The `GPT/` ChatGPT package, moved to its own repo at [KilledByAPixel/LittleJS-GPT](https://github.com/KilledByAPixel/LittleJS-GPT) with its history. A marketplace install copies the whole repo, so it was shipping 680KB of unrelated files to everyone installing a game-dev plugin.
 
-[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.3...v1.0.4
