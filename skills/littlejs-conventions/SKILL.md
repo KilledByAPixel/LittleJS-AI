@@ -38,7 +38,7 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 
 ## Use the engine's built-ins — don't reinvent
 
-- `keyDirection()` for ALL arrow/WASD directional input (returns a vec2) — never write manual arrow-key OR chains. `keyIsDown()` is for non-directional actions (jump, interact).
+- `keyDirection()` for ALL arrow/WASD directional input (returns a vec2) — never write manual arrow-key OR chains. WASD is already included (`inputWASDEmulateDirection` defaults to true), so don't wire it by hand. `keyIsDown()` is for non-directional actions (jump, interact).
 - `gamepadStick(0)` for analog movement/aim; `mousePos` (world-space), `mouseWasPressed(0)` / `mouseIsDown(0)` for the mouse.
 - `isOverlapping(posA, sizeA, posB, sizeB)` for AABB hit tests; `isOnScreen()` for culling; `screenToWorld()` / `worldToScreen()` for coordinate conversion; `Timer` for timed events.
 - Math: `clamp`, `lerp`, `percent`, `rand`, `randInt`, and `Vector2` methods (`add`, `scale`, `distance`, `normalize`, `rotate`, ...) — don't rewrite them.
@@ -56,6 +56,9 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 - Y-axis is **up-positive** in world space: falling gravity is negative Y.
 - `drawText` is world-space (size ~3 is normal); `drawTextScreen` is pixel/screen-space (size ~80 is normal). Don't mix them up.
 - Spin uses `angleVelocity` / `angleDamping` — the standard-sounding `angularVelocity` is a silent no-op.
+- Bounciness is `restitution` (0 to 1). Older LittleJS called it `elasticity`; that property no longer exists and setting it does nothing.
+- To handle a collision yourself, return `false` from `collideWithObject(other)` — that skips the engine's position/velocity resolution for the pair (how a paddle steers a ball). Returning `true`, the default, lets the engine resolve it.
+- The canvas can be any aspect ratio. To keep a fixed playfield fully visible, set the scale each frame in `gameUpdatePost`: `setCameraScale(min(mainCanvasSize.x / viewW, mainCanvasSize.y / viewH))`.
 - For additive glow, the `additiveColor` argument needs **alpha 0** (e.g. `new Color(1,1,0,0)`); non-zero alpha thickens the silhouette.
 - `readSaveData(key, default)` merges with object spread, so the default must be an OBJECT. A scalar default returns `{}` and turns into `NaN` downstream, silently. (Engine 1.18.25+ asserts on a scalar default in debug builds; release builds still fail quietly, so pass an object regardless.)
 - Time-driven logic is testable: `setHeadlessMode(true)` plus `setEngineManualStep(true)` before `engineInit` stop the engine self-driving, and `engineStep(frames)` then advances exactly that many fixed updates. Use it instead of guessing whether a `Timer` or spawn interval fired.

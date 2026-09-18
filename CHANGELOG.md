@@ -6,6 +6,24 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-09-18
+
+Changes from a second round of real-world feedback — an agent building a breakout game with 1.0.8 in Cowork, and the report it wrote afterwards.
+
+### Fixed
+
+- **Screen shake slowly drifted the camera.** `addScreenShake` in `templates/gameFx.js` nudged `cameraPos` by a random amount every frame and never removed it, so it was a random walk: after a few shakes the camera sat permanently off-centre. The comment even said so. It now undoes the previous frame's nudge before applying the next, so the camera always returns to wherever the game put it.
+- **The shipped zip was a debug build.** Since 1.0.2 a scaffolded project vendors only `littlejs.js`, and `build.json` pointed at it, so `npm run build` packaged the debug engine — hundreds of asserts, the watermark, and a `LittleJS DEBUG build loaded` console warning, delivered to players. `build.mjs` now uses `littlejs.release.js` automatically whenever it sits beside `littlejs.js`, and warns loudly when it has to fall back to the debug build. Verified both directions: debug-only produces the warning and the marker; with the release copied in, the marker is gone.
+- `examples/emptyGame` now sets `debugWatermark = false` like `pong` does. A fresh game showing an FPS watermark in the corner looks like a bug.
+
+### Changed
+
+- **Scaffolding no longer builds the zip.** The Cowork test showed the agent going straight from scaffold to `npm install` and a zip, before the user had played anything. Making a game is iterative: scaffold, play, change, repeat, and packaging is the last step, on request. The skill now says so explicitly, stops after a playable `index.html`, and has a separate **Shipping** section for when the user asks — which is also where `littlejs.release.js` gets copied in, so the zip that eventually ships is the release build.
+
+### Added
+
+- Four conventions the report hit as silent failures, each verified against the engine build before being written down: bounciness is `restitution` (`elasticity` no longer exists); returning `false` from `collideWithObject` skips the engine's collision response so you can handle it yourself; a one-line `setCameraScale` recipe for fitting a fixed playfield into any aspect ratio; and that `keyDirection()` already covers WASD.
+
 ## [1.0.8] - 2026-09-18
 
 ### Changed
@@ -126,7 +144,8 @@ First release. The repo itself is the plugin: `.claude-plugin/marketplace.json` 
 - `.github/copilot-instructions.md`, which described a repo layout from roughly six months earlier.
 - The `GPT/` ChatGPT package, moved to its own repo at [KilledByAPixel/LittleJS-GPT](https://github.com/KilledByAPixel/LittleJS-GPT) with its history. A marketplace install copies the whole repo, so it was shipping 680KB of unrelated files to everyone installing a game-dev plugin.
 
-[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.8...HEAD
+[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.9...HEAD
+[1.0.9]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.5...v1.0.6

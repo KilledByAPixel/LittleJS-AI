@@ -157,10 +157,40 @@ function buildGameDir(gameDir, gameName)
     if (!Array.isArray(config.sources) || config.sources.length === 0)
         throw new Error('build.json: "sources" is required and must be a non-empty array');
 
+    // prefer the release engine for shipping. A scaffolded project points
+    // build.json at the debug build (littlejs.js) because that is what the
+    // page loads while developing; once littlejs.release.js is copied beside
+    // it, use that instead so the zip does not ship asserts, the watermark and
+    // the "DEBUG build loaded" warning. Fall back the other way too, loudly.
+    let engineResolved = engine;
+    if (typeof engine === 'string')
+    {
+        const dir = dirname(engine), base = basename(engine);
+        const release = join(dir, 'littlejs.release.js');
+        const debug = join(dir, 'littlejs.js');
+        if (base === 'littlejs.js' && fs.existsSync(join(gameDir, release)))
+        {
+            engineResolved = release;
+            console.log('Using release engine build (littlejs.release.js)');
+        }
+        else if (base === 'littlejs.release.js' && !fs.existsSync(join(gameDir, engine))
+            && fs.existsSync(join(gameDir, debug)))
+        {
+            engineResolved = debug;
+            console.warn('Warning: littlejs.release.js not found, building with the DEBUG engine.');
+            console.warn('         Copy littlejs.release.js beside littlejs.js before shipping.');
+        }
+        else if (base === 'littlejs.js')
+        {
+            console.warn('Warning: building with the DEBUG engine (no littlejs.release.js beside it).');
+            console.warn('         Players will see the debug watermark; copy littlejs.release.js in before shipping.');
+        }
+    }
+
     // build the ordered concatenation list (engine first unless false)
-    const sourceRelPaths = engine === false
+    const sourceRelPaths = engineResolved === false
         ? [...config.sources]
-        : [engine, ...config.sources];
+        : [engineResolved, ...config.sources];
 
     // resolve to absolute paths and verify every input file exists
     const sourceFiles = sourceRelPaths.map(f => join(gameDir, f));

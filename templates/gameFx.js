@@ -150,7 +150,8 @@ class SoundGenerator extends Sound
 }
 
 // ============================================================================
-// Screen shake — random-walk nudge on cameraPos, decays linearly to zero.
+// Screen shake — per-frame nudge on cameraPos that is removed again next frame,
+// so it never accumulates into a permanent offset. Decays linearly to zero.
 // Stacks by keeping whichever active shake has the larger (amount × remaining)
 // "energy" — strongest event wins, weaker is discarded.
 //
@@ -163,6 +164,7 @@ let _shakeAmount    = 0;     // peak amplitude in world units
 let _shakeRemaining = 0;     // seconds left
 let _shakeDuration  = 1;     // original duration of the active event
 let _shakeEnabled   = true;
+let _shakeOffset    = vec2(); // nudge currently applied to cameraPos (undone next frame)
 
 function addScreenShake(amount, duration)
 {
@@ -180,6 +182,10 @@ function isScreenShakeEnabled()   { return _shakeEnabled; }
 
 function _shakeUpdate()
 {
+    // undo last frame's nudge first, so the camera always returns to where the
+    // game put it and shake can never drift it (this used to be a random walk)
+    cameraPos = cameraPos.subtract(_shakeOffset);
+    _shakeOffset = vec2();
     if (_shakeRemaining <= 0) return;
     _shakeRemaining -= timeDelta;
     if (_shakeRemaining <= 0)
@@ -189,7 +195,8 @@ function _shakeUpdate()
     }
     if (!_shakeEnabled) return;
     const a = _shakeAmount * (_shakeRemaining / _shakeDuration);
-    cameraPos = cameraPos.add(vec2(rand(-a, a), rand(-a, a)));
+    _shakeOffset = vec2(rand(-a, a), rand(-a, a));
+    cameraPos = cameraPos.add(_shakeOffset);
 }
 
 // Active input device (lastInputDevice + usingMouseInput/usingKeyboardInput/

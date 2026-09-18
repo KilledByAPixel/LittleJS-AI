@@ -5,6 +5,7 @@
 */
 
 'use strict';
+debugWatermark = false; // hide the FPS/version watermark in the corner
 
 ///////////////////////////////////////////////////////////////////////////////
 function gameInit()

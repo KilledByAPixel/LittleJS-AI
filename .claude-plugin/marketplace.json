@@ -9,7 +9,7 @@
             "name": "littlejs",
             "source": "./",
             "description": "Make browser games with LittleJS, a fast open-source HTML5 engine that's simple to build on. Describe the game you want and get a complete, playable project that runs by opening a file. Because the engine already handles rendering, input, physics, particles, audio and collision, nothing has to be rebuilt from scratch: your tokens go into the game itself, not the plumbing. Ready-made templates for menus, sound, sprite art and board games already work, and hard-won rules keep the generated code correct the first time. Nothing to install, nothing to configure, nothing to reinvent.",
-            "version": "1.0.8",
+            "version": "1.0.9",
             "author": { "name": "Frank Force", "url": "https://github.com/KilledByAPixel" },
             "homepage": "https://github.com/KilledByAPixel/LittleJS-AI",
             "repository": "https://github.com/KilledByAPixel/LittleJS-AI",

@@ -69,7 +69,7 @@ Combine rows freely — `gameFx.js` stacks onto any other choice. Load order mat
 Copy from `<plugin>` into the project directory:
 
 1. The chosen starter's files (`index.html`, `game.js`, `build.json`) into the project ROOT (not a subfolder).
-2. `dist/littlejs.js` → `./dist/`. For Box2D also `dist/box2d.wasm.js` + `dist/box2d.wasm.wasm`. Copy ONLY this one engine build — it is what the page loads and what the zip build reads. Do not also copy `littlejs.release.js`; it would double the vendored size (~640KB each) for a file the project never opens. If the user later wants the smallest possible jam build, they can copy `littlejs.release.js` in then and point `build.json` at it.
+2. `dist/littlejs.js` → `./dist/`. For Box2D also `dist/box2d.wasm.js` + `dist/box2d.wasm.wasm`. Copy ONLY this one engine build now — it is the debug build the page loads while developing, and its asserts and watermark help catch mistakes. Do not copy `littlejs.release.js` at scaffold time; it doubles the vendored size for a file nothing opens yet. It gets copied in later, in **Shipping** below, when the user asks for a zip.
 3. Each helper module chosen in Step 2 → `./templates/` (only the ones needed, not all of them).
 4. `build.mjs` → project root.
 
@@ -103,7 +103,7 @@ Then fix up the copies:
 
    Omit `data` unless the game genuinely ships a file alongside the page. These games use no external textures or audio — art is drawn procedurally — so a `data` entry naming an image that does not exist is the one thing that reliably breaks `npm run build`. For Box2D add `"data": ["dist/box2d.wasm.js", "dist/box2d.wasm.wasm"]` (data files are copied into the build by basename).
 
-7. Generate `package.json` (build tooling only — playing the game needs none of it):
+7. Generate `package.json` (build tooling only — playing the game needs none of it, and you do NOT run `npm install` now):
 
    ```json
    {
@@ -157,7 +157,7 @@ Then fix up the copies:
 
 **Never review, verify, or summarize the contents of anything you copied out of the plugin** — the engine, `build.mjs`, or the helper modules. Confirming the engine copied means checking that `dist/littlejs.js` exists and is the right size (step 8): not diffing it, not reading it, not comparing it byte-by-byte against the source. Say "engine vendored (~640KB)" and move on. The game code you wrote is the only thing that deserves review.
 
-The project is now self-contained: `index.html` opens and plays from `file://` immediately. Building a shippable single-file zip is optional: `npm install` once, then `npm run build` (runs `node build.mjs`, which builds the current folder when it finds `./build.json`).
+The project is now self-contained: `index.html` opens and plays immediately. **Stop here — do not run `npm install` or `npm run build` as part of scaffolding.** The deliverable is a playable `index.html`. The zip is a separate, later step (see **Shipping** below) that happens only when the user asks to ship, package, or submit the game. Building at scaffold time wastes minutes, installs tooling the user may never want, and would package the debug engine.
 
 ## Step 3b — Scaffold (repo mode)
 
@@ -194,7 +194,19 @@ Both flags must be set BEFORE `engineInit`, one `engineStep(n)` runs exactly `n`
 
 Then stop and give the standard output: 1-3 line step summary, quick test for the user (open `index.html` directly — no server needed on their end — with expected result + controls), what you verified and how, and 2-4 next-step options.
 
+## Shipping a zip (only when the user asks)
+
+Making a game is iterative: scaffold, play, change, repeat. Packaging is the last thing that happens, and only on request — "ship it", "make a zip", "package it for the jam". When that request comes:
+
+1. Copy `<plugin>/dist/littlejs.release.js` → `./dist/`, with a real copy command (same rule as the engine in Step 3a). The release build strips the debug watermark and the `LittleJS DEBUG build loaded` console warning; shipping the debug build to players is the wrong artifact.
+2. `npm install` once, then `npm run build`. `build.mjs` uses `littlejs.release.js` automatically when it sits beside `littlejs.js`, so `build.json` needs no change. It prints which engine it used — confirm it says release.
+3. Output is `build/index.html` (one self-contained file) and `<name>.zip`, both gitignored. Hand over the zip and say what size it came out at.
+
+If `build.mjs` warns that it is using the DEBUG engine, that is step 1 not done — do it, don't ship.
+
 ## Common mistakes
+- **Building the zip during scaffolding** — the user asked for a game, not a package. Deliver `index.html`; zip only when asked.
+- **Shipping the debug engine** — copy `littlejs.release.js` in before building, and check the build log says release.
 
 - **Scaffolding into or writing to `<plugin>`** — it is read-only and wiped on update. Copy OUT of it only.
 - **Basing the project on a template** (`templates/*.html`) — single-file references; copy patterns OUT of them, copy the FOLDER from an example game.
