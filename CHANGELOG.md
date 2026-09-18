@@ -6,6 +6,12 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-18
+
+### Changed
+
+- **Repositioned the plugin description around what it saves you, not what it lets you do.** "You can build games with AI" is table stakes now; nobody browsing a directory is impressed by it. The actual pitch is that asking an AI for a game from scratch makes it rebuild a game engine from scratch, every time, and you pay for that in tokens and bugs. LittleJS already solved rendering, input, physics, particles, audio and collision, and the templates already solved menus, sound and sprite art. The plugin, marketplace and README copy now all say that, and end on the same line: nothing to install, nothing to configure, nothing to reinvent.
+
 ## [1.0.7] - 2026-09-18
 
 Ships engine **1.18.30** (up from 1.18.25). This is the release that actually delivers it: the engine
@@ -120,7 +126,8 @@ First release. The repo itself is the plugin: `.claude-plugin/marketplace.json` 
 - `.github/copilot-instructions.md`, which described a repo layout from roughly six months earlier.
 - The `GPT/` ChatGPT package, moved to its own repo at [KilledByAPixel/LittleJS-GPT](https://github.com/KilledByAPixel/LittleJS-GPT) with its history. A marketplace install copies the whole repo, so it was shipping 680KB of unrelated files to everyone installing a game-dev plugin.
 
-[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/KilledByAPixel/LittleJS-AI/compare/v1.0.4...v1.0.5

@@ -17,7 +17,7 @@ The 50+ finished games built with these tools live in their own repo: the **[Lit
 
 ## 🤖 Claude Code Plugin
 
-Use LittleJS AI directly inside [Claude Code](https://claude.com/claude-code) — **no clone required**. Install once:
+Make games with LittleJS, a fast open-source HTML5 engine that's simple to build on, straight from [Claude Code](https://claude.com/claude-code). Ask for a game and get a complete, playable project that opens from a file. Because the engine already handles rendering, input, physics, collision and audio, nothing gets rebuilt from scratch: the tokens go into *your game*, not the plumbing. Templates for menus, sound, sprite art and board games already work. Install once, **no clone required**:
 
 ```
 /plugin marketplace add KilledByAPixel/LittleJS-AI
