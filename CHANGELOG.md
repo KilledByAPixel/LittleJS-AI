@@ -6,6 +6,15 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-02
+
+Ships engine **1.23.1** (up from 1.23.0).
+
+### Changed
+
+- Engine 1.23.1. A 3D level's block map in a game that has loaded no image now shows plain colored blocks, one color per type, where 1.23.0 asserted — which matters here, since games made with the plugin usually ship no image. Also in this release: opaque billboards and sprite objects are batched into one instanced draw per sheet, glTF reads `KHR_materials_emissive_strength`, the 2D editor's undo list keeps the last 100 edits, fewer allocations per draw for polygons and tinted Canvas2D draws, and the deprecated names are kept until 1.25 at least.
+- The `custom-level-editor` skill follows the engine's updated `EDITOR.md`, which now has its own tested recipe for keeping a level as a script in a game opened from disk and spells out how to fork the editor. The skill's `onSave` example matches that recipe (`var level`), and its tile sheet advice no longer tells you to drop the block map from an image-less 3D level.
+
 ## [1.2.0] - 2026-10-02
 
 ### Added

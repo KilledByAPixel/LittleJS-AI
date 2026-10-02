@@ -21,7 +21,7 @@
 'use strict';
 {
     const BUILD = 'release';            // shipped default: 'debug' | 'release' | 'min'
-    const VER   = '1790922152946';      // engine cache-bust; bump on engine update
+    const VER   = '1790925797986';      // engine cache-bust; bump on engine update
     const FILES = { debug: 'littlejs.js', release: 'littlejs.release.js', min: 'littlejs.min.js' };
     const KEY   = 'littlejs-build';
 

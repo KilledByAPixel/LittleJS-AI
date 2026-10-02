@@ -35,7 +35,7 @@ const engineName = 'LittleJS';
  *  @type {string}
  *  @default
  *  @memberof Engine */
-const engineVersion = '1.23.0';
+const engineVersion = '1.23.1';
 
 /** Frames per second to update
  *  @type {number}
@@ -984,7 +984,11 @@ function tweakDivider(){}
 function tweakEngineDefaults(){}
 class LevelEditor
 {
-    constructor() { this.paletteTiles = this.use3D = this.tool = undefined; }
+    constructor()
+    {
+        this.paletteTiles = this.use3D = this.tool = undefined;
+        this.keys = {}, this.buttons = [], this.tools = {};
+    }
     get isOpen() { return false; }
     get is3D() { return false; }
     get edit2D() { return undefined; }
@@ -2373,7 +2377,7 @@ class Timer
     getPercent()
     {
         if (!this.isSet()) return 0;
-        if (!this.setTime) return 1;
+        if (!(this.setTime > 0)) return 1;
         return 1 - percent(this.time - this.getGlobalTime(), 0, this.setTime);
     }
 
@@ -5057,7 +5061,7 @@ function drawRegularPoly(pos, size=vec2(1), sides=3, color=WHITE, lineWidth=0, l
     // build regular polygon points
     const points = [];
     const sizeX = size.x/2, sizeY = size.y/2;
-    for (let i=sides; i--;)
+    for (let i=sides; i-- > 0;) // a count that is not whole, or below zero, still ends
     {
         const a = (i/sides)*PI*2;
         points.push(vec2(sin(a)*sizeX, cos(a)*sizeY));
@@ -5168,7 +5172,7 @@ function drawEllipse(pos, size=vec2(1), color=WHITE, angle=0, lineWidth=0, lineC
         if (!ring)
         {
             const points = [];
-            for (let i=sides; i--;)
+            for (let i=sides; i-- > 0;)
             {
                 const a = (i/sides)*PI*2;
                 points.push(vec2(sin(a), cos(a)));
@@ -5268,7 +5272,7 @@ function drawEllipseGradient(pos, size=vec2(1), colorInner=WHITE, colorOuter=CLE
         const startA = (offset%sides)/sides*PI*2;
         const points = [rim(startA)];
         const colors = [outerInt];
-        for (let i=sides; i--;)
+        for (let i=sides; i-- > 0;)
         {
             const a = ((i+offset)%sides)/sides*PI*2;
             points.push(pos);
@@ -5691,7 +5695,8 @@ function isOnScreen(pos, size=0)
 function setAdditiveBlendMode(additive=true)
 {
     glAdditive = additive;
-    drawContext.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+    if (drawContext) // none headless
+        drawContext.globalCompositeOperation = additive ? 'lighter' : 'source-over';
 }
 
 /** Set the Shader that 2D draws use from now on, none for the engine's own
@@ -5814,9 +5819,12 @@ function drawImageColor(context, image, sx, sy, sWidth, sHeight, dx, dy, dWidth,
     }
     else
     {
-        // copy to offscreen canvas
-        workReadCanvas.width = sWidth;
-        workReadCanvas.height = sHeight;
+        // copy to offscreen canvas, sized again only when the size changes: setting a size remakes the canvas even
+        // to the same one, and a game's tinted tiles are mostly of one size
+        if (workReadCanvas.width !== sWidth || workReadCanvas.height !== sHeight)
+            workReadCanvas.width = sWidth, workReadCanvas.height = sHeight;
+        else
+            workReadContext.clearRect(0, 0, sWidth, sHeight);
         workReadContext.drawImage(image, sx|0, sy|0, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
         // tint image using offscreen work context
@@ -7762,7 +7770,13 @@ class Sound
      */
     constructor(asset, randomness, range, taper=soundDefaultTaper, onloadCallback)
     {
-        if (!soundEnable || headlessMode) return;
+        if (!soundEnable || headlessMode)
+        {
+            // no sound is made: it counts as loaded, so a game that waits for its sounds goes on
+            this.loadedPercent = 1;
+            onloadCallback?.(this);
+            return;
+        }
         const rangeIsDefault = range === undefined;
         if (rangeIsDefault)
             range = soundDefaultRange;
@@ -8909,7 +8923,8 @@ function objectLayersMake(tileMapData, object)
     const name = object.type || object.class, type = objectLayersTypes.get(name);
     if (!type)
     {
-        debug && console.warn(`objectLayersLoad: no type added for ${name}, skipped`);
+        // an object with no type, a shape or a text someone drew in Tiled, is not one a game makes
+        debug && name && console.warn(`objectLayersLoad: no type added for ${name}, skipped`);
         return;
     }
     const {height=0, tilewidth=1, tileheight=1} = tileMapData;
@@ -10993,6 +11008,9 @@ function glDrawUntextured(x, y, sizeX, sizeY, angle, rgba)
     glDraw(x, y, sizeX, sizeY, angle, 0, 0, 0, 0, 0, rgba);
 }
 
+// the list and the vectors glDrawPointsTransform writes its points into
+const glPointsOut = [], glPointsPool = [];
+
 /** Transform and add a polygon to the gl draw list
  *  @param {Array<Vector2>} points - Array of Vector2 points
  *  @param {number} rgba - Color of the polygon as a 32-bit integer
@@ -11005,15 +11023,21 @@ function glDrawUntextured(x, y, sizeX, sizeY, angle, rgba)
  *  @memberof WebGL */
 function glDrawPointsTransform(points, rgba, x, y, sx, sy, angle, tristrip=true)
 {
-    const pointsOut = [];
+    // written into vectors kept for this, a circle would make one for each of its sides at every draw; they are
+    // read into the batch before this returns
+    const pointsOut = glPointsOut, pool = glPointsPool, count = points.length;
+    pointsOut.length = count;
     const sa = sin(-angle);
     const ca = cos(-angle);
-    for (const p of points)
+    for (let i = 0; i < count; ++i)
     {
         // transform the point
+        const p = points[i], out = pool[i] ||= vec2();
         const px = p.x*sx;
         const py = p.y*sy;
-        pointsOut.push(vec2(x + ca*px - sa*py, y + sa*px + ca*py));
+        out.x = x + ca*px - sa*py;
+        out.y = y + sa*px + ca*py;
+        pointsOut[i] = out;
     }
     const drawPoints = tristrip ? glPolyStrip(pointsOut) : pointsOut;
     glDrawPoints(drawPoints, rgba);
@@ -12448,8 +12472,11 @@ class PostProcessPlugin
             {
                 // copy main canvas to work canvas at the backing store size,
                 // mainCanvasSize is css pixels so it would lose resolution
-                workCanvas.width = mainCanvas.width;
-                workCanvas.height = mainCanvas.height;
+                // sized again only when the canvas changed, setting a size remakes the canvas even to the same one
+                if (workCanvas.width !== mainCanvas.width || workCanvas.height !== mainCanvas.height)
+                    workCanvas.width = mainCanvas.width, workCanvas.height = mainCanvas.height;
+                else
+                    workContext.clearRect(0, 0, workCanvas.width, workCanvas.height);
                 glCopyToContext(workContext);
                 workContext.drawImage(mainCanvas, 0, 0);
                 // clear the main canvas with clearRect, resizing it would also
@@ -13545,6 +13572,8 @@ class Light extends EngineObject
 
 /**
  * LittleJS ZzFXM Plugin
+ * - A port of ZzFXM, the Zuper Zmall Zound Zynth music player, by Keith Clark and Frank Force, MIT licensed,
+ *   https://github.com/keithclark/ZzFXM; its notice is in COPYRIGHT.txt
  * @namespace ZzFXM
  */
 
@@ -15211,8 +15240,10 @@ class UIObject
                             return void inputClearKey(0, 0, false, true, false);
                     }
                 }
+                // the object that was the active one going into this update: one pressed and let go inside a
+                // frame is clicked on the next, with its release, not on both
                 if (!uiSystem.activateOnPress)
-                if (!mouseDown && this.isActiveObject() && this.interactive)
+                if (!mouseDown && isActive && this.isActiveObject() && this.interactive)
                     this.click();
                 if (this.destroyed) return;
             }
@@ -15955,7 +15986,10 @@ class UIVideo extends UIObject
         if (this.destroyed)
             return;
 
+        // let go of the media too, a paused video keeps what it has loaded
         this.video.pause();
+        this.video.removeAttribute?.('src');
+        this.video.load?.();
         this.video.remove();
         super.destroy();
     }
@@ -19294,6 +19328,7 @@ function loadAtlas(imageSrc, jsonSrc, padding=textureSheetPadding)
             for (const group of parseAtlas(data))
             {
                 // reserve a block of full size cells, one per frame
+                if (!group.frames.length) continue; // a tag with no frames, the groups after it still load
                 const sourceSize = group.frames[0].sourceSize;
                 const blockSize = vec2(sourceSize.x*group.frames.length, sourceSize.y);
                 const added = textureSheetAdd(blockSize, sourceSize, padding);
@@ -20079,45 +20114,50 @@ function tweenUpdate(gameDelta, realDelta)
     const list = tweenUpdateList.length ? [] : tweenUpdateList, pass = ++tweenUpdatePass;
     for (const t of tweenActive)
         list.push(t);
-    for (let i = list.length; i--;)
+    // the list is let go however the walk ends: a callback that throws must not leave it held, or every
+    // update after would take it for an update still going and make a list of its own
+    try
     {
-        const t = list[i];
-        // stopped, or started again by a callback this update, or during an update a callback ran inside it, which
-        // counts on from this one
-        if (!t.active || t.activePass >= pass) continue;
-        let dt;
-        if (enginePath)
+        for (let i = list.length; i--;)
         {
-            // a paused tween keeps count too, so it does not jump when resumed
-            dt = t.useRealTime ? timeReal - t.lastTimeReal : time - t.lastTime;
-            t.lastTime = time;
-            t.lastTimeReal = timeReal;
-        }
-        else
-            dt = t.useRealTime ? realDelta : gameDelta;
-        if (t.target?.destroyed) { t.stop(); continue; } // its object is gone, paused or not
-        if (t.paused || dt <= 0) continue;
+            const t = list[i];
+            // stopped, or started again by a callback this update, or during an update a callback ran inside it, which
+            // counts on from this one
+            if (!t.active || t.activePass >= pass) continue;
+            let dt;
+            if (enginePath)
+            {
+                // a paused tween keeps count too, so it does not jump when resumed
+                dt = t.useRealTime ? timeReal - t.lastTimeReal : time - t.lastTime;
+                t.lastTime = time;
+                t.lastTimeReal = timeReal;
+            }
+            else
+                dt = t.useRealTime ? realDelta : gameDelta;
+            if (t.target?.destroyed) { t.stop(); continue; } // its object is gone, paused or not
+            if (t.paused || dt <= 0) continue;
 
-        t.life -= dt;
-        if (t.life > 1e-9) // the engine's deltas add up a rounding error short of the duration
-        {
-            t.callback(t.interp(t.life));
-        }
-        else
-        {
-            // Completion: fire end value, remove from active, start the next iteration
-            // of a loop or pingPong, or when there is none it has completed, fire onComplete
-            t.callback(t.interp(0));
-            if (!t.active || t.activePass >= pass)
-                continue; // stopped or restarted by its own callback, the run it was on ends without completing
-            tweenDeactivate(t);
-            const next = t.thenCallback;
-            t.thenCallback = undefined;
-            if (!(next && next()) && t.onComplete)
-                t.onComplete();
+            t.life -= dt;
+            if (t.life > 1e-9) // the engine's deltas add up a rounding error short of the duration
+            {
+                t.callback(t.interp(t.life));
+            }
+            else
+            {
+                // Completion: fire end value, remove from active, start the next iteration
+                // of a loop or pingPong, or when there is none it has completed, fire onComplete
+                t.callback(t.interp(0));
+                if (!t.active || t.activePass >= pass)
+                    continue; // stopped or restarted by its own callback, the run it was on ends without completing
+                tweenDeactivate(t);
+                const next = t.thenCallback;
+                t.thenCallback = undefined;
+                if (!(next && next()) && t.onComplete)
+                    t.onComplete();
+            }
         }
     }
-    list.length = 0;
+    finally { list.length = 0; }
 }
 
 /** Stop every active tween, ending loops too, without calling their then-callbacks.
@@ -22499,17 +22539,19 @@ function render3DInstance(mesh, matrix, tileInfo, color)
 // make room for one more instance of a mesh under a texture and the current draw state, flushing a batch that
 // differs first, and return where its 24 floats go in mesh.instanceData: the matrix, the tint and the uv rect
 // drawMesh passes whether its matrix mirrors, and its batch then culls by the mesh and winds by that at the flush,
-// so it never sets the draw state for them, which would move the state's version at every draw
-function render3DInstanceSlot(mesh, textureInfo, mirrored)
+// so it never sets the draw state for them, which would move the state's version at every draw; drawBillboard
+// passes that its batch is unlit, for the same reason
+function render3DInstanceSlot(mesh, textureInfo, mirrored, unlit=false)
 {
     const r = render3D;
     if (mesh.instanceCount && (mesh.instanceTextureInfo !== textureInfo || mesh.instanceMirrored !== mirrored
-        || render3DStateChanged(mesh.instanceState)))
+        || mesh.instanceUnlit !== unlit || render3DStateChanged(mesh.instanceState)))
         render3DFlushInstances(mesh);
     if (!mesh.instanceCount)
     {
         mesh.instanceTextureInfo = textureInfo;
         mesh.instanceMirrored = mirrored;
+        mesh.instanceUnlit = unlit;
         mesh.instanceState = render3DCaptureBatchState();
         r.instanceMeshes.push(mesh);
     }
@@ -22543,6 +22585,8 @@ function render3DFlushInstances(only)
         const state = mesh.instanceState;
         if (mesh.instanceMirrored !== undefined) // a drawMesh batch: culled by its mesh, wound by its matrices
             state.cullBackFaces = !mesh.doubleSided, state.mirrored = mesh.instanceMirrored;
+        if (mesh.instanceUnlit) // a batch of sprites
+            state.lighting = false;
         render3DDrawInstanced(mesh, buffer, count, mesh.instanceTextureInfo, state);
     }
     if (!only)
@@ -22899,6 +22943,7 @@ class Render3DPlugin
         /** @type {TextureInfo|undefined} */
         this.streamTileInfo = undefined;
         this.streamState = undefined; // captured state the pending batch was drawn under
+        this.streamUnlit = false;     // the pending batch is drawn unlit whatever that state says, billboards are
         /** @type {Mesh|undefined} */
         this.capture = undefined;     // the mesh a bake is filling
         /** @type {Array<{distance: number, state: Object, draw: function(): void}>|undefined} */
@@ -23289,6 +23334,8 @@ class Render3DPlugin
     {
         if (!this.streamCount || !render3DCanDraw()) return;
         const gl = glContext;
+        if (this.streamUnlit)
+            this.streamState.lighting = false; // its own copy of the state
         render3DSetDrawUniforms(RENDER3D_IDENTITY, this.streamTileInfo, WHITE, RENDER3D_FULL_UV_RECT, this.streamState);
         render3DBindVertexBuffer(this.streamBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.streamFloats, 0, this.streamCount * RENDER3D_VERTEX_FLOATS);
@@ -23523,13 +23570,34 @@ class Render3DPlugin
             return this.queueTransparent(p, ()=> this.drawBillboard(p, s, tileInfo, c, angle, upright));
         }
 
-        // the quad's six stream vertices written straight in with no vectors made, unlit, for sprites, and for
-        // particles when instancing is off
-        const lit = this.lighting;
-        this.lighting = this.shadowPass && lit; // unlit on screen, in the shadow map the object's flag decides
-        let uvRect;
-        try { uvRect = render3DBeginStrip(6, tileInfo); }
-        finally { this.lighting = lit; }
+        // unlit on screen, in the shadow map the object's flag decides; the batch is told, the draw state is not
+        // set, which would move its version at every sprite
+        const unlit = !this.shadowPass;
+        if (!this.blend && this.depthTest && this.instancing)
+        {
+            // an opaque sprite is one more instance of the shared quad, as a mesh's uses are: every sprite of a
+            // sheet is one instanced draw at the end of the stage, with nothing written per corner; the shader
+            // drops its see through texels, so it needs no sorting
+            if (!render3DCanDraw() || this.shadowPass && !this.lighting) return; // unlit things cast no shadow
+            if (this.frustumCulling && !render3DSphereVisible(pos.x, pos.y, pos.z, hypot(size.x, size.y) / 2))
+                return;
+            const quad = this.billboardMesh, cb = this.cameraBack, uv = render3DGetTileUVs(tileInfo);
+            render3DMeshUpload(quad);
+            // the quad's half axes, doubled for its unit square
+            const a = render3DBillboardAxes(size, angle, upright);
+            const k = render3DInstanceSlot(quad, render3DTextureOf(tileInfo), false, unlit), data = quad.instanceData;
+            data[k]    = a[0] * 2; data[k+1]  = a[1] * 2; data[k+2]  = a[2] * 2; data[k+3]  = 0;
+            data[k+4]  = a[3] * 2; data[k+5]  = a[4] * 2; data[k+6]  = a[5] * 2; data[k+7]  = 0;
+            data[k+8]  = cb.x;     data[k+9]  = cb.y;     data[k+10] = cb.z;     data[k+11] = 0;
+            data[k+12] = pos.x;    data[k+13] = pos.y;    data[k+14] = pos.z;    data[k+15] = 1;
+            data[k+16] = color.r;  data[k+17] = color.g;  data[k+18] = color.b;  data[k+19] = color.a;
+            data[k+20] = uv.x;     data[k+21] = uv.y;     data[k+22] = uv.w;     data[k+23] = uv.h;
+            return;
+        }
+
+        // one that blends is drawn in its sorted place: the quad's six stream vertices written straight in with no
+        // vectors made, for sprites that blend, and for particles when instancing is off
+        const uvRect = render3DBeginStrip(6, tileInfo, unlit);
         if (!uvRect) return;
         const a = render3DBillboardAxes(size, angle, upright);
         const rx = a[0], ry = a[1], rz = a[2], ux = a[3], uy = a[4], uz = a[5];
@@ -24641,8 +24709,9 @@ function render3DRenderDepth()
 // which way they face, so keeping the count even keeps every strip facing out.
 
 // make room in the stream for a strip of count vertices under the current state and texture, flushing a batch that
-// differs first; returns the uv rect to map the vertices with, or undefined when nothing can be drawn
-function render3DBeginStrip(count, tileInfo)
+// differs first; returns the uv rect to map the vertices with, or undefined when nothing can be drawn; unlit draws
+// the batch unlit whatever the state says, so a billboard does not set the state and set it back at every draw
+function render3DBeginStrip(count, tileInfo, unlit=false)
 {
     const r = render3D;
     if (!render3DCanDraw()) return;
@@ -24650,12 +24719,13 @@ function render3DBeginStrip(count, tileInfo)
     false&&ASSERT(count <= RENDER3D_MAX_STREAM_VERTS, 'strip is too large for the stream, bake it into a mesh');
     if (count > RENDER3D_MAX_STREAM_VERTS) return;
     const textureInfo = render3DTextureOf(tileInfo);
-    if (r.streamCount && (textureInfo !== r.streamTileInfo || render3DStateChanged(r.streamState)
-        || r.streamCount + count > RENDER3D_MAX_STREAM_VERTS))
+    if (r.streamCount && (textureInfo !== r.streamTileInfo || r.streamUnlit !== unlit
+        || render3DStateChanged(r.streamState) || r.streamCount + count > RENDER3D_MAX_STREAM_VERTS))
         r.flush();
     render3DFlushBeforeOverlay();
     if (!r.streamCount)
         r.streamState = render3DCaptureBatchState();
+    r.streamUnlit = unlit;
     r.streamTileInfo = textureInfo;
     return render3DGetTileUVs(tileInfo);
 }
@@ -29793,7 +29863,8 @@ let level3DVoxelTiles, level3DVoxelSetupMap, level3DVoxelMap;
 
 /** How a level's block map is made: the sheet its blocks show tiles of, and a function to set it up
  *  - A level's voxels block makes a VoxelMap when the level loads, with texture 0 and the default tile size unless
- *    a sheet is given here; a block's type shows that tile of the sheet on every face
+ *    a sheet is given here; a block's type shows that tile of the sheet on every face; a game that has loaded no
+ *    image gets plain blocks, a color for each type
  *  - setup is called with each map a level makes, to give block types their own faces or make them see-through
  *  - Call it before level3DLoad; with no arguments the defaults are back
  *  @param {TileInfo} [tileInfo] - The sheet's first tile, as for a VoxelMap
@@ -29855,7 +29926,7 @@ function level3DVoxelsMake(voxels)
 {
     const shape = level3DVoxelsShape(voxels);
     if (!shape || typeof VoxelMap == 'undefined') return;
-    const map = new VoxelMap(shape.pos, shape.size, level3DVoxelTiles || tile());
+    const map = new VoxelMap(shape.pos, shape.size, level3DVoxelTiles || level3DVoxelPlainTiles());
     level3DVoxelsDecode(voxels.blocks, map.data);
     level3DVoxelSetupMap?.(map);
     map.rebuild();
@@ -29915,6 +29986,31 @@ function level3DTerrainSetColors(map, terrain, paint=level3DTerrainPaint(terrain
     const palette = [base, ...paint.colors.map(level3DHexColor)];
     map.color = WHITE;
     map.colors = map.heights.map((row, r)=> row.map((v, c)=> palette[paint.cells[r * map.columns + c]] || base));
+}
+
+// the sheet a level's blocks show when the game gave none with level3DVoxelSetup: the game's first image, as a
+// VoxelMap takes it, or, for a game that has loaded no image, plain tiles made here, a color for each type, so a
+// block map in a game with no art can still be seen and painted
+let level3DVoxelPlain;
+function level3DVoxelPlainTiles()
+{
+    if (textureInfos[0]?.size.x || headlessMode || typeof OffscreenCanvas == 'undefined')
+        return tile();
+    if (!level3DVoxelPlain)
+    {
+        // 16 by 16 tiles of 16 pixels, each a color of its own with a darker edge, so the blocks read as blocks
+        const context = createCanvasContext(256);
+        for (let i = 0; i < 256; ++i)
+        {
+            const x = i % 16 * 16, y = (i / 16 | 0) * 16, hue = i * .618 % 1;
+            context.fillStyle = hsl(hue, .45, .4).toString();
+            context.fillRect(x, y, 16, 16);
+            context.fillStyle = hsl(hue, .5, .55).toString();
+            context.fillRect(x + 1, y + 1, 14, 14);
+        }
+        level3DVoxelPlain = new TextureInfo(context.canvas);
+    }
+    return tile(0, 16, level3DVoxelPlain, 0);
 }
 
 // the HeightMap of a level's terrain block, undefined when it has none or it is wrong
@@ -31486,6 +31582,11 @@ async function parseGLTF(data, baseUrl='')
     for (const name of json.extensionsRequired || [])
         if (name === 'KHR_draco_mesh_compression' || name === 'EXT_meshopt_compression')
             throw new Error(`glTF with ${name} is not read, export it uncompressed`);
+        else if (name === 'KHR_texture_basisu')
+            throw new Error('glTF with KHR_texture_basisu textures is not read, export them as png or jpeg');
+    // one that only may use them has other images to fall back on, or none: said, since it loads with them left out
+    if (json.extensionsUsed?.includes('KHR_texture_basisu') && !json.extensionsRequired?.includes('KHR_texture_basisu'))
+        console.warn('glTF: KHR_texture_basisu textures are not read and are left out, export them as png or jpeg');
 
     // the buffers: the GLB's own, a data uri, or a file beside the model
     const buffers = await Promise.all((json.buffers || []).map((buffer, i)=>
@@ -31528,7 +31629,8 @@ async function parseGLTF(data, baseUrl='')
             const bitmap = normalTextures.has(index) ?
                 await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'}) :
                 opaque ? await createImageBitmap(blob, {premultiplyAlpha: 'none'}).then(gltfOpaqueImage) : await createImageBitmap(blob);
-            return new TextureInfo(bitmap, true, [sampler.wrapS ?? 10497, sampler.wrapT ?? 10497]); // REPEAT by default
+            // REPEAT by default, and hard edged only when its sampler says NEAREST, not as the game's tiles are
+            return new TextureInfo(bitmap, true, [sampler.wrapS ?? 10497, sampler.wrapT ?? 10497], sampler.magFilter === 9728);
         }
         catch (e) { false&&LOG('glTF image not loaded', e); }
     }));
@@ -31638,17 +31740,25 @@ function gltfOpaqueImage(image)
 {
     const gl = glContext, {width, height} = image;
     if (gl.isContextLost()) return image; // nothing to read back through, it keeps its alpha
-    const texture = gl.createTexture(), framebuffer = gl.createFramebuffer(), bound = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    // the room to read into first: for a huge image it can fail, and must not with the framebuffer bound
     const data = new Uint8ClampedArray(width * height * 4);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data); // row 0 is the image's first row, as uploaded
-    gl.bindFramebuffer(gl.FRAMEBUFFER, bound);
-    gl.bindTexture(gl.TEXTURE_2D, glActiveTexture);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteTexture(texture);
+    const texture = gl.createTexture(), framebuffer = gl.createFramebuffer(), bound = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    try
+    {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data); // row 0 is the image's first row, as uploaded
+    }
+    finally
+    {
+        // the 2D renderer's own bindings back, whatever happened
+        gl.bindFramebuffer(gl.FRAMEBUFFER, bound);
+        gl.bindTexture(gl.TEXTURE_2D, glActiveTexture);
+        gl.deleteFramebuffer(framebuffer);
+        gl.deleteTexture(texture);
+    }
     for (let i = 3; i < data.length; i += 4)
         data[i] = 255;
     image.close();
@@ -31785,7 +31895,7 @@ function gltfAccessor(json, buffers, index)
     }
     if (scale !== 1)
         for (let i = 0; i < out.length; ++i)
-            out[i] /= scale;
+            out[i] = max(out[i] / scale, -1); // a signed type's lowest value is -1 too, as the format says
     return {data: out, components, count: a.count};
 }
 
@@ -31849,8 +31959,10 @@ function gltfPart(json, buffers, textures, primitive, matrix, name)
     const [er, eg, eb] = material.emissiveFactor || [0, 0, 0];
     if (er || eg || eb)
     {
+        // KHR_materials_emissive_strength makes it that many times brighter, emission above 1 in Blender
+        const strength = material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1;
         part.emissiveMap = emissiveRef ? textures[emissiveRef.index] : gltfWhiteTexture();
-        part.emissiveMapColor = rgb(gltfSRGB(er), gltfSRGB(eg), gltfSRGB(eb));
+        part.emissiveMapColor = rgb(gltfSRGB(er) * strength, gltfSRGB(eg) * strength, gltfSRGB(eb) * strength);
     }
     return part;
 }

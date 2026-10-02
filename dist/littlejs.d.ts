@@ -3647,6 +3647,7 @@ declare module "littlejsengine" {
          *  @param {SoundLoadCallback} [onloadCallback] - callback function to call when sound is loaded
          */
         constructor(asset?: string | URL | any[], randomness?: number, range?: number, taper?: number, onloadCallback?: SoundLoadCallback);
+        loadedPercent: number;
         set range(arg: number);
         /** World space max range of sound, 0 for no limit; a range that is set is the sound's own, in 3D too
          *  @type {number} */
@@ -3669,9 +3670,6 @@ declare module "littlejsengine" {
         /** @ignore
          *  @type {Array<Array<number>|Float32Array>|undefined} */
         _sampleChannels: Array<Array<number> | Float32Array> | undefined;
-        /** @property {number} - Percentage of this sound currently loaded, sounds
-         *  fetched from a url stay at 0 until decoding completes */
-        loadedPercent: number;
         /** @property {SoundLoadCallback|undefined} - function to call when sound is loaded
          *  @type {SoundLoadCallback|undefined} */
         onloadCallback: SoundLoadCallback | undefined;
@@ -5318,6 +5316,8 @@ declare module "littlejsengine" {
     }
     /**
      * LittleJS ZzFXM Plugin
+     * - A port of ZzFXM, the Zuper Zmall Zound Zynth music player, by Keith Clark and Frank Force, MIT licensed,
+     *   https://github.com/keithclark/ZzFXM; its notice is in COPYRIGHT.txt
      * @namespace ZzFXM
      */
     /**
@@ -8561,6 +8561,7 @@ declare module "littlejsengine" {
         /** @type {TextureInfo|undefined} */
         streamTileInfo: TextureInfo | undefined;
         streamState: any;
+        streamUnlit: boolean;
         /** @type {Mesh|undefined} */
         capture: Mesh | undefined;
         /** @type {Array<{distance: number, state: Object, draw: function(): void}>|undefined} */
@@ -10684,7 +10685,8 @@ declare module "littlejsengine" {
     }
     /** How a level's block map is made: the sheet its blocks show tiles of, and a function to set it up
      *  - A level's voxels block makes a VoxelMap when the level loads, with texture 0 and the default tile size unless
-     *    a sheet is given here; a block's type shows that tile of the sheet on every face
+     *    a sheet is given here; a block's type shows that tile of the sheet on every face; a game that has loaded no
+     *    image gets plain blocks, a color for each type
      *  - setup is called with each map a level makes, to give block types their own faces or make them see-through
      *  - Call it before level3DLoad; with no arguments the defaults are back
      *  @param {TileInfo} [tileInfo] - The sheet's first tile, as for a VoxelMap

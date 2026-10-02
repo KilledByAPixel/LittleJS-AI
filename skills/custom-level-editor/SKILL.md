@@ -51,23 +51,23 @@ This is the step that turns an existing game into one the editor can work on.
 
 ### Tile sheets
 
-The 2D editor paints tile indices from a tile sheet, so a tile-based game needs one — an image in `engineInit`'s image list, or a texture the game generates. A map of object layers only (`objectLayersLoad` with no tile layer) needs none. In 3D only the block map needs a sheet — a level with a `voxels` block asserts `tile texture is not loaded` when the game has no image, so leave that block out (objects, terrain and scene work without one) or give the game a sheet and call `level3DVoxelSetup`.
+The 2D editor paints tile indices from a tile sheet, so a tile-based game needs one — an image in `engineInit`'s image list, or a texture the game generates. A map of object layers only (`objectLayersLoad` with no tile layer) needs none. A 3D level needs no image at all — its block map (`voxels`) shows the tiles of the sheet given to `level3DVoxelSetup`, or of the game's first image, and in a game that has loaded no image it shows plain colored blocks, one color per block type (engine 1.23.1+; 1.23.0 asserted `tile texture is not loaded` there).
 
 ### Where the level file lives
 
 The editor autosaves to the browser as you work, and its Save button writes the level as JSON (to a file picked once in Chrome and Edge, a download elsewhere). How the game reads it back depends on how the game is served.
 
-- **Opened from `file://`** (no server) — `fetch` cannot read local files, so keep the level in a script — `level.js` containing `const level = {...};`, loaded by a `<script>` tag before `game.js`. Have Save write that form:
+- **Opened from `file://`** (no server) — `fetch` cannot read local files, so keep the level in a script — `level.js` containing `var level = {...};`, loaded by a `<script>` tag before `game.js`. Have Save write that form (this is the engine's own tested recipe, "A game opened from disk" in `EDITOR.md`):
 
   ```javascript
   levelEditor.onSave = (text, fileName)=>
   {
-      saveText('const level = ' + text + ';\n', 'level.js', 'text/javascript'); // downloads level.js
-      return true; // kept, the editor writes no file of its own
+      saveText('var level = ' + text.trim() + ';\n', 'level.js', 'text/javascript'); // downloads level.js
+      return true; // kept, the editor writes no JSON file
   };
   ```
 
-  Tell the user to move the downloaded `level.js` over the one in the project. Add `level.js` to `build.json` `sources` before `game.js`.
+  Load that same `level` object (`level3DLoad(level)`, or `tileLayersLoad(level, ...)` in 2D) so the editor's changes are the game's. Tell the user to move the downloaded `level.js` over the one in the project; until then the autosave still brings unsaved edits back after a reload. Add `level.js` to `build.json` `sources` before `game.js`.
 - **Served over http** — keep `level.json` and load it with `level = await fetchJSON('level.json')` in an async `gameInit`; the editor's own Save then writes the real file. List it in `build.json` `data`.
 
 Either way a level loaded again from the same object, as a restart does, has the edits.
@@ -122,4 +122,4 @@ The cost to state plainly to the user: the game now carries a private engine bui
 
 ## Using the bundled examples
 
-`examples/editor2D.js` and `examples/editor3D.js` are the engine's demo "shorts": plain game code with no `engineInit` line and written for a 16-pixel tile sheet. To run one as a game, add `engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, ['tiles.png'])` with empty functions for the callbacks it does not define, and either supply a tile sheet or, for the 3D one, delete its `voxels` block. Read them for structure; write the game's own level and types.
+`examples/editor2D.js` and `examples/editor3D.js` are the engine's demo "shorts": plain game code with no `engineInit` line and written for a 16-pixel tile sheet. To run one as a game, add `engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost, ['tiles.png'])` with empty functions for the callbacks it does not define. The 2D one needs a tile sheet for its tiles and icons; the 3D one runs without any image, leave `['tiles.png']` off. Read them for structure; write the game's own level and types.
