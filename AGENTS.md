@@ -133,6 +133,13 @@ UI and helper modules
   The panel is debug-build only (Esc opens the debug overlay, 9 toggles the panel, or set
   `debugTweakables = true`); release builds stub the functions out. Changed values are saved
   per page and Copy puts them on the clipboard as code.
+- Bloom and other full-screen effects are engine functions too; there is no `templates/bloom.js`
+  or `templates/postProcess.js` any more. Call `postProcessBloom(threshold, strength, size)` in
+  `gameInit` for glow, or compose pieces with `new PostProcessPlugin(postProcessEffects(
+  postProcessGlow(), postProcessScanlines(), postProcessVignette()))`; `postProcessTV({...})` is
+  an old TV in one piece. Only one post-process is active at a time, so combine effects with
+  `postProcessEffects` rather than creating two plugins. `postProcess.setShaderCode(code)`
+  switches effects while running. Do not hand-write a bloom shader.
 
 Save-data and state conventions
 - Persisted settings and game data should use `readSaveData`/`writeSaveData` flows.
