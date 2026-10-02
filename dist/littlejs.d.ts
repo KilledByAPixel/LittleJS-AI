@@ -8,6 +8,10 @@ declare module "littlejsengine" {
      */
     export type GameInitCallback = () => void | Promise<void>;
     /**
+     * - Draws the loading screen on mainContext, each frame while the game loads
+     */
+    export type LoadingScreenCallback = (progress: number) => any;
+    /**
      * - Update or render function for the game
      */
     export type GameCallback = () => any;
@@ -24,25 +28,388 @@ declare module "littlejsengine" {
      */
     export type Canvas2DDrawFunction = (context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => any;
     /**
+     * Padding for each side of a rectangle, the sides left out are 0
+     */
+    export type CameraFitSides = {
+        top?: number;
+        right?: number;
+        bottom?: number;
+        left?: number;
+    };
+    /**
+     * Anything with input and output audio nodes, like an effect from the audio effects plugin
+     */
+    export type AudioEffectNodes = {
+        input: AudioNode;
+        output: AudioNode;
+    };
+    /**
      * - Function called when a sound ends
      */
     export type AudioEndedCallback = (source: AudioBufferSourceNode) => any;
     /**
-     * - Function to handle a tile collision test
+     * - Decides whether a tile counts as solid for a collision test or raycast
      */
-    export type TileCollisionCallback = (tileData: number, pos: Vector2) => any;
+    export type TileCollisionCallback = (tileData: number, pos: Vector2) => boolean;
     /**
      * - Function that processes a medal
      */
     export type MedalCallbackFunction = (medal: Medal) => any;
     /**
+     * Options for a tweak
+     */
+    export type TweakOptions = {
+        /**
+         * - Lowest value on the slider, the slider shows when min and max are both set
+         */
+        min?: number;
+        /**
+         * - Highest value on the slider
+         */
+        max?: number;
+        /**
+         * - Step for the slider and number box, a thousandth of the range by default
+         */
+        step?: number;
+        /**
+         * - Name to show in place of the path, and the name it is saved by with an object
+         */
+        label?: string;
+        /**
+         * - Object the path is a field of, in place of a global, for an ES module game
+         */
+        object?: any;
+    };
+    /**
+     * - Called once when a SpriteAnimation's play ends
+     */
+    export type SpriteAnimationEndCallback = () => void;
+    /**
+     * - Function called when sound is loaded
+     */
+    export type SoundLoadCallback = (sound: Sound) => any;
+    /**
      * - Function that processes a particle
      */
     export type ParticleCallback = (particle: Particle) => any;
     /**
-     * - Collide callback for particles
+     * - Decides whether a particle stops at a tile, it is a filter rather than a notice
      */
-    export type ParticleCollideCallback = (particle: Particle, tileData: number, pos: Vector2) => any;
+    export type ParticleCollideCallback = (particle: Particle, tileData: number, pos: Vector2) => boolean;
+    /**
+     * A scene, any object with the hooks it needs, each optional and called as a method so this is the scene
+     */
+    export type Scene = {
+        /**
+         * - Called when the scene starts, after the old one left and the objects were destroyed
+         */
+        enter?: () => void;
+        /**
+         * - Called before the next scene starts, while the scene is current and its objects are still there
+         */
+        leave?: () => void;
+        /**
+         * - Called each update after gameUpdate, not while paused or at time scale 0
+         */
+        update?: () => void;
+        /**
+         * - Called before gameRender, to draw under the objects
+         */
+        render?: () => void;
+        /**
+         * - Called after gameRenderPost, to draw over the game, while paused too; plugins made after the first setScene draw over it
+         */
+        renderPost?: () => void;
+    };
+    /**
+     * The draw state's values, behind render3D's accessors, and the rgb emissiveMapColor had when it was set
+     */
+    export type Render3DDrawState = {
+        blend: boolean;
+        additive: boolean;
+        depthTest: boolean;
+        depthWrite: boolean;
+        cullBackFaces: boolean;
+        mirrored: boolean;
+        lighting: boolean;
+        emissive: number;
+        receiveShadow: boolean;
+        specular: number;
+        pixelated: boolean;
+        shader: Shader | undefined;
+        normalMap: TextureInfo | undefined;
+        normalScale: number;
+        shininess: number;
+        reflectivity: number;
+        emissiveMap: TextureInfo | undefined;
+        emissiveMapColor: Color;
+        emissiveR: number;
+        emissiveG: number;
+        emissiveB: number;
+    };
+    /**
+     * A particle as a ParticleEmitter3D's callbacks see it: one object the emitter reuses, set from the particle for each
+     * call and written back after it, so copy what you keep
+     */
+    export type Particle3D = {
+        /**
+         * - The emitter it is in
+         */
+        emitter: ParticleEmitter3D;
+        /**
+         * - Where it is, change it to move it
+         */
+        pos: Vector3;
+        /**
+         * - How far it moves each frame
+         */
+        velocity: Vector3;
+        /**
+         * - Seconds it has lived
+         */
+        age: number;
+        /**
+         * - Seconds it lives
+         */
+        lifeTime: number;
+        /**
+         * - How much the emitter grows its effect, from its scale3D and its parents', as the 2D
+         * particle's scale
+         */
+        scale: number;
+        /**
+         * - Set by destroy
+         */
+        destroyed: boolean;
+        /**
+         * - End it this update, the destroy callback gets it
+         */
+        destroy: () => void;
+    };
+    /**
+     * - A function a ParticleEmitter3D calls with one of its particles
+     */
+    export type Particle3DCallback = (particle: Particle3D) => any;
+    /**
+     * - Decides whether a particle stops where it hits the level, a filter as in 2D
+     */
+    export type Particle3DCollideCallback = (particle: Particle3D, level: EngineObject3D, pos: Vector3) => boolean | void;
+    /**
+     * What VoxelMap.raycast finds: how far along the ray, the block's cell and type, and the normal of the face it comes in
+     * through
+     */
+    export type VoxelHit = {
+        distance: number;
+        cell: Vector3;
+        normal: Vector3;
+        type: number;
+    };
+    /**
+     * - Puts the player at a world position, for the level editor's Play from mouse
+     */
+    export type EditorPlayFromCallback = (pos: Vector2) => any;
+    /**
+     * - Rebuilds the level from the map the level editor changed
+     */
+    export type EditorRestartCallback = () => any;
+    /**
+     * - What the game does when the level editor paints a tile
+     */
+    export type EditorTileCallback = (layer: TileLayer, pos: Vector2, tile: number | undefined) => any;
+    /**
+     * - What the level editor gives the callbacks of a tool of the game's own
+     */
+    export type EditorToolAt = {
+        /**
+         * - Where the mouse is in the level: a Vector2 in the 2D editor; in the 3D one a Vector3 on
+         * the level or the ground, undefined when the mouse is over the panel
+         */
+        pos: any;
+        /**
+         * - 2D: the tile cell under the mouse on the selected tile layer
+         */
+        cell: Vector2 | undefined;
+        /**
+         * - 3D: the mouse's Ray3D
+         */
+        ray: any;
+        /**
+         * - Is Shift held
+         */
+        shift: boolean;
+        /**
+         * - Is Ctrl held
+         */
+        ctrl: boolean;
+    };
+    /**
+     * - A tool of the game's own for the level editor, see LevelEditor.addTool
+     */
+    export type EditorTool = {
+        /**
+         * - The key that picks it, as addKey spells one
+         */
+        key?: string;
+        /**
+         * - The hint line while it is on
+         */
+        hint?: string;
+        /**
+         * - The left button went down in the level; returning false
+         * says the press was not the tool's
+         */
+        onPress?: (arg0: EditorToolAt) => any;
+        /**
+         * - Each frame it is held
+         */
+        onDrag?: (arg0: EditorToolAt) => any;
+        /**
+         * - It was let go
+         */
+        onRelease?: (arg0: EditorToolAt) => any;
+        /**
+         * - Each frame the tool is on, to draw its cursor or preview
+         */
+        onDraw?: (arg0: EditorToolAt) => any;
+    };
+    /**
+     * - The 2D level editor's edit functions, levelEditor.edit2D
+     */
+    export type EditorEdit2D = {
+        /**
+         * - The Tiled map of the selected layer
+         */
+        map: any | undefined;
+        /**
+         * - The selected tile layer, undefined on an object layer
+         */
+        layer: TileLayer | undefined;
+        /**
+         * - A copy of the selected object layer's objects, as Tiled has them
+         */
+        objects: Array<any>;
+        /**
+         * - The cell under the mouse on the selected tile layer
+         */
+        hover: Vector2 | undefined;
+        /**
+         * - The selected objects' ids
+         */
+        selection: Set<number>;
+        /**
+         * - Set a cell of the selected tile layer
+         * to a tile index, -1 erases, with a direction 0 to 3 and a mirror; false off the layer or with none
+         */
+        paint: (arg0: Vector2, arg1: number, ...args: any[]) => boolean;
+        /**
+         * - Edit a copy of the selected object
+         * layer's objects; false when nothing changed
+         */
+        changeObjects: (arg0: (arg0: Array<any>) => void) => boolean;
+        /**
+         * - End the edit: one undo step, and the autosave
+         */
+        strokeEnd: () => void;
+        /**
+         * - Take the edit being made back
+         */
+        strokeCancel: () => void;
+        /**
+         * - Many paints with one redraw a layer
+         */
+        bulk: (arg0: () => void) => void;
+        /**
+         * - Undo, or redo with true
+         */
+        undo: (...args: any[]) => any;
+        /**
+         * - The map as the text Save writes
+         */
+        toJSON: () => string;
+    };
+    /**
+     * - The 3D level editor's edit functions, levelEditor.edit3D; a position, a
+     *   rotation and a scale are Vector3, the rotation in degrees
+     */
+    export type EditorEdit3D = {
+        /**
+         * - The level object being edited
+         */
+        level: any | undefined;
+        /**
+         * - Its objects, the list in the level: read it, edit through change
+         */
+        objects: Array<any>;
+        /**
+         * - The selected objects' ids
+         */
+        selection: Set<number>;
+        /**
+         * - The selected objects
+         */
+        selected: () => Array<any>;
+        /**
+         * - What the game made for an object's id
+         */
+        made: (arg0: number) => any;
+        /**
+         * - Edit a copy of the object list; false
+         * when nothing changed
+         */
+        change: (arg0: (arg0: Array<any>) => void) => boolean;
+        /**
+         * - Edit the level's scene, voxels, terrain
+         * or prefabs block
+         */
+        changePart: (arg0: string, arg1: (arg0: any) => any) => boolean;
+        /**
+         * - End the edit: one undo step, and the autosave
+         */
+        strokeEnd: () => void;
+        /**
+         * - Take the edit being made back
+         */
+        strokeCancel: () => void;
+        /**
+         * - Add an object of a type at a position, selected;
+         * its id, undefined when there is no such type or the level can not be edited
+         */
+        place: (arg0: string, arg1: any) => number | undefined;
+        /**
+         * - Write a place, a rotation and a scale on an
+         * object of the list given to change; one left out is kept
+         */
+        setTransform: (arg0: any, ...args: any[]) => void;
+        /**
+         * - Write a property on an object of the list given
+         * to change, left out of the file when it is the type's default
+         */
+        setProperty: (arg0: any, arg1: string, arg2: any) => void;
+        /**
+         * - An object's position
+         */
+        pos: (arg0: any) => any;
+        /**
+         * - Its rotation, in degrees
+         */
+        rotation: (arg0: any) => any;
+        /**
+         * - Its scale
+         */
+        scale: (arg0: any) => any;
+        /**
+         * - Where the mouse is on the level or the ground, undefined over the panel
+         */
+        mousePoint: () => any;
+        /**
+         * - Undo, or redo with true
+         */
+        undo: (...args: any[]) => boolean;
+        /**
+         * - The level as the text Save writes
+         */
+        toJSON: () => string;
+    };
     /**
      * LittleJS - The Tiny Fast JavaScript Game Engine
      * MIT License - Copyright 2021 Frank Force
@@ -79,11 +446,12 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Engine */
     export const frameRate: number;
-    /** How many seconds each frame lasts, engine uses a fixed time step
+    /** How many seconds the update covers: 1/60 with the fixed time step, or with engineVariableStep the time of the
+     *  display frame it runs on, times timeScale; while paused it keeps the last update's
      *  @type {number}
      *  @default 1/60
      *  @memberof Engine */
-    export const timeDelta: number;
+    export let timeDelta: number;
     /** Array containing all engine objects
      *  @type {Array<EngineObject>}
      *  @memberof Engine */
@@ -100,7 +468,7 @@ declare module "littlejsengine" {
      *  @type {number}
      *  @memberof Engine */
     export let time: number;
-    /** Actual clock time since start in seconds (not affected by pause, timescale, or frame rate clamping)
+    /** Actual clock time since start in seconds (not affected by pause, timescale, or frame rate clamping; the debug speed keys scale it in debug builds)
      *  @type {number}
      *  @memberof Engine */
     export let timeReal: number;
@@ -123,17 +491,24 @@ declare module "littlejsengine" {
      * @memberof Engine
      */
     /**
+     * @callback LoadingScreenCallback - Draws the loading screen on mainContext, each frame while the game loads
+     * @param {number} progress - The part of the loads done, 0 to 1
+     * @memberof Engine
+     */
+    /**
      * @callback GameCallback - Update or render function for the game
      * @memberof Engine
      */
     /** Startup LittleJS engine with your callback functions
-     *  @param {GameInitCallback} gameInit - Called once after the engine starts up, can be async for loading
-     *  @param {GameCallback} gameUpdate - Called every frame before objects are updated (60fps), use for game logic
-     *  @param {GameCallback} gameUpdatePost - Called after physics and objects are updated, even when paused, use for UI updates
-     *  @param {GameCallback} gameRender - Called before objects are rendered, use for drawing backgrounds/world elements
-     *  @param {GameCallback} gameRenderPost - Called after objects are rendered, use for drawing UI/overlays
+     *  @param {GameInitCallback} [gameInit] - Called once after the engine starts up, can be async for loading
+     *  @param {GameCallback} [gameUpdate] - Called every frame before objects are updated (60fps), use for game logic
+     *  @param {GameCallback} [gameUpdatePost] - Called after physics and objects are updated, even when paused, use for UI updates
+     *  @param {GameCallback} [gameRender] - Called before objects are rendered, use for drawing backgrounds/world elements
+     *  @param {GameCallback} [gameRenderPost] - Called after objects are rendered, use for drawing UI/overlays
      *  @param {Array<string>} [imageSources=[]] - List of image file paths to preload (e.g., ['player.png', 'tiles.png'])
      *  @param {HTMLElement} [rootElement] - Root DOM element to attach canvas to, defaults to document.body
+     *    It keeps its own inline styles and the canvas centers inside it, but the canvas is still sized from the window,
+     *    so set canvasFixedSize or canvasMaxSize to fit a smaller element
      *  @example
      *  // Basic engine startup
      *  engineInit(
@@ -145,11 +520,12 @@ declare module "littlejsengine" {
      *    ['tiles.png', 'tilesLevel.png']       // images to load
      *  );
      *  @memberof Engine */
-    export function engineInit(gameInit: GameInitCallback, gameUpdate: GameCallback, gameUpdatePost: GameCallback, gameRender: GameCallback, gameRenderPost: GameCallback, imageSources?: Array<string>, rootElement?: HTMLElement): Promise<void>;
+    export function engineInit(gameInit?: GameInitCallback, gameUpdate?: GameCallback, gameUpdatePost?: GameCallback, gameRender?: GameCallback, gameRenderPost?: GameCallback, imageSources?: Array<string>, rootElement?: HTMLElement): Promise<void>;
     /** Advance the engine by a number of frames
-     *  Requires setEngineManualStep(true) before engineInit
+     *  Requires setEngineManualStep(true), before engineInit or while running; it stops early if an update turns it off
      *  Respects paused exactly as the normal update loop does
-     *  @param {number} [frames] - number of engine update ticks, max 36000, each running one fixed update at timeScale 1
+     *  @param {number} [frames] - frames of 1/60 of a second to advance, max 36000; timeScale sets how many fixed
+     *  updates they run, as in the normal loop, one each at timeScale 1
      *  @example
      *  setHeadlessMode(true);
      *  setEngineManualStep(true);
@@ -157,36 +533,44 @@ declare module "littlejsengine" {
      *  engineStep(600); // advance 10 seconds of game time
      *  @memberof Engine */
     export function engineStep(frames?: number): void;
-    /** Update each engine object, remove destroyed objects, and update time
-     * can be called manually if objects need to be updated outside of main loop
+    /** Update each engine object and remove destroyed objects; time and frame are advanced by the engine loop, not here
+     *  - Can be called manually if objects need to be updated outside of main loop
      *  @memberof Engine */
     export function engineObjectsUpdate(): void;
     /** Destroy and remove all objects
      *  - This can be used to clear out all objects when restarting a level
+     *  - Objects with the persistent flag set are left alone, for things that outlive a level
      *  - Objects can override their destroy function to do cleanup or stick around
-     *  @param {boolean} [immediate] - should attached effects be allowed to die off?
+     *  @param {boolean} [immediate] - true removes attached effects like particle emitters at once, false lets them finish first
      *  @memberof Engine */
     export function engineObjectsDestroy(immediate?: boolean): void;
     /** Collects all object within a given area
+     *  - An object is collected when its box overlaps the area, or with testCenters when its center is inside it
+     *  - Objects destroyed this frame are left out, they are only in the list until the frame ends
      *  @param {Vector2} [pos] - Center of test area, or undefined for all objects
-     *  @param {Vector2|number} [size] - Radius of circle if float, rectangle size if Vector2
+     *  @param {Vector2|number} [size] - Diameter of a circle if a number, full size of a rectangle if a Vector2,
+     *                                   left out or 0 the objects that overlap the point at pos
      *  @param {Array<EngineObject>} [objects=engineObjects] - List of objects to check
+     *  @param {boolean} [testCenters] - Test only each object's center, a little faster, and ignores object sizes
      *  @return {Array<EngineObject>} - List of collected objects
      *  @memberof Engine */
-    export function engineObjectsCollect(pos?: Vector2, size?: Vector2 | number, objects?: Array<EngineObject>): Array<EngineObject>;
+    export function engineObjectsCollect(pos?: Vector2, size?: Vector2 | number, objects?: Array<EngineObject>, testCenters?: boolean): Array<EngineObject>;
     /**
      * @callback ObjectCallbackFunction - Function that processes an object
      * @param {EngineObject} object
      *  @memberof Engine
      */
-    /** Triggers a callback for each object within a given area
+    /** Triggers a callback for each object within a given area, objects destroyed this frame left out
      *  @param {Vector2} [pos] - Center of test area, or undefined for all objects
-     *  @param {Vector2|number} [size] - Radius of circle if float, rectangle size if Vector2
-     *  @param {ObjectCallbackFunction} [callbackFunction] - Calls this function on every object that passes the test
+     *  @param {Vector2|number} [size] - Diameter of a circle if a number, full size of a rectangle if a Vector2
+     *  @param {ObjectCallbackFunction} [callbackFunction] - Calls this function on every object that passes the test, needed
+     *                                                     (marked optional only because the area before it is)
      *  @param {Array<EngineObject>} [objects=engineObjects] - List of objects to check
+     *  @param {boolean} [testCenters] - Test only each object's center, see engineObjectsCollect
      *  @memberof Engine */
-    export function engineObjectsCallback(pos?: Vector2, size?: Vector2 | number, callbackFunction?: ObjectCallbackFunction, objects?: Array<EngineObject>): void;
-    /** Return a list of objects intersecting a ray
+    export function engineObjectsCallback(pos?: Vector2, size?: Vector2 | number, callbackFunction?: ObjectCallbackFunction, objects?: Array<EngineObject>, testCenters?: boolean): void;
+    /** Return a list of objects intersecting a ray, objects destroyed this frame left out
+     *  - Only objects with collideRaycast set are hit, which setCollision turns on
      *  @param {Vector2} start
      *  @param {Vector2} end
      *  @param {Array<EngineObject>} [objects=engineObjects] - List of objects to check
@@ -198,17 +582,29 @@ declare module "littlejsengine" {
      * @memberof Engine
      */
     /** Add a new update function for a plugin
+     *  - update runs on every fixed tick, paused and timeScale 0 included; a plugin that simulates should skip those
      *  @param {PluginCallback} [update]
      *  @param {PluginCallback} [render]
      *  @param {PluginCallback} [glContextLost]
      *  @param {PluginCallback} [glContextRestored]
+     *  @param {PluginCallback} [preRender] - Called after the canvas is cleared and before gameRender
      *  @memberof Engine */
-    export function engineAddPlugin(update?: PluginCallback, render?: PluginCallback, glContextLost?: PluginCallback, glContextRestored?: PluginCallback): void;
+    export function engineAddPlugin(update?: PluginCallback, render?: PluginCallback, glContextLost?: PluginCallback, glContextRestored?: PluginCallback, preRender?: PluginCallback): void;
+    /** Add something the game loads to what startup waits for: while engineInit and gameInit run, the game loop starts
+     *  once it is done, and the loading screen counts it; images from loadTexture and sounds from files are added on
+     *  their own, and a load that fails counts as done; after startup it does nothing
+     *  @param {Promise<any>} promise
+     *  @return {Promise<any>} - The same promise
+     *  @example
+     *  async function gameInit() { level = await engineAddLoad(fetchJSON('level.json')); }
+     *  @memberof Engine */
+    export function engineAddLoad(promise: Promise<any>): Promise<any>;
     /**
      * LittleJS Debug System
      * - Press Esc to toggle debug overlay with object picking
-     * - Number keys toggle debug visualizations (physics, particles, etc.)
-     * - +/- keys control time scale for slow motion/fast forward
+     * - Number keys toggle debug visualizations (physics, particles, etc.) while the overlay is open
+     * - +/- keys control time scale for slow motion/fast forward while the overlay is open
+     * - setDebugKeysAlways lets those keys work with the overlay closed too
      * - ASSERT and LOG macros for development (removed in release builds)
      * - Debug primitive rendering (rectangles, circles, lines, points, text)
      * - Screenshot and video capture support
@@ -231,12 +627,260 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Debug */
     export let debugWatermark: boolean;
+    /** Key code used to toggle debug mode, Esc by default
+     *  @type {string}
+     *  @default
+     *  @memberof Debug */
+    export let debugKey: string;
+    /** Let the debug keys work while the overlay is closed, the number keys and the +/- time keys, for a game that does
+     *  not use them; off by default, so they only work while the overlay is open
+     *  @type {boolean}
+     *  @default
+     *  @memberof Debug */
+    export let debugKeysAlways: boolean;
+    /** True if the tweakables panel is shown, 9 toggles it while the overlay is open; set it to show the panel
+     *  from the start, the panel is never shown in release builds
+     *  @type {boolean}
+     *  @default
+     *  @memberof Debug */
+    export let debugTweakables: boolean;
+    /** The level editor, levelEditor.open() to edit the level, levelEditor.close() to play on with the changes
+     *  @type {LevelEditor}
+     *  @memberof Editor */
+    export let levelEditor: LevelEditor;
+    /**
+     * LittleJS Level Editor
+     * - Paint the game's tile layers while it is paused, then keep playing with the changes
+     * - Press 0 while the debug overlay is open to edit, 0 again to play, or call levelEditor.open() and close()
+     * - Edits the Tiled map the game loaded, saves it back as Tiled JSON, and autosaves every change
+     * - Debug builds only, the release build has stubs for its names in engineRelease.js and none of its code
+     * @namespace Editor
+     */
+    /**
+     *  @callback EditorPlayFromCallback - Puts the player at a world position, for the level editor's Play from mouse
+     *  @param {Vector2} pos - Where to start playing
+     *  @memberof Editor
+     */
+    /**
+     *  @callback EditorRestartCallback - Rebuilds the level from the map the level editor changed
+     *  @memberof Editor
+     */
+    /**
+     *  @callback EditorTileCallback - What the game does when the level editor paints a tile
+     *  @param {TileLayer} layer - The layer painted
+     *  @param {Vector2} pos - The cell's position in the layer
+     *  @param {number|undefined} tile - The tile painted, undefined when erased
+     *  @memberof Editor
+     */
+    /**
+     *  @typedef {Object} EditorToolAt - What the level editor gives the callbacks of a tool of the game's own
+     *  @property {any} pos - Where the mouse is in the level: a Vector2 in the 2D editor; in the 3D one a Vector3 on
+     *    the level or the ground, undefined when the mouse is over the panel
+     *  @property {Vector2|undefined} cell - 2D: the tile cell under the mouse on the selected tile layer
+     *  @property {any} ray - 3D: the mouse's Ray3D
+     *  @property {boolean} shift - Is Shift held
+     *  @property {boolean} ctrl - Is Ctrl held
+     *  @memberof Editor
+     */
+    /**
+     *  @typedef {Object} EditorTool - A tool of the game's own for the level editor, see LevelEditor.addTool
+     *  @property {string} [key] - The key that picks it, as addKey spells one
+     *  @property {string} [hint] - The hint line while it is on
+     *  @property {function(EditorToolAt): any} [onPress] - The left button went down in the level; returning false
+     *    says the press was not the tool's
+     *  @property {function(EditorToolAt): any} [onDrag] - Each frame it is held
+     *  @property {function(EditorToolAt): any} [onRelease] - It was let go
+     *  @property {function(EditorToolAt): any} [onDraw] - Each frame the tool is on, to draw its cursor or preview
+     *  @memberof Editor
+     */
+    /**
+     *  @typedef {Object} EditorEdit2D - The 2D level editor's edit functions, levelEditor.edit2D
+     *  @property {Object|undefined} map - The Tiled map of the selected layer
+     *  @property {TileLayer|undefined} layer - The selected tile layer, undefined on an object layer
+     *  @property {Array<Object>} objects - A copy of the selected object layer's objects, as Tiled has them
+     *  @property {Vector2|undefined} hover - The cell under the mouse on the selected tile layer
+     *  @property {Set<number>} selection - The selected objects' ids
+     *  @property {function(Vector2, number, ...any): boolean} paint - Set a cell of the selected tile layer
+     *    to a tile index, -1 erases, with a direction 0 to 3 and a mirror; false off the layer or with none
+     *  @property {function(function(Array<Object>): void): boolean} changeObjects - Edit a copy of the selected object
+     *    layer's objects; false when nothing changed
+     *  @property {function(): void} strokeEnd - End the edit: one undo step, and the autosave
+     *  @property {function(): void} strokeCancel - Take the edit being made back
+     *  @property {function(function(): void): void} bulk - Many paints with one redraw a layer
+     *  @property {function(...any): any} undo - Undo, or redo with true
+     *  @property {function(): string} toJSON - The map as the text Save writes
+     *  @memberof Editor
+     */
+    /**
+     *  @typedef {Object} EditorEdit3D - The 3D level editor's edit functions, levelEditor.edit3D; a position, a
+     *    rotation and a scale are Vector3, the rotation in degrees
+     *  @property {Object|undefined} level - The level object being edited
+     *  @property {Array<Object>} objects - Its objects, the list in the level: read it, edit through change
+     *  @property {Set<number>} selection - The selected objects' ids
+     *  @property {function(): Array<Object>} selected - The selected objects
+     *  @property {function(number): any} made - What the game made for an object's id
+     *  @property {function(function(Array<Object>): void): boolean} change - Edit a copy of the object list; false
+     *    when nothing changed
+     *  @property {function(string, function(any): any): boolean} changePart - Edit the level's scene, voxels, terrain
+     *    or prefabs block
+     *  @property {function(): void} strokeEnd - End the edit: one undo step, and the autosave
+     *  @property {function(): void} strokeCancel - Take the edit being made back
+     *  @property {function(string, any): number|undefined} place - Add an object of a type at a position, selected;
+     *    its id, undefined when there is no such type or the level can not be edited
+     *  @property {function(Object, ...any): void} setTransform - Write a place, a rotation and a scale on an
+     *    object of the list given to change; one left out is kept
+     *  @property {function(Object, string, any): void} setProperty - Write a property on an object of the list given
+     *    to change, left out of the file when it is the type's default
+     *  @property {function(Object): any} pos - An object's position
+     *  @property {function(Object): any} rotation - Its rotation, in degrees
+     *  @property {function(Object): any} scale - Its scale
+     *  @property {function(): any} mousePoint - Where the mouse is on the level or the ground, undefined over the panel
+     *  @property {function(...any): boolean} undo - Undo, or redo with true
+     *  @property {function(): string} toJSON - The level as the text Save writes
+     *  @memberof Editor
+     */
+    /**
+     * The level editor, open it to pause the game and edit its level, close it to play on with the changes
+     * - One of it, levelEditor, 0 on the debug overlay opens and closes it too
+     * - A game makes it its own: it sets the hooks, adds keys, panel buttons and tools, or extends this class and
+     *   gives its own with setLevelEditor; the same calls work in the 2D editor and the 3D one, see EDITOR.md
+     * - In release builds LevelEditor is a stub that never opens: what a game adds is taken and never called
+     * @memberof Editor
+     * @example
+     * levelEditor.onRestart = ()=> loadLevel(); // adds a Restart button that rebuilds the level
+     * levelEditor.onTile = (layer, pos, tile)=> layer.setCollisionData(pos, tile === ladderTile ? -1 : tile ? 1 : 0);
+     * levelEditor.addKey('k', ()=> clearEnemies(), 'K: clear the enemies');
+     *
+     * // or as a class of the game's own
+     * class MyEditor extends LevelEditor
+     * {
+     *     onRestart() { loadLevel(); }
+     *     onDraw() { drawSpawnZones(); }
+     * }
+     * setLevelEditor(new MyEditor);
+     */
+    export class LevelEditor {
+        /** @property {Array<number>|undefined} - The tiles the palette shows, in its order, for a sheet that also holds
+         *  sprites and art that are not level tiles; undefined shows every tile of the sheet
+         *  @type {Array<number>|undefined} */
+        paletteTiles: Array<number> | undefined;
+        /** @property {boolean|undefined} - Which level editor opens: true the 3D one, false the 2D one, undefined the
+         *  3D one when a level was loaded with level3DLoad and there is a Render3DPlugin
+         *  @type {boolean|undefined} */
+        use3D: boolean | undefined;
+        /** @property {string|undefined} - The tool of the game's own that is on, one added with addTool, undefined
+         *  while a tool of the editor's is
+         *  @type {string|undefined} */
+        tool: string | undefined;
+        /** @type {Object<string, {action: function(boolean): any, help: string|undefined, warned: boolean}>} */
+        keys: {
+            [x: string]: {
+                action: (arg0: boolean) => any;
+                help: string | undefined;
+                warned: boolean;
+            };
+        };
+        /** @type {Array<{label: string, onClick: Function, title: string}>} */
+        buttons: Array<{
+            label: string;
+            onClick: Function;
+            title: string;
+        }>;
+        /** @type {Object<string, EditorTool>} */
+        tools: {
+            [x: string]: EditorTool;
+        };
+        /** What the game does when the 2D editor paints a tile, like setting its collision or its look the way the
+         *  game does when it loads the level; set it or override it, without one the collision layer gets collision 1
+         *  where there is a tile
+         *  @param {TileLayer} layer - The layer painted
+         *  @param {Vector2} pos - The cell's position in the layer
+         *  @param {number|undefined} tile - The tile painted, undefined when erased */
+        onTile(layer: TileLayer, pos: Vector2, tile: number | undefined): void;
+        /** Rebuild the level from what the editor changed; set it or override it and the editor has a Restart button,
+         *  which calls it after switching to play */
+        onRestart(): void;
+        /** Put the player at a position, a Vector2 in the 2D editor and a Vector3 in the 3D one; set it or override it
+         *  and the editor has Play from mouse, which starts play there
+         *  @param {any} pos */
+        onPlayFrom(pos: any): void;
+        /** Called when the editor opens, to set or override */
+        onOpen(): void;
+        /** Called when the editor closes and the game plays on, to set or override */
+        onClose(): void;
+        /** Called each frame while the editor is open, to set or override */
+        onUpdate(): void;
+        /** Called while the editor draws the level, to draw overlays of the game's own in it, to set or override */
+        onDraw(): void;
+        /** Called once when the editor's panel is made, with a box in it for the game's own controls, to set or override
+         *  @param {HTMLElement} element */
+        onPanel(element: HTMLElement): void;
+        /** Called by Save with the text of the file and its name; return true when the game kept it itself, and the
+         *  editor writes no file, to set or override; it may be async
+         *  @param {string} text
+         *  @param {string} fileName
+         *  @return {boolean|void|Promise<boolean|void>} */
+        onSave(text: string, fileName: string): boolean | void | Promise<boolean | void>;
+        /** True while the editor is open, the game is paused under it
+         *  @return {boolean} */
+        get isOpen(): boolean;
+        /** True when the editor in use is the 3D one, as use3D says or since a 3D level was loaded
+         *  @return {boolean} */
+        get is3D(): boolean;
+        /** The 2D editor's edit functions, for a key, a button or a tool of the game's own: map, the Tiled map; layer,
+         *  the selected TileLayer; objects, a copy of the selected object layer's; hover, the cell under the mouse;
+         *  selection, the selected objects' ids; paint(cell, tile, direction, mirror), a tile index, -1 erases;
+         *  changeObjects((list)=> ...); strokeEnd() and strokeCancel(); bulk(()=> ...); undo(redo); toJSON()
+         *  @return {EditorEdit2D} */
+        get edit2D(): EditorEdit2D;
+        /** The 3D editor's edit functions, undefined without the 3D plugins: level; objects; selection, a Set of ids;
+         *  selected(); made(id); change((list)=> ...); changePart(name, (part)=> ...); strokeEnd() and strokeCancel();
+         *  place(type, pos3D); setTransform(object, pos3D, rotationDegrees, scale3D); setProperty(object, name, value);
+         *  pos(object), rotation(object) and scale(object); mousePoint(); undo(redo); toJSON()
+         *  @return {EditorEdit3D|undefined} */
+        get edit3D(): EditorEdit3D;
+        /** Add a key of the game's own to the editor, the 2D and the 3D one
+         *  - Escape and 0 are the editor's own, to play and to exit, and Ctrl is the one modifier: Shift is given to
+         *    the action
+         *  @param {string} key - A letter or digit, 'k', or a key's name in any case, 'Delete', 'F2', 'Enter', 'Space';
+         *    'ctrl+k' with Ctrl or Cmd
+         *  @param {function(boolean): any} action - Called with whether Shift is held; returning false says it did
+         *    nothing, and the key is left to the browser
+         *  @param {string} [helpLine] - A line for the editor's help */
+        addKey(key: string, action: (arg0: boolean) => any, helpLine?: string): void;
+        /** Add a button of the game's own to the editor's panel
+         *  @param {string} label
+         *  @param {Function} onClick
+         *  @param {string} [title] - What it says when the mouse is over it */
+        addButton(label: string, onClick: Function, title?: string): void;
+        /** Add a tool of the game's own: a button in the panel by its name, and while it is on the left button in the
+         *  level is its, not the editor's own tools'
+         *  - Each callback is given {pos, cell, ray, shift, ctrl}: pos is where the mouse is in the level, a Vector2 in
+         *    2D and a Vector3 on the level or the ground in 3D; cell is the tile under it in 2D; ray is the mouse's
+         *    in 3D
+         *  - What the callbacks change through edit2D or edit3D is one undo: the editor ends the stroke at the release,
+         *    and takes it back when the right button or Escape ends the press
+         *  @param {string} name
+         *  @param {EditorTool} tool - {key, hint, onPress, onDrag, onRelease, onDraw}, each optional; onPress returning
+         *    false says the press was not the tool's */
+        addTool(name: string, tool: EditorTool): void;
+        /** Open the editor, pausing the game; until close(), Escape (the debug key) switches between playing and editing */
+        open(): any;
+        /** Close the editor and end its session, the game carries on with the changes and Escape opens the debug
+         *  overlay again */
+        close(): any;
+    }
+    /** Make a level editor of the game's own the one in use: an instance of a class that extends LevelEditor, with
+     *  the game's hooks as its methods; set it before the editor opens
+     *  @param {LevelEditor} editor
+     *  @memberof Editor */
+    export function setLevelEditor(editor: LevelEditor): void;
     /** Asserts if the expression is false, does nothing in release builds
      *  Halts execution if the assert fails and throws an error
-     *  @param {boolean} assert
+     *  @param {*} assert - any value, the assert fails when it is falsy
      *  @param {...Object} output - error message output
      *  @memberof Debug */
-    export function ASSERT(assert: boolean, ...output: any[]): void;
+    export function ASSERT(assert: any, ...output: any[]): void;
     /** Log to console if debug is enabled, does nothing in release builds
      *  @param {...Object} output - message output
      *  @memberof Debug */
@@ -246,63 +890,63 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Debug */
     export const debugPointSize: number;
-    /** Draw a debug rectangle in world space
+    /** Draw a debug rectangle in world space, or on the screen with screenSpace
      *  @param {Vector2} pos
      *  @param {Vector2} [size=vec2(0)]
      *  @param {Color|string} [color]
      *  @param {number} [time]
      *  @param {number} [angle]
      *  @param {boolean} [fill]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugRect(pos: Vector2, size?: Vector2, color?: Color | string, time?: number, angle?: number, fill?: boolean, screenSpace?: boolean): void;
-    /** Draw a debug poly in world space
+    /** Draw a debug poly in world space, or on the screen with screenSpace
      *  @param {Vector2} pos
      *  @param {Array<Vector2>} points
      *  @param {Color|string} [color]
      *  @param {number} [time]
      *  @param {number} [angle]
      *  @param {boolean} [fill]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugPoly(pos: Vector2, points: Array<Vector2>, color?: Color | string, time?: number, angle?: number, fill?: boolean, screenSpace?: boolean): void;
-    /** Draw a debug circle in world space
+    /** Draw a debug circle in world space, or on the screen with screenSpace
      *  @param {Vector2} pos
      *  @param {number} [size] - diameter
      *  @param {Color|string} [color]
      *  @param {number} [time]
      *  @param {boolean} [fill]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugCircle(pos: Vector2, size?: number, color?: Color | string, time?: number, fill?: boolean, screenSpace?: boolean): void;
-    /** Draw a debug point in world space
+    /** Draw a debug point in world space, or on the screen with screenSpace
      *  @param {Vector2} pos
      *  @param {Color|string} [color]
      *  @param {number} [time]
      *  @param {number} [angle]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugPoint(pos: Vector2, color?: Color | string, time?: number, angle?: number, screenSpace?: boolean): void;
-    /** Draw a debug line in world space
+    /** Draw a debug line in world space, or on the screen with screenSpace
      *  @param {Vector2} posA
      *  @param {Vector2} posB
      *  @param {Color|string} [color]
      *  @param {number} [width]
      *  @param {number} [time]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugLine(posA: Vector2, posB: Vector2, color?: Color | string, width?: number, time?: number, screenSpace?: boolean): void;
-    /** Draw a debug combined axis aligned bounding box in world space
+    /** Draw a debug combined axis aligned bounding box in world space, or on the screen with screenSpace
      *  @param {Vector2} posA
      *  @param {Vector2} sizeA
      *  @param {Vector2} posB
      *  @param {Vector2} sizeB
      *  @param {Color|string} [color]
      *  @param {number} [time]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugOverlap(posA: Vector2, sizeA: Vector2, posB: Vector2, sizeB: Vector2, color?: Color | string, time?: number, screenSpace?: boolean): void;
-    /** Draw debug text in world space
+    /** Draw debug text in world space, or on the screen with screenSpace
      *  @param {string|number} text
      *  @param {Vector2} pos
      *  @param {number} [size]
@@ -310,7 +954,7 @@ declare module "littlejsengine" {
      *  @param {number} [time]
      *  @param {number} [angle]
      *  @param {string} [font]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @memberof Debug */
     export function debugText(text: string | number, pos: Vector2, size?: number, color?: Color | string, time?: number, angle?: number, font?: string, screenSpace?: boolean): void;
     /** Clear all debug primitives in the list
@@ -355,7 +999,7 @@ declare module "littlejsengine" {
     export let cameraScale: number;
     /** Scale applied to engine time, can be used for slow motion or fast forward
      *  - 1 is normal speed, 2 is double speed, 0.5 is half speed
-     *  - 0 freezes the simulation without setting the paused flag
+     *  - 0 freezes the game like a pause without setting the paused flag, gameUpdatePost and input still run
      *  - Should be >= 0; stacks multiplicatively with the debug +/- shortcut
      *  @type {number}
      *  @default
@@ -371,9 +1015,10 @@ declare module "littlejsengine" {
      *  @type {Color}
      *  @memberof Settings */
     export let canvasClearColor: Color;
-    /** The max size of the canvas, centered if window is larger
+    /** The max size of the canvas in css pixels, centered if window is larger
+     *  - Not affected by canvasPixelRatio, the backing store may be larger than this
      *  @type {Vector2}
-     *  @default Vector2(1920,1080)
+     *  @default Vector2(3840,2160)
      *  @memberof Settings */
     export let canvasMaxSize: Vector2;
     /** Minimum aspect ratio of the canvas (width/height), unused if 0
@@ -388,8 +1033,8 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let canvasMaxAspect: number;
-    /** Fixed size of the canvas, if enabled canvas size never changes
-     * - you may also need to set mainCanvasSize if using screen space coords in startup
+    /** Fixed size of the canvas in css pixels, if enabled canvas size never changes
+     * - canvasPixelRatio still applies, it only scales the backing store
      *  @type {Vector2}
      *  @default Vector2()
      *  @memberof Settings */
@@ -402,13 +1047,19 @@ declare module "littlejsengine" {
     export let canvasPixelated: boolean;
     /** Disables texture filtering for crisper pixel art
      *  - Leave true for pixel art so sprites stay sharp when scaled (uses NEAREST filtering)
-     *  - Set false for smooth/high-resolution art to enable bilinear filtering and mipmaps
+     *  - Set false for smooth/high-resolution art to enable bilinear filtering and mipmaps; those textures upload
+     *    premultiplied, so filtering does not pull dark from see through texels into the edges
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
     export let tilesPixelated: boolean;
-    /** Scale factor applied to the canvas backing store for native-resolution rendering.
+    /** Scale factor applied to the canvas resolution for sharper rendering
      *  Pass 1 for no scaling, a number for an explicit ratio, or undefined to track devicePixelRatio each frame.
+     *  - Only the backing store scales, so this changes sharpness and nothing else
+     *  - mainCanvasSize, cameraScale, mousePos and screen space stay in css pixels,
+     *    so the same code draws the same size at any ratio
+     *  - Pixel art usually looks best left at 1 or set to whole numbers,
+     *    a fractional ratio samples texels unevenly
      *  @type {number|undefined}
      *  @default
      *  @memberof Settings */
@@ -418,12 +1069,18 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let fontDefault: string;
-    /** Enable to show the LittleJS splash screen on startup
+    /** Enable to show the LittleJS splash screen on startup, must be set before engineInit
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
     export let showSplashScreen: boolean;
-    /** Disables all rendering, audio, and input for servers
+    /** The loading screen, drawn after the splash while the images, gameInit and what they load are loading, once that
+     *  takes more than half a second: a function given the part done, 0 to 1, or undefined for none, which leaves the
+     *  screen blank; the default says Loading over a bar
+     *  @type {LoadingScreenCallback|undefined}
+     *  @memberof Settings */
+    export let loadingScreen: LoadingScreenCallback | undefined;
+    /** Disables all rendering, audio, and input for servers, must be set before engineInit
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
@@ -434,6 +1091,14 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let engineManualStep: boolean;
+    /** Run one update per display frame with timeDelta the time it covers, in place of fixed updates at frameRate
+     *  - Per-frame values are not scaled: velocity, gravity, damping and particle speeds act once per update, so a
+     *    game that turns this on scales its own movement by timeDelta
+     *  - Values in seconds follow real time as they are: time, timers, particle emit rate and life, animation, Box2D
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let engineVariableStep: boolean;
     /** Default size of tiles in pixels
      *  @type {Vector2}
      *  @default Vector2(16,16)
@@ -449,7 +1114,7 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let tileDefaultBleed: number;
-    /** Enable physics solver for collisions between objects
+    /** Enable physics solver for collisions, between objects and with tiles
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
@@ -459,12 +1124,12 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let objectDefaultMass: number;
-    /** How much to slow velocity by each frame (0-1)
+    /** Fraction of velocity objects keep each frame, 1 keeps all of it, 0 stops at once
      *  @type {number}
      *  @default
      *  @memberof Settings */
     export let objectDefaultDamping: number;
-    /** How much to slow angular velocity each frame (0-1)
+    /** Fraction of angular velocity objects keep each frame, 1 keeps all of it, 0 stops at once
      *  @type {number}
      *  @default
      *  @memberof Settings */
@@ -474,17 +1139,18 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let objectDefaultRestitution: number;
-    /** How much to slow when touching (0-1)
+    /** Fraction of sliding speed objects keep each frame on the ground, 1 is no friction, 0 stops at once
+     *  - The more slippery of an object and its ground is used
      *  @type {number}
      *  @default
      *  @memberof Settings */
     export let objectDefaultFriction: number;
-    /** Clamp max speed to avoid fast objects missing collisions
+    /** Clamp max speed to avoid fast objects missing collisions, in world units per frame on each axis
      *  @type {number}
      *  @default
      *  @memberof Settings */
     export let objectMaxSpeed: number;
-    /** How much gravity to apply to objects, negative Y is down
+    /** How much gravity to apply to objects, negative Y is down, in world units per frame per frame
      *  @type {Vector2}
      *  @default
      *  @memberof Settings */
@@ -499,6 +1165,16 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let glEnable: boolean;
+    /** Draw in screen space by default: what the screenSpace parameter of the draw and debug functions defaults to, so a
+     *  heads up display, or a 3D game that only draws 2D on the screen, can turn it on and leave the flag out
+     *  - The engine says its own space when it draws, so objects, tile layers and particles stay in world space, but a
+     *    game's own draws follow it, a render() override included: turn it on around the hud, or pass false there
+     *  - Sizes and widths keep their defaults, which are world sized, so pass them in pixels
+     *  - drawText has no screenSpace and stays in world space, drawTextScreen is the one for the screen
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let drawScreenSpace: boolean;
     /** How many sided poly to use when drawing circles and ellipses with WebGL
      *  @type {number}
      *  @default
@@ -522,6 +1198,7 @@ declare module "littlejsengine" {
      *  @memberof Settings */
     export let gamepadAxisFilterEnable: boolean;
     /** If true the WASD keys are also routed to the direction keys (for better accessibility)
+     *  - Turn it off for a game with two players on one keyboard, one on WASD and one on the arrows
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
@@ -534,9 +1211,10 @@ declare module "littlejsengine" {
     export let touchInputEnable: boolean;
     /** True if touch gamepad should appear on mobile devices
      *  - Supports left analog stick, 4 face buttons and start button (button 9)
-     *  - setTouchGamepadButtonCount(1) to use face buttons as right analog stick
+     *  - setTouchGamepadRightStick(true) for a right analog stick in place of the face buttons
      *  - Analog stick buttons 10 and 11 are also activated when virtual sticks are touched
      *  - Rendered as a full-viewport HTML/SVG overlay, so controls may sit outside the game canvas
+     *  - It is gamepad 0 once touched; a real gamepad being used takes over and hides it until the screen is touched again
      *  @type {boolean}
      *  @default
      *  @memberof Settings */
@@ -549,6 +1227,14 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let touchGamepadPassthrough: boolean;
+    /** True if a pinch of two fingers turns the mouse wheel: touchPinch is added to mouseWheel, so what zooms with
+     *  the wheel zooms with a pinch, the mouse is between the two fingers, and a second finger lets go of the button
+     *  the first pressed, since a pinch is not a drag; turn it off for a game with its own use for two fingers, the
+     *  first finger stays the mouse and touchPinch can still be read
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let touchPinchWheel: boolean;
     /** Size of center button if touch gamepad should have start button in the center
      *  - Prevents activating when pressed near virtual stick or face buttons
      *  - When the game is paused, any touch will press the button
@@ -645,6 +1331,13 @@ declare module "littlejsengine" {
      *  @default
      *  @memberof Settings */
     export let soundDefaultTaper: number;
+    /** Pause all sound while the page is hidden, and pick up where it was when it shows again
+     *  - A hidden page stops the game, so without this a looping sound plays on over a frozen game
+     *  - Turn it off to keep music playing in a background tab
+     *  @type {boolean}
+     *  @default
+     *  @memberof Settings */
+    export let soundPauseWhenHidden: boolean;
     /** Set position of camera in world space
      *  @param {Vector2} pos
      *  @memberof Settings */
@@ -658,7 +1351,8 @@ declare module "littlejsengine" {
      *  @memberof Settings */
     export function setCameraScale(scale: number): void;
     /** Set scale applied to engine time
-     *  @param {number} scale
+     *  - 0 freezes the game like a pause, gameUpdatePost and input still run so the game can set it back
+     *  @param {number} scale - 0 or more
      *  @memberof Settings */
     export function setTimeScale(scale: number): void;
     /** Set if tiles should be colorized when using canvas2d
@@ -694,35 +1388,63 @@ declare module "littlejsengine" {
     export function setCanvasPixelated(pixelated: boolean): void;
     /** Disables texture filtering for crisper pixel art
      *  - Leave true for pixel art; set false for smooth/high-resolution art
+     *  - Set it before engineInit, a texture already loaded keeps the filtering it was made with
      *  @param {boolean} pixelated
      *  @memberof Settings */
     export function setTilesPixelated(pixelated: boolean): void;
-    /** Set the canvas pixel ratio.
+    /** Set the canvas pixel ratio, scales the render resolution for sharper output
      *  Pass a number for an explicit ratio, or call with no argument to track devicePixelRatio each frame.
+     *  - The canvas stays the same size on screen and everything draws the same
+     *    size, it just renders at a higher resolution so nothing looks blurry
+     *  - Game code is unaffected, it always works in css pixels
      *  @param {number} [pixelRatio]
+     *  @example
+     *  // render at native resolution, capped so phones don't pay for 3x
+     *  setCanvasPixelRatio(min(devicePixelRatio, 2));
      *  @memberof Settings */
     export function setCanvasPixelRatio(pixelRatio?: number): void;
+    /** Get the pixel ratio currently applied to the canvas backing store
+     *  - Resolves canvasPixelRatio, falling back to devicePixelRatio when it is undefined
+     *  - Game code works in css pixels so this is rarely needed, it is for sizing
+     *    render targets and viewports that must match the backing store
+     *  @return {number}
+     *  @memberof Settings */
+    export function getCanvasPixelRatio(): number;
     /** Set default font used for text rendering
      *  @param {string} font
      *  @memberof Settings */
     export function setFontDefault(font: string): void;
-    /** Set if the LittleJS splash screen should be shown on startup
+    /** Set if the LittleJS splash screen should be shown on startup, must be set before engineInit
      *  @param {boolean} show
      *  @memberof Settings */
     export function setShowSplashScreen(show: boolean): void;
-    /** Set to disable rendering, audio, and input for servers
+    /** Set the loading screen, drawn after the splash while the game loads, once that takes more than half a second
+     *  @param {LoadingScreenCallback} [callback] - Draws on mainContext given the part done, 0 to 1; undefined for none
+     *  @memberof Settings */
+    export function setLoadingScreen(callback?: LoadingScreenCallback): void;
+    /** Set to disable rendering, audio, and input for servers, must be set before engineInit
      *  @param {boolean} headless
      *  @memberof Settings */
     export function setHeadlessMode(headless: boolean): void;
     /** Set if the engine only advances when engineStep is called
-     *  Must be set before engineInit
+     *  Set before engineInit for a test or a server; turned on in a running game it stops the loop, and turned off
+     *  again it starts the loop from real time
      *  @param {boolean} [enable]
      *  @memberof Settings */
     export function setEngineManualStep(enable?: boolean): void;
+    /** Set if the engine runs one update per display frame with timeDelta the time it covers
+     *  Can be set before engineInit or while running; turned off it goes back to fixed updates at frameRate
+     *  @param {boolean} [enable]
+     *  @memberof Settings */
+    export function setEngineVariableStep(enable?: boolean): void;
     /** Set if WebGL rendering is enabled
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setGLEnable(enable: boolean): void;
+    /** Set whether the draw and debug functions draw in screen space when a call leaves screenSpace out
+     *  @param {boolean} screenSpace
+     *  @memberof Settings */
+    export function setDrawScreenSpace(screenSpace: boolean): void;
     /** Set default size of tiles in pixels
      *  @param {Vector2} size
      *  @memberof Settings */
@@ -735,7 +1457,7 @@ declare module "littlejsengine" {
      *  @param {number} bleed
      *  @memberof Settings */
     export function setTileDefaultBleed(bleed: number): void;
-    /** Set if collisions between objects are enabled
+    /** Set if collisions are enabled, between objects and with tiles
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setEnablePhysicsSolver(enable: boolean): void;
@@ -743,11 +1465,11 @@ declare module "littlejsengine" {
      *  @param {number} mass
      *  @memberof Settings */
     export function setObjectDefaultMass(mass: number): void;
-    /** Set how much to slow velocity by each frame
+    /** Set the fraction of velocity objects keep each frame, 1 keeps all of it, 0 stops at once
      *  @param {number} damp
      *  @memberof Settings */
     export function setObjectDefaultDamping(damp: number): void;
-    /** Set how much to slow angular velocity each frame
+    /** Set the fraction of angular velocity objects keep each frame, 1 keeps all of it, 0 stops at once
      *  @param {number} damp
      *  @memberof Settings */
     export function setObjectDefaultAngleDamping(damp: number): void;
@@ -755,7 +1477,7 @@ declare module "littlejsengine" {
      *  @param {number} restitution
      *  @memberof Settings */
     export function setObjectDefaultRestitution(restitution: number): void;
-    /** Set how much to slow when touching
+    /** Set the fraction of sliding speed objects keep each frame on the ground, 1 is no friction, 0 stops at once
      *  @param {number} friction
      *  @memberof Settings */
     export function setObjectDefaultFriction(friction: number): void;
@@ -767,7 +1489,7 @@ declare module "littlejsengine" {
      *  @param {Vector2} newGravity
      *  @memberof Settings */
     export function setGravity(newGravity: Vector2): void;
-    /** Set to scales emit rate of particles
+    /** Set the scale for the emit rate of particles, 0 disables particle emitters
      *  @param {number} scale
      *  @memberof Settings */
     export function setParticleEmitRateScale(scale: number): void;
@@ -791,7 +1513,7 @@ declare module "littlejsengine" {
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setGamepadAxisFilterEnable(enable: boolean): void;
-    /** Set if true the WASD keys are also routed to the direction keys
+    /** Set if the WASD keys are also routed to the direction keys
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setInputWASDEmulateDirection(enable: boolean): void;
@@ -803,6 +1525,10 @@ declare module "littlejsengine" {
      *  @param {boolean} passthrough
      *  @memberof Settings */
     export function setTouchGamepadPassthrough(passthrough: boolean): void;
+    /** Set if a pinch of two fingers turns the mouse wheel
+     *  @param {boolean} enable
+     *  @memberof Settings */
+    export function setTouchPinchWheel(enable: boolean): void;
     /** Set if touch gamepad should have start button in the center
      *  - Set size to enable the center button
      *  - When the game is paused, any touch will press the button
@@ -834,7 +1560,7 @@ declare module "littlejsengine" {
      *  @param {boolean} floating
      *  @memberof Settings */
     export function setTouchGamepadFloating(floating: boolean): void;
-    /** Set size of virtual gamepad for touch devices in pixels
+    /** Set size of virtual gamepad for touch devices in viewport CSS pixels
      *  @param {number} size
      *  @memberof Settings */
     export function setTouchGamepadSize(size: number): void;
@@ -854,7 +1580,7 @@ declare module "littlejsengine" {
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setVibrateEnable(enable: boolean): void;
-    /** Set to disable all audio code
+    /** Set if audio is enabled, false turns all sound off
      *  @param {boolean} enable
      *  @memberof Settings */
     export function setSoundEnable(enable: boolean): void;
@@ -870,6 +1596,10 @@ declare module "littlejsengine" {
      *  @param {number} taper
      *  @memberof Settings */
     export function setSoundDefaultTaper(taper: number): void;
+    /** Set if all sound pauses while the page is hidden
+     *  @param {boolean} pause
+     *  @memberof Settings */
+    export function setSoundPauseWhenHidden(pause: boolean): void;
     /** Set if watermark with FPS should be shown
      *  @param {boolean} show
      *  @memberof Debug */
@@ -878,6 +1608,18 @@ declare module "littlejsengine" {
      *  @param {string} key
      *  @memberof Debug */
     export function setDebugKey(key: string): void;
+    /** Set if the debug keys work while the overlay is closed, the number keys and the +/- time keys
+     *  @param {boolean} [enable]
+     *  @memberof Debug */
+    export function setDebugKeysAlways(enable?: boolean): void;
+    /** Set if the tweakables panel is shown, as 9 does while the debug overlay is open
+     *  @param {boolean} [show]
+     *  @memberof Debug */
+    export function setDebugTweakables(show?: boolean): void;
+    /** Open or close the debug overlay from code, as the debug key does; does nothing in release builds
+     *  @param {boolean} [show]
+     *  @memberof Debug */
+    export function setDebugOverlay(show?: boolean): void;
     /**
      * LittleJS Math Classes and Functions
      * - Comprehensive math utilities for game development
@@ -964,7 +1706,7 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export const atan2: (y: number, x: number) => number;
-    /** Returns first parm modulo the second param, but adjusted so negative numbers work as expected
+    /** Returns first param modulo the second param, but adjusted so negative numbers work as expected
      *  @param {number} dividend
      *  @param {number} [divisor]
      *  @return {number}
@@ -977,7 +1719,7 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export function clamp(value: number, min?: number, max?: number): number;
-    /** Returns what percentage the value is between valueA and valueB
+    /** Returns what percentage the value is between valueA and valueB, clamped to 0-1
      *  @param {number} value
      *  @param {number} valueA
      *  @param {number} valueB
@@ -991,7 +1733,7 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export function distanceWrap(valueA: number, valueB: number, wrapSize?: number): number;
-    /** Linearly interpolates between values passed in with wrapping
+    /** Linearly interpolates between values passed in with wrapping, percent is clamped to 0-1
      *  @param {number} valueA
      *  @param {number} valueB
      *  @param {number} percent
@@ -1005,14 +1747,14 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export function distanceAngle(angleA: number, angleB: number): number;
-    /** Linearly interpolates between the angles passed in with wrapping
+    /** Linearly interpolates between the angles passed in with wrapping, percent is clamped to 0-1
      *  @param {number} angleA
      *  @param {number} angleB
      *  @param {number} percent
      *  @return {number}
      *  @memberof Math */
     export function lerpAngle(angleA: number, angleB: number, percent: number): number;
-    /** Linearly interpolates between values passed in using percent
+    /** Linearly interpolates between values passed in using percent, percent is clamped to 0-1
      *  @param {number} valueA
      *  @param {number} valueB
      *  @param {number} percent
@@ -1029,7 +1771,7 @@ declare module "littlejsengine" {
      *  @return {number}
      *  @memberof Math */
     export function percentLerp(value: number, percentA: number, percentB: number, lerpA: number, lerpB: number): number;
-    /** Applies smoothstep function to the percentage value
+    /** Applies smoothstep function to the percentage value, clamped between 0 and 1
      *  @param {number} percent
      *  @return {number}
      *  @memberof Math */
@@ -1061,10 +1803,35 @@ declare module "littlejsengine" {
      *  @return {boolean}      - True if intersecting
      *  @memberof Math */
     export function isIntersecting(start: Vector2, end: Vector2, pos: Vector2, size: Vector2): boolean;
+    /** Returns the vector to move circle A by so it no longer overlaps circle B, or undefined
+     *  @param {Vector2} posA - Center of circle A
+     *  @param {number} radiusA
+     *  @param {Vector2} posB - Center of circle B
+     *  @param {number} radiusB
+     *  @return {Vector2|undefined}
+     *  @memberof Math */
+    export function collideCircleCircle(posA: Vector2, radiusA: number, posB: Vector2, radiusB: number): Vector2 | undefined;
+    /** Returns the vector to move a circle out of an axis aligned box, or undefined
+     *  @param {Vector2} pos - Center of the circle
+     *  @param {number} radius
+     *  @param {Vector2} boxPos - Center of the box
+     *  @param {Vector2} boxSize - Full size of the box
+     *  @return {Vector2|undefined}
+     *  @memberof Math */
+    export function collideCircleBox(pos: Vector2, radius: number, boxPos: Vector2, boxSize: Vector2): Vector2 | undefined;
+    /** Returns the vector to move box A by so it no longer overlaps box B, the shortest way out, or undefined
+     *  - isOverlapping is the yes or no version of this
+     *  @param {Vector2} posA - Center of box A
+     *  @param {Vector2} sizeA - Full size of box A
+     *  @param {Vector2} posB - Center of box B
+     *  @param {Vector2} sizeB - Full size of box B
+     *  @return {Vector2|undefined}
+     *  @memberof Math */
+    export function collideBoxBox(posA: Vector2, sizeA: Vector2, posB: Vector2, sizeB: Vector2): Vector2 | undefined;
     /**
      * @callback LineTestFunction - Checks if a position is colliding
      * @param {Vector2} pos
-     * @memberof Draw
+     * @memberof Math
      */
     /**
      * Casts a ray and returns position of the first collision found, or undefined if none are found
@@ -1100,6 +1867,14 @@ declare module "littlejsengine" {
      *  @param {string} [type]
      *  @memberof Utilities */
     export function saveText(text: string, filename?: string, type?: string): void;
+    /** Create an offscreen canvas to draw into, and return its 2D context
+     *  - The canvas is context.canvas, which is what TextureInfo and the like take
+     *  @param {number} width - In pixels
+     *  @param {number} [height] - In pixels, defaults to the width for a square
+     *  @param {boolean} [willReadFrequently] - Keep it in software, faster when getImageData is called on it often
+     *  @return {OffscreenCanvasRenderingContext2D}
+     *  @memberof Utilities */
+    export function createCanvasContext(width: number, height?: number, willReadFrequently?: boolean): OffscreenCanvasRenderingContext2D;
     /** Save a canvas to disk
      *  @param {HTMLCanvasElement|OffscreenCanvas} canvas
      *  @param {string} [filename]
@@ -1119,24 +1894,28 @@ declare module "littlejsengine" {
      *  @memberof Utilities */
     export function shareURL(title: string, url: string, callback?: Function): void;
     /** Read save data from local storage
+     *  - The result has the type of defaultSaveData, or any when there is none
+     *  @template {Object<string, any>} [T=any]
      *  @param {string} saveName - unique name for the game/save
-     *  @param {Object} [defaultSaveData] - default values, result is {...default, ...loaded} so this must be an object
-     *  @return {Object}
+     *  @param {T} [defaultSaveData] - default values, result is {...default, ...loaded} so this must be an object
+     *  @return {T}
      *  @memberof Utilities */
-    export function readSaveData(saveName: string, defaultSaveData?: any): any;
+    export function readSaveData<T extends {
+        [x: string]: any;
+    } = any>(saveName: string, defaultSaveData?: T): T;
     /** Write save data to local storage
      *  @param {string} saveName - unique name for the game/save
-     *  @param {Object} saveData - object containing data to be saved
+     *  @param {object} saveData - object containing data to be saved
      *  @memberof Utilities */
-    export function writeSaveData(saveName: string, saveData: any): void;
-    /** 1D gradient noise — returns a smooth value in [0, 1] for any real x.
+    export function writeSaveData(saveName: string, saveData: object): void;
+    /** 1D value noise — returns a smooth value in [0, 1] for any real x.
      *  Integer inputs land on deterministic lattice values; non-integer inputs
      *  are interpolated with smoothStep for C1 continuity.
      *  @param {number} x
      *  @return {number}
      *  @memberof Utilities */
     export function noise1D(x: number): number;
-    /** 2D gradient noise — returns a smooth value in [0, 1] for any real (x, y).
+    /** 2D value noise — returns a smooth value in [0, 1] for any real (x, y).
      *  @param {number} x
      *  @param {number} y
      *  @return {number}
@@ -1187,6 +1966,8 @@ declare module "littlejsengine" {
     /**
      * Seeded random number generator
      * - Can be used to create a deterministic random number sequence
+     * - The seed works as a 32 bit integer, and one that is 0 as an integer
+     *   (0, a fraction between -1 and 1, or a multiple of 2**32) uses the default seed
      * @memberof Engine
      * @example
      * let r = new RandomGenerator(123); // random number generator with seed 123
@@ -1197,16 +1978,16 @@ declare module "littlejsengine" {
      */
     export class RandomGenerator {
         /** Create a random number generator with the seed passed in
-         *  @param {number} [seed] - Starting seed or engine default seed */
+         *  @param {number} [seed] - Starting seed, 0 as an integer uses the default seed */
         constructor(seed?: number);
-        /** @property {number} - random seed */
+        /** @property {number} - random seed, set it to reseed */
         seed: number;
         /** Returns a seeded random value between the two values passed in
         *  @param {number} [valueA]
         *  @param {number} [valueB]
         *  @return {number} */
         float(valueA?: number, valueB?: number): number;
-        /** Returns a floored seeded random value the two values passed in
+        /** Returns a floored seeded random value between the two values passed in
         *  @param {number} valueA
         *  @param {number} [valueB]
         *  @return {number} */
@@ -1226,11 +2007,16 @@ declare module "littlejsengine" {
         /** Returns a random angle between -PI and PI
         *  @return {number} */
         angle(): number;
-        /** Returns a seeded vec2 with size between the two values passed in
-        *  @param {number} valueA
+        /** Returns a seeded vec2 with each component between the two values passed in
+        *  - A point in a square, not a random direction like randVec2, see direction for that
+        *  @param {number} [valueA]
         *  @param {number} [valueB]
         *  @return {Vector2} */
         vec2(valueA?: number, valueB?: number): Vector2;
+        /** Returns a seeded Vector2 pointing a random way with the length passed in, the twin of randVec2
+        *  @param {number} [length]
+        *  @return {Vector2} */
+        direction(length?: number): Vector2;
         /** Returns a random color between the two passed in colors, combine components if linear
         *  @param {Color}   [colorA=WHITE]
         *  @param {Color}   [colorB=BLACK]
@@ -1246,7 +2032,7 @@ declare module "littlejsengine" {
     }
     /**
      * 2D Vector object with vector math library
-     * - Functions do not change this so they can be chained together
+     * - Most functions return a new vector so they can be chained, the set functions change this one
      * @memberof Engine
      * @example
      * let a = new Vector2(2, 3); // vector with coordinates (2, 3)
@@ -1291,7 +2077,7 @@ declare module "littlejsengine" {
          *  @param {Vector2} v - other vector
          *  @return {Vector2} */
         divide(v: Vector2): Vector2;
-        /** Returns a copy of this vector scaled by the vector passed in
+        /** Returns a copy of this vector scaled by the number passed in
          *  @param {number} s - scale
          *  @return {Vector2} */
         scale(s: number): Vector2;
@@ -1310,6 +2096,7 @@ declare module "littlejsengine" {
          * @return {number} */
         distanceSquared(v: Vector2): number;
         /** Returns a new vector in same direction as this one with the length passed in
+         * - A zero vector has no direction, so it normalizes to straight up
          * @param {number} [length]
          * @return {Vector2} */
         normalize(length?: number): Vector2;
@@ -1327,7 +2114,7 @@ declare module "littlejsengine" {
         cross(v: Vector2): number;
         /** Returns a copy this vector reflected by the surface normal
          * @param {Vector2} normal - surface normal (should be normalized)
-         * @param {number} restitution - how much to bounce, 1 is perfect bounce, 0 is no bounce
+         * @param {number} [restitution] - how much to bounce, 1 is perfect bounce, 0 is no bounce
          * @return {Vector2} */
         reflect(normal: Vector2, restitution?: number): Vector2;
         /** Returns the clockwise angle of this vector, up is angle 0
@@ -1342,11 +2129,11 @@ declare module "littlejsengine" {
          * @param {number} angle
          * @return {Vector2} */
         rotate(angle: number): Vector2;
-        /** Sets this this vector to point in the specified integer direction (0-3), corresponding to multiples of 90 degree rotation
-         * @param {number} [direction]
+        /** Sets this vector to point in the specified integer direction (0-3), corresponding to multiples of 90 degree rotation
+         * @param {number} direction
          * @param {number} [length]
          * @return {Vector2} */
-        setDirection(direction?: number, length?: number): Vector2;
+        setDirection(direction: number, length?: number): Vector2;
         /** Returns the integer direction of this vector, corresponding to multiples of 90 degree rotation (0-3)
          * @return {number} */
         direction(): number;
@@ -1356,7 +2143,10 @@ declare module "littlejsengine" {
         /** Returns a copy of this vector with each axis floored
          * @return {Vector2} */
         floor(): Vector2;
-        /** Returns a copy of this vector snapped to a grid. Note that `grid` is
+        /** Returns a copy of this vector with each axis rounded
+         * @return {Vector2} */
+        round(): Vector2;
+        /** Returns a copy of this vector snapped down to a grid. Note that `grid` is
          *  the number of snap steps per unit (so `grid=2` snaps to halves and
          *  `grid=0.5` snaps to twos), not the cell size.
          *  @param {number} grid - snap steps per unit
@@ -1369,7 +2159,7 @@ declare module "littlejsengine" {
         /** Returns the area this vector covers as a rectangle
          * @return {number} */
         area(): number;
-        /** Returns a new vector that is p percent between this and the vector passed in
+        /** Returns a new vector that is p percent between this and the vector passed in, percent is clamped to 0-1
          * @param {Vector2} v - other vector
          * @param {number}  percent
          * @return {Vector2} */
@@ -1379,7 +2169,7 @@ declare module "littlejsengine" {
          * @return {boolean} */
         arrayCheck(arraySize: Vector2): boolean;
         /** Returns this vector expressed as a string
-         * @param {number} digits - precision to display
+         * @param {number} [digits] - precision to display
          * @return {string} */
         toString(digits?: number): string;
         /** Checks if this is a valid vector
@@ -1457,7 +2247,7 @@ declare module "littlejsengine" {
         /** Returns a copy of this color clamped to the valid range between 0 and 1
          * @return {Color} */
         clamp(): Color;
-        /** Returns a new color that is p percent between this and the color passed in
+        /** Returns a new color that is p percent between this and the color passed in, percent is clamped to 0-1
          * @param {Color}  c - other color
          * @param {number} percent
          * @return {Color} */
@@ -1470,8 +2260,8 @@ declare module "littlejsengine" {
          * @return {Color} */
         setHSLA(h?: number, s?: number, l?: number, a?: number): Color;
         /** Returns this color expressed in hsla format
-         * @return {Array<number>} */
-        HSLA(): Array<number>;
+         * @return {[number, number, number, number]} - hue, saturation, lightness and alpha */
+        HSLA(): [number, number, number, number];
         /** Returns a new color that has each component randomly adjusted
          * @param {number} [amount]
          * @param {number} [alphaAmount]
@@ -1500,7 +2290,7 @@ declare module "littlejsengine" {
      * - File saving (text, canvas, data URLs)
      * - Native share dialog support
      * - Local storage save data management
-     * - Gradient noise (1D and 2D)
+     * - Value noise (1D and 2D)
      * @namespace Utilities
      */
     /**
@@ -1519,8 +2309,10 @@ declare module "littlejsengine" {
          *  @param {boolean} [useRealTime] - Should the timer keep running even when the game is paused? (useful for UI) */
         constructor(timeLeft?: number, useRealTime?: boolean);
         useRealTime: boolean;
-        time: number;
-        setTime: number;
+        /** @type {number|undefined} */
+        time: number | undefined;
+        /** @type {number|undefined} */
+        setTime: number | undefined;
         /** Set the timer with seconds passed in
          *  @param {number} [timeLeft] - How much time left before the timer is elapsed in seconds */
         set(timeLeft?: number): void;
@@ -1734,7 +2526,8 @@ declare module "littlejsengine" {
         */
         setColumns(columns?: number): TileInfo;
         /**
-         * Returns a tile info for an index using this tile as reference
+         * Returns a tile info for an index using this tile's size, texture and padding as reference
+         * - the index counts from the texture's origin like tile(), for a sprite packed in a texture sheet use frame()
          * @param {Vector2|number} [index=0]
          * @return {TileInfo}
          */
@@ -1747,27 +2540,36 @@ declare module "littlejsengine" {
         setFullImage(textureInfo?: TextureInfo): TileInfo;
     }
     /**
-     * Tile Info - Stores info about each texture
+     * Texture Info - Stores info about each texture
      * @memberof Draw
      */
     export class TextureInfo {
         /**
          * Create a TextureInfo, called automatically by the engine
-         * @param {HTMLImageElement|OffscreenCanvas} image
+         * @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|ImageBitmap} image
          * @param {boolean} [useWebGL] - Should use WebGL if available?
-         * @param {boolean} [wrap] - Should the texture wrap (REPEAT) or clamp (CLAMP_TO_EDGE)?
+         * @param {boolean|Array<number>} [wrap] - Should the texture wrap (REPEAT) or clamp (CLAMP_TO_EDGE)? Or the WebGL
+         *   modes across and down, like [gl.CLAMP_TO_EDGE, gl.MIRRORED_REPEAT], as a glTF sampler gives them
+         * @param {boolean} [pixelated] - Hard edged or smooth for this texture alone, undefined follows tilesPixelated
          */
-        constructor(image: HTMLImageElement | OffscreenCanvas, useWebGL?: boolean, wrap?: boolean);
-        /** @property {HTMLImageElement|OffscreenCanvas} - image source */
-        image: OffscreenCanvas | HTMLImageElement;
+        constructor(image: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap, useWebGL?: boolean, wrap?: boolean | Array<number>, pixelated?: boolean);
+        /** @property {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|ImageBitmap} - image source */
+        image: OffscreenCanvas | ImageBitmap | HTMLCanvasElement | HTMLImageElement;
         /** @property {Vector2} - size of the image */
         size: Vector2;
         /** @property {Vector2} - inverse of the size, cached for rendering */
         sizeInverse: Vector2;
-        /** @property {WebGLTexture} - WebGL texture */
-        glTexture: any;
-        /** @property {boolean} - true for REPEAT wrap mode, false for CLAMP_TO_EDGE */
-        wrap: boolean;
+        /** @property {WebGLTexture|undefined} - WebGL texture
+         *  @type {WebGLTexture|undefined} */
+        glTexture: WebGLTexture | undefined;
+        /** @property {boolean|Array<number>} - true for REPEAT wrap mode, false for CLAMP_TO_EDGE, or the WebGL modes
+         *  across and down
+         *  @type {boolean|Array<number>} */
+        wrap: boolean | Array<number>;
+        /** @property {boolean|undefined} - Hard edged or smooth for this texture alone, a soft glow in a pixel art
+         *  game or pixel art in a smooth one; undefined follows tilesPixelated
+         *  @type {boolean|undefined} */
+        pixelated: boolean | undefined;
         /** Creates the WebGL texture, updates if already created */
         createWebGLTexture(): void;
         /** Destroys the WebGL texture */
@@ -1776,8 +2578,187 @@ declare module "littlejsengine" {
          * @return {boolean} */
         hasWebGL(): boolean;
         /** Set the wrap mode for this texture
-         *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE */
-        setWrap(wrap?: boolean): void;
+         *  @param {boolean|Array<number>} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE, or the WebGL modes across
+         *    and down */
+        setWrap(wrap?: boolean | Array<number>): void;
+        /** Make this texture hard edged or smooth on its own, whatever tilesPixelated says for the rest; it is made again
+         *  with the new filtering
+         *  @param {boolean} [pixelated] - undefined follows tilesPixelated again */
+        setPixelated(pixelated?: boolean): void;
+    }
+    /** Load a texture at a specific index after engineInit, the images passed to engineInit load this way
+     *  @param {number} textureIndex - Index to store the texture at, an unused one
+     *  @param {string} [src] - Image source path
+     *  @return {Promise<TextureInfo>} Resolves to the texture info once the image loads, or fails to with a warning
+     *  @memberof Draw */
+    export function loadTexture(textureIndex: number, src?: string): Promise<TextureInfo>;
+    /**
+     * @callback SpriteAnimationEndCallback - Called once when a SpriteAnimation's play ends
+     * @return {void}
+     * @memberof Draw
+     */
+    /**
+     * SpriteAnimation - Steps a tile through its frames over time: looping, once, or there and back
+     * - Driven by the engine time like a Timer, so it pauses with the game and needs no update call
+     * - Read tileInfo each frame for the frame to draw, from an object's update or before a drawTile
+     * - loop, play and pingPong each start over from the first frame; stop holds the current one
+     * - play(onEnd) calls onEnd once the play ends, on the first read after it, since there is no update to call it
+     * - Frames follow each other along the row, as tileInfo.frame counts them
+     * - SpriteAnimator switches between a character's animations by name
+     * @example
+     * const walk = new SpriteAnimation(tile(0, 16), 4, .1); // four frames, a tenth of a second each
+     * const attack = new SpriteAnimation(tile(4, 16), 3, .05).play(); // once, then holds the last frame
+     * // in update: this.tileInfo = (attack.isDone ? walk : attack).tileInfo;
+     * @memberof Draw
+     */
+    export class SpriteAnimation {
+        /** Create an animation over a run of frames, looping from the start
+         *  @param {TileInfo} tileInfo - The first frame
+         *  @param {number} frameCount - How many frames, one or more
+         *  @param {number} [frameTime] - Seconds each frame shows for */
+        constructor(tileInfo: TileInfo, frameCount: number, frameTime?: number);
+        /** @property {TileInfo} - The first frame, the others follow it along the row */
+        firstTile: TileInfo;
+        /** @property {number} - How many frames */
+        frameCount: number;
+        /** @property {number} - Seconds each frame shows for */
+        frameTime: number;
+        /** @property {number} - Rate multiplier, 2 plays twice as fast; set it before starting */
+        speed: number;
+        /** @property {string} - How it runs: 'loop', 'once' or 'pingPong', set by loop, play and pingPong */
+        mode: string;
+        /** @property {number} - Engine time it started at */
+        startTime: number;
+        /** @property {number|undefined} - The frame held by stop, undefined while running
+         *  @type {number|undefined} */
+        heldFrame: number | undefined;
+        /** @property {SpriteAnimationEndCallback|undefined} - Called once when a play ends, on the first read after it
+         *  @type {SpriteAnimationEndCallback|undefined} */
+        onEnd: SpriteAnimationEndCallback | undefined;
+        /** Start over from the first frame and repeat forever
+         *  @return {SpriteAnimation} */
+        loop(): SpriteAnimation;
+        /** Start over from the first frame, run through once and hold the last frame, last to first at a negative speed
+         *  @param {function():void} [onEnd] - Called once when it ends, on the first read of it after that
+         *  @return {SpriteAnimation} */
+        play(onEnd?: () => void): SpriteAnimation;
+        /** Start over from the first frame and run there and back forever
+         *  @return {SpriteAnimation} */
+        pingPong(): SpriteAnimation;
+        /** Hold the current frame
+         *  @return {SpriteAnimation} */
+        stop(): SpriteAnimation;
+        /** Start over from the first frame in a mode, with no end callback
+         *  @param {string} [mode] - 'loop', 'once' or 'pingPong', the current mode when left out
+         *  @return {SpriteAnimation} */
+        restart(mode?: string): SpriteAnimation;
+        /** How many frames have gone by since the start, fractional
+         *  @return {number} */
+        get elapsedFrames(): number;
+        /** The frame showing now, 0 to frameCount-1
+         *  @return {number} */
+        get frame(): number;
+        /** The tile of the frame showing now
+         *  @return {TileInfo} */
+        get tileInfo(): TileInfo;
+        /** True once a play has shown its last frame for its time, the first read after that calls onEnd
+         *  @return {boolean} */
+        get isDone(): boolean;
+    }
+    /**
+     * SpriteAnimator - A character's animations by name, like idle, walk and attack, and the one showing now
+     * - Each clip is a SpriteAnimation and keeps its own mode, loop, play or pingPong
+     * - set starts a clip over only when it changes or a play of it has ended, so it can be called every update
+     * - Read tileInfo each frame for the frame to draw, as with a SpriteAnimation
+     * @example
+     * const hero = new SpriteAnimator({
+     *     idle:   new SpriteAnimation(tile(0, 16), 2, .4),
+     *     walk:   new SpriteAnimation(tile(2, 16), 4, .1),
+     *     attack: new SpriteAnimation(tile(6, 16), 3, .05).play(),
+     * });
+     * hero.set('attack', ()=> hero.set('idle')); // back to idle when the attack ends
+     * // in update: this.tileInfo = hero.tileInfo;
+     * @memberof Draw
+     */
+    export class SpriteAnimator {
+        /** Create an animator from its clips, showing the first one
+         *  @param {Object<string, SpriteAnimation>} clips - The clips by name */
+        constructor(clips: {
+            [x: string]: SpriteAnimation;
+        });
+        /** @property {Object<string, SpriteAnimation>} - The clips by name */
+        clips: {
+            [x: string]: SpriteAnimation;
+        };
+        /** @property {string} - The name of the clip showing now */
+        name: string;
+        /** Show a clip, starting it over in its own mode unless it is showing and has not ended
+         *  @param {string} name - The clip's name
+         *  @param {function():void} [onEnd] - Called once when a play clip ends, as with SpriteAnimation.play
+         *  @return {SpriteAnimator} */
+        set(name: string, onEnd?: () => void): SpriteAnimator;
+        /** The clip showing now
+         *  @return {SpriteAnimation} */
+        get clip(): SpriteAnimation;
+        /** The clip showing now, once a clip that has ended has called its onEnd: the callback may switch clips, and a
+         *  read gives the clip it switched to, not the one that ended
+         *  @return {SpriteAnimation}
+         *  @ignore */
+        get settledClip(): SpriteAnimation;
+        /** The tile of the frame showing now
+         *  @return {TileInfo} */
+        get tileInfo(): TileInfo;
+        /** The frame of the clip showing now
+         *  @return {number} */
+        get frame(): number;
+        /** True once the clip showing now is a play that has ended
+         *  @return {boolean} */
+        get isDone(): boolean;
+    }
+    /**
+     * Shader - A custom fragment shader for objects and draws, 2D or 3D
+     * - Write a mainImage function in the post processing style, the renderer wraps it with its own program
+     * - It gives the surface color, then the object's color and additive color apply in 2D, and the lighting,
+     *   shadows and fog in 3D; set emissive to 1 on a 3D object for the snippet's color to be final
+     * - Set it as obj.shader, or use setShader for 2D draws and render3D.shader for 3D draws
+     * - Draws that share a Shader share a batch; with no Shader set nothing changes
+     * - In 2D it shades textured draws, untextured ones like drawRect draw as they are
+     * - A render target, like a tile layer drawn in WebGL, holds premultiplied color, and so does every image when
+     *   tilesPixelated is false; there iChannel0 reads premultiplied texels and the snippet's color is taken as
+     *   premultiplied too. premultipliedTexture is true there, so a snippet that changes the alpha, or makes a see
+     *   through color of its own, scales the rgb with it: `if (premultipliedTexture) c.rgb *= k;`
+     * - Compiled once per renderer by the first draw that needs it; a bad snippet throws with the GLSL log in debug
+     * - Make each Shader once, at init, and share it; every one made lives for the session with its programs
+     * - Names in both renderers: iChannel0 the texture, iTime, iResolution, premultipliedTexture, and localUV, 0 to 1
+     *   across the sprite or the mesh's own uv
+     * - Names in 3D only: worldPos, worldNormal, cameraPos, sunDirection, sunColor, ambientColor, ambientGroundColor,
+     *   lightCount, lights[i], lightColors[i] and shadow()
+     * - In 3D the shadow map is drawn without the Shader, cut only by the texture's alpha, so a snippet that removes
+     *   parts of a surface still shadows with the whole of it
+     * @example
+     * const fade = new Shader(`
+     * void mainImage(out vec4 c, vec2 uv)
+     * {
+     *     c = texture(iChannel0, uv);
+     *     float fade = .5 + .5*sin(iTime);
+     *     c.a *= fade;
+     *     if (premultipliedTexture) c.rgb *= fade; // a tile layer, or any image with tilesPixelated false
+     * }`);
+     * obj.shader = fade;
+     * @memberof Draw
+     */
+    export class Shader {
+        /** Create a shader from a fragment snippet that defines void mainImage(out vec4 c, vec2 uv)
+         *  @param {string} fragmentCode */
+        constructor(fragmentCode: string);
+        /** @property {string} - The mainImage snippet */
+        fragmentCode: string;
+        /** @property {WebGLProgram|undefined} - The 2D program, compiled by the first draw that needs it, read only
+         *  @type {WebGLProgram|undefined} */
+        program: WebGLProgram | undefined;
+        /** @property {WebGLProgram|undefined} - The 3D program, compiled by the 3D plugin the same way, read only
+         *  @type {WebGLProgram|undefined} */
+        program3D: WebGLProgram | undefined;
     }
     /**
      * LittleJS Drawing System
@@ -1805,6 +2786,9 @@ declare module "littlejsengine" {
      *  @memberof Draw */
     export let mainCanvas: HTMLCanvasElement;
     /** 2d context for mainCanvas
+     *  - Scaled by canvasPixelRatio, so drawing to it is in css pixels
+     *  - getImageData and putImageData ignore that scale and work in backing store
+     *    pixels, so use workReadCanvas to read pixels back instead of this
      *  @type {CanvasRenderingContext2D}
      *  @memberof Draw */
     export let mainContext: CanvasRenderingContext2D;
@@ -1833,7 +2817,9 @@ declare module "littlejsengine" {
      *  @type {HTMLCanvasElement}
      *  @memberof Draw */
     export let backgroundCanvas: HTMLCanvasElement;
-    /** The size of the main canvas (and other secondary canvases)
+    /** The size of the main canvas (and other secondary canvases) in css pixels
+     *  - This is the screen space coordinate system, matching mousePos
+     *  - With canvasPixelRatio set the backing store is larger than this
      *  @type {Vector2}
      *  @memberof Draw */
     export let mainCanvasSize: Vector2;
@@ -1865,7 +2851,7 @@ declare module "littlejsengine" {
      *  @return {Vector2}
      *  @memberof Draw */
     export function screenToWorldDelta(screenDelta: Vector2): Vector2;
-    /** Convert from screen to world space coordinates for a directional vector (no translation)
+    /** Convert from world to screen space coordinates for a directional vector (no translation)
      *  @param {Vector2} worldDelta
      *  @return {Vector2}
      *  @memberof Draw */
@@ -1886,7 +2872,7 @@ declare module "littlejsengine" {
      *  @param {boolean}  [mirror] - Is image flipped along the Y axis?
      *  @param {Color}    [additiveColor] - Additive color to be applied if any
      *  @param {boolean}  [useWebGL=glEnable] - Use accelerated WebGL rendering?
-     *  @param {boolean}  [screenSpace=false] - Are the pos and size are in screen space?
+     *  @param {boolean}  [screenSpace=drawScreenSpace] - Are the pos and size are in screen space?
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to
      *  @memberof Draw */
     export function drawTile(pos: Vector2, size?: Vector2, tileInfo?: TileInfo, color?: Color, angle?: number, mirror?: boolean, additiveColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1896,7 +2882,7 @@ declare module "littlejsengine" {
      *  @param {Color}   [color=WHITE]
      *  @param {number}  [angle]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawRect(pos: Vector2, size?: Vector2, color?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1907,7 +2893,7 @@ declare module "littlejsengine" {
      *  @param {Color}   [colorBottom=CLEAR_WHITE]
      *  @param {number}  [angle]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawRectGradient(pos: Vector2, size?: Vector2, colorTop?: Color, colorBottom?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1922,7 +2908,7 @@ declare module "littlejsengine" {
      *  @param {number}   [angle=0] - Angle to rotate by
      *  @param {Color}    [additiveColor] - Additive color to be applied if any
      *  @param {boolean}  [useWebGL=glEnable] - Use accelerated WebGL rendering?
-     *  @param {boolean}  [screenSpace=false] - Are pos and size in screen space?
+     *  @param {boolean}  [screenSpace=drawScreenSpace] - Are pos and size in screen space?
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to
      *  @memberof Draw */
     export function drawTextureWrapped(pos: Vector2, size: Vector2, wrapCount: Vector2, texture?: TextureInfo | number, color?: Color, angle?: number, additiveColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1934,7 +2920,7 @@ declare module "littlejsengine" {
      *  @param {Vector2} [pos=vec2()] - Offset to apply
      *  @param {number}  [angle] - Angle to rotate by
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawLineList(points: Array<Vector2>, width?: number, color?: Color, wrap?: boolean, pos?: Vector2, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1946,11 +2932,13 @@ declare module "littlejsengine" {
      *  @param {Vector2} [pos=vec2()] - Offset to apply
      *  @param {number}  [angle] - Angle to rotate by
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawLine(posA: Vector2, posB: Vector2, width?: number, color?: Color, pos?: Vector2, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Draw colored polygon using passed in points
+     *  - WebGL fills a polygon whose edges do not cross, concave or not; a self crossing one, like a star through its
+     *    outer points, fills wrong there, so draw it as its simple outline or in parts
      *  @param {Array<Vector2>} points - Array of Vector2 points
      *  @param {Color}   [color=WHITE]
      *  @param {number}  [lineWidth]
@@ -1958,7 +2946,7 @@ declare module "littlejsengine" {
      *  @param {Vector2} [pos=vec2()] - Offset to apply
      *  @param {number}  [angle] - Angle to rotate by
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawPoly(points: Array<Vector2>, color?: Color, lineWidth?: number, lineColor?: Color, pos?: Vector2, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1971,7 +2959,7 @@ declare module "littlejsengine" {
      *  @param {Color}   [lineColor=BLACK]
      *  @param {number}  [angle]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawRegularPoly(pos: Vector2, size?: Vector2, sides?: number, color?: Color, lineWidth?: number, lineColor?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1983,7 +2971,7 @@ declare module "littlejsengine" {
      *  @param {number}  [lineWidth]
      *  @param {Color}   [lineColor=BLACK]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawEllipse(pos: Vector2, size?: Vector2, color?: Color, angle?: number, lineWidth?: number, lineColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -1994,11 +2982,24 @@ declare module "littlejsengine" {
      *  @param {number}  [lineWidth=0]
      *  @param {Color}   [lineColor=BLACK]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawCircle(pos: Vector2, size?: number, color?: Color, lineWidth?: number, lineColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
-    export function drawEllipseGradient(pos: any, size: Vector2, colorInner: Color, colorOuter: Color, angle: number, useWebGL: boolean, screenSpace: boolean, context: any): void;
+    /** Draw an ellipse filled with a radial gradient from the center to the rim
+     *  - Best when batched with other untextured polys
+     *  - If drawing mostly textured sprites, bake the gradient into a texture and use drawTile instead
+     *  - Stacking gradients at the exact same position may show a faint vertical artifact
+     *  @param {Vector2} pos
+     *  @param {Vector2} [size=vec2(1)] - Width and height diameter
+     *  @param {Color}   [colorInner=WHITE]
+     *  @param {Color}   [colorOuter=CLEAR_WHITE]
+     *  @param {number}  [angle]
+     *  @param {boolean} [useWebGL=glEnable]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
+     *  @memberof Draw */
+    export function drawEllipseGradient(pos: Vector2, size?: Vector2, colorInner?: Color, colorOuter?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Draw a circle filled with a radial gradient from the center to the rim
      *  - Best when batched with other untextured polys
      *  - If drawing mostly textured sprites, bake the gradient into a texture and use drawTile instead
@@ -2008,7 +3009,7 @@ declare module "littlejsengine" {
      *  @param {Color}   [colorInner=WHITE]
      *  @param {Color}   [colorOuter=CLEAR_WHITE]
      *  @param {boolean} [useWebGL=glEnable]
-     *  @param {boolean} [screenSpace]
+     *  @param {boolean} [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
      *  @memberof Draw */
     export function drawCircleGradient(pos: Vector2, size?: number, colorInner?: Color, colorOuter?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -2023,10 +3024,10 @@ declare module "littlejsengine" {
      *  (e.g. linear gradients) should flip their own Y endpoints accordingly.
      *  @param {Vector2}  pos
      *  @param {Vector2}  size
-     *  @param {number}   angle
+     *  @param {number}   [angle]
      *  @param {boolean}  [mirror]
-     *  @param {Canvas2DDrawFunction} [drawFunction]
-     *  @param {boolean}  [screenSpace=false]
+     *  @param {Canvas2DDrawFunction} [drawFunction] - Needed, marked optional only because the ones before it are
+     *  @param {boolean}  [screenSpace=drawScreenSpace]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context=drawContext]
      *  @memberof Draw */
     export function drawCanvas2D(pos: Vector2, size: Vector2, angle?: number, mirror?: boolean, drawFunction?: Canvas2DDrawFunction, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -2038,14 +3039,14 @@ declare module "littlejsengine" {
      *  @param {Color}   [color=WHITE]
      *  @param {number}  [lineWidth]
      *  @param {Color}   [lineColor=BLACK]
-     *  @param {CanvasTextAlign}  [textAlign='center']
+     *  @param {'left'|'center'|'right'} [textAlign='center']
      *  @param {string}  [font=fontDefault]
      *  @param {string}  [fontStyle]
      *  @param {number}  [maxWidth]
      *  @param {number}  [angle]
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context=drawContext]
      *  @memberof Draw */
-    export function drawText(text: string | number, pos: Vector2, size?: number, color?: Color, lineWidth?: number, lineColor?: Color, textAlign?: CanvasTextAlign, font?: string, fontStyle?: string, maxWidth?: number, angle?: number, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    export function drawText(text: string | number, pos: Vector2, size?: number, color?: Color, lineWidth?: number, lineColor?: Color, textAlign?: 'left' | 'center' | 'right', font?: string, fontStyle?: string, maxWidth?: number, angle?: number, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Draw text in screen space
      *  Automatically splits new lines into rows
      *  @param {string|number}  text
@@ -2054,18 +3055,23 @@ declare module "littlejsengine" {
      *  @param {Color}   [color=WHITE]
      *  @param {number}  [lineWidth]
      *  @param {Color}   [lineColor=BLACK]
-     *  @param {CanvasTextAlign}  [textAlign]
+     *  @param {'left'|'center'|'right'} [textAlign]
      *  @param {string}  [font=fontDefault]
      *  @param {string}  [fontStyle]
      *  @param {number}  [maxWidth]
-     *  @param {number}  [angle]
+     *  @param {number}  [angle] - Clockwise, like the other screen space draws
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context=drawContext]
      *  @memberof Draw */
-    export function drawTextScreen(text: string | number, pos: Vector2, size: number, color?: Color, lineWidth?: number, lineColor?: Color, textAlign?: CanvasTextAlign, font?: string, fontStyle?: string, maxWidth?: number, angle?: number, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    export function drawTextScreen(text: string | number, pos: Vector2, size: number, color?: Color, lineWidth?: number, lineColor?: Color, textAlign?: 'left' | 'center' | 'right', font?: string, fontStyle?: string, maxWidth?: number, angle?: number, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Enable additive blending
      *  @param {boolean} [additive]
      *  @memberof Draw */
     export function setAdditiveBlendMode(additive?: boolean): void;
+    /** Set the Shader that 2D draws use from now on, none for the engine's own
+     *  - The object render loop sets each object's own shader, so this is for draws in gameRender and gameRenderPost
+     *  @param {Shader} [shader]
+     *  @memberof Draw */
+    export function setShader(shader?: Shader): void;
     /** Set an extra canvas to composite behind the engine canvases when combining
      *  Plugins that insert their own canvas below the LittleJS canvases should set
      *  this so it appears in screenshots and video capture
@@ -2093,7 +3099,7 @@ declare module "littlejsengine" {
      * const font = engineImageFont;
      *
      * // draw text
-     * font.drawTextScreen('LittleJS\nHello World!', vec2(200, 50));
+     * font.drawTextScreen('LittleJS\nHello World!', vec2(200, 50), 16);
      */
     export class ImageFont {
         /** Create an image font
@@ -2103,10 +3109,11 @@ declare module "littlejsengine" {
         /** @property {TileInfo} - Tile info for the font */
         tileInfo: TileInfo;
         /** Draw text in world space using the image font
+         *  - The text stays upright and ignores cameraAngle, each glyph is snapped to whole screen pixels to keep it crisp
          *  @param {string|number} text
          *  @param {Vector2} pos
          *  @param {Vector2|number} [size]
-         *  @param {boolean} [center=true]
+         *  @param {boolean} [center=true] - center each line on pos, and the lines of multi-line text around it
          *  @param {Color} [color=WHITE]
          *  @param {boolean} [useWebGL=glEnable]
          *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
@@ -2116,12 +3123,18 @@ declare module "littlejsengine" {
          *  @param {string|number} text
          *  @param {Vector2} pos
          *  @param {Vector2|number} size
-         *  @param {boolean} [center]
+         *  @param {boolean} [center] - center each line on pos, and the lines of multi-line text around it
          *  @param {Color} [color=WHITE]
          *  @param {boolean} [useWebGL=glEnable]
          *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
          */
         drawTextScreen(text: string | number, pos: Vector2, size: Vector2 | number, center?: boolean, color?: Color, useWebGL?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+        /** Get where a glyph sits in the texture: counted in the font's own columns when its tile has them, like a font
+         *  packed by loadSprite, otherwise along the texture's grid from the font's first tile, the way tile() lays it out
+         *  @param {number} index - Glyph number, 0 is the space and the characters follow in ASCII order
+         *  @param {Vector2} [pos] - Written into and returned, for a loop that places many
+         *  @return {Vector2} */
+        getGlyphPos(index: number, pos?: Vector2): Vector2;
     }
     /** Returns true if fullscreen mode is active
      *  @return {boolean}
@@ -2138,6 +3151,13 @@ declare module "littlejsengine" {
      *  @return {Vector2}
      *  @memberof Draw */
     export function getCameraSize(): Vector2;
+    /** Padding for each side of a rectangle, the sides left out are 0
+     *  @typedef {Object} CameraFitSides
+     *  @property {number} [top]
+     *  @property {number} [right]
+     *  @property {number} [bottom]
+     *  @property {number} [left]
+     *  @memberof Draw */
     /** Fit the camera to a rectangle in world space by setting cameraPos and cameraScale
      *  - worldMargin pads the content rectangle in world units, so the gap scales with the content on resize
      *  - screenInset reserves space in screen pixels on each viewport edge (for example a HUD band) and
@@ -2146,16 +3166,16 @@ declare module "littlejsengine" {
      *    or an object with any of {top, right, bottom, left}
      *  @param {Vector2} center - Center of the rectangle in world space
      *  @param {Vector2} size - Size of the rectangle in world space
-     *  @param {number|Vector2|Object} [worldMargin] - World space padding added around the content rectangle
-     *  @param {number|Vector2|Object} [screenInset] - Screen space padding in pixels reserved on each viewport edge
+     *  @param {number|Vector2|CameraFitSides} [worldMargin] - World space padding added around the content rectangle
+     *  @param {number|Vector2|CameraFitSides} [screenInset] - Screen space padding in pixels reserved on each viewport edge
      *  @return {number} - The new camera scale
      *  @memberof Draw */
-    export function cameraFit(center: Vector2, size: Vector2, worldMargin?: number | Vector2 | any, screenInset?: number | Vector2 | any): number;
+    export function cameraFit(center: Vector2, size: Vector2, worldMargin?: number | Vector2 | CameraFitSides, screenInset?: number | Vector2 | CameraFitSides): number;
     /** Check if a box, point, or circle is on screen with a circle test
      *  If size is a Vector2, uses the length as diameter
      *  This can be used to cull offscreen objects from render or update
      *  @param {Vector2} pos - world space position
-     *  @param {Vector2|number} size - world space size or diameter
+     *  @param {Vector2|number} [size] - world space size or diameter
      *  @return {boolean}
      *  @memberof Draw */
     export function isOnScreen(pos: Vector2, size?: Vector2 | number): boolean;
@@ -2186,7 +3206,7 @@ declare module "littlejsengine" {
      *  @type {boolean}
      *  @memberof WebGL */
     export let glAntialias: boolean;
-    /** Clear the canvas and setup the viewport
+    /** Clear the canvas or render target to canvasClearColor
      *  @memberof WebGL */
     export function glClearCanvas(): void;
     /** Set the WebGL texture, called automatically if using multiple textures
@@ -2194,12 +3214,13 @@ declare module "littlejsengine" {
      *  @param {WebGLTexture} texture
      *  @memberof WebGL */
     export function glSetTexture(texture: WebGLTexture): void;
-    /** Set the wrap mode (REPEAT or CLAMP_TO_EDGE) on an existing WebGL texture
+    /** Set the wrap mode on an existing WebGL texture
      *  Flushes the current batch only if the texture is the active one
      *  @param {WebGLTexture} texture
-     *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
+     *  @param {boolean|Array<number>} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE, or the WebGL modes across and
+     *    down, like [gl.CLAMP_TO_EDGE, gl.MIRRORED_REPEAT]
      *  @memberof WebGL */
-    export function glSetTextureWrap(texture: WebGLTexture, wrap?: boolean): void;
+    export function glSetTextureWrap(texture: WebGLTexture, wrap?: boolean | Array<number>): void;
     /** Compile WebGL shader of the given type, will throw errors if in debug mode
      *  @param {string} source
      *  @param {number} type
@@ -2214,24 +3235,26 @@ declare module "littlejsengine" {
     export function glCreateProgram(vsSource: string, fsSource: string): WebGLProgram;
     /** Create WebGL texture from an image and init the texture settings
      *  Restores the active texture when done
-     *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas} [image]
-     *  @param {boolean} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE
+     *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|ImageBitmap} [image]
+     *  @param {boolean|Array<number>} [wrap] - true for REPEAT, false for CLAMP_TO_EDGE, or the WebGL modes across and down
+     *  @param {boolean} [pixelated] - Hard edged or smooth, undefined follows tilesPixelated
      *  @return {WebGLTexture}
      *  @memberof WebGL */
-    export function glCreateTexture(image?: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas, wrap?: boolean): WebGLTexture;
+    export function glCreateTexture(image?: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap, wrap?: boolean | Array<number>, pixelated?: boolean): WebGLTexture;
     /** Deletes a WebGL texture
      *  @param {WebGLTexture} [texture]
      *  @memberof WebGL */
     export function glDeleteTexture(texture?: WebGLTexture): void;
     /** Set WebGL texture data from an image, restores the active texture when done
      *  @param {WebGLTexture} texture
-     *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas} image
+     *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|ImageBitmap} image
+     *  @param {boolean} [pixelated] - Hard edged or smooth, undefined follows tilesPixelated
      *  @memberof WebGL */
-    export function glSetTextureData(texture: WebGLTexture, image: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas): void;
+    export function glSetTextureData(texture: WebGLTexture, image: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap, pixelated?: boolean): void;
     /** Draw all sprites and clear out the buffer, called automatically by the system whenever necessary
      *  @memberof WebGL */
     export function glFlush(): void;
-    /** Flush any sprites still in the buffer and copy to main canvas
+    /** Flush any sprites still in the buffer and copy the WebGL canvas to a 2D context
      *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} context
      *  @memberof WebGL */
     export function glCopyToContext(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
@@ -2240,6 +3263,17 @@ declare module "littlejsengine" {
      *  @param {boolean} [antialias]
      *  @memberof WebGL */
     export function glSetAntialias(antialias?: boolean): void;
+    /** The largest texture this device makes, in pixels across, 0 until WebGL starts; at least 2048 with WebGL2
+     *  @type {number}
+     *  @memberof WebGL */
+    export let glMaxTextureSize: number;
+    /** A texture size this device can make: the size asked for, or the largest it supports when that is smaller
+     *  - The engine sizes the textures it makes itself through this, the shadow maps and the like, so a size a device
+     *    does not have falls back instead of failing
+     *  @param {number} size - Pixels across
+     *  @return {number}
+     *  @memberof WebGL */
+    export function glClampTextureSize(size: number): number;
     /** Add a sprite to the gl draw list, used by all gl draw functions
      *  @param {number} x
      *  @param {number} y
@@ -2277,7 +3311,7 @@ declare module "littlejsengine" {
      *  @param {boolean} [tristrip] - should tristrip algorithm be used
      *  @memberof WebGL */
     export function glDrawPointsTransform(points: Array<Vector2>, rgba: number, x: number, y: number, sx: number, sy: number, angle: number, tristrip?: boolean): void;
-    /** Transform and add a polygon to the gl draw list
+    /** Transform and add a polygon's outline to the gl draw list
      *  @param {Array<Vector2>} points - Array of Vector2 points
      *  @param {number} rgba - Color of the polygon as a 32-bit integer
      *  @param {number} lineWidth - Width of the outline
@@ -2300,11 +3334,14 @@ declare module "littlejsengine" {
      *  @memberof WebGL */
     export function glDrawColoredPoints(points: Array<Vector2>, pointColors: Array<number>): void;
     /** Set the WebGL render target to the given texture or back to the canvas
+     *  - What is drawn into a texture is stored premultiplied, and draws of that texture blend it as such
      *  @param {WebGLTexture} [texture] - a texture or undefined to use normal glCanvas
-     *  @param {boolean} [clear] - should the render target be cleared
+     *  @param {boolean} [clear] - should the render target be cleared, to canvasClearColor, CLEAR_BLACK for a transparent one
      *  @memberof WebGL */
     export function glSetRenderTarget(texture?: WebGLTexture, clear?: boolean): void;
     /** Clear out a rectangle area of the WebGL canvas or render target
+     *  - In framebuffer pixels from the bottom left: backing store pixels on the canvas, texture pixels in a
+     *    render target
      *  @param {number} x
      *  @param {number} y
      *  @param {number} width
@@ -2313,19 +3350,19 @@ declare module "littlejsengine" {
     export function glClearRect(x: number, y: number, width: number, height: number): void;
     /** Returns true if device key is down
      *  @param {string|number} key
-     *  @param {number} [device]
+     *  @param {number} [device] - 0 for the keyboard and mouse, gamepad n is device n + 1
      *  @return {boolean}
      *  @memberof Input */
     export function keyIsDown(key: string | number, device?: number): boolean;
     /** Returns true if device key was pressed this frame
      *  @param {string|number} key
-     *  @param {number} [device]
+     *  @param {number} [device] - 0 for the keyboard and mouse, gamepad n is device n + 1
      *  @return {boolean}
      *  @memberof Input */
     export function keyWasPressed(key: string | number, device?: number): boolean;
     /** Returns true if device key was released this frame
      *  @param {string|number} key
-     *  @param {number} [device]
+     *  @param {number} [device] - 0 for the keyboard and mouse, gamepad n is device n + 1
      *  @return {boolean}
      *  @memberof Input */
     export function keyWasReleased(key: string | number, device?: number): boolean;
@@ -2340,12 +3377,13 @@ declare module "littlejsengine" {
     /** Clears all input
      *  @memberof Input */
     export function inputClear(): void;
-    /** Clears an input key state
-     *  @param {string|number} key
-     *  @param {number} [device]
-     *  @param {boolean} [clearDown=true]
-     *  @param {boolean} [clearPressed=true]
-     *  @param {boolean} [clearReleased=true]
+    /** Clear a key's state, so it stops reading as down, pressed or released this frame; a key still held is not
+     *  pressed again until it is let go
+     *  @param {string|number} key - A key code like 'Space', or a mouse or gamepad button number
+     *  @param {number} [device] - 0 for the keyboard and mouse, gamepad n is device n + 1
+     *  @param {boolean} [clearDown] - Clear the held state
+     *  @param {boolean} [clearPressed] - Clear the pressed this frame state
+     *  @param {boolean} [clearReleased] - Clear the released this frame state
      *  @memberof Input */
     export function inputClearKey(key: string | number, device?: number, clearDown?: boolean, clearPressed?: boolean, clearReleased?: boolean): void;
     /** Returns true if mouse button is down
@@ -2398,6 +3436,12 @@ declare module "littlejsengine" {
      *  @type {number}
      *  @memberof Input */
     export let mouseWheel: number;
+    /** Touch pinch delta this frame, in the mouse wheel's units: two fingers moving apart are negative, as the wheel
+     *  turned up is, and moving together positive, 1 for every 50 pixels; added to mouseWheel while touchPinchWheel
+     *  is on, so a game that zooms with the wheel zooms with a pinch
+     *  @type {number}
+     *  @memberof Input */
+    export let touchPinch: number;
     /** True if mouse was inside the document window, set to false when mouse leaves
      *  @type {boolean}
      *  @memberof Input */
@@ -2414,9 +3458,9 @@ declare module "littlejsengine" {
      *  mouse to aim) it tracks whichever was touched last each frame, so it may
      *  alternate — that's intended; use it to pick which control drives a shared
      *  action. Updated every frame by inputUpdate().
-     *  @type {string}
+     *  @type {'mouse'|'keyboard'|'gamepad'}
      *  @memberof Input */
-    export let lastInputDevice: string;
+    export let lastInputDevice: 'mouse' | 'keyboard' | 'gamepad';
     /** Screen-pixel mouse movement per frame that counts as "using the mouse"
      *  (so sub-pixel hand jitter doesn't steal focus from the keyboard/gamepad).
      *  @type {number}
@@ -2435,19 +3479,27 @@ declare module "littlejsengine" {
      *  @memberof Input */
     export const isTouchDevice: boolean;
     /** Prevents input continuing to the default browser handling
-     *  This is useful to disable for html menus so the browser can handle input normally
-     *  @param {boolean} preventDefault
+     *  This is useful to disable for html menus so the browser can handle input normally,
+     *  the right click menu included; over an html text field that menu always shows
+     *  - While on, the mouse's back and forward buttons don't leave the page, a game can read them as mouse 3 and 4
+     *  @param {boolean} [preventDefault]
      *  @memberof Input */
     export function setInputPreventDefault(preventDefault?: boolean): void;
     /** Set the screen-pixel mouse movement per frame that counts as using the mouse
      *  @param {number} threshold
      *  @memberof Input */
     export function setInputMouseMoveThreshold(threshold: number): void;
-    /** @return {boolean} - Is the mouse the most recently used input device?    @memberof Input */
+    /** Is the mouse the most recently used input device?
+     *  @return {boolean}
+     *  @memberof Input */
     export function usingMouseInput(): boolean;
-    /** @return {boolean} - Is the keyboard the most recently used input device? @memberof Input */
+    /** Is the keyboard the most recently used input device?
+     *  @return {boolean}
+     *  @memberof Input */
     export function usingKeyboardInput(): boolean;
-    /** @return {boolean} - Is a gamepad the most recently used input device?    @memberof Input */
+    /** Is a gamepad the most recently used input device?
+     *  @return {boolean}
+     *  @memberof Input */
     export function usingGamepadInput(): boolean;
     /** Returns true if gamepad button is down
      *  @param {number} button
@@ -2470,7 +3522,7 @@ declare module "littlejsengine" {
     /** Returns gamepad stick value
      *  @param {number} stick
      *  @param {number} [gamepad]
-     *  @return {Vector2}
+     *  @return {Vector2} - Where the stick points, y up, length 0 to 1 past the dead zone, zero when there is no such stick
      *  @memberof Input */
     export function gamepadStick(stick: number, gamepad?: number): Vector2;
     /** Returns how many control sticks the passed in gamepad has
@@ -2491,13 +3543,14 @@ declare module "littlejsengine" {
     /** Pulse a gamepad's vibration hardware using the dual-rumble effect if it exists
      *  Strong magnitude is usually the left side motor, weak magnitude is usually the right side motor
      *  @param {number} [gamepad] - gamepad index
-     *  @param {number} [duration] - effect duration in ms
+     *  @param {number} [duration] - effect duration in ms, browsers limit it and the delay to 5 seconds together
      *  @param {number} [strongMagnitude] - strong (left) motor intensity, 0 to 1
      *  @param {number} [weakMagnitude] - weak (right) motor intensity, 0 to 1
      *  @param {number} [startDelay] - delay in ms before the effect starts
      *  @memberof Input */
     export function gamepadVibrate(gamepad?: number, duration?: number, strongMagnitude?: number, weakMagnitude?: number, startDelay?: number): void;
     /** Stop vibration on a gamepad
+     *  @param {number} [gamepad] - gamepad index
      *  @memberof Input */
     export function gamepadVibrateStop(gamepad?: number): void;
     /** Pulse the vibration hardware if it exists
@@ -2507,7 +3560,7 @@ declare module "littlejsengine" {
     /** Cancel any ongoing vibration
      *  @memberof Input */
     export function vibrateStop(): void;
-    /** Request to lock the pointer, does not work on touch devices
+    /** Request to lock the pointer, for a mouse; a device with only touch refuses it
      *  @memberof Input */
     export function pointerLockRequest(): void;
     /** Request to unlock the pointer
@@ -2528,24 +3581,44 @@ declare module "littlejsengine" {
      * - Speech synthesis for text-to-speech
      * - Music playback with ZzFXM support
      * - Web Audio API integration with master gain control
+     * - Sounds and the master bus can route through effects, see the audio effects plugin
      * @namespace Audio
      */
-    /** Audio context used by the engine
+    /** Audio context used by the engine, undefined outside a browser, where the engine runs headless
      *  @type {AudioContext}
      *  @memberof Audio */
     export let audioContext: AudioContext;
-    /** Master gain node for all audio to pass through
+    /** Master gain node for all audio to pass through, made at load so effects can connect to it any time
      *  @type {GainNode}
      *  @memberof Audio */
     export let audioMasterGain: GainNode;
+    /** Anything with input and output audio nodes, like an effect from the audio effects plugin
+     *  @typedef {{input: AudioNode, output: AudioNode}} AudioEffectNodes
+     *  @memberof Audio */
+    /** Route all sound through an effect between the master gain and the speakers
+     *  - Pass a node or an effect, or the first and last of a chain, each a node or an effect
+     *  - With one argument a node is both ends, and an effect uses its own input and output
+     *  - The output node is disconnected from everything else first, so it only feeds the speakers
+     *  - The two ends of a chain must already be connected to each other, like effectA.connect(effectB)
+     *  - Call with no arguments to remove the effect, an effect that was the master goes back to feeding the master gain
+     *  - Debug video capture records the end of the master chain, but loses its tap if the effect changes mid-capture
+     *  @param {AudioNode|AudioEffectNodes} [input] - Node or effect the master gain connects to
+     *  @param {AudioNode|AudioEffectNodes} [output] - Node or effect that connects to the audio destination, defaults to the input's output
+     *  @memberof Audio */
+    export function setAudioMasterEffect(input?: AudioNode | AudioEffectNodes, output?: AudioNode | AudioEffectNodes): void;
     /** Default sample rate used for sounds
      *  @default 44100
      *  @memberof Audio */
     export const audioDefaultSampleRate: 44100;
     /** Check if the audio context is running and available for playback
-     *  @return {boolean} - True if the audio context is running
+     *  @return {boolean} - True if the audio context is running, false when there is none
      *  @memberof Audio */
     export function audioIsRunning(): boolean;
+    /**
+     * @callback SoundLoadCallback - Function called when sound is loaded
+     * @param {Sound} sound
+     * @memberof Audio
+     */
     /**
      * Sound Object - Stores a sound for later
      * - this can be used to load and play wave, mp3, and ogg files
@@ -2566,76 +3639,95 @@ declare module "littlejsengine" {
      * sound_example.play();
      */
     export class Sound {
-        /**
-         * @callback SoundLoadCallback - Function called when sound is loaded
-         * @param {Sound} sound
-         * @memberof Audio
-         */
         /** Create a sound object and cache the audio for later use
-         *  @param {string|Array} [asset] - Filename of audio file or zzfx array
-         *  @param {number} [randomness] - How much to randomize frequency each time sound plays, for zzfx sounds the zzfx default is used if undefined
+         *  @param {string|URL|Array} [asset] - Filename or URL of an audio file, or a zzfx array
+         *  @param {number} [randomness] - How much to randomize frequency each time sound plays, for zzfx sounds it overrides the array's own randomness, which is used if undefined
          *  @param {number} [range=soundDefaultRange] - World space max range of sound
          *  @param {number} [taper=soundDefaultTaper] - At what percentage of range should it start tapering
          *  @param {SoundLoadCallback} [onloadCallback] - callback function to call when sound is loaded
          */
-        constructor(asset?: string | any[], randomness?: number, range?: number, taper?: number, onloadCallback?: (sound: Sound) => Sound);
-        /** @property {number} - World space max range of sound */
-        range: number;
+        constructor(asset?: string | URL | any[], randomness?: number, range?: number, taper?: number, onloadCallback?: SoundLoadCallback);
+        set range(arg: number);
+        /** World space max range of sound, 0 for no limit; a range that is set is the sound's own, in 3D too
+         *  @type {number} */
+        get range(): number;
+        /** @property {boolean} - No range was given, so it got soundDefaultRange; played in 3D such a sound is heard
+         *  to render3D.soundDefaultRange instead, which is further; setting range makes it false */
+        rangeIsDefault: boolean;
         /** @property {number} - At what percentage of range should it start tapering */
         taper: number;
-        /** @property {number} - How much to randomize frequency each time sound plays */
-        randomness: any;
+        /** @property {number} - How much to randomize frequency each time sound plays
+         *  @type {number} */
+        randomness: number;
         /** @property {number} - Sample rate for this sound */
         sampleRate: number;
         /** @property {number} - How many samples per channel this sound has */
         sampleLength: number;
-        /** @property {AudioBuffer} - Decoded audio shared by every play of this sound
-         *  @type {AudioBuffer} */
-        sampleBuffer: AudioBuffer;
-        /** @private @type {Array<Array<number>|Float32Array>} */
-        private _sampleChannels;
+        /** @property {AudioBuffer|undefined} - Decoded audio shared by every play of this sound
+         *  @type {AudioBuffer|undefined} */
+        sampleBuffer: AudioBuffer | undefined;
+        /** @ignore
+         *  @type {Array<Array<number>|Float32Array>|undefined} */
+        _sampleChannels: Array<Array<number> | Float32Array> | undefined;
         /** @property {number} - Percentage of this sound currently loaded, sounds
          *  fetched from a url stay at 0 until decoding completes */
         loadedPercent: number;
-        /** @property {SoundLoadCallback} - function to call when sound is loaded */
-        onloadCallback: (sound: Sound) => Sound;
+        /** @property {SoundLoadCallback|undefined} - function to call when sound is loaded
+         *  @type {SoundLoadCallback|undefined} */
+        onloadCallback: SoundLoadCallback | undefined;
+        /** @property {AudioNode|AudioEffectNodes|undefined} - Node or effect to route every play of this sound through instead of the master gain
+         *  - Where this sound's audio goes, unlike AudioEffect.output which is an effect's own node, effects chain with connect()
+         *  @type {AudioNode|AudioEffectNodes|undefined} */
+        output: AudioNode | AudioEffectNodes | undefined;
         /** @param {Array<Array<number>|Float32Array>} sampleChannels */
         set sampleChannels(arg: (number[] | Float32Array)[]);
         /** Sample data for each channel
          *  Sounds keep their samples in an audio buffer, so reading this rebuilds
          *  the arrays from it and caches them. The copies are safe to hold onto,
          *  playing a sound detaches the buffer's own channel arrays.
-         *  @type {Array<Array<number>|Float32Array>} */
+         *  @return {Array<Array<number>|Float32Array>|undefined} */
         get sampleChannels(): (number[] | Float32Array)[];
+        rangeValue: number;
         /** Move this sound's samples into an audio buffer that every play can share
          *  Does nothing if there is already a buffer or no samples to build one from */
         buildSampleBuffer(): void;
         /** Play the sound
-         *  Sounds may not play until a user interaction occurs
+         *  - Browsers hold audio until the first user input, a sound played before it returns a paused instance
+         *    that starts on its own once audio runs, unless paused or stopped first; a one shot that would have
+         *    ended by then is dropped, and only the newest play of each sound waits, so a sound played every frame
+         *    starts once
          *  @param {Vector2} [pos] - World space position to play the sound if any
          *  @param {number}  [volume] - How much to scale volume by
          *  @param {number}  [pitch] - How much to scale pitch by
          *  @param {number}  [randomnessScale] - How much to scale pitch randomness
          *  @param {boolean} [loop] - Should the sound loop?
          *  @param {boolean} [paused] - Should the sound start paused
-         *  @return {SoundInstance} - The sound instance, or undefined if sound is disabled, not loaded, or running in headless mode
+         *  @return {SoundInstance|undefined} - The sound instance, or undefined if sound is disabled, not loaded, out of range, or running in headless mode
          */
-        play(pos?: Vector2, volume?: number, pitch?: number, randomnessScale?: number, loop?: boolean, paused?: boolean): SoundInstance;
+        play(pos?: Vector2, volume?: number, pitch?: number, randomnessScale?: number, loop?: boolean, paused?: boolean): SoundInstance | undefined;
+        /** Play the sound on a loop, the same as play with loop on; stop or change it through the SoundInstance returned
+         *  @param {Vector2} [pos] - World space position to play the sound if any
+         *  @param {number}  [volume] - How much to scale volume by
+         *  @param {number}  [pitch] - How much to scale pitch by
+         *  @param {number}  [randomnessScale] - How much to scale pitch randomness
+         *  @param {boolean} [paused] - Should the sound start paused
+         *  @return {SoundInstance|undefined} - The sound instance, or undefined if sound is disabled, not loaded, out of range, or running in headless mode */
+        playLoop(pos?: Vector2, volume?: number, pitch?: number, randomnessScale?: number, paused?: boolean): SoundInstance | undefined;
         /** Play a music track that loops by default
          *  @param {number} [volume] - Volume to play the music at
          *  @param {boolean} [loop] - Should the music loop?
          *  @param {boolean} [paused] - Should the music start paused
-         *  @return {SoundInstance} - The sound instance
+         *  @return {SoundInstance|undefined} - The sound instance, or undefined if sound is disabled, not loaded, or running in headless mode
          */
-        playMusic(volume?: number, loop?: boolean, paused?: boolean): SoundInstance;
+        playMusic(volume?: number, loop?: boolean, paused?: boolean): SoundInstance | undefined;
         /** Play the sound as a musical note with a semitone offset
          *  This can be used to play music with chromatic scales
-         *  @param {number}  [semitoneOffset=0] - How many semitones to offset pitch
+         *  @param {number}  [semitoneOffset] - How many semitones to offset pitch
          *  @param {Vector2} [pos] - World space position to play the sound if any
          *  @param {number}  [volume=1] - How much to scale volume by
-         *  @return {SoundInstance} - The sound instance
+         *  @return {SoundInstance|undefined} - The sound instance, or undefined if sound is disabled, not loaded, out of range, or running in headless mode
          */
-        playNote(semitoneOffset?: number, pos?: Vector2, volume?: number): SoundInstance;
+        playNote(semitoneOffset?: number, pos?: Vector2, volume?: number): SoundInstance | undefined;
         /** Get how long this sound is in seconds
          *  @return {number} - How long the sound is in seconds (0 if loading)
          */
@@ -2683,23 +3775,54 @@ declare module "littlejsengine" {
         pan: number;
         /** @property {boolean} - Should the sound loop */
         loop: boolean;
-        /** @property {number} - Timestamp for audio context when paused */
-        pausedTime: number;
-        /** @property {number} - Timestamp for audio context when started */
-        startTime: number;
-        /** @property {GainNode} - Gain node for the sound */
-        gainNode: GainNode;
-        /** @property {AudioBufferSourceNode} - Source node of the audio */
-        source: AudioBufferSourceNode;
-        onendedCallback: (source: any) => void;
-        /** Start playing the sound instance from the offset time
-         *  @param {number} [offset] - Offset in seconds to start playback from
+        /** @property {number|undefined} - Where it is in the sound while not playing, in the sound's own seconds, undefined while playing
+         *  @type {number|undefined} */
+        pausedTime: number | undefined;
+        /** @property {number} - Audio context time its place was last taken at, while playing
+         *  @type {number|undefined} */
+        startTime: number | undefined;
+        /** @property {number} - Where it was in the sound at startTime, in the sound's own seconds */
+        startOffset: number;
+        /** @property {GainNode|undefined} - Gain node for the sound, undefined once it is stopped or paused
+         *  @type {GainNode|undefined} */
+        gainNode: GainNode | undefined;
+        /** @property {StereoPannerNode|undefined} - Stereo panner for the sound, undefined once it is stopped or paused
+         *  @type {StereoPannerNode|undefined} */
+        pannerNode: StereoPannerNode | undefined;
+        /** @property {AudioBufferSourceNode|undefined} - Source node of the audio, undefined while not playing
+         *  @type {AudioBufferSourceNode|undefined} */
+        source: AudioBufferSourceNode | undefined;
+        /** @property {AudioNode|AudioEffectNodes|undefined} - Node or effect to route this instance through, copied from the sound
+         *  @type {AudioNode|AudioEffectNodes|undefined} */
+        output: AudioNode | AudioEffectNodes | undefined;
+        /** @property {AudioEndedCallback|undefined} - Called when this instance plays to its end, not when it is stopped
+         *  or paused; it is read when the sound ends, so it can be set at any time
+         *  @type {AudioEndedCallback|undefined} */
+        onendedCallback: AudioEndedCallback | undefined;
+        /** A playback that ends on its own leaves the instance stopped, its time back at 0; the ended event of one
+         *  stopped or replaced since is too late to change anything
+         *  @private */
+        private sourceEnded;
+        /** Start playing the sound instance from a place in the sound
+         *  @param {number} [offset] - Where to start in the sound, in its own seconds whatever the rate
          */
         start(offset?: number): void;
-        /** Set the volume of this sound instance
-         *  @param {number} volume */
-        setVolume(volume: number): void;
-        /** Stop this sound instance and reset position to the start */
+        /** Set the volume of this sound instance, with an optional fade to it
+         *  - A fade ducks music under dialogue or cross fades two tracks without a click
+         *  @param {number} volume
+         *  @param {number} [fadeTime] - Seconds to fade to the new volume over */
+        setVolume(volume: number, fadeTime?: number): void;
+        /** Set the stereo pan of this sound instance, while it plays too
+         *  - A looping sound can follow its source across the screen this way
+         *  @param {number} pan - -1 is left, 0 is center, 1 is right, clamped to that range */
+        setPan(pan: number): void;
+        /** Set the playback rate of this sound instance, its speed and pitch, while it plays
+         *  - A looping sound can follow something smoothly this way, like an engine with the speed
+         *  - A rate of 0 freezes the sound in place, and it carries on from there when the rate comes back
+         *  @param {number} rate - 1 is normal, 2 is twice as fast and an octave up */
+        setRate(rate: number): void;
+        /** Stop this sound instance and reset position to the start
+         *  @param {number} [fadeTime] - Seconds to fade out over before stopping */
         stop(fadeTime?: number): void;
         /** Pause this sound instance */
         pause(): void;
@@ -2713,18 +3836,19 @@ declare module "littlejsengine" {
          *  @return {boolean} - True if not playing
          */
         isPaused(): boolean;
-        /** Get the current playback time in seconds
-         *  @return {number} - Current playback time
+        /** Get where it is in the sound, in the sound's own seconds: at a rate of 2 it moves two seconds for each one
+         *  that passes, and at 0 it stays put
+         *  @return {number} - Seconds into the sound
          */
         getCurrentTime(): number;
-        /** Get the total duration of this sound
-         *  @return {number} - Total duration in seconds (0 if loading)
+        /** Get the length of the sound in its own seconds, the same at any rate; divide by the rate for how long it takes to play
+         *  @return {number} - Length in seconds (0 if loading)
          */
         getDuration(): number;
         /** Get source of this sound instance
-         *  @return {AudioBufferSourceNode}
+         *  @return {AudioBufferSourceNode|undefined} - The source, or undefined while not playing
          */
-        getSource(): AudioBufferSourceNode;
+        getSource(): AudioBufferSourceNode | undefined;
     }
     /** Speak text with passed in settings
      *  @param {string} text - The text to speak
@@ -2740,7 +3864,7 @@ declare module "littlejsengine" {
     export function speakStop(): void;
     /** Get frequency of a note on a musical scale
      *  @param {number} semitoneOffset - How many semitones away from the root note
-     *  @param {number} [rootFrequency=220] - Frequency at semitone offset 0
+     *  @param {number} [rootFrequency] - Frequency at semitone offset 0
      *  @return {number} - The frequency of the note
      *  @memberof Audio */
     export function getNoteFrequency(semitoneOffset: number, rootFrequency?: number): number;
@@ -2757,11 +3881,13 @@ declare module "littlejsengine" {
      *  @param {boolean}  [loop] - True if the sound should loop when it reaches the end
      *  @param {number}   [sampleRate=44100] - Sample rate for the sound
      *  @param {GainNode} [gainNode] - Optional gain node for volume control while playing (disconnected when the sound ends)
-     *  @param {number}   [offset] - Offset in seconds to start playback from
+     *  @param {number}   [offset] - Where to start in the sound, in its own seconds whatever the rate
      *  @param {AudioEndedCallback} [onended] - Callback for when the sound ends
-     *  @return {AudioBufferSourceNode} - The source node of the sound played, may be undefined if play fails
+     *  @param {AudioNode|AudioEffectNodes} [output] - Node or effect to connect the gain to instead of the master gain
+     *  @param {StereoPannerNode} [pannerNode] - Optional stereo panner for panning while playing, its pan already set (disconnected when the sound ends)
+     *  @return {AudioBufferSourceNode|undefined} - The source node of the sound played, undefined if play fails
      *  @memberof Audio */
-    export function playSamples(sampleChannels: any[], volume?: number, rate?: number, pan?: number, loop?: boolean, sampleRate?: number, gainNode?: GainNode, offset?: number, onended?: AudioEndedCallback): AudioBufferSourceNode;
+    export function playSamples(sampleChannels: any[], volume?: number, rate?: number, pan?: number, loop?: boolean, sampleRate?: number, gainNode?: GainNode, offset?: number, onended?: AudioEndedCallback, output?: AudioNode | AudioEffectNodes, pannerNode?: StereoPannerNode): AudioBufferSourceNode | undefined;
     /** Play an audio buffer with given settings
      *  The buffer can be shared by any number of sounds playing at once
      *  @param {AudioBuffer} buffer - The audio buffer to play
@@ -2770,11 +3896,13 @@ declare module "littlejsengine" {
      *  @param {number}   [pan] - How much to apply stereo panning
      *  @param {boolean}  [loop] - True if the sound should loop when it reaches the end
      *  @param {GainNode} [gainNode] - Optional gain node for volume control while playing (disconnected when the sound ends)
-     *  @param {number}   [offset] - Offset in seconds to start playback from
+     *  @param {number}   [offset] - Where to start in the sound, in its own seconds whatever the rate
      *  @param {AudioEndedCallback} [onended] - Callback for when the sound ends
-     *  @return {AudioBufferSourceNode} - The source node of the sound played, may be undefined if play fails
+     *  @param {AudioNode|AudioEffectNodes} [output] - Node or effect to connect the gain to instead of the master gain
+     *  @param {StereoPannerNode} [pannerNode] - Optional stereo panner for panning while playing, its pan already set (disconnected when the sound ends)
+     *  @return {AudioBufferSourceNode|undefined} - The source node of the sound played, undefined if play fails
      *  @memberof Audio */
-    export function playAudioBuffer(buffer: AudioBuffer, volume?: number, rate?: number, pan?: number, loop?: boolean, gainNode?: GainNode, offset?: number, onended?: AudioEndedCallback): AudioBufferSourceNode;
+    export function playAudioBuffer(buffer: AudioBuffer, volume?: number, rate?: number, pan?: number, loop?: boolean, gainNode?: GainNode, offset?: number, onended?: AudioEndedCallback, output?: AudioNode | AudioEffectNodes, pannerNode?: StereoPannerNode): AudioBufferSourceNode | undefined;
     /** Copy arrays of samples into a new audio buffer
      *  @param {Array}  sampleChannels - Array of arrays of samples (for stereo playback)
      *  @param {number} [sampleRate=44100] - Sample rate for the sound
@@ -2785,9 +3913,9 @@ declare module "littlejsengine" {
      *
      *  <a href=https://killedbyapixel.github.io/ZzFX/>Create sounds using the ZzFX Sound Designer.</a>
      *  @param {Array} zzfxSound - Array of ZzFX parameters, ex. [.5,.5]
-     *  @return {AudioBufferSourceNode} - The audio node of the sound played
+     *  @return {AudioBufferSourceNode|undefined} - The audio node of the sound played, undefined if play fails
      *  @memberof Audio */
-    export function zzfx(...zzfxSound: any[]): AudioBufferSourceNode;
+    export function zzfx(...zzfxSound: any[]): AudioBufferSourceNode | undefined;
     /** Generate samples for a ZzFX sound
      *  @param {number}  [volume] - Volume scale (percent)
      *  @param {number}  [randomness] - How much to randomize frequency (percent Hz)
@@ -2810,9 +3938,9 @@ declare module "littlejsengine" {
      *  @param {number}  [decay] - Decay time, how long to reach sustain after attack (seconds)
      *  @param {number}  [tremolo] - Trembling effect, rate controlled by repeat time (percent)
      *  @param {number}  [filter] - Filter cutoff frequency, positive for HPF, negative for LPF (Hz)
-     *  @return {Array} - Array of audio samples
+     *  @return {Float32Array} - The audio samples
      *  @memberof Audio */
-    export function zzfxG(volume?: number, randomness?: number, frequency?: number, attack?: number, sustain?: number, release?: number, shape?: number, shapeCurve?: number, slide?: number, deltaSlide?: number, pitchJump?: number, pitchJumpTime?: number, repeatTime?: number, noise?: number, modulation?: number, bitCrush?: number, delay?: number, sustainVolume?: number, decay?: number, tremolo?: number, filter?: number): any[];
+    export function zzfxG(volume?: number, randomness?: number, frequency?: number, attack?: number, sustain?: number, release?: number, shape?: number, shapeCurve?: number, slide?: number, deltaSlide?: number, pitchJump?: number, pitchJumpTime?: number, repeatTime?: number, noise?: number, modulation?: number, bitCrush?: number, delay?: number, sustainVolume?: number, decay?: number, tremolo?: number, filter?: number): Float32Array;
     /**
      * LittleJS Object System
      * - EngineObject is the base class for all game objects
@@ -2842,6 +3970,7 @@ declare module "littlejsengine" {
      * - If an object starts or is moved inside tile collision, it will not collide with that tile
      * - Collision for objects can be set to be solid to block other objects
      * - Objects may get pushed into overlapping other solid objects, if so they will push away
+     * - A static solid (mass 0) moved by its velocity, like a door or an elevator, pushes objects out of its way
      * - Solid objects are more performance intensive and should be used sparingly
      * @memberof Engine
      * @example
@@ -2863,62 +3992,87 @@ declare module "littlejsengine" {
         pos: Vector2;
         /** @property {Vector2} - World space width and height of the object */
         size: Vector2;
-        /** @property {Vector2} - Size of object used for drawing, uses size if not set */
-        drawSize: any;
-        /** @property {TileInfo} - Tile info to render object (undefined is untextured) */
-        tileInfo: TileInfo;
+        /** @property {Vector2|undefined} - Size of object used for drawing, uses size if not set
+         *  @type {Vector2|undefined} */
+        drawSize: Vector2 | undefined;
+        /** @property {TileInfo|undefined} - Tile info to render object (undefined is untextured)
+         *  @type {TileInfo|undefined} */
+        tileInfo: TileInfo | undefined;
         /** @property {number} - Angle to rotate the object */
         angle: number;
         /** @property {Color} - Color to apply when rendered */
         color: Color;
-        /** @property {Color} - Additive color to apply when rendered */
-        additiveColor: any;
+        /** @property {Color|undefined} - Additive color to apply when rendered
+         *  @type {Color|undefined} */
+        additiveColor: Color | undefined;
+        /** @property {Shader|undefined} - Custom shader to render with, undefined for the engine's own
+         *  @type {Shader|undefined} */
+        shader: Shader | undefined;
+        /** @property {boolean} - Does this object draw into the light system's shadow map; false for a floor layer, a background, a pickup */
+        castShadow: boolean;
+        /** @property {number} - With the light system, how much it lights itself: 0 lit only by the lights, 1 full
+         *  brightness in its own colors whatever the lights do, between partly; drawn into the lightmap through
+         *  renderEmissive, as 3D's emissive. Exact for solid pixels; a partly transparent one is self lit by its alpha
+         *  too, so a half alpha pixel shows at a quarter and a fading emissive sprite fades a little faster */
+        emissive: number;
         /** @property {boolean} - Should the rendered tile flip along the y axis. Affects rendering and the local→world transform of attached children (a mirrored parent flips its children's localPos.x and localAngle). Does not affect this object's own physics, collision, or localToWorld/worldToLocal. */
         mirror: boolean;
         /** @property {boolean} - Has object been destroyed? */
         destroyed: boolean;
-        /** @property {number} - How heavy the object is, static if 0 */
+        updatePass: number;
+        /** @property {number} - How heavy the object is, static if 0: a static object moves by its velocity but does not
+         *  collide on its own, the moving ones collide with it */
         mass: number;
-        /** @property {number} - How much to slow down velocity each frame (0-1) */
+        /** @property {number} - Fraction of velocity kept each frame, 1 keeps all of it, 0 stops at once */
         damping: number;
-        /** @property {number} - How much to slow down rotation each frame (0-1) */
+        /** @property {number} - Fraction of angular velocity kept each frame, 1 keeps all of it, 0 stops at once */
         angleDamping: number;
         /** @property {number} - How bouncy the object is when colliding (0-1) */
         restitution: number;
-        /** @property {number} - How much friction to apply when sliding (0-1) */
+        /** @property {number} - Fraction of sliding speed kept each frame on the ground, 1 is no friction, 0 stops at
+         *  once, the more slippery of the object and its ground is used */
         friction: number;
         /** @property {number} - How much to scale gravity by for this object */
         gravityScale: number;
         /** @property {number} - Objects are sorted by render order */
         renderOrder: number;
-        /** @property {Vector2} - Velocity of the object */
+        /** @property {Vector2} - Velocity of the object, in world units per frame */
         velocity: Vector2;
-        /** @property {number} - Angular velocity of the object */
+        /** @property {number} - Angular velocity of the object, in radians per frame */
         angleVelocity: number;
         /** @property {number} - Track when object was created  */
         spawnTime: number;
-        /** @property {Array<EngineObject>} - List of children of this object */
-        children: any[];
+        /** @property {Array<EngineObject>} - List of children of this object
+         *  @type {Array<EngineObject>} */
+        children: Array<EngineObject>;
         /** @property {boolean} - Limit object speed along x and y axis */
         clampSpeed: boolean;
-        /** @property {EngineObject} - Object we are standing on, if any  */
-        groundObject: EngineObject | TileCollisionLayer;
-        /** @property {EngineObject} - Parent of object if in local space  */
-        parent: any;
-        /** @property {Vector2} - Local position if child */
-        localPos: Vector2;
+        /** @property {EngineObject|undefined} - Object we are standing on, if any
+         *  @type {EngineObject|undefined} */
+        groundObject: EngineObject | undefined;
+        /** @property {EngineObject|undefined} - Parent of object if in local space
+         *  @type {EngineObject|undefined} */
+        parent: EngineObject | undefined;
+        /** @property {Vector2|undefined} - Position relative to the parent, only while attached to one
+         *  @type {Vector2|undefined} */
+        localPos: Vector2 | undefined;
         /** @property {number} - Local angle if child  */
         localAngle: number;
-        /** @property {boolean} - Object collides with the tile collision */
-        collideTiles: boolean;
+        /** @property {boolean} - Object collides with the level, its tile collision layers
+         *  @type {boolean} */
+        collideLevel: boolean;
         /** @property {boolean} - Object collides with solid objects */
         collideSolidObjects: boolean;
         /** @property {boolean} - Object collides with and blocks other objects */
         isSolid: boolean;
         /** @property {boolean} - Object collides with raycasts */
         collideRaycast: boolean;
-        /** Update the object transform, called automatically by engine even when paused */
-        updateTransforms(): void;
+        /** @property {boolean} - Object is skipped by engineObjectsDestroy, for things that outlive a level like a camera
+         *  - Calling destroy on it still destroys it, and its children go with it either way */
+        persistent: boolean;
+        /** Update the object transform, called automatically by engine even when paused
+         *  @param {boolean} [updateChildren] - Also update the children's transforms */
+        updateTransforms(updateChildren?: boolean): void;
         /** Update the object physics, called automatically by engine once each frame. Can be overridden to stop or change how physics works for an object. */
         updatePhysics(): void;
         /** Update the object, called automatically by engine once each frame. Does nothing by default. */
@@ -2927,8 +4081,16 @@ declare module "littlejsengine" {
         render(): void;
         /** Optional hook called during the light system plugin's lightmap pass to draw this object's lightmap contribution. Does nothing by default. */
         renderLight(): void;
+        /** Draw this object into the light system's shadow map, called during its shadow pass when castShadow is set.
+         *  Calls render() by default so the object casts its own shape; override to cast a different one, like a blob at a character's feet so its body stays lit;
+         *  screen space WebGL draws in render() are skipped during the pass */
+        renderShadow(): void;
+        /** Draw this object's shape into the light system's lightmap, called during its light pass when emissive is above
+         *  0; what it draws shows in its own colors that much brighter. Calls render() by default so the whole object
+         *  glows; override to glow a part, like a robot's eyes */
+        renderEmissive(): void;
         /** Destroy this object, destroy its children, detach its parent, and mark it for removal
-         *  @param {boolean} [immediate] - should attached effects be allowed to die off? */
+         *  @param {boolean} [immediate] - true removes attached effects like particle emitters at once, false lets them finish first */
         destroy(immediate?: boolean): void;
         /** Convert from local space to world space
          *  @param {Vector2} pos - local space point */
@@ -2943,15 +4105,23 @@ declare module "littlejsengine" {
          *  @param {Vector2} vec - world space vector */
         worldToLocalVector(vec: Vector2): Vector2;
         /** Called to check if a tile collision should be resolved. Return true for physics to resolve the collision or false to ignore and resolve it manually.
+         *  - Called for each solid tile the physics tests, which can be several times a frame for the same tile, and for
+         *    positions it only tries, so keep it free of side effects or guard them to once a frame
+         *  - this.pos has already moved, so a check on where it came from, like a one way platform, needs the position
+         *    saved in update, as the platformer example does
          *  @param {number}  tileData - the value of the tile at the position
-         *  @param {Vector2} pos - tile where the collision occurred
+         *  @param {Vector2} pos - the tile's bottom left corner in world space
          *  @return {boolean} - true if the collision should be resolved by modifying it's position and velocity */
         collideWithTile(tileData: number, pos: Vector2): boolean;
         /** Called by the engine to check if an object collision should be resolved. Return true for physics to resolve the collision or false to ignore and resolve it manually.
+         *  - Both objects of a touching pair are asked once a frame, whichever order they update in; an object that
+         *    destroys itself here is gone at the end of the frame and is still asked about the pairs left this frame, so a
+         *    bullet that should hit one thing checks its own destroyed flag first
          *  @param {EngineObject} object - the object to test against
+         *  @param {Vector3} [push] - what it would take to move this object clear, a Vector3 from the 3D plugin, undefined in 2D
          *  @return {boolean} - true if the collision should be resolved by modifying it's position and velocity
          */
-        collideWithObject(object: EngineObject): boolean;
+        collideWithObject(object: EngineObject, push?: Vector3): boolean;
         /** Get this object's up vector
          *  @param {number} [scale] - length of the vector
          *  @return {Vector2} */
@@ -2967,12 +4137,15 @@ declare module "littlejsengine" {
          *  @return {number} */
         getSpeed(): number;
         /** Apply acceleration to this object (adjust velocity, not affected by mass)
+         *  - Does nothing on a static object (mass 0), set its velocity instead
          *  @param {Vector2} acceleration */
         applyAcceleration(acceleration: Vector2): void;
         /** Apply angular acceleration to this object
+         *  - Does nothing on a static object (mass 0), set its angleVelocity instead
          *  @param {number} acceleration */
         applyAngularAcceleration(acceleration: number): void;
         /** Apply force to this object (adjust velocity, affected by mass)
+         *  - Does nothing on a static object (mass 0), set its velocity instead
          *  @param {Vector2} force */
         applyForce(force: Vector2): void;
         /** Get the direction of the mirror
@@ -2984,11 +4157,15 @@ declare module "littlejsengine" {
          *  @param {number}       [localAngle]
          *  @return {EngineObject} The child object added */
         addChild(child: EngineObject, localPos?: Vector2, localAngle?: number): EngineObject;
-        /** Removes a child from this one
+        /** Attaches a child to this without moving it: the local transform is worked out from where the child is now,
+         *  where addChild takes one; a child of something else is moved over, returns child for chaining
+         *  @param {EngineObject} child
+         *  @return {EngineObject} The child object attached */
+        attach(child: EngineObject): EngineObject;
+        /** Removes a child from this one, it stays where it is in the world
          *  @param {EngineObject} child */
         removeChild(child: EngineObject): void;
-        /** Check if overlapping another engine object
-         *  Collisions are resolved to prevent overlaps
+        /** Check if this object's box overlaps another object's box
          *  @param {EngineObject} object
          *  @return {boolean} */
         isOverlappingObject(object: EngineObject): boolean;
@@ -3000,9 +4177,13 @@ declare module "littlejsengine" {
         /** Set how this object collides
          *  @param {boolean} [collideSolidObjects] - Does it collide with solid objects?
          *  @param {boolean} [isSolid]             - Does it collide with and block other objects? (expensive in large numbers)
-         *  @param {boolean} [collideTiles]        - Does it collide with the tile collision?
+         *  @param {boolean} [collideLevel]        - Does it collide with the level, its tile collision layers?
          *  @param {boolean} [collideRaycast]      - Does it collide with raycasts? */
-        setCollision(collideSolidObjects?: boolean, isSolid?: boolean, collideTiles?: boolean, collideRaycast?: boolean): void;
+        setCollision(collideSolidObjects?: boolean, isSolid?: boolean, collideLevel?: boolean, collideRaycast?: boolean): void;
+        set collideTiles(arg: boolean);
+        /** @deprecated since 1.20, use collideLevel
+         *  @type {boolean} */
+        get collideTiles(): boolean;
         /** Returns string containing info about this object for debugging
          *  @return {string} */
         toString(): string;
@@ -3036,13 +4217,14 @@ declare module "littlejsengine" {
      *  @param {Vector2} [size=vec2()]
      *  @param {EngineObject|TileCollisionCallback} [callbackObject] - Callback, engine object, or undefined
      *  @param {boolean} [solidOnly] - Only check solid layers?
-     *  @return {TileCollisionLayer}
+     *  @return {TileCollisionLayer|undefined}
      *  @memberof TileLayers */
-    export function tileCollisionTest(pos: Vector2, size?: Vector2, callbackObject?: EngineObject | TileCollisionCallback, solidOnly?: boolean): TileCollisionLayer;
+    export function tileCollisionTest(pos: Vector2, size?: Vector2, callbackObject?: EngineObject | TileCollisionCallback, solidOnly?: boolean): TileCollisionLayer | undefined;
     /**
-     *  @callback TileCollisionCallback - Function to handle a tile collision test
+     *  @callback TileCollisionCallback - Decides whether a tile counts as solid for a collision test or raycast
      *  @param {number} tileData - the value of the tile at the position
      *  @param {Vector2} pos - world space position of tile where the collision occurred
+     *  @return {boolean} - true for a hit; a callback that returns nothing lets everything through
      *  @memberof TileLayers
      */
     /** Return the exact position of the boundary of first tile hit, undefined if nothing was hit.
@@ -3052,19 +4234,54 @@ declare module "littlejsengine" {
      *  @param {EngineObject|TileCollisionCallback} [callbackObject] - Callback, engine object, or undefined
      *  @param {Vector2} [normal] - Optional normal of the surface hit
      *  @param {boolean} [solidOnly=true] - Only check solid layers?
-     *  @return {Vector2|undefined} - position of the center of the tile hit or undefined if no hit
+     *  @return {Vector2|undefined} - where the ray meets the first tile hit, nudged just inside it, or undefined if no hit
      *  @memberof TileLayers */
     export function tileCollisionRaycast(posStart: Vector2, posEnd: Vector2, callbackObject?: EngineObject | TileCollisionCallback, normal?: Vector2, solidOnly?: boolean): Vector2 | undefined;
     /**
      * Load tile layers from exported data
+     * - Tiled maps come in as they are, flipped and turned tiles included, from one tileset image (a second tileset's
+     *   tiles continue its numbering), finite maps in the CSV or array layer format; layer offsets and parallax are not read
+     * - Group layers are flattened in order, each replaced by the layers inside it, so the layer indices
+     *   (collisionLayer and the returned array) count that flattened list; a group's tint, opacity and
+     *   visibility carry to the layers inside it
+     * - An object or image layer keeps its index, with its slot in the returned array left empty
+     * - A hidden layer (visible false) is loaded, its collision included, but not drawn; its render
+     *   is a no-op, delete that and call redraw() to show it
      *  @param {Object}   tileMapData - Level data from exported data
-     *  @param {TileInfo} [tileInfo] - Default tile info (used for size and texture)
+     *  @param {TileInfo} [tileInfo] - Default tile info (used for size and texture), tile() by default, none when no image is loaded
      *  @param {number}   [renderOrder] - Render order of the top layer
      *  @param {number}   [collisionLayer] - Layer to use for collision if any
      *  @param {boolean}  [draw] - Should the layer be drawn automatically
      *  @return {Array<TileCollisionLayer>}
      *  @memberof TileLayers */
     export function tileLayersLoad(tileMapData: any, tileInfo?: TileInfo, renderOrder?: number, collisionLayer?: number, draw?: boolean): Array<TileCollisionLayer>;
+    /** Add a type of object, so objectLayersLoad makes one wherever a map's object layer has an object of that type
+     *  - The name is the object's type in Tiled (its class in Tiled 1.9); it is a string because minified builds
+     *    rename classes
+     *  - A class, or any function with a prototype, is made with new make(pos); an arrow function is called as
+     *    make(pos), for what is not an object, like a player start
+     *  - The defaults, and then the properties the object has in Tiled, are set on what it made
+     *  - Adding a name again replaces it
+     *  @param {string} name - The type the objects have in Tiled
+     *  @param {Function} make - A class made at each object's position, or a function called with it
+     *  @param {Object} [defaults] - Properties set on each one made, the level editor shows inputs for them
+     *  @param {TileInfo} [tileInfo] - An icon for the level editor
+     *  @memberof TileLayers
+     *  @example
+     *  objectLayersAddType('Coin', Coin, {value: 1}, tile(5, 16));
+     *  objectLayersAddType('PlayerStart', (pos)=> playerStartPos = pos); */
+    export function objectLayersAddType(name: string, make: Function, defaults?: any, tileInfo?: TileInfo): void;
+    /** Make the objects in a map's object layers, each from the type added for its name with objectLayersAddType
+     *  - An object is made at its position, the world y up as tileLayersLoad places the layers; layer offsets are
+     *    not read, and a shape or tile object is made at its position too
+     *  - Group layers are flattened in order, as tileLayersLoad does
+     *  - The object's properties in Tiled are set over the type's defaults: numbers, booleans, strings, and colors,
+     *    and for a Vector2 default the string x,y
+     *  - An object whose type was not added is skipped, with a warning in debug builds
+     *  @param {Object} tileMapData - The same Tiled map given to tileLayersLoad
+     *  @return {Array<any>} - What each object's type made, a function that made nothing is left out
+     *  @memberof TileLayers */
+    export function objectLayersLoad(tileMapData: any): Array<any>;
     /**
      * Tile layer data object stores info about how to draw a tile
      * @memberof TileLayers
@@ -3072,19 +4289,20 @@ declare module "littlejsengine" {
      * // create tile layer data with tile index 0 and random orientation and color
      * const tileIndex = 0;
      * const direction = randInt(4)
-     * const mirror = randInt(2);
+     * const mirror = randBool();
      * const color = randColor();
      * const data = new TileLayerData(tileIndex, direction, mirror, color);
      */
     export class TileLayerData {
         /** Create a tile layer data object, one for each tile in a TileLayer
-         *  @param {number}  [tile] - The tile to use, untextured if undefined
+         *  @param {number}  [tile] - The tile to use, from 0 like tile(); undefined is an empty cell that draws nothing
          *  @param {number}  [direction] - Integer direction of tile, in 90 degree increments
          *  @param {boolean} [mirror] - If the tile should be mirrored along the x axis
          *  @param {Color}   [color] - Color of the tile */
         constructor(tile?: number, direction?: number, mirror?: boolean, color?: Color);
-        /** @property {number} - The tile to use, untextured if undefined */
-        tile: number;
+        /** @property {number|undefined} - The tile to use, from 0 like tile(); undefined is an empty cell that draws nothing
+         *  @type {number|undefined} */
+        tile: number | undefined;
         /** @property {number} - Integer direction of tile, in 90 degree increments */
         direction: number;
         /** @property {boolean} - If the tile should be mirrored along the x axis */
@@ -3098,6 +4316,9 @@ declare module "littlejsengine" {
      * Canvas Layer - cached off screen rendering system
      * - Contains an offscreen canvas that can be rendered to
      * - WebGL rendering is optional, call updateWebGL to enable/update
+     * - A TileLayer using WebGL redraws into its texture and leaves this canvas blank, so drawing on its context
+     *   only shows on a layer made with useWebGL=false (or with WebGL off); use drawLayerTile/drawLayerRect inside
+     *   redrawStart/End for drawing that works both ways
      * @extends EngineObject
      * @memberof TileLayers
      * @example
@@ -3113,24 +4334,21 @@ declare module "littlejsengine" {
          *  @param {boolean}  [useWebGL] - Should this layer use WebGL for rendering
         */
         constructor(pos?: Vector2, size?: Vector2, angle?: number, renderOrder?: number, canvasSize?: Vector2, useWebGL?: boolean);
-        /** @property {HTMLCanvasElement} - The canvas used by this layer */
-        canvas: OffscreenCanvas;
         /** @property {OffscreenCanvasRenderingContext2D} - The 2D canvas context used by this layer */
         context: OffscreenCanvasRenderingContext2D;
+        /** @property {OffscreenCanvas} - The canvas used by this layer */
+        canvas: OffscreenCanvas;
         /** @property {TextureInfo} - Texture info to use for this object rendering */
         textureInfo: TextureInfo;
-        /** Destroy this canvas layer */
-        destroy(): void;
-        /** Draw this canvas layer centered in world space, with color applied if using WebGL
+        /** Draw this canvas layer centered in world space
         *  @param {Vector2} pos - Center in world space
         *  @param {Vector2} [size] - Size in world space
         *  @param {Color}   [color] - Color to modulate with
         *  @param {number}  [angle] - Angle to rotate by
         *  @param {boolean} [mirror] - If true image is flipped along the Y axis
         *  @param {Color}   [additiveColor] - Additive color to be applied if any
-        *  @param {boolean} [screenSpace] - If true the pos and size are in screen space
-        *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to
-        *  @memberof Draw */
+        *  @param {boolean} [screenSpace=drawScreenSpace] - If true the pos and size are in screen space
+        *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas 2D context to draw to */
         draw(pos: Vector2, size?: Vector2, color?: Color, angle?: number, mirror?: boolean, additiveColor?: Color, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
         /** Create WebGL texture if necessary and copy layer canvas to it */
         updateWebGL(): void;
@@ -3140,10 +4358,9 @@ declare module "littlejsengine" {
     }
     /**
      * Tile Layer - cached rendering system for tile layers
-     * - Each Tile layer is rendered to an off screen canvas
-     * - To allow dynamic modifications, layers are rendered using canvas 2d
-     * - Some devices like mobile phones are limited to 4k texture resolution
-     * - For with 16x16 tiles this limits layers to 256x256 on mobile devices
+     * - Tiles are drawn once into a texture, a WebGL render target, or the layer's canvas when WebGL is off
+     *   or useWebGL is false, and the layer draws that as one image
+     * - Some devices like mobile phones are limited to 4k textures, which with 16x16 tiles limits a layer to 256x256
      * - Tile layers are centered on their corner, so normal levels are at (0,0)
      * @extends CanvasLayer
      * @memberof TileLayers
@@ -3154,7 +4371,7 @@ declare module "littlejsengine" {
         /** Create a tile layer object
         *  @param {Vector2}  pos - World space position
         *  @param {Vector2}  size - World space size
-        *  @param {TileInfo} [tileInfo] - Default tile info for layer (used for size and texture)
+        *  @param {TileInfo} [tileInfo] - Default tile info for layer (used for size and texture), tile() by default, none when no image is loaded
         *  @param {number}   [renderOrder] - Objects are sorted by renderOrder
         *  @param {boolean}  [useWebGL] - Should this layer use WebGL for rendering
         */
@@ -3163,6 +4380,10 @@ declare module "littlejsengine" {
         data: TileLayerData[];
         /** @property {boolean} - Is this layer using a webgl texture? */
         isUsingWebGL: boolean;
+        tilesInWebGL: boolean;
+        /** @property {boolean} - Show this layer's bounds and values when the debug overlay's Debug Tiles is on,
+         *  turn it off for layers that only add noise */
+        debugShow: boolean;
         /** Draw all the tile data to an offscreen canvas
          *  - This may be slow if not using webgl but only needs to be done once */
         redraw(): void;
@@ -3195,7 +4416,7 @@ declare module "littlejsengine" {
          *  @param {boolean}  [mirror] - Is image flipped along the Y axis?
          *  @param {Color}    [additiveColor] - Additive color to be applied if any */
         drawLayerTile(pos: Vector2, size?: Vector2, tileInfo?: TileInfo, color?: Color, angle?: number, mirror?: boolean, additiveColor?: Color): void;
-        /** Clear a rectangle in layer space
+        /** Draw a rectangle in layer space
          *  @param {Vector2} pos
          *  @param {Vector2} size
          *  @param {Color} [color=WHITE] - Color to modulate with
@@ -3236,20 +4457,27 @@ declare module "littlejsengine" {
         getData(layerPos: Vector2): TileLayerData | undefined;
         /** Called after this layer is redrawn, does nothing by default */
         onRedraw(): void;
-        /** @type {[CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D, Vector2, Vector2, number, Color]} */
-        savedRenderSettings: [CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, Vector2, Vector2, number, Color];
+        redrawIfSwitched(): void;
+        /** @type {[CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D, Vector2, Vector2, number, number, Color, Shader|undefined]} */
+        savedRenderSettings: [CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, Vector2, Vector2, number, number, Color, Shader | undefined];
+        savedRenderTarget: any[];
     }
     /**
      * Tile Collision Layer - a tile layer with collision
      * - adds collision data and functions to TileLayer
      * - there can be multiple tile collision layers
+     * - its pos must be whole numbers, so its cells line up with the world grid objects land on
      * @extends TileLayer
      * @memberof TileLayers
      */
     export class TileCollisionLayer extends TileLayer {
-        /** @property {Array<number>} - The tile collision grid */
-        collisionData: any[];
-        /** Clear and initialize tile collision to new size
+        /** @property {Array<number>} - The tile collision grid
+         *  @type {Array<number>} */
+        collisionData: Array<number>;
+        /** @property {boolean} - In the light system's shadow pass, cast only from the cells with collision, drawn
+         *  as the layer shows them, so a floor in the same layer stays lit; false casts every tile */
+        shadowSolidOnly: boolean;
+        /** Clear and initialize tile collision, the size is the layer's own, the tile data and canvas keep it
         *  @param {Vector2} size - width and height of tile collision 2d grid */
         initCollision(size: Vector2): void;
         /** Set tile collision data for a given cell in the layer
@@ -3296,10 +4524,11 @@ declare module "littlejsengine" {
      *  @memberof Particles
      */
     /**
-     *  @callback ParticleCollideCallback - Collide callback for particles
+     *  @callback ParticleCollideCallback - Decides whether a particle stops at a tile, it is a filter rather than a notice
      *  @param {Particle} particle
      *  @param {number} tileData
      *  @param {Vector2} pos
+     *  @return {boolean} - true to stop the particle there; a callback that returns nothing lets it pass through
      *  @memberof Particles
      */
     /**
@@ -3327,7 +4556,7 @@ declare module "littlejsengine" {
          *  @param {number|Vector2}  [emitSize] - World space size of the emitter (float for circle diameter, vec2 for rect)
          *  @param {number} [emitTime] - How long to stay alive (0 is forever)
          *  @param {number} [emitRate] - How many particles per second to spawn, does not emit if 0
-         *  @param {number} [emitConeAngle=PI] - Local angle to apply velocity to particles from emitter
+         *  @param {number} [emitConeAngle=PI] - Half angle of the cone around the emitter's angle that particles move along, PI is every direction
          *  @param {TileInfo} [tileInfo] - Tile info to render particles (undefined is untextured)
          *  @param {Color} [colorStartA=WHITE] - Color at start of life 1, randomized between start colors
          *  @param {Color} [colorStartB=WHITE] - Color at start of life 2, randomized between start colors
@@ -3341,25 +4570,25 @@ declare module "littlejsengine" {
          *  @param {number} [damping]           - How much to dampen particle speed, per-frame velocity multiplier (1 = no damping, .9 = lose 10% speed each frame)
          *  @param {number} [angleDamping]      - How much to dampen particle angular speed, per-frame multiplier (1 = no damping)
          *  @param {number} [gravityScale]      - How much gravity effect particles
-         *  @param {number} [particleConeAngle] - Cone for start particle angle
+         *  @param {number} [particleConeAngle] - Half angle each side of the emitter's angle for a particle's start angle, PI is any angle
          *  @param {number} [fadeRate]          - Fraction of life spent fading: half at fade-in (start), half at fade-out (end). e.g. .2 = 10% fade-in, 80% full opacity, 10% fade-out
          *  @param {number} [randomness]    - Apply extra randomness percent
-         *  @param {boolean} [collideTiles] - Do particles collide against tiles
+         *  @param {boolean} [collideLevel] - Do particles collide with the level's tiles, world space emitters only
          *  @param {boolean} [additive]     - Should particles use additive blend
          *  @param {boolean} [randomColorLinear] - Should color be randomized linearly or across each component
          *  @param {number} [renderOrder] - Render order for particles (additive is above other stuff by default)
          *  @param {boolean}  [localSpace] - Should it be in local space of emitter (world space is default)
          */
-        constructor(pos: Vector2, angle?: number, emitSize?: number | Vector2, emitTime?: number, emitRate?: number, emitConeAngle?: number, tileInfo?: TileInfo, colorStartA?: Color, colorStartB?: Color, colorEndA?: Color, colorEndB?: Color, particleTime?: number, sizeStart?: number, sizeEnd?: number, speed?: number, angleSpeed?: number, damping?: number, angleDamping?: number, gravityScale?: number, particleConeAngle?: number, fadeRate?: number, randomness?: number, collideTiles?: boolean, additive?: boolean, randomColorLinear?: boolean, renderOrder?: number, localSpace?: boolean);
+        constructor(pos: Vector2, angle?: number, emitSize?: number | Vector2, emitTime?: number, emitRate?: number, emitConeAngle?: number, tileInfo?: TileInfo, colorStartA?: Color, colorStartB?: Color, colorEndA?: Color, colorEndB?: Color, particleTime?: number, sizeStart?: number, sizeEnd?: number, speed?: number, angleSpeed?: number, damping?: number, angleDamping?: number, gravityScale?: number, particleConeAngle?: number, fadeRate?: number, randomness?: number, collideLevel?: boolean, additive?: boolean, randomColorLinear?: boolean, renderOrder?: number, localSpace?: boolean);
         /** @property {boolean} - Should particles be emitted in a circle */
         emitCircle: boolean;
-        /** @property {number|Vector2} - World space size of the emitter (float for circle diameter, vec2 for rect) */
+        /** @property {Vector2} - World space size of the emitter, x is the diameter when emitCircle is set */
         emitSize: Vector2;
         /** @property {number} - How long to stay alive (0 is forever) */
         emitTime: number;
         /** @property {number} - How many particles per second to spawn, does not emit if 0 */
         emitRate: number;
-        /** @property {number} - Local angle to apply velocity to particles from emitter */
+        /** @property {number} - Half angle of the cone around the emitter's angle that particles move along, PI is every direction */
         emitConeAngle: number;
         /** @property {Color} - Color at start of life 1, randomized between start colors */
         colorStartA: Color;
@@ -3381,7 +4610,7 @@ declare module "littlejsengine" {
         speed: number;
         /** @property {number} - Particle angular speed when spawned, in radians per frame (at 60fps) */
         angleSpeed: number;
-        /** @property {number} - Cone for start particle angle */
+        /** @property {number} - Half angle each side of the emitter's angle for a particle's start angle, PI is any angle */
         particleConeAngle: number;
         /** @property {number} - Fraction of life spent fading, split half at start and half at end (e.g. .2 = 10% fade-in + 10% fade-out) */
         fadeRate: number;
@@ -3393,20 +4622,35 @@ declare module "littlejsengine" {
         localSpace: boolean;
         /** @property {number} - If non zero the particle is drawn as a trail, stretched in the direction of velocity */
         trailScale: number;
-        /** @property {ParticleCallback} - Callback when particle is created */
-        particleCreateCallback: any;
-        /** @property {ParticleCallback} - Callback when particle is destroyed */
-        particleDestroyCallback: any;
-        /** @property {ParticleCollideCallback} - Callback when particle collides */
-        particleCollideCallback: any;
+        /** @property {number} - Grows the whole effect as each particle is born: the spawn area, the particles' sizes,
+         *  speed and fall, so it looks the same only bigger; 1 is as made, and a particle keeps the scale it was born
+         *  with, so a change never moves the ones already out */
+        scale: number;
+        /** @property {number} - The effect's own fall, added to each particle's velocity y every frame, on top of the
+         *  world's gravity times gravityScale; an effect that sets its own looks the same in any game */
+        gravity: number;
+        /** @property {ParticleCallback|undefined} - Callback when particle is created
+         *  @type {ParticleCallback|undefined} */
+        particleCreateCallback: ParticleCallback | undefined;
+        /** @property {ParticleCallback|undefined} - Callback when particle is destroyed
+         *  @type {ParticleCallback|undefined} */
+        particleDestroyCallback: ParticleCallback | undefined;
+        /** @property {ParticleCollideCallback|undefined} - Callback when particle collides
+         *  @type {ParticleCollideCallback|undefined} */
+        particleCollideCallback: ParticleCollideCallback | undefined;
+        /** @property {ParticleCallback|undefined} - Callback each time a particle updates, after it moves
+         *  @type {ParticleCallback|undefined} */
+        particleUpdateCallback: ParticleCallback | undefined;
         /** @property {number} - Percentage of velocity to pass to particles (0-1) */
         velocityInheritance: number;
-        /** @property {number} - Track particle emit time */
+        /** @property {number} - Particles owed to the emit rate, starts at one so the first comes out at once */
         emitTimeBuffer: number;
-        /** @property {Array<Particle>} - Array of particles for this emitter */
-        particles: any[];
+        /** @property {Array<Particle>} - Array of particles for this emitter
+         *  @type {Array<Particle>} */
+        particles: Array<Particle>;
+        /** @type {Vector2|undefined} */
+        previousPos: Vector2 | undefined;
         previousAngle: number;
-        previousPos: Vector2;
         /** Spawn one particle
          *  @return {Particle} */
         emitParticle(): Particle;
@@ -3433,51 +4677,58 @@ declare module "littlejsengine" {
          * @param {number}  [angleVelocity] - Angular speed of the particle
          */
         constructor(emitter: ParticleEmitter, pos: Vector2, angle: number, colorStart: Color, colorEnd: Color, lifeTime: number, sizeStart: number, sizeEnd: number, velocity?: Vector2, angleVelocity?: number);
-        /** @property {ParticleEmitter} */
+        /** @property {ParticleEmitter} - The emitter this particle came from */
         emitter: ParticleEmitter;
-        /** @property {Vector2} */
+        /** @property {number} - The emitter's scale when it was made, which grows its fall */
+        scale: number;
+        /** @property {Vector2} - Position, world space or local to the emitter when localSpace is set */
         pos: Vector2;
-        /** @property {number} */
+        /** @property {number} - Angle in radians */
         angle: number;
-        /** @property {Vector2} */
+        /** @property {Vector2} - Current size, updated as it renders */
         size: Vector2;
-        /** @property {Color} */
+        /** @property {Color} - Current color, updated as it renders */
         color: Color;
-        /** @property {Color} */
+        /** @property {Color} - Color at start of life */
         colorStart: Color;
-        /** @property {Color} */
+        /** @property {Color} - Color at end of life */
         colorEnd: Color;
-        /** @property {number} */
+        /** @property {number} - How long this particle lives for */
         lifeTime: number;
-        /** @property {number} */
+        /** @property {number} - Size at start of life */
         sizeStart: number;
-        /** @property {number} */
+        /** @property {number} - Size at end of life */
         sizeEnd: number;
-        /** @property {Vector2} */
+        /** @property {Vector2} - Velocity in world units per frame (at 60fps) */
         velocity: Vector2;
-        /** @property {number} */
+        /** @property {number} - Angular speed in radians per frame (at 60fps) */
         angleVelocity: number;
-        /** @property {number} */
+        /** @property {number} - Engine time it was made at */
         spawnTime: number;
-        /** @property {boolean} */
+        /** @property {boolean} - If true the tile is flipped along the x axis */
         mirror: boolean;
-        /** @property {EngineObject} */
-        groundObject: TileCollisionLayer;
-        /** @property {boolean} */
+        /** @property {EngineObject|undefined} - Tile layer it last landed on, undefined in the air
+         *  @type {EngineObject|undefined} */
+        groundObject: EngineObject | undefined;
+        /** @property {boolean} - Has this particle been destroyed */
         destroyed: boolean;
-        /** @property {TileInfo} */
-        tileInfo: TileInfo;
+        /** @property {TileInfo|undefined} - The emitter's tile, undefined for an untextured one
+         *  @type {TileInfo|undefined} */
+        tileInfo: TileInfo | undefined;
         /** Update the particle */
         update(): void;
-        /** Destroy this particle */
+        /** Destroy this particle, once: a second call does nothing
+         */
         destroy(): void;
         /** Render the particle, automatically called each frame */
         render(): void;
     }
     /** List of all medals
-     *  @type {Object}
+     *  @type {Object<number, Medal>}
      *  @memberof Medals */
-    export const medals: any;
+    export const medals: {
+        [x: number]: Medal;
+    };
     /** Set to stop medals from being unlockable (like if cheats are enabled)
      *  @type {boolean}
      *  @default
@@ -3500,8 +4751,10 @@ declare module "littlejsengine" {
     export let medalDisplaySize: Vector2;
     /** Initialize medals with a save name used for storage
      *  - Call this after creating all medals
-     *  - Checks if medals are unlocked
-     *  @param {string} saveName
+     *  - Loads which medals are unlocked from the save, and writes the catalog back
+     *  - A medal a service like Newgrounds holds is left as it is, see Medal.isLocal
+     *  @param {string} saveName - The localStorage key the medals are kept under, a different one from the game's own
+     *  readSaveData and writeSaveData, or each would overwrite the other
      *  @memberof Medals */
     export function medalsInit(saveName: string): void;
     /**
@@ -3514,6 +4767,7 @@ declare module "littlejsengine" {
      *  @memberof Medals */
     export function medalsForEach(callback: MedalCallbackFunction): void;
     /** Reset all medals to locked and persist the cleared catalog
+     *  - A medal a service like Newgrounds holds is left alone, the service has it
      *  @memberof Medals */
     export function medalsReset(): void;
     /** Set how long to show medals for in seconds
@@ -3546,7 +4800,7 @@ declare module "littlejsengine" {
      * medal_example.unlock();
      */
     export class Medal {
-        /** Create a medal object and adds it to the list of medals
+        /** Create a medal and add it to the list of medals
          *  @param {number} id            - The unique identifier of the medal
          *  @param {string} name          - Name of the medal
          *  @param {string} [description] - Description of the medal
@@ -3564,10 +4818,16 @@ declare module "littlejsengine" {
         icon: string;
         /** @property {boolean} - Is the medal unlocked? */
         unlocked: boolean;
-        /** @property {HTMLImageElement|undefined} - Source image for the medal icon, if any */
-        image: HTMLImageElement;
-        /** Unlocks a medal if not already unlocked */
-        unlock(): void;
+        /** @property {HTMLImageElement|undefined} - Source image for the medal icon, if any
+         *  @type {HTMLImageElement|undefined} */
+        image: HTMLImageElement | undefined;
+        /** Unlocks a medal if not already unlocked
+         *  - The promise is optional, for when a game wants to know the outcome
+         *  @return {Promise<boolean>} - Whether the medal is unlocked, right away unless a service like Newgrounds has to confirm */
+        unlock(): Promise<boolean>;
+        /** Whether the local save holds this medal, it is neither loaded nor written while a service like Newgrounds holds it
+         *  @return {boolean} */
+        isLocal(): boolean;
         /** Render a medal
          *  @param {number} [hidePercent] - How much to slide the medal off screen
          */
@@ -3581,10 +4841,16 @@ declare module "littlejsengine" {
     /**
      * LittleJS Newgrounds Plugin
      * - NewgroundsMedal extends Medal with Newgrounds API functionality
-     * - Call new NewgroundsPlugin(app_id) to setup Newgrounds
-     * - Uses CryptoJS for encryption if optional cipher is provided
-     * - provides functions to interact with medals scoreboards
-     * - Keeps connection alive and logs views
+     * - When logged in, Newgrounds holds the player's NewgroundsMedals: they unlock once the server confirms and the local save leaves them alone
+     * - A plain Medal is never touched, so a game can use the plugin for scoreboards alone
+     * - Without a session the medal and scoreboard lists still come in, so the medals get their names and icons; unlocking on the server and posting scores need a logged in player
+     * - Create the medals as NewgroundsMedals with their ids on Newgrounds, then new NewgroundsPlugin(app_id, cipher); medalsInit is still needed, before or after
+     * - Encrypts medal unlocks and posted scores, the calls Newgrounds secures, with the browser's own WebCrypto when the app has a cipher, no library needed
+     * - Logs a view when it starts, and provides functions to unlock medals and to post and read scoreboards
+     * - Tells the Newgrounds page around the game when a medal unlocks or a score posts, as the official client does
+     * - Checks the session every minute when logged in, which keeps it alive, and plays as not logged in once it is lost
+     * - Where the browser has AbortSignal.timeout, a request that takes longer than 15 seconds fails like one that could not reach the server
+     * - Every call is a fetch, so the functions return promises; await newgrounds.ready for the medals and scoreboards
      * @namespace Newgrounds
      */
     /** Global Newgrounds object
@@ -3597,65 +4863,117 @@ declare module "littlejsengine" {
      */
     export class NewgroundsPlugin {
         /** Create the global newgrounds object
-         *  @param {string} app_id     - The newgrounds App ID
-         *  @param {string} [cipher]   - The encryption Key (AES-128/Base64)
-         *  @param {Object} [cryptoJS] - An instance of CryptoJS, if there is a cipher
+         *  - Logs a view right away, for a guest and a logged in player alike, so a game does not have to
+         *  - Create the medals first: they take their name and icon from the server once it answers, and when logged in they are locked here until it does
+         *  - Call medalsInit too, before or after: an unlock asserts without it, and it keeps the medals while not logged in
+         *  @param {string} app_id   - The Newgrounds App ID
+         *  @param {string} [cipher] - The encryption key from the app's settings, AES-128 as Base64; medal unlocks and posted
+         *    scores are encrypted with the browser's WebCrypto, which needs a secure page, https or localhost
          *  @example
          *  // create the newgrounds object, replace the app id with your own
          *  const app_id = 'your_app_id_here';
          *  new NewgroundsPlugin(app_id);
          */
-        constructor(app_id: string, cipher?: string, cryptoJS?: any);
-        /** @property {string} - The newgrounds App ID */
+        constructor(app_id: string, cipher?: string);
+        /** @property {string} - The Newgrounds App ID */
         app_id: string;
-        /** @property {string|undefined} - AES-128/Base64 encryption key, if any */
-        cipher: string;
-        /** @property {Object|undefined} - CryptoJS instance used when cipher is set */
-        cryptoJS: any;
-        /** @property {string} - Hostname used when logging views */
+        /** @property {string|undefined} - AES-128/Base64 encryption key, if any
+         *  @type {string|undefined} */
+        cipher: string | undefined;
+        /** @type {CryptoKey|undefined} */
+        cryptoKey: CryptoKey | undefined;
+        /** @property {string} - Hostname sent with the view the plugin logs when it starts */
         host: string;
-        /** @property {string|null} - Newgrounds session id from the URL (null when not logged in) */
-        session_id: string;
-        medals: any;
-        scoreboards: any;
-        /** Send message to unlock a medal by id
-         * @param {number} id - The medal id */
-        unlockMedal(id: number): any;
+        /** @property {Array} - Medals fetched from Newgrounds, empty until ready, with the unlocks only when logged in */
+        medals: any[];
+        /** @property {Array} - Scoreboards fetched from Newgrounds, empty until ready */
+        scoreboards: any[];
+        /** @property {{id: number, name: string, url: string, supporter: boolean}|null} - The logged in player once ready, null when not logged in
+         *  @type {{id: number, name: string, url: string, supporter: boolean}|null} */
+        user: {
+            id: number;
+            name: string;
+            url: string;
+            supporter: boolean;
+        } | null;
+        /** @property {Map<NewgroundsMedal, Promise<boolean>>} - Medals whose unlock is in flight or waiting to be resent, with their request's promise; one the server refused leaves it
+         *  @type {Map<NewgroundsMedal, Promise<boolean>>} */
+        pendingUnlocks: Map<NewgroundsMedal, Promise<boolean>>;
+        /** @property {string|null} - Newgrounds session id from the URL, null when not logged in or once the session is lost
+         *  @type {string|null} */
+        session_id: string | null;
+        /** @property {Promise<NewgroundsPlugin>} - Resolves once the session is checked and the lists are in, empty if the server could not be reached */
+        ready: Promise<this>;
+        /** @deprecated since 1.20, the view is logged when the plugin starts, so this does nothing */
+        logView(): void;
+        /** Log the view, check the session, fetch the medals and scoreboards, then keep the session alive; the constructor runs it once
+         *  @private */
+        private init;
+        /** Play as not logged in from now on: the NewgroundsMedals come back from the local save, keeping the unlocks the
+         *  server confirmed meanwhile, and the unlocks still pending unlock locally; a refused one only if it is earned again
+         *  - internal, the medals call it too when the server says the session is gone
+         *  @ignore */
+        dropSession(): void;
+        /** Send the unlocks whose request did not reach the server again, which the session check does every minute
+         *  - A request still out is left to answer, and while unlocks are prevented they wait */
+        resendUnlocks(): void;
+        /** Send a request to unlock a medal by id, the local medal is not changed; NewgroundsMedal.unlock sends this and waits for the answer
+         *  @param {number} id - The medal id
+         *  @return {Promise<Object>} - The response JSON object, undefined when the call failed */
+        unlockMedal(id: number): Promise<any>;
         /** Send message to post score
-         * @param {number} id    - The scoreboard id
-         * @param {number} value - The score value */
-        postScore(id: number, value: number): any;
+         *  @param {number} id    - The scoreboard id
+         *  @param {number} value - The score value, a whole number
+         *  @return {Promise<Object>} - The response JSON object, undefined when the call failed; result.data.success says whether
+         *    it posted, which needs a logged in player; an answer that the session is gone makes the game play as not logged
+         *    in, and one that timed out may still have posted */
+        postScore(id: number, value: number): Promise<any>;
         /** Get scores from a scoreboard
-         * @param {number} id       - The scoreboard id
-         * @param {string} [user]   - A user's id or name
-         * @param {number} [social] - If true, only social scores will be loaded
-         * @param {number} [skip]   - Number of scores to skip over
-         * @param {number} [limit]  - Number of scores to include in the list
-         * @return {Object}         - The response JSON object
+         *  @param {number} id        - The scoreboard id
+         *  @param {string|number} [user] - A user's id or name, to load only their scores
+         *  @param {boolean} [social] - If true, only the scores of the user and their friends, the logged in player when user is left out
+         *  @param {number} [skip]    - Number of scores to skip over
+         *  @param {number} [limit]   - Number of scores to include in the list
+         *  @param {string} [period]  - 'D' today, which the server assumes when left out, 'W' this week, 'M' this month, 'Y' this year or 'A' all time
+         *  @return {Promise<Object>} - The response JSON object, undefined when the call failed; the scores are in
+         *    result.data.scores, each with user.name, value and formatted_value; without a user or social it is the whole board
          */
-        getScores(id: number, user?: string, social?: number, skip?: number, limit?: number): any;
-        /** Send message to log a view */
-        logView(): any;
+        getScores(id: number, user?: string | number, social?: boolean, skip?: number, limit?: number, period?: string): Promise<any>;
+        /** Encrypt text the way the Newgrounds gateway expects, AES-128 CBC with a random iv in front, as Base64
+         *  @param {string} text
+         *  @return {Promise<string>} */
+        encrypt(text: string): Promise<string>;
         /** Send a message to call a component of the Newgrounds API
-         * @param {string}  component    - Name of the component
-         * @param {Object}  [parameters] - Parameters to use for call
-         * @param {boolean} [async]      - If true, don't wait for response before continuing
-         * @return {Object}              - The response JSON object
+         *  @param {string}  component    - Name of the component
+         *  @param {Object}  [parameters] - Parameters to use for call
+         *  @param {string|null} [session_id] - The session to send, the player's by default
+         *  @return {Promise<Object>}     - The response JSON object, undefined when the call failed or took over 15 seconds;
+         *    a component's own success and error are in result.data, and a cipher that is not a key gives error 201
          */
-        call(component: string, parameters?: any, async?: boolean): any;
+        call(component: string, parameters?: any, session_id?: string | null): Promise<any>;
     }
     /**
-     * Newgrounds medal auto unlocks in newgrounds API
+     * NewgroundsMedal: its id is the medal's id on the Newgrounds API Tools page; when logged in it only unlocks once the server confirms
      * @extends Medal
      * @memberof Newgrounds
      */
     export class NewgroundsMedal extends Medal {
+        /** @property {number|undefined} - Difficulty from the server once ready, 1 easy to 5 brutal
+         *  @type {number|undefined} */
+        difficulty: number | undefined;
+        /** @property {number|undefined} - Point value from the server once ready
+         *  @type {number|undefined} */
+        value: number | undefined;
     }
     /**
      * LittleJS Post Processing Plugin
      * - Supports shadertoy style post processing shaders
      * - call new PostProcessPlugin() to setup post processing
      * - can be enabled to pass other canvases through a final shader
+     * - iResolution is the canvas backing store, so it grows with canvasPixelRatio
+     *   like shadertoy does. Effects that use it only for uv (p/iResolution.xy) are
+     *   unaffected, but ones that set a feature size from it, like scan lines, get
+     *   finer as the ratio rises. Divide by getCanvasPixelRatio() to pin them.
      * @namespace PostProcess
      */
     /** Global Post Process plugin object
@@ -3664,25 +4982,157 @@ declare module "littlejsengine" {
     export let postProcess: PostProcessPlugin;
     /**
      * Post Process Plugin - Applies a full screen shader to the rendered output
+     * - Create it after any plugin that draws, since plugins render in the order they are made
+     *   and this one shades what is on the canvas when its turn comes
+     * - It runs after gameRenderPost, so a HUD drawn there with WebGL is shaded (and bloomed) too;
+     *   draw the HUD with useWebGL=false (the main canvas) or from a plugin created after this one
      * @memberof PostProcess
      */
     export class PostProcessPlugin {
         /** Create global post processing shader
-        *  @param {string} shaderCode
+        *  @param {string} [shaderCode] - Shadertoy style mainImage code, a pass-through when left out
         *  @param {boolean} [includeMainCanvas] - combine mainCanvas onto glCanvas
-        *  @param {boolean} [feedbackTexture] - use glCanvas from previous frame as the texture
+        *  @param {boolean} [feedbackTexture] - also pass the shader's own output from the previous frame as iChannel1,
+        *                                       for trails and echoes; iChannel0 is still the frame just drawn
         *  @example
         *  // create the post process plugin object
         *  new PostProcessPlugin(shaderCode);
         */
-        constructor(shaderCode: string, includeMainCanvas?: boolean, feedbackTexture?: boolean);
-        /** @property {WebGLProgram} - Shader for post processing */
-        shader: any;
-        /** @property {WebGLTexture} - Texture for post processing */
-        texture: any;
-        /** @property {WebGLVertexArrayObject} - Vertex array object */
-        vao: any;
+        constructor(shaderCode?: string, includeMainCanvas?: boolean, feedbackTexture?: boolean);
+        /** @property {string} - The shadertoy style mainImage code it shades with, see setShaderCode */
+        shaderCode: string;
+        /** @property {WebGLProgram|undefined} - Shader for post processing
+         *  @type {WebGLProgram|undefined} */
+        shader: WebGLProgram | undefined;
+        /** @property {WebGLTexture|undefined} - Texture for post processing
+         *  @type {WebGLTexture|undefined} */
+        texture: WebGLTexture | undefined;
+        /** @property {WebGLTexture|undefined} - The previous frame's output, iChannel1, when feedbackTexture is set
+         *  @type {WebGLTexture|undefined} */
+        feedbackTexture: WebGLTexture | undefined;
+        /** @property {WebGLVertexArrayObject|undefined} - Vertex array object
+         *  @type {WebGLVertexArrayObject|undefined} */
+        vao: WebGLVertexArrayObject | undefined;
+        /** Shade with new code from the next frame on, to switch effects while the game runs; the shader is made again
+         *  @param {string} [shaderCode] - Shadertoy style mainImage code, postProcessEffects builds it; none passes the
+         *  frame through */
+        setShaderCode(shaderCode?: string): void;
     }
+    /**
+     * Set up post processing with a bloom effect, so bright colors and lights glow
+     * @param {number} [threshold] - Brightness where the glow starts, 0 is everything and 1 is only pure white
+     * @param {number} [strength] - How much glow to add
+     * @param {number} [size] - How far the glow spreads in pixels
+     * @param {boolean} [includeMainCanvas] - Glow the 2D canvas too, off by default so HUD text stays crisp
+     *   (a HUD drawn with WebGL in gameRenderPost glows either way, draw it with useWebGL=false)
+     * @return {PostProcessPlugin}
+     * @memberof PostProcess
+     * @example
+     * postProcessBloom(); // in gameInit, after any Render3DPlugin
+     */
+    export function postProcessBloom(threshold?: number, strength?: number, size?: number, includeMainCanvas?: boolean): PostProcessPlugin;
+    /**
+     * Shader code for a bloom effect, the bright parts of the image blurred back over it
+     * - Pass it to PostProcessPlugin, or edit the string to build an effect on top of it
+     * @param {number} [threshold] - Brightness where the glow starts, 0 is everything and 1 is only pure white
+     * @param {number} [strength] - How much glow to add
+     * @param {number} [size] - How far the glow spreads in pixels, which also sets how many samples it takes
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessBloomShader(threshold?: number, strength?: number, size?: number): string;
+    /**
+     * Join effects into one post process shader, in the order given, for PostProcessPlugin or setShaderCode
+     * - Each effect is a piece of shader code on c, the pixel's color, and uv, where it is on the screen from 0 to 1;
+     *   your own code is a piece too, a line of GLSL or many, dropped in where you put it
+     * - Put the ones that bend the picture or sample it first: postProcessCurve, postProcessChromatic, postProcessGlow
+     * @param {...string} effects - The pieces, from the effect functions or your own code
+     * @return {string} - Shadertoy style mainImage code
+     * @example
+     * new PostProcessPlugin(postProcessEffects(
+     *     postProcessScanlines(.5), postProcessVignette(), 'c.rgb *= vec3(1, .9, .8);'));
+     * @memberof PostProcess
+     */
+    export function postProcessEffects(...effects: string[]): string;
+    /**
+     * Bright parts glow, the bloom as an effect to join with others; postProcessBloom sets up bloom on its own
+     * @param {number} [threshold] - Brightness where the glow starts, 0 is everything and 1 is only pure white
+     * @param {number} [strength] - How much glow to add
+     * @param {number} [size] - How far the glow spreads in pixels, which also sets how many samples it takes
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessGlow(threshold?: number, strength?: number, size?: number): string;
+    /**
+     * Scan lines across the screen, like an old TV
+     * @param {number} [strength] - How dark the lines are, and how bright between them
+     * @param {number} [spacing] - Pixels from one line to the next
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessScanlines(strength?: number, spacing?: number): string;
+    /**
+     * Static noise over the picture, changing every frame
+     * @param {number} [strength] - How bright the static is
+     * @param {number} [size] - Size of a speck in pixels
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessNoise(strength?: number, size?: number): string;
+    /**
+     * Darken toward the edges and corners
+     * @param {number} [strength] - How dark the corners get, 1 is black
+     * @param {number} [falloff] - How far in it reaches, low darkens most of the screen, high only the corners
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessVignette(strength?: number, falloff?: number): string;
+    /**
+     * Bend the picture like the bulged glass of an old TV, black past the corners; put it first
+     * @param {number} [strength] - How much it bends
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessCurve(strength?: number): string;
+    /**
+     * Split red and blue apart toward the edges, like a cheap lens; put it before what shades the picture
+     * @param {number} [strength] - How far apart at the edge, as a part of the screen
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessChromatic(strength?: number): string;
+    /**
+     * Draw lines where the 3D depth jumps, around objects and along their creases; needs render3D.depthTexture on
+     * @param {Color} [color] - The lines' color, its alpha how strong they are
+     * @param {number} [thickness] - How wide the lines are in pixels
+     * @param {number} [threshold] - How big a jump makes a line, as a part of the distance, lower draws more
+     * @return {string}
+     * @memberof PostProcess
+     */
+    export function postProcessOutline(color?: Color, thickness?: number, threshold?: number): string;
+    /**
+     * The look of an old TV, as one effect to use alone or join with others: static noise, scan lines, a soft glow and
+     * a vignette, and a bulged screen when curve is set; any setting at 0 leaves that part out
+     * @param {Object} [settings]
+     * @param {number} [settings.noise] - Static noise strength
+     * @param {number} [settings.scanlines] - Scan line strength
+     * @param {number} [settings.scanlineSpacing] - Pixels from one scan line to the next
+     * @param {number} [settings.glow] - Soft glow strength
+     * @param {number} [settings.vignette] - Vignette strength
+     * @param {number} [settings.curve] - How much the screen bulges, 0 by default for flat
+     * @return {string}
+     * @example
+     * new PostProcessPlugin(postProcessEffects(postProcessTV({scanlines: .4, curve: .1})));
+     * @memberof PostProcess
+     */
+    export function postProcessTV({ noise, scanlines, scanlineSpacing, glow, vignette, curve }?: {
+        noise?: number;
+        scanlines?: number;
+        scanlineSpacing?: number;
+        glow?: number;
+        vignette?: number;
+        curve?: number;
+    }): string;
     /**
      * LittleJS Light System Plugin
      * - Adds 2D dynamic lighting to the scene
@@ -3693,8 +5143,20 @@ declare module "littlejsengine" {
      *   areas go to the ambient color and lit areas show the scene tinted by the
      *   accumulated light color
      * - Draw the world at full brightness — the lightmap does the darkening
+     * - The pass runs after gameRenderPost, so a HUD drawn there with WebGL is
+     *   darkened too; draw the HUD with useWebGL=false (the main canvas) or from
+     *   a plugin created after this one
      * - Any EngineObject may override renderLight() to additively contribute to the
-     *   lightmap (e.g. emissive lava tiles, weapon flashes, glowing crystals)
+     *   lightmap (e.g. lava that lights the floor around it, weapon flashes, glowing crystals)
+     * - Set obj.emissive to 1 to show an object at full brightness in its own colors, lit or not, or between 0 and 1 for
+     *   partly: it draws its shape into the lightmap through renderEmissive(), which calls render() by default; exact for
+     *   solid pixels, a partly transparent one is self lit by its alpha too, so it shows darker
+     * - Set lightSystem.shadows for objects to block light: each frame every object draws black into a
+     *   shadow map through renderShadow(), which calls render() by default; obj.castShadow = false keeps it
+     *   out (a floor TileLayer, a background), a draw's alpha sets how much light it blocks, and
+     *   setShadowTransparent lets its color tint the light
+     * - Set light.glow for a soft hazy glow over a light, like a lamp at night; it is added over the lit scene after the
+     *   lightmap, so it shows in the dark and sits in front of everything there
      * - Must be constructed BEFORE PostProcessPlugin so post-process sees lit pixels
      * @namespace LightSystem
      */
@@ -3713,7 +5175,7 @@ declare module "littlejsengine" {
      */
     export class LightSystemPlugin {
         /** Create the global light system plugin.
-         *  @param {Vector2} [textureSize]  - Size of the lightmap texture (defaults to mainCanvasSize)
+         *  @param {Vector2} [textureSize]  - Size of the lightmap texture (defaults to following mainCanvasSize, which is css pixels, so the lightmap is not scaled by canvasPixelRatio; pass mainCanvasSize.scale(getCanvasPixelRatio()) for a full resolution lightmap)
          *  @param {Color}   [ambientColor] - Color applied to unlit areas of the scene (defaults to BLACK = pitch dark). Set a small RGB like rgb(0.1,0.1,0.15) for a faint "moonlight" baseline so unlit areas aren't fully black.
          *  @example
          *  // simplest usage
@@ -3724,26 +5186,103 @@ declare module "littlejsengine" {
         enabled: boolean;
         /** @property {Color} - Baseline color applied to unlit areas of the scene. Defaults to BLACK (pitch dark). Set to a small RGB for a faint ambient. The lightmap is cleared to this color each frame, then lights add on top, then the result multiplies the scene. */
         ambientColor: Color;
-        /** @property {Vector2} - Size of the lightmap texture (set at construction; falls back to mainCanvasSize at init time) */
+        /** @property {Vector2} - Size of the lightmap texture, follows mainCanvasSize (css pixels, so it is not scaled by canvasPixelRatio) unless a size was passed */
         textureSize: Vector2;
-        /** @property {WebGLTexture} - The lightmap texture */
-        texture: any;
-        /** @property {WebGLProgram} - Shader for drawing per-Light falloff blobs into the lightmap */
-        lightShader: any;
-        /** @property {WebGLProgram} - Shader for compositing the lightmap over the main scene */
-        compositeShader: any;
-        /** @property {WebGLVertexArrayObject} - Vertex array object for the light shader */
-        lightVAO: any;
-        /** @property {WebGLVertexArrayObject} - Vertex array object for the composite shader */
-        compositeVAO: any;
+        /** @property {boolean} - True when no size was passed, so the lightmap follows mainCanvasSize */
+        textureSizeAuto: boolean;
+        /** @property {WebGLTexture|undefined} - The lightmap texture
+         *  @type {WebGLTexture|undefined} */
+        texture: WebGLTexture | undefined;
+        /** @property {WebGLProgram|undefined} - Shader for drawing per-Light falloff blobs into the lightmap
+         *  @type {WebGLProgram|undefined} */
+        lightShader: WebGLProgram | undefined;
+        /** @property {WebGLProgram|undefined} - Shader for compositing the lightmap over the main scene
+         *  @type {WebGLProgram|undefined} */
+        compositeShader: WebGLProgram | undefined;
+        /** @property {WebGLVertexArrayObject|undefined} - Vertex array object for the light shader
+         *  @type {WebGLVertexArrayObject|undefined} */
+        lightVAO: WebGLVertexArrayObject | undefined;
+        /** @property {WebGLVertexArrayObject|undefined} - Vertex array object for the composite shader
+         *  @type {WebGLVertexArrayObject|undefined} */
+        compositeVAO: WebGLVertexArrayObject | undefined;
+        /** @property {boolean} - Cast shadows: every object draws black into a shadow map once a frame and each light's rays stop at them; off by default and free when off */
+        shadows: boolean;
+        /** @property {number} - Pixels across the square shadow map, made again when changed */
+        shadowMapSize: number;
+        /** @property {number} - How many times the larger side of the view the shadow map covers, so casters just off screen still cast in; raise it when lights reach further than a view past the screen */
+        shadowMapScale: number;
+        /** @property {number} - Pixels across each light's own shadow texture, made again when changed; larger is sharper,
+         *  and a gap between casters narrower than about 4*radius/shadowTextureSize world units closes */
+        shadowTextureSize: number;
+        /** @property {number} - Stretch passes per shadow casting light, fewer is cheaper and shorter shadows */
+        shadowPassCount: number;
+        /** @property {number} - How much light bleeds into a caster's near side, 0 for hard edged casters, 1 for most;
+         *  the bleed reaches further in under a bigger light, so a thin wall under a big one lets some through, lower it
+         *  for those */
+        shadowSoftness: number;
+        /** @property {boolean} - True while the shadow pass runs, read only, so a render() can skip parts that should not cast */
+        shadowPass: boolean;
+        /** @property {boolean} - True while emissive objects draw into the lightmap, read only, see EngineObject.emissive */
+        emissivePass: boolean;
+        /** @property {WebGLTexture|undefined} - The shadow map, casters drawn black on white around the camera, read only
+         *  @type {WebGLTexture|undefined} */
+        shadowMap: WebGLTexture | undefined;
+        /** @property {WebGLTexture|undefined} - One of the two textures each light's shadow is built in
+         *  @type {WebGLTexture|undefined} */
+        shadowTextureA: WebGLTexture | undefined;
+        /** @property {WebGLTexture|undefined} - The other
+         *  @type {WebGLTexture|undefined} */
+        shadowTextureB: WebGLTexture | undefined;
+        /** @property {WebGLProgram|undefined} - Copies the shadow map around a light into its texture
+         *  @type {WebGLProgram|undefined} */
+        shadowCopyShader: WebGLProgram | undefined;
+        /** @property {WebGLProgram|undefined} - One stretch pass of a light's shadow texture
+         *  @type {WebGLProgram|undefined} */
+        shadowStretchShader: WebGLProgram | undefined;
+        /** @property {WebGLVertexArrayObject|undefined} - Vertex array object for the copy shader
+         *  @type {WebGLVertexArrayObject|undefined} */
+        shadowCopyVAO: WebGLVertexArrayObject | undefined;
+        /** @property {WebGLVertexArrayObject|undefined} - Vertex array object for the stretch shader
+         *  @type {WebGLVertexArrayObject|undefined} */
+        shadowStretchVAO: WebGLVertexArrayObject | undefined;
+        /** @property {OffscreenCanvasRenderingContext2D|undefined} - Where Canvas2D draws go during the shadow and emissive passes, a 1x1 canvas, so text in a render() is not drawn twice
+         *  @type {OffscreenCanvasRenderingContext2D|undefined} */
+        shadowContext: OffscreenCanvasRenderingContext2D | undefined;
+        /** @property {Vector2} - World position of the shadow map's bottom left corner, set each shadow pass */
+        shadowMapOrigin: Vector2;
+        /** @property {number} - World size the shadow map covers, set each shadow pass */
+        shadowMapWorldSize: number;
+        shadowMapSizeAllocated: number;
+        shadowTextureSizeAllocated: number;
+        /** Bring the sizes of the textures it makes down to what the device can make: shadowMapSize, shadowTextureSize
+         *  and a textureSize given by hand; called before they are made, so a size too big falls back instead of failing */
+        clampTextureSizes(): void;
         /** Draw a single Light's falloff blob into the currently bound lightmap.
          *  Called by Light.renderLight() during the plugin's render pass.
          *  @param {Light} light */
         drawLight(light: Light): void;
+        /** Build a light's shadow texture from the shadow map: the map around the light, its casters stretched
+         *  away from the light a little further each pass with light bled into their near sides. Leaves the
+         *  result on texture unit 1 and the lightmap bound again. Called by drawLight.
+         *  @param {Light} light */
+        renderLightShadow(light: Light): void;
+        /** In the shadow pass, let the draws that follow keep their color in the shadow map, so light passing
+         *  through them is tinted instead of blocked: a stained glass window, colored smoke. Any draw blocks light
+         *  by its alpha, so a fading sprite casts a fading shadow; this keeps the color as well. It covers what was drawn
+         *  under it in the map as any draw does, so glass drawn after a wall cuts a tinted window in the wall's shadow, and
+         *  a wall drawn after the glass covers it. Does nothing outside
+         *  the pass, so a render() can call it around those draws unconditionally; set it back to false after them.
+         *  @param {boolean} [transparent] */
+        setShadowTransparent(transparent?: boolean): void;
     }
     /**
      * A Light is an EngineObject that contributes a soft additive blob of color
      * to the LightSystem plugin's lightmap.
+     * - castShadow on a Light means its rays stop at casters when lightSystem.shadows is on, three.js's meaning
+     *   for a light; a Light's own render() draws nothing so the object meaning never applies to it
+     * - A light inside a caster is blocked entirely, so the object that holds it, its lamp, a torch, the player
+     *   carrying it, needs a shadowCore that reaches past it, castShadow = false, or a renderShadow that leaves
+     *   the light's spot out
      * @extends EngineObject
      * @memberof LightSystem
      * @example
@@ -3761,6 +5300,21 @@ declare module "littlejsengine" {
         radius: number;
         /** @property {number} - Width of the soft edge in world units */
         fadeRange: number;
+        /** @property {number} - Radius around the light where casters are left out of its shadow, so the lamp
+         *  or torch that holds it, or the player carrying it, does not block it; it has to reach past that object's
+         *  corners, about half its diagonal and a little more, or dark rays run out from them */
+        shadowCore: number;
+        /** @property {number} - Size across of a soft hazy glow drawn over the light, like a lamp at night, 0 for
+         *  none; it is added over the lit scene, in front of everything there */
+        glow: number;
+        /** @property {number} - How fast the glow fades from its middle: 1 by default, .5 a wide haze, 2 a tight
+         *  bright core */
+        glowFalloff: number;
+        /** @type {TileInfo|undefined} */
+        glowTileInfo: TileInfo | undefined;
+        /** Draw this light's glow, soft and round, its glow size across and in its color, added over the lit scene;
+         *  called by LightSystemPlugin after the lightmap is applied */
+        renderGlow(): void;
     }
     /**
      * LittleJS ZzFXM Plugin
@@ -3774,7 +5328,7 @@ declare module "littlejsengine" {
      * @memberof ZzFXM
      * @example
      * // create some music
-     * const music_example = new Music(
+     * const music_example = new ZzFXMusic(
      * [
      *     [                         // instruments
      *       [,0,400]                // simple note
@@ -3795,21 +5349,14 @@ declare module "littlejsengine" {
      *     90            // BPM
      * ]);
      *
-     * // play the music
-     * music_example.play();
+     * // play the music on a loop
+     * music_example.playMusic();
      */
     export class ZzFXMusic extends Sound {
         /** Create a music object and cache the zzfx music samples for later use
-         *  @param {[Array, Array, Array, number]} zzfxMusic - Array of zzfx music parameters
+         *  @param {[Array, Array, Array, number?, ...any[]]} zzfxMusic - Array of zzfx music parameters: instruments, patterns, sequence, and an optional BPM; anything after it, like the tracker's metadata, is ignored
          */
-        constructor(zzfxMusic: [any[], any[], any[], number]);
-        sampleChannels: any[];
-        /** Play the music that loops by default
-         *  @param {number}  [volume] - Volume to play the music at
-         *  @param {boolean} [loop] - Should the music loop?
-         *  @return {SoundInstance} - The sound instance
-         */
-        playMusic(volume?: number, loop?: boolean): SoundInstance;
+        constructor(zzfxMusic: [any[], any[], any[], number?, ...any[]]);
     }
     /** Generate samples for a ZzFM song with given parameters
      *  @param {Array} instruments - Array of ZzFX sound parameters
@@ -3819,6 +5366,192 @@ declare module "littlejsengine" {
      *  @return {Array} - Left and right channel sample data
      *  @memberof ZzFXM */
     export function zzfxM(instruments: any[], patterns: any[], sequence: any[], BPM?: number): any[];
+    /**
+     * LittleJS Audio Effects Plugin
+     * - Web Audio effects with a wet/dry mix: filter, reverb, delay, distortion, compressor
+     * - Route a sound through one with sound.output = effect
+     * - Route everything with setAudioMasterEffect(effect)
+     * - Chain effects with effect.connect(nextEffect)
+     * @namespace AudioEffects
+     */
+    /**
+     * Base class for audio effects, an input and output with a wet/dry mix between them
+     * - Sounds connect to input, output goes to the master gain until connect() moves it
+     * - Subclasses put their nodes between input and the wet gain with connectEffect
+     * @memberof AudioEffects
+     * @example
+     * const cave = new AudioReverb(3, 2);
+     * footstep.output = cave; // every play of this sound is in the cave
+     */
+    export class AudioEffect {
+        /** Create an audio effect
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(mix?: number);
+        /** @property {number} - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        mix: number;
+        /** @property {GainNode} - Connect sounds to this node */
+        input: GainNode;
+        /** @property {GainNode} - This node carries the mixed result, send it somewhere with connect(), never by assigning here
+         *  - Unlike sound.output, which is where a sound's audio goes and can be set to an effect */
+        output: GainNode;
+        /** @property {GainNode} - Level of the unprocessed signal */
+        dryGain: GainNode;
+        /** @property {GainNode} - Level of the processed signal */
+        wetGain: GainNode;
+        /** Set the wet/dry balance
+         *  @param {number} mix - 0 is fully dry and 1 is fully wet
+         *  @param {number} [fadeTime] - Seconds to ramp over so the change doesn't click */
+        setMix(mix: number, fadeTime?: number): void;
+        /** Ramp one of this effect's params, keeping the effect running until the ramp is done
+         *  - The browser drops an effect from rendering while nothing plays through it, which
+         *    would freeze a ramp partway, so a silent source feeds the input for the ramp's length
+         *  @param {AudioParam} param - The param to ramp
+         *  @param {number} value - Where to ramp to
+         *  @param {number} [fadeTime] - Seconds to ramp over, 0 sets the value at once
+         *  @protected */
+        protected rampParam(param: AudioParam, value: number, fadeTime?: number): void;
+        /** Send this effect's output into another effect or audio node instead of the speakers
+         *  @template {AudioEffect|AudioNode} T
+         *  @param {T} target - The next effect in the chain, or any audio node
+         *  @return {T} - The target, so chains read left to right */
+        connect<T extends AudioNode | AudioEffect>(target: T): T;
+        /** Stop sending this effect's output anywhere */
+        disconnect(): void;
+        /** Wire nodes between the input and the wet gain, for subclasses
+         *  @param {AudioNode} first - Node the input connects to
+         *  @param {AudioNode} [last=first] - Node that connects to the wet gain
+         *  @protected */
+        protected connectEffect(first: AudioNode, last?: AudioNode): void;
+    }
+    /**
+     * Filter effect, muffle sounds underwater or behind a wall
+     * @extends AudioEffect
+     * @memberof AudioEffects
+     * @example
+     * const muffle = new AudioFilter('lowpass', 400);
+     * setAudioMasterEffect(muffle);
+     * muffle.setFrequency(20000, .5); // sweep back to clear
+     */
+    export class AudioFilter extends AudioEffect {
+        /** Create a filter effect
+         *  @param {BiquadFilterType} [type] - lowpass, highpass, bandpass, notch, etc.
+         *  @param {number} [frequency] - Cutoff or center frequency in Hz
+         *  @param {number} [q] - Resonance at the cutoff, higher is sharper
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(type?: BiquadFilterType, frequency?: number, q?: number, mix?: number);
+        /** @property {BiquadFilterNode} - The filter node */
+        node: BiquadFilterNode;
+        /** Set the cutoff or center frequency
+         *  @param {number} frequency - Frequency in Hz
+         *  @param {number} [fadeTime] - Seconds to sweep over */
+        setFrequency(frequency: number, fadeTime?: number): void;
+        /** Set the resonance at the cutoff
+         *  @param {number} q - Higher is sharper
+         *  @param {number} [fadeTime] - Seconds to ramp over */
+        setQ(q: number, fadeTime?: number): void;
+    }
+    /**
+     * Reverb effect, puts sounds in a room, cave, or hall
+     * - The impulse response is generated, no audio file needed
+     * @extends AudioEffect
+     * @memberof AudioEffects
+     * @example
+     * const hall = new AudioReverb(4, 1.5, .4);
+     * footstep.output = hall;
+     */
+    export class AudioReverb extends AudioEffect {
+        /** Create a reverb effect
+         *  @param {number} [duration] - Seconds until the reverb tail is silent
+         *  @param {number} [decay] - How quickly the tail fades, higher is faster
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(duration?: number, decay?: number, mix?: number);
+        /** @property {ConvolverNode} - The convolver node */
+        node: ConvolverNode;
+        /** Change the room by rebuilding the impulse response
+         *  @param {number} duration - Seconds until the reverb tail is silent
+         *  @param {number} [decay] - How quickly the tail fades, higher is faster */
+        setRoom(duration: number, decay?: number): void;
+        /** Build a stereo impulse response of decaying noise
+         *  @param {number} duration - Seconds until silence
+         *  @param {number} decay - How quickly it fades, higher is faster
+         *  @return {AudioBuffer} */
+        createImpulse(duration: number, decay: number): AudioBuffer;
+    }
+    /**
+     * Delay effect, echoes that repeat and fade
+     * @extends AudioEffect
+     * @memberof AudioEffects
+     * @example
+     * const canyon = new AudioDelay(.4, .5);
+     * shout.output = canyon;
+     */
+    export class AudioDelay extends AudioEffect {
+        /** Create a delay effect
+         *  @param {number} [time] - Seconds between echoes, up to 5
+         *  @param {number} [feedback] - How much of each echo repeats, 0 to .95
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(time?: number, feedback?: number, mix?: number);
+        /** @property {DelayNode} - The delay node */
+        node: DelayNode;
+        /** @property {GainNode} - How much of the delayed signal feeds back in */
+        feedbackGain: GainNode;
+        /** Set the time between echoes
+         *  - Browsers hold a delay in a feedback loop to at least one render quantum, so 0 is not a bypass
+         *  @param {number} time - Seconds, up to 5
+         *  @param {number} [fadeTime] - Seconds to ramp over, pitch bends while it moves */
+        setTime(time: number, fadeTime?: number): void;
+        /** Set how much of each echo repeats, clamped below 1 so it always dies out
+         *  @param {number} feedback - 0 to .95
+         *  @param {number} [fadeTime] - Seconds to ramp over */
+        setFeedback(feedback: number, fadeTime?: number): void;
+    }
+    /**
+     * Distortion effect, overdrive for radios, damaged robots, and engines
+     * @extends AudioEffect
+     * @memberof AudioEffects
+     * @example
+     * const radio = new AudioDistortion(.8);
+     * voice.output = radio;
+     */
+    export class AudioDistortion extends AudioEffect {
+        /** Create a distortion effect
+         *  @param {number} [amount] - How hard to drive the signal, 0 is clean and 1 is crushed
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(amount?: number, mix?: number);
+        /** @property {number} - How hard the signal is driven, 0 is clean and 1 is crushed */
+        amount: number;
+        /** @property {WaveShaperNode} - The wave shaper node */
+        node: WaveShaperNode;
+        /** Set how hard to drive the signal, rebuilds the shaping curve
+         *  @param {number} amount - 0 is clean and 1 is crushed */
+        setAmount(amount: number): void;
+    }
+    /**
+     * Compressor effect, evens out loud and quiet so many sounds at once don't clip
+     * - Meant for the master bus, it is not on by default
+     * @extends AudioEffect
+     * @memberof AudioEffects
+     * @example
+     * const compressor = new AudioCompressor;
+     * setAudioMasterEffect(compressor);
+     */
+    export class AudioCompressor extends AudioEffect {
+        /** Create a compressor effect
+         *  @param {number} [threshold] - Level in dB above which the signal is reduced
+         *  @param {number} [ratio] - How much to reduce it, 12 means 12 dB in becomes 1 dB out
+         *  @param {number} [mix] - Wet/dry balance, 0 is fully dry and 1 is fully wet */
+        constructor(threshold?: number, ratio?: number, mix?: number);
+        /** @property {DynamicsCompressorNode} - The compressor node */
+        node: DynamicsCompressorNode;
+        /** Set the level above which the signal is reduced
+         *  @param {number} threshold - Level in dB
+         *  @param {number} [fadeTime] - Seconds to ramp over */
+        setThreshold(threshold: number, fadeTime?: number): void;
+        /** Set how much the signal is reduced above the threshold
+         *  @param {number} ratio - 1 is no reduction, 20 is a hard limit
+         *  @param {number} [fadeTime] - Seconds to ramp over */
+        setRatio(ratio: number, fadeTime?: number): void;
+    }
     /**
      * LittleJS User Interface Plugin
      * - call new UISystemPlugin() to setup the UI system
@@ -3853,12 +5586,12 @@ declare module "littlejsengine" {
      */
     export class UISystemPlugin {
         /** Create the global UI system object
-         *  @param {CanvasRenderingContext2D} [context]
+         *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context]
          *  @example
          *  // create the ui plugin object
          *  new UISystemPlugin;
          */
-        constructor(context?: CanvasRenderingContext2D);
+        constructor(context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
         /** @property {boolean} - Activate when mouse is pressed down instead of clicked */
         activateOnPress: boolean;
         /** @property {Color} - Default fill color for UI elements */
@@ -3873,8 +5606,9 @@ declare module "littlejsengine" {
         defaultHoverColor: Color;
         /** @property {Color} - Default color for disabled UI elements */
         defaultDisabledColor: Color;
-        /** @property {Color} - Uses a gradient fill combined with color */
-        defaultGradientColor: any;
+        /** @property {Color|undefined} - Uses a gradient fill combined with color
+         *  @type {Color|undefined} */
+        defaultGradientColor: Color | undefined;
         /** @property {number} - Default line width for UI elements */
         defaultLineWidth: number;
         /** @property {number} - Default rounded rect corner radius for UI elements */
@@ -3883,44 +5617,64 @@ declare module "littlejsengine" {
         defaultTextFitScale: number;
         /** @property {string} - Default font for UI elements */
         defaultFont: string;
-        /** @property {Sound} - Default sound when interactive UI element is pressed */
-        defaultSoundPress: any;
-        /** @property {Sound} - Default sound when interactive UI element is released */
-        defaultSoundRelease: any;
-        /** @property {Sound} - Default sound when interactive UI element is clicked */
-        defaultSoundClick: any;
+        /** @property {Sound|undefined} - Default sound when interactive UI element is pressed
+         *  @type {Sound|undefined} */
+        defaultSoundPress: Sound | undefined;
+        /** @property {Sound|undefined} - Default sound when interactive UI element is released
+         *  @type {Sound|undefined} */
+        defaultSoundRelease: Sound | undefined;
+        /** @property {Sound|undefined} - Default sound when interactive UI element is clicked
+         *  @type {Sound|undefined} */
+        defaultSoundClick: Sound | undefined;
         /** @property {Color} - Color for shadow */
         defaultShadowColor: Color;
         /** @property {number} - Size of shadow blur */
         defaultShadowBlur: number;
         /** @property {Vector2} - Offset of shadow blur */
         defaultShadowOffset: Vector2;
+        /** @property {TileSlice|undefined} - Style to draw UI elements with in place of their rectangle, tinted by
+         *  their color, undefined for rectangles; needs the drawUtilities plugin
+         *  @type {TileSlice|undefined} */
+        defaultSlice: TileSlice | undefined;
+        /** @property {TileSlice|undefined} - Style to draw slider handles with, undefined for the slider's own slice
+         *  @type {TileSlice|undefined} */
+        defaultHandleSlice: TileSlice | undefined;
         /** @property {number} - If set ui coords will be renormalized to this canvas height */
         nativeHeight: number;
-        /** @property {UIObject} - Object currently selected by navigation (gamepad or keyboard) */
-        navigationObject: any;
+        /** @property {UIObject|undefined} - Object currently selected by navigation (gamepad or keyboard)
+         *  @type {UIObject|undefined} */
+        navigationObject: UIObject | undefined;
         /** @property {Timer} - Cool down timer for navigation inputs */
         navigationTimer: Timer;
         /** @property {number} - Time between navigation inputs in seconds */
         navigationDelay: number;
-        /** @property {boolean} - should the navigation be horizontal, vertical, or both? */
+        /** @property {number} - Which way keys and gamepads move the selection: 0 horizontal, 1 vertical, 2 both */
         navigationDirection: number;
         /** @property {boolean} - True if user last used navigation instead of mouse */
         navigationMode: boolean;
-        /** @property {Array<UIObject>} - List of all UI elements */
-        uiObjects: any[];
+        /** @property {Array<UIObject>} - List of all UI elements
+         *  @type {Array<UIObject>} */
+        uiObjects: Array<UIObject>;
         /** @property {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} - Context to render UI elements to */
-        uiContext: CanvasRenderingContext2D;
-        /** @property {UIObject} - Object user is currently interacting with */
-        activeObject: any;
-        /** @property {UIObject} - Top most object user is over */
-        hoverObject: any;
-        /** @property {UIObject} - Hover object at start of update */
-        lastHoverObject: any;
-        /** @property {UIObject} - Current confirm menu being shown */
-        confirmDialog: any;
-        /** @private */
+        uiContext: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+        /** @property {UIObject|undefined} - Object user is currently interacting with
+         *  @type {UIObject|undefined} */
+        activeObject: UIObject | undefined;
+        /** @property {UIObject|undefined} - Top most object user is over
+         *  @type {UIObject|undefined} */
+        hoverObject: UIObject | undefined;
+        /** @property {UIObject|undefined} - Hover object at start of update
+         *  @type {UIObject|undefined} */
+        lastHoverObject: UIObject | undefined;
+        /** @property {UIObject|undefined} - Current confirm menu being shown
+         *  @type {UIObject|undefined} */
+        confirmDialog: UIObject | undefined;
+        /** @private
+         *  @type {UIObject|undefined} */
         private _keyInputObject;
+        /** @private
+         *  @type {Array<Array<any>>|undefined} */
+        private _dragListeners;
         /** @private */
         private _onKeyDown;
         /** Draw a rectangle to the UI context
@@ -3933,8 +5687,14 @@ declare module "littlejsengine" {
         *  @param {Color}   [gradientColor]
         *  @param {Color}   [shadowColor]
         *  @param {number}  [shadowBlur]
-        *  @param {Color}   [shadowOffset] */
-        drawRect(pos: Vector2, size: Vector2, color?: Color, lineWidth?: number, lineColor?: Color, cornerRadius?: number, gradientColor?: Color, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Color): void;
+        *  @param {Vector2} [shadowOffset] */
+        drawRect(pos: Vector2, size: Vector2, color?: Color, lineWidth?: number, lineColor?: Color, cornerRadius?: number, gradientColor?: Color, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Vector2): void;
+        /** Draw a TileSlice to the UI context, in place of a rectangle
+        *  @param {TileSlice} slice
+        *  @param {Vector2}   pos
+        *  @param {Vector2}   size
+        *  @param {Color}     [color] */
+        drawSlice(slice: TileSlice, pos: Vector2, size: Vector2, color?: Color): void;
         /** Draw a line to the UI context
         *  @param {Vector2} posA
         *  @param {Vector2} posB
@@ -3950,8 +5710,8 @@ declare module "littlejsengine" {
         *  @param {boolean}  [mirror]
         *  @param {Color}    [shadowColor]
         *  @param {number}   [shadowBlur]
-        *  @param {Color}    [shadowOffset] */
-        drawTile(pos: Vector2, size: Vector2, tileInfo: TileInfo, color?: Color, angle?: number, mirror?: boolean, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Color): void;
+        *  @param {Vector2}  [shadowOffset] */
+        drawTile(pos: Vector2, size: Vector2, tileInfo: TileInfo, color?: Color, angle?: number, mirror?: boolean, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Vector2): void;
         /** Draw text to the UI context
         *  @param {string}  text
         *  @param {Vector2} pos
@@ -3959,15 +5719,15 @@ declare module "littlejsengine" {
         *  @param {Color}   [color=uiSystem.defaultColor]
         *  @param {number}  [lineWidth=uiSystem.defaultLineWidth]
         *  @param {Color}   [lineColor=uiSystem.defaultLineColor]
-        *  @param {string}  [align]
+        *  @param {'left'|'center'|'right'} [align]
         *  @param {string}  [font=uiSystem.defaultFont]
         *  @param {string}  [fontStyle]
         *  @param {boolean} [applyMaxWidth=true]
         *  @param {Vector2} [textShadow]
         *  @param {Color}   [shadowColor]
         *  @param {number}  [shadowBlur]
-        *  @param {Color}   [shadowOffset] */
-        drawText(text: string, pos: Vector2, size: Vector2, color?: Color, lineWidth?: number, lineColor?: Color, align?: string, font?: string, fontStyle?: string, applyMaxWidth?: boolean, textShadow?: Vector2, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Color): void;
+        *  @param {Vector2} [shadowOffset] */
+        drawText(text: string, pos: Vector2, size: Vector2, color?: Color, lineWidth?: number, lineColor?: Color, align?: 'left' | 'center' | 'right', font?: string, fontStyle?: string, applyMaxWidth?: boolean, textShadow?: Vector2, shadowColor?: Color, shadowBlur?: number, shadowOffset?: Vector2): void;
         /**
          * @callback DragAndDropCallback - Callback for drag and drop events
          * @param {DragEvent} event - The drag event
@@ -3980,23 +5740,28 @@ declare module "littlejsengine" {
         *  @param {DragAndDropCallback} [onDragLeave] - when a file is dragged off the window
         *  @param {DragAndDropCallback} [onDragOver] - continuously when dragging over */
         setupDragAndDrop(onDrop?: (event: DragEvent) => any, onDragEnter?: (event: DragEvent) => any, onDragLeave?: (event: DragEvent) => any, onDragOver?: (event: DragEvent) => any): void;
-        _dragListeners: any[];
         /** Convert a screen space position to native UI position
          *  @param {Vector2} pos
          *  @return {Vector2} */
         screenToNative(pos: Vector2): Vector2;
         set keyInputObject(arg: UIObject);
-        /** Object to send keyboard input to (typically a UITextInput).
-         *  The document keydown listener is only attached while this is set,
+        /** Object to send keyboard input to (typically a UITextInput), which keeps the keys from the game while set.
+         *  The keyboard listeners are only attached while this is set,
          *  so games that never use text input pay no event-handling cost.
-         *  @type {UIObject} */
+         *  To end typing in a field, call its stopEditing(), which also fires its onChange and release sound
+         *  @type {UIObject|undefined} */
         get keyInputObject(): UIObject;
-        /** Destroy and remove all objects
-        *  @memberof UISystem */
+        /** Destroy and remove all objects */
         destroyObjects(): void;
         /** Get all navigable UI objects sorted by navigationIndex
          *  @return {Array<UIObject>} */
         getNavigableObjects(): Array<UIObject>;
+        /** Check if the mouse is over a visible UI object that can be hovered, or anywhere while the
+         *  confirm dialog is open, so a game can leave world clicks on the UI alone, on touch too.
+         *  The UI uses up a click before objects update and gameUpdatePost, so read world clicks there,
+         *  or check this in gameUpdate, which runs first. Positions are from the last UI update.
+         *  @return {boolean} */
+        isMouseOverUI(): boolean;
         /** Get navigation direction from gamepad or keyboard
          *  @return {number} */
         getNavigationDirection(): number;
@@ -4010,9 +5775,9 @@ declare module "littlejsengine" {
          *  Centers the dialog on the screen with darkened background
          *  @param {string} [text] - The message to display
          *  @param {Function} [yesCallback] - Called when Yes is clicked
-         *  @param {Function} [noCallback] - Called when No is clicked
-         *  @param {Vector2} [size] - Size of the confirmation dialog
-         *  @param {string} [exitKey] - Key that can exit the menu
+         *  @param {Function} [noCallback] - Called when No is clicked, or the exit key or gamepad B closes it
+         *  @param {Vector2} [size] - Size of the confirmation dialog, the title and buttons are placed by it
+         *  @param {string} [exitKey] - Key that closes the menu as No, gamepad B (button 1) does too
          *  @return {UIObject} The confirmation menu object
          */
         showConfirmDialog(text?: string, yesCallback?: Function, noCallback?: Function, size?: Vector2, exitKey?: string): UIObject;
@@ -4023,7 +5788,7 @@ declare module "littlejsengine" {
     export class UIObject {
         /** Create a UIObject
          *  @param {Vector2}  [pos=vec2()]
-         *  @param {Vector2}  [size=vec2(1)]
+         *  @param {Vector2}  [size=vec2()]
          */
         constructor(pos?: Vector2, size?: Vector2);
         /** @property {Vector2} - Position you set: an offset from this object's
@@ -4039,10 +5804,12 @@ declare module "littlejsengine" {
         size: Vector2;
         /** @property {Color} - Color of the object */
         color: Color;
-        /** @property {Color} - Color of the object when active, uses hoverColor if undefined */
-        activeColor: any;
-        /** @property {string} - Text for this ui object */
-        text: any;
+        /** @property {Color|undefined} - Color of the object when active, uses hoverColor if undefined
+         *  @type {Color|undefined} */
+        activeColor: Color | undefined;
+        /** @property {string|undefined} - Text for this ui object
+         *  @type {string|undefined} */
+        text: string | undefined;
         /** @property {Color} - Color when disabled */
         disabledColor: Color;
         /** @property {boolean} - Is this object disabled? */
@@ -4053,62 +5820,85 @@ declare module "littlejsengine" {
         hoverColor: Color;
         /** @property {Color} - Color for line drawing */
         lineColor: Color;
-        /** @property {Color} - Uses a gradient fill combined with color */
-        gradientColor: any;
+        /** @property {Color|undefined} - Uses a gradient fill combined with color
+         *  @type {Color|undefined} */
+        gradientColor: Color | undefined;
         /** @property {number} - Width for line drawing */
         lineWidth: number;
         /** @property {number} - Corner radius for rounded rects */
         cornerRadius: number;
+        /** @property {TileSlice|undefined} - Style to draw with in place of the rectangle, tinted by the color for its
+         *  state; its art has the frame, so the outline, corner radius and shadow are not drawn
+         *  @type {TileSlice|undefined} */
+        slice: TileSlice | undefined;
         /** @property {string} - Font for this object */
         font: string;
-        /** @property {string} - Font style for this object or undefined */
-        fontStyle: any;
-        /** @property {number} - Override for text width */
-        textWidth: any;
-        /** @property {number} - Override for text height */
-        textHeight: any;
+        /** @property {string|undefined} - Font style for this object or undefined
+         *  @type {string|undefined} */
+        fontStyle: string | undefined;
+        /** @property {number|undefined} - Override for text width
+         *  @type {number|undefined} */
+        textWidth: number | undefined;
+        /** @property {number|undefined} - Override for text height
+         *  @type {number|undefined} */
+        textHeight: number | undefined;
         /** @property {number} - Scale text to fit in the object */
         textFitScale: number;
-        /** @property {Vector2} - How much to offset the text shadow or undefined */
-        textShadow: any;
-        /** @property {number} - Color for text line drawing  */
+        /** @property {Vector2|undefined} - How much to offset the text shadow or undefined.
+         *  UIText draws it in its shadowColor, which is clear by default, so set that too;
+         *  the blurred shadow then shows as well unless shadowBlur and shadowOffset are zero.
+         *  The other widgets draw it in black
+         *  @type {Vector2|undefined} */
+        textShadow: Vector2 | undefined;
+        /** @property {Color} - Color for text line drawing  */
         textLineColor: Color;
         /** @property {number} - Width for text line drawing */
         textLineWidth: number;
         /** @property {boolean} - Should this object be drawn */
         visible: boolean;
-        /** @property {Array<UIObject>} - A list of this object's children */
-        children: any[];
-        /** @property {UIObject} - This object's parent, position is in parent space */
-        parent: any;
+        /** @property {Array<UIObject>} - A list of this object's children
+         *  @type {Array<UIObject>} */
+        children: Array<UIObject>;
+        /** @property {UIObject|undefined} - This object's parent, position is in parent space
+         *  @type {UIObject|undefined} */
+        parent: UIObject | undefined;
         /** @property {number} - Added size to make small buttons easier to touch on mobile devices */
         extraTouchSize: number;
-        /** @property {Sound} - Sound when interactive element is pressed */
-        soundPress: any;
-        /** @property {Sound} - Sound when interactive element is released */
-        soundRelease: any;
-        /** @property {Sound} - Sound when interactive element is clicked */
-        soundClick: any;
+        /** @property {Sound|undefined} - Sound when interactive element is pressed
+         *  @type {Sound|undefined} */
+        soundPress: Sound | undefined;
+        /** @property {Sound|undefined} - Sound when interactive element is released
+         *  @type {Sound|undefined} */
+        soundRelease: Sound | undefined;
+        /** @property {Sound|undefined} - Sound when interactive element is clicked
+         *  @type {Sound|undefined} */
+        soundClick: Sound | undefined;
         /** @property {boolean} - Is this element interactive */
         interactive: boolean;
         /** @property {boolean} - Activate when dragged over with mouse held down */
         dragActivate: boolean;
         /** @property {boolean} - True if this can be a hover object */
         canBeHover: boolean;
-        /** @property {Color} - Color for shadow, undefined if no shadow */
+        /** @property {Color} - Color for shadow */
         shadowColor: Color;
         /** @property {number} - Size of shadow blur */
         shadowBlur: number;
         /** @property {Vector2} - Offset of shadow blur */
         shadowOffset: Vector2;
-        /** @property {number} - Optional navigation order index, lower values are selected first */
-        navigationIndex: any;
+        /** @property {number|undefined} - Optional navigation order index, lower values are selected first
+         *  @type {number|undefined} */
+        navigationIndex: number | undefined;
         /** @property {boolean} - Should this be auto selected by navigation? Must also have valid navigation index. */
         navigationAutoSelect: boolean;
         /** @property {Vector2} - Where on parent (or canvas if no parent) this object is anchored.
          *  Components in [-1, 1]: (0,0)=center, (-1,-1)=top-left, (1,1)=bottom-right.
          *  Also acts as self-pivot — e.g. (1,-1) puts your top-right corner at the anchor point. */
         anchor: Vector2;
+        /** @property {'left'|'center'|'right'} - Horizontal text alignment: left, center, or right
+         *  @type {'left'|'center'|'right'} */
+        align: 'left' | 'center' | 'right';
+        /** @property {boolean} - Has this object been destroyed? */
+        destroyed: boolean;
         /** Add a child UIObject to this object, returns child for chaining
          *  @param {UIObject} child
          *  @return {UIObject} The child object added */
@@ -4118,17 +5908,21 @@ declare module "littlejsengine" {
         removeChild(child: UIObject): void;
         /** Destroy this object, destroy its children, detach its parent, and mark it for removal */
         destroy(): void;
-        destroyed: number;
         /** Check if the mouse is overlapping this ui object
          *  @return {boolean} - True if overlapping */
         isMouseOverlapping(): boolean;
-        /** Update the object, called automatically by plugin once each frame */
+        /** Update the object, called automatically by plugin once each frame
+         *  @return {void} */
         update(): void;
         /** Render the object, called automatically by plugin once each frame */
         render(): void;
         /** Get the size for text with overrides and scale
          *  @return {Vector2} */
         getTextSize(): Vector2;
+        /** Get where the text is drawn, the center, or the edge of the text area its align puts it against
+         *  @param {Vector2} textSize - From getTextSize
+         *  @return {Vector2} */
+        getTextPos(textSize: Vector2): Vector2;
         /** Called when the navigation button is pressed on this object */
         navigatePressed(): void;
         /** @return {boolean} - Is the mouse hovering over this element */
@@ -4139,13 +5933,13 @@ declare module "littlejsengine" {
         isNavigationObject(): boolean;
         /** @return {boolean} - Is this object in keyboard input mode */
         isKeyInputObject(): boolean;
-        /** @return {boolean} - Can it be interacted with */
+        /** @return {boolean} - Can it be interacted with, it and every parent visible and enabled */
         isInteractive(): boolean;
         /** Returns string containing info about this object for debugging
          *  @return {string} */
         toString(): string;
         /** Called if uiDebug is enabled
-         *  @param {boolean} visible */
+         *  @param {boolean} [visible] */
         renderDebug(visible?: boolean): void;
         /** Internal function called when object is clicked
          *  @param {boolean} [playSound] */
@@ -4160,12 +5954,16 @@ declare module "littlejsengine" {
         onLeave(): void;
         /** Called when the mouse is pressed while over the object */
         onPress(): void;
-        /** Called when the mouse is released while over the object */
+        /** Called when a press on it ends, wherever the mouse is let go, or when it is disabled or hidden while held, or
+         *  an edit takes the press; onClick is the one for a press let go over it */
         onRelease(): void;
         /** Called when user clicks on this object */
         onClick(): void;
         /** Called when the state of this object changes */
         onChange(): void;
+        /** Called with each key while this is the keyInputObject
+         *  @param {KeyboardEvent} e */
+        onKeyDown(e: KeyboardEvent): void;
     }
     /**
      * UIText - A UI object that displays text
@@ -4177,17 +5975,17 @@ declare module "littlejsengine" {
          *  @param {Vector2} [pos]
          *  @param {Vector2} [size]
          *  @param {string}  [text]
-         *  @param {string}  [align]
+         *  @param {'left'|'center'|'right'} [align]
          *  @param {string}  [font=uiSystem.defaultFont]
          */
-        constructor(pos?: Vector2, size?: Vector2, text?: string, align?: string, font?: string);
-        text: string;
-        align: string;
+        constructor(pos?: Vector2, size?: Vector2, text?: string, align?: 'left' | 'center' | 'right', font?: string);
     }
     /**
      * UITextInput - An editable text input field
      * - A simple text entry field that supports basic editing
      * - Suitable for short text input like names or numbers
+     * - Reads a physical keyboard: no on-screen keyboard opens on touch devices, and IME composition and paste do not type,
+     *   use an HTML input element for those
      * @extends UIObject
      * @memberof UISystem
      */
@@ -4200,13 +5998,8 @@ declare module "littlejsengine" {
         constructor(pos?: Vector2, size?: Vector2, text?: string);
         /** @property {number} - Max length of input (0 = no limit) */
         maxLength: number;
-        text: string;
-        click(): void;
         /** Stop editing the text */
         stopEditing(): void;
-        /** Key down event handler if this object is being edited
-         *  @param {KeyboardEvent} [e] */
-        onKeyDown(e?: KeyboardEvent): void;
     }
     /**
      * UITile - A UI object that displays a tile image
@@ -4215,14 +6008,14 @@ declare module "littlejsengine" {
      */
     export class UITile extends UIObject {
         /** Create a UITile object
-         *  @param {Vector2}  [pos]
-         *  @param {Vector2}  [size]
-         *  @param {TileInfo} [tileInfo]
+         *  @param {Vector2}  pos
+         *  @param {Vector2}  size
+         *  @param {TileInfo} tileInfo
          *  @param {Color}    [color=WHITE]
          *  @param {number}   [angle]
          *  @param {boolean}  [mirror]
          */
-        constructor(pos?: Vector2, size?: Vector2, tileInfo?: TileInfo, color?: Color, angle?: number, mirror?: boolean);
+        constructor(pos: Vector2, size: Vector2, tileInfo: TileInfo, color?: Color, angle?: number, mirror?: boolean);
         /** @property {TileInfo} - Tile image to use */
         tileInfo: TileInfo;
         /** @property {number} - Angle to rotate in radians */
@@ -4245,7 +6038,6 @@ declare module "littlejsengine" {
         constructor(pos?: Vector2, size?: Vector2, text?: string, color?: Color);
         /** @property {Vector2} - Text offset for the button */
         textOffset: Vector2;
-        text: string;
     }
     /**
      * UICheckbox - A UI object that acts as a checkbox
@@ -4263,8 +6055,6 @@ declare module "littlejsengine" {
         constructor(pos?: Vector2, size?: Vector2, checked?: boolean, text?: string, color?: Color);
         /** @property {boolean} - Is the checkbox currently checked? */
         checked: boolean;
-        text: string;
-        click(): void;
     }
     /**
      * UISlider - A UI object that acts as a slider or scrollbar
@@ -4285,16 +6075,24 @@ declare module "littlejsengine" {
         value: number;
         /** @property {Color} - Color for the handle part of the slider */
         handleColor: Color;
+        /** @property {TileSlice|undefined} - Style to draw the handle, or the fill, with; undefined for the slider's own
+         *  slice, or a rectangle when it has none
+         *  @type {TileSlice|undefined} */
+        handleSlice: TileSlice | undefined;
         /** @property {boolean} - Should it fill up like a progress bar? */
         fillMode: boolean;
-        text: string;
+        /** Draw the handle, or the fill of a fill mode slider, with the handle slice, the slider's own, or a rectangle
+         *  @param {Vector2} pos
+         *  @param {Vector2} size
+         *  @param {Color}   color */
+        drawHandle(pos: Vector2, size: Vector2, color: Color): void;
     }
     /**
-     * VideoPlayerUIObject - A UI object that plays video
+     * UIVideo - A UI object that plays video
      * @extends UIObject
      * @example
      * // Create a video player UI object
-     * const video = new VideoPlayerUIObject(vec2(400, 300), vec2(320, 240), 'video.mp4', true);
+     * const video = new UIVideo(vec2(400, 300), vec2(320, 240), 'video.mp4', true);
      * video.play();
      * @memberof UISystem
      */
@@ -4312,9 +6110,11 @@ declare module "littlejsengine" {
         volume: number;
         /** @property {HTMLVideoElement} - The video player */
         video: HTMLVideoElement;
+        /** @private */
+        private _soundEnabled;
         /** Play or resume the video
-         *  @return {Promise} Promise that resolves when playback starts */
-        play(): Promise<any>;
+         *  @return {Promise<boolean>} Resolves true once playback starts, false if the browser refused it */
+        play(): Promise<boolean>;
         /** Pause the video */
         pause(): void;
         /** Stop and reset the video */
@@ -4358,6 +6158,7 @@ declare module "littlejsengine" {
      * - Per-child sizing: each row's height = max child.size.y in that row, each column's width = max child.size.x in that column
      * - Children are positioned centered in their cell
      * - Container auto-sizes to fit children plus padding
+     * - Hidden children take no cell, call relayout after showing or hiding one
      * @extends UIObject
      * @memberof UISystem
      */
@@ -4378,7 +6179,7 @@ declare module "littlejsengine" {
         padding: number;
         /** Recompute child positions and container size based on per-child sizes.
          *  Called automatically by addChild and removeChild. Call manually if you
-         *  mutate a child's size or change columns, gap, or padding. */
+         *  mutate a child's size, show or hide one, or change columns, gap, or padding. */
         relayout(): void;
     }
     /**
@@ -4395,6 +6196,8 @@ declare module "littlejsengine" {
      * - Box2dTileLayer for grid based collision
      * - Every type of joint
      * - Debug physics drawing
+     * - Box2D works per second: its velocities and accelerations are in units per second, and it reads the engine's
+     *   gravity as units per second squared, where an EngineObject's are per frame
      * @namespace Box2D
      */
     /** Global Box2d Plugin object
@@ -4422,56 +6225,75 @@ declare module "littlejsengine" {
      * @memberof Box2D
      */
     export class Box2dPlugin {
-        /** Create the global UI system object
+        /** Create the global Box2D plugin object, box2dInit does this
          *  @param {Object} instance */
         constructor(instance: any);
         /** @property {Object} - The Box2d instance */
         instance: any;
         /** @property {Object} - The Box2d world */
         world: any;
-        /** @property {Array<Box2dObject>} - List of all Box2d objects */
-        objects: any[];
+        /** @property {Array<Box2dObject>} - List of all Box2d objects, a destroyed one stays until the next step
+         *  with its body undefined
+         *  @type {Array<Box2dObject>} */
+        objects: Array<Box2dObject>;
         /** @property {number} - Velocity iterations per update*/
         velocityIterations: number;
         /** @property {number} - Position iterations per update*/
         positionIterations: number;
-        /** @property {number} - Static, zero mass, zero velocity, may be manually moved */
-        bodyTypeStatic: any;
-        /** @property {number} - Kinematic, zero mass, non-zero velocity set by user, moved by solver */
-        bodyTypeKinematic: any;
-        /** @property {number} - Dynamic, positive mass, non-zero velocity determined by forces, moved by solver */
-        bodyTypeDynamic: any;
+        /** @property {number} - Static, zero mass, zero velocity, may be manually moved
+         *  @type {number} */
+        bodyTypeStatic: number;
+        /** @property {number} - Kinematic, zero mass, non-zero velocity set by user, moved by solver
+         *  @type {number} */
+        bodyTypeKinematic: number;
+        /** @property {number} - Dynamic, positive mass, non-zero velocity determined by forces, moved by solver
+         *  @type {number} */
+        bodyTypeDynamic: number;
         /** Step the physics world simulation
          *  @param {number} [frames] */
         step(frames?: number): void;
-        /** raycast and return a list of all the results
+        /** raycast and return a list of all the results, nearest first
          *  @param {Vector2} start
-         *  @param {Vector2} end */
-        raycastAll(start: Vector2, end: Vector2): any[];
+         *  @param {Vector2} end
+         *  @param {boolean} [includeSensors] - Also hit sensors, trigger zones are passed through by default
+         *  @return {Array<Box2dRaycastResult>} */
+        raycastAll(start: Vector2, end: Vector2, includeSensors?: boolean): Array<Box2dRaycastResult>;
         /** raycast and return the first result
          *  @param {Vector2} start
-         *  @param {Vector2} end */
-        raycast(start: Vector2, end: Vector2): any;
+         *  @param {Vector2} end
+         *  @param {boolean} [includeSensors] - Also hit sensors, trigger zones are passed through by default
+         *  @return {Box2dRaycastResult|undefined} */
+        raycast(start: Vector2, end: Vector2, includeSensors?: boolean): Box2dRaycastResult | undefined;
         /** box aabb cast and return all the objects
          *  @param {Vector2} pos
-         *  @param {Vector2} size */
-        boxCastAll(pos: Vector2, size: Vector2): any[];
+         *  @param {Vector2} size
+         *  @param {boolean} [includeSensors] - Also find sensors, trigger zones are passed through by default
+         *  @return {Array<Box2dObject>} */
+        boxCastAll(pos: Vector2, size: Vector2, includeSensors?: boolean): Array<Box2dObject>;
         /** box aabb cast and return the first object
          *  @param {Vector2} pos
-         *  @param {Vector2} size */
-        boxCast(pos: Vector2, size: Vector2): undefined;
-        /** circle cast and return all the objects
+         *  @param {Vector2} size
+         *  @param {boolean} [includeSensors] - Also find sensors, trigger zones are passed through by default
+         *  @return {Box2dObject|undefined} */
+        boxCast(pos: Vector2, size: Vector2, includeSensors?: boolean): Box2dObject | undefined;
+        /** circle cast and return all the objects whose position is within the circle, wherever their shapes are
          *  @param {Vector2} pos
-         *  @param {number} diameter */
-        circleCastAll(pos: Vector2, diameter: number): any[];
-        /** circle cast and return the first object
+         *  @param {number} diameter
+         *  @param {boolean} [includeSensors] - Also find objects whose shapes are all sensors, like trigger zones
+         *  @return {Array<Box2dObject>} */
+        circleCastAll(pos: Vector2, diameter: number, includeSensors?: boolean): Array<Box2dObject>;
+        /** circle cast and return the object whose position is nearest, of those within the circle
          *  @param {Vector2} pos
-         *  @param {number} diameter */
-        circleCast(pos: Vector2, diameter: number): any;
+         *  @param {number} diameter
+         *  @param {boolean} [includeSensors] - Also find objects whose shapes are all sensors, like trigger zones
+         *  @return {Box2dObject|undefined} */
+        circleCast(pos: Vector2, diameter: number, includeSensors?: boolean): Box2dObject | undefined;
         /** point cast and return the first object
          *  @param {Vector2} pos
-         *  @param {boolean} dynamicOnly */
-        pointCast(pos: Vector2, dynamicOnly?: boolean): undefined;
+         *  @param {boolean} [dynamicOnly]
+         *  @param {boolean} [includeSensors] - Also find sensors, so a pickup radius does not grab its object from afar
+         *  @return {Box2dObject|undefined} */
+        pointCast(pos: Vector2, dynamicOnly?: boolean, includeSensors?: boolean): Box2dObject | undefined;
         /** draws a fixture
          *  @param {Object} fixture
          *  @param {Vector2} pos
@@ -4488,7 +6310,8 @@ declare module "littlejsengine" {
         /** converts a box2d vec2 pointer to a Vector2
          *  @param {Object} vp */
         vec2FromPointer(vp: any): Vector2;
-        /** converts a Vector2 to a box2 vec2
+        /** converts a Vector2 to a new box2d vec2, which stays until destroyed with box2d.instance.destroy;
+         *  the plugin itself passes Box2D reused ones, since Box2D copies every vector it is given
          *  @param {Vector2} v */
         vec2dTo(v: Vector2): any;
         /** checks if a box2d object is null
@@ -4506,6 +6329,7 @@ declare module "littlejsengine" {
      * - A LittleJS object with Box2D physics, dynamic by default
      * - Provides interface for Box2D body and fixture functions
      * - Each object can have multiple fixtures and joints
+     * - Angular values are clockwise like angle: angular velocity, torque, joint angles, limits and motor speeds
      * @extends EngineObject
      * @memberof Box2D
      */
@@ -4519,16 +6343,19 @@ declare module "littlejsengine" {
          *  @param {number}   [bodyType]
          *  @param {number}   [renderOrder] */
         constructor(pos?: Vector2, size?: Vector2, tileInfo?: TileInfo, angle?: number, color?: Color, bodyType?: number, renderOrder?: number);
-        /** @property {Object} - The Box2d body */
+        /** @property {Object} - The Box2d body, undefined once it is destroyed */
         body: any;
         /** @property {Color} - Line color used for default box2d drawing */
         lineColor: Color;
-        /** @property {Array<Object>} - List of all edges for default box2d drawing */
-        edgeLists: any[];
-        /** @property {Array<Object>} - List of all edge loops for default box2d drawing */
-        edgeLoops: any[];
-        /** Destroy this object and its physics body */
-        destroy(): void;
+        /** @property {number} - Line width used for default box2d drawing */
+        lineWidth: number;
+        /** @property {Array<Array<Vector2>>} - List of all edges for default box2d drawing
+         *  @type {Array<Array<Vector2>>} */
+        edgeLists: Array<Array<Vector2>>;
+        /** @property {Array<Array<Vector2>>} - List of all edge loops for default box2d drawing
+         *  @type {Array<Array<Vector2>>} */
+        edgeLoops: Array<Array<Vector2>>;
+        edgeListFixtures: Map<any, any>;
         /** Draws all this object's fixtures
          *  @param {Color}   [color]
          *  @param {Color}   [lineColor]
@@ -4536,12 +6363,20 @@ declare module "littlejsengine" {
          *  @param {boolean} [useWebGL=glEnable]
          *  @param {CanvasRenderingContext2D} [context] */
         drawFixtures(color?: Color, lineColor?: Color, lineWidth?: number, useWebGL?: boolean, context?: CanvasRenderingContext2D): void;
-        /** Called when a contact begins
-         *  @param {Box2dObject} otherObject */
-        beginContact(otherObject: Box2dObject): void;
-        /** Called when a contact ends
-         *  @param {Box2dObject} otherObject */
-        endContact(otherObject: Box2dObject): void;
+        /** Called when a contact begins, while the world steps: a destroy or a setter waits until the step is done,
+         *  and creating objects, fixtures or joints must wait until after the step
+         *  - The fixtures say which shapes touched, the same objects addBox and the others returned, so a small sensor
+         *    under a player's feet can tell standing on the ground from touching a wall
+         *  @param {Box2dObject} otherObject
+         *  @param {Object} [fixture] - This object's fixture that touched
+         *  @param {Object} [otherFixture] - The other object's fixture that touched */
+        beginContact(otherObject: Box2dObject, fixture?: any, otherFixture?: any): void;
+        /** Called when a contact ends, while the world steps or a body is destroyed: a destroy or a setter waits
+         *  until the step is done, and creating objects, fixtures or joints must wait until after the step
+         *  @param {Box2dObject} otherObject
+         *  @param {Object} [fixture] - This object's fixture that touched
+         *  @param {Object} [otherFixture] - The other object's fixture that touched */
+        endContact(otherObject: Box2dObject, fixture?: any, otherFixture?: any): void;
         /** Add a shape fixture to the body
          *  @param {Object} shape
          *  @param {number}  [density]
@@ -4560,7 +6395,8 @@ declare module "littlejsengine" {
          *  @param {number}  [restitution]
          *  @param {boolean} [isSensor] */
         addBox(size?: Vector2, offset?: Vector2, angle?: number, density?: number, friction?: number, restitution?: number, isSensor?: boolean): any;
-        /** Add a polygon shape to the body
+        /** Add a polygon shape to the body, the convex hull of its points; Box2D takes 3 to 8 points,
+         *  not all in a line, and no fixture is made from any other; points closer than .001 count as one
          *  @param {Array<Vector2>} points
          *  @param {number}  [density]
          *  @param {number}  [friction]
@@ -4569,7 +6405,7 @@ declare module "littlejsengine" {
         addPoly(points: Array<Vector2>, density?: number, friction?: number, restitution?: number, isSensor?: boolean): any;
         /** Add a regular polygon shape to the body
          *  @param {number}  [diameter]
-         *  @param {number}  [sides]
+         *  @param {number}  [sides] - 3 to 8, the most Box2D polygons have
          *  @param {number}  [density]
          *  @param {number}  [friction]
          *  @param {number}  [restitution]
@@ -4612,24 +6448,24 @@ declare module "littlejsengine" {
          *  @param {number}  [restitution]
          *  @param {boolean} [isSensor] */
         addEdgeLoop(points: Array<Vector2>, density?: number, friction?: number, restitution?: number, isSensor?: boolean): any[];
-        /** Destroy a fixture from the body
-         *  @param {Object} [fixture] */
-        destroyFixture(fixture?: any): void;
-        /** Destroy all fixture from the body */
+        /** Destroy a fixture from the body, from a contact callback once the step is done
+         *  @param {Object} fixture */
+        destroyFixture(fixture: any): void;
+        /** Destroy all fixtures from the body, from a contact callback once the step is done */
         destroyAllFixtures(): void;
-        /** Gets the center of mass
+        /** Gets the center of mass in world space
          *  @return {Vector2} */
         getCenterOfMass(): Vector2;
         /** Gets the linear velocity
          *  @return {Vector2} */
         getLinearVelocity(): Vector2;
-        /** Gets the angular velocity
-         *  @return {Vector2} */
-        getAngularVelocity(): Vector2;
+        /** Gets the angular velocity, clockwise like angle
+         *  @return {number} */
+        getAngularVelocity(): number;
         /** Gets the mass
          *  @return {number} */
         getMass(): number;
-        /** Gets the rotational inertia
+        /** Gets the rotational inertia about the center of mass
          *  @return {number} */
         getInertia(): number;
         /** Check if this object is awake
@@ -4638,20 +6474,20 @@ declare module "littlejsengine" {
         /** Gets the physics body type
          *  @return {number} */
         getBodyType(): number;
-        /** Sets the position and angle
+        /** Sets the position and angle, from a contact callback the body moves once the step is done
          *  @param {Vector2} pos
          *  @param {number} angle */
         setTransform(pos: Vector2, angle: number): void;
-        /** Sets the position
+        /** Sets the position, from a contact callback the body moves once the step is done, keeping the angle it has then
          *  @param {Vector2} pos */
         setPosition(pos: Vector2): void;
-        /** Sets the angle
+        /** Sets the angle, from a contact callback the body turns once the step is done, keeping the position it has then
          *  @param {number} angle */
         setAngle(angle: number): void;
         /** Sets the linear velocity
          *  @param {Vector2} velocity */
         setLinearVelocity(velocity: Vector2): void;
-        /** Sets the angular velocity
+        /** Sets the angular velocity, clockwise like angle
          *  @param {number} angularVelocity */
         setAngularVelocity(angularVelocity: number): void;
         /** Sets the linear damping
@@ -4669,7 +6505,7 @@ declare module "littlejsengine" {
         /** Set the sleep state of the body
          *  @param {boolean} [isAwake] */
         setAwake(isAwake?: boolean): void;
-        /** Set the physics body type
+        /** Set the physics body type, from a contact callback it changes once the step is done
          *  @param {number} type */
         setBodyType(type: number): void;
         /** Set whether the body is allowed to sleep
@@ -4678,23 +6514,26 @@ declare module "littlejsengine" {
         /** Set whether the body can rotate
          *  @param {boolean} [isFixed] */
         setFixedRotation(isFixed?: boolean): void;
-        /** Set the center of mass of the body
+        /** Set the center of mass of the body, local to it
          *  @param {Vector2} center */
         setCenterOfMass(center: Vector2): void;
         /** Set the mass of the body
          *  @param {number} mass */
         setMass(mass: number): void;
-        /** Set the moment of inertia of the body
+        /** Set the moment of inertia of the body, about its center of mass
          *  @param {number} momentOfInertia */
         setMomentOfInertia(momentOfInertia: number): void;
-        /** Reset the mass, center of mass, and moment */
+        /** Reset the mass, center of mass, and moment, from a contact callback once the step is done */
         resetMassData(): void;
-        /** Set the mass data of the body
+        /** Set the mass data of the body, from a contact callback once the step is done;
+         *  a mass of 0 or less becomes 1, use setBodyType for a static body; call it after adding fixtures and after
+         *  setFixedRotation, both of which put the mass back to what the fixtures give
          *  @param {Vector2} [localCenter]
          *  @param {number}  [mass]
-         *  @param {number}  [momentOfInertia] */
+         *  @param {number}  [momentOfInertia] - About the center of mass */
         setMassData(localCenter?: Vector2, mass?: number, momentOfInertia?: number): void;
-        /** Set the collision filter data for this body
+        /** Set the collision filter data for the fixtures this body has now, a fixture added later has the default
+         *  filter, category 1 colliding with everything
          *  @param {number} [categoryBits]
          *  @param {number} [ignoreCategoryBits]
          *  @param {number} [groupIndex] */
@@ -4707,7 +6546,7 @@ declare module "littlejsengine" {
          *  @param {Vector2} [pos] */
         applyForce(force: Vector2, pos?: Vector2): void;
         /** Apply acceleration to this object (changes velocity by acceleration,
-         *  mass-independent — matches EngineObject.applyAcceleration semantics).
+         *  mass-independent like EngineObject.applyAcceleration, but in units per second).
          *  Use applyImpulse if you want the mass-dependent velocity change
          *  Δv = impulse / mass, or applyForce for a Newton-style sustained force.
          *  @param {Vector2} acceleration
@@ -4718,11 +6557,11 @@ declare module "littlejsengine" {
          *  @param {Vector2} impulse
          *  @param {Vector2} [pos] */
         applyImpulse(impulse: Vector2, pos?: Vector2): void;
-        /** Apply torque to this object
+        /** Apply torque to this object, clockwise like angle
          *  @param {number} torque */
         applyTorque(torque: number): void;
         /** Apply an instantaneous angular impulse. Changes angular velocity by
-         *  impulse / inertia immediately.
+         *  impulse / inertia immediately, clockwise like angle.
          *  @param {number} impulse */
         applyAngularImpulse(impulse: number): void;
         /** Check if this object has any fixtures
@@ -4734,9 +6573,10 @@ declare module "littlejsengine" {
         /** Check if this object has any joints
          *  @return {boolean} */
         hasJoints(): boolean;
-        /** Get list of joints for this object
-         *  @return {Array<Object>} */
-        getJointList(): Array<any>;
+        /** Get list of joints for this object, the Box2dJoint for each one made through LittleJS,
+         *  and the Box2D joint, cast to its type, for any made on the world directly
+         *  @return {Array<Box2dJoint|Object>} */
+        getJointList(): Array<Box2dJoint | any>;
     }
     /**
      * Box2D Static Object - Box2d with a static physics body
@@ -4771,15 +6611,15 @@ declare module "littlejsengine" {
     /**
      * Box2d Tile Layer
      * - adds Box2d support to tile layers
-     * - creates static box2d fixtures for solid tiles
-     * @extends Box2dObject
+     * - creates static box2d fixtures for solid tiles, call buildCollision to rebuild them after the tiles change
+     * @extends Box2dStaticObject
      * @memberof Box2D
      */
-    export class Box2dTileLayer extends Box2dObject {
+    export class Box2dTileLayer extends Box2dStaticObject {
         /** Create a Box2d tile layer object
         *  @param {TileCollisionLayer} tileLayer - Tile layer for this object */
         constructor(tileLayer: TileCollisionLayer);
-        /** @property {TileLayer} - The tile layer */
+        /** @property {TileCollisionLayer} - The tile layer */
         tileLayer: TileCollisionLayer;
         /** Create box2d collision fixtures for solid tiles
         *  @param {number} [friction]
@@ -4790,6 +6630,7 @@ declare module "littlejsengine" {
      * Box2D Raycast Result
      * - Holds results from a box2d raycast queries
      * - Automatically created by box2d raycast functions
+     * @memberof Box2D
      */
     export class Box2dRaycastResult {
         /** Create a raycast result
@@ -4798,8 +6639,9 @@ declare module "littlejsengine" {
          *  @param {Vector2} normal
          *  @param {number}  fraction */
         constructor(fixture: any, point: Vector2, normal: Vector2, fraction: number);
-        /** @property {Box2dObject} - The box2d object */
-        object: any;
+        /** @property {Box2dObject} - The box2d object
+         *  @type {Box2dObject} */
+        object: Box2dObject;
         /** @property {Object} - The fixture that was hit */
         fixture: any;
         /** @property {Vector2} - The hit point */
@@ -4813,13 +6655,14 @@ declare module "littlejsengine" {
      * Box2D Joint
      * - Base class for Box2D joints
      * - A joint is used to connect objects together
+     * - Angular values are clockwise like angle: joint angles and speeds, limits, motor speeds and torques
      * @memberof Box2D
      */
     export class Box2dJoint {
         /** Create a box2d joint, the base class is not intended to be used directly
-         *  @param {Object} jointDef */
+         *  @param {Object} jointDef - Freed once the joint is made, Box2D copies it */
         constructor(jointDef: any);
-        /** @property {Object} - The Box2d joint */
+        /** @property {Object} - The Box2d joint, 0 once it is destroyed, as it is when either object is */
         box2dJoint: any;
         /** Destroy this joint */
         destroy(): void;
@@ -4835,26 +6678,30 @@ declare module "littlejsengine" {
         /** Get the second anchor for this joint in world coordinates
          *  @return {Vector2} */
         getAnchorB(): Vector2;
-        /** Get the reaction force on bodyB at the joint anchor given a time step
-         *  @param {number} time
+        /** Get the reaction force on bodyB at the joint anchor over the last step
+         *  @param {number} [time] - The step length in seconds, the world steps by timeDelta
          *  @return {Vector2} */
-        getReactionForce(time: number): Vector2;
-        /** Get the reaction torque on bodyB in N*m given a time step
-         *  @param {number} time
+        getReactionForce(time?: number): Vector2;
+        /** Get the reaction torque on bodyB in N*m over the last step, clockwise like angle
+         *  @param {number} [time] - The step length in seconds, the world steps by timeDelta
          *  @return {number} */
-        getReactionTorque(time: number): number;
+        getReactionTorque(time?: number): number;
         /** Check if the connected bodies should collide
          *  @return {boolean} */
         getCollideConnected(): boolean;
         /** Check if either connected body is active
          *  @return {boolean} */
         isActive(): boolean;
+        /** Check if the joint is gone, destroyed or taken along with one of its objects; its other methods can not be used then
+         *  @return {boolean} */
+        isDestroyed(): boolean;
     }
     /**
      * Box2D Target Joint, also known as a mouse joint
      * - Used to make a point on a object track a specific world point target
      * - This a soft constraint with a max force
      * - This allows the constraint to stretch and without applying huge forces
+     * - The object must be dynamic, and stay dynamic while the joint holds it, Box2D stops for good on one with no mass
      * @extends Box2dJoint
      * @memberof Box2D
      */
@@ -4876,7 +6723,7 @@ declare module "littlejsengine" {
         /** Gets the maximum force in Newtons
          *  @return {number} */
         getMaxForce(): number;
-        /** Sets the joint frequency in Hertz
+        /** Sets the joint frequency in Hertz, above 0, Box2D stops for good on 0
          *  @param {number} hz */
         setFrequency(hz: number): void;
         /** Gets the joint frequency in Hertz
@@ -4894,10 +6741,10 @@ declare module "littlejsengine" {
         /** Create a distance joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchorA
-         *  @param {Vector2} anchorB
+         *  @param {Vector2} [anchorA] - World position, objectA's position if not given
+         *  @param {Vector2} [anchorB] - World position, objectB's position if not given
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchorA: Vector2, anchorB: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchorA?: Vector2, anchorB?: Vector2, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -4925,17 +6772,12 @@ declare module "littlejsengine" {
     }
     /**
      * Box2D Pin Joint
-     * - Pins two objects together at a point
-     * @extends Box2dDistanceJoint
+     * - Pins two objects together at a point, where they still turn freely, like a nail through two boards
+     * - A revolute joint at that point, so it holds exactly and its limits and motor work too
+     * @extends Box2dRevoluteJoint
      * @memberof Box2D
      */
-    export class Box2dPinJoint extends Box2dDistanceJoint {
-        /** Create a pin joint
-         *  @param {Box2dObject} objectA
-         *  @param {Box2dObject} objectB
-         *  @param {Vector2} [pos]
-         *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, pos?: Vector2, collide?: boolean);
+    export class Box2dPinJoint extends Box2dRevoluteJoint {
     }
     /**
      * Box2D Rope Joint
@@ -4947,11 +6789,11 @@ declare module "littlejsengine" {
         /** Create a rope joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchorA
-         *  @param {Vector2} anchorB
-         *  @param {number} extraLength
+         *  @param {Vector2} [anchorA] - World position, objectA's position if not given
+         *  @param {Vector2} [anchorB] - World position, objectB's position if not given
+         *  @param {number} [extraLength]
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchorA: Vector2, anchorB: Vector2, extraLength?: number, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchorA?: Vector2, anchorB?: Vector2, extraLength?: number, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -4979,9 +6821,9 @@ declare module "littlejsengine" {
         /** Create a revolute joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchor
+         *  @param {Vector2} [anchor] - World position, objectB's position if not given
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor?: Vector2, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -4991,10 +6833,10 @@ declare module "littlejsengine" {
         /** Get the reference angle, objectB angle minus objectA angle in the reference state
          *  @return {number} */
         getReferenceAngle(): number;
-        /** Get the current joint angle
+        /** Get the current joint angle, clockwise like angle
          *  @return {number} */
         getJointAngle(): number;
-        /** Get the current joint angle speed in radians per second
+        /** Get the current joint angle speed in radians per second, clockwise like angle
          *  @return {number} */
         getJointSpeed(): number;
         /** Is the joint limit enabled?
@@ -5002,58 +6844,62 @@ declare module "littlejsengine" {
         isLimitEnabled(): boolean;
         /** Enable/disable the joint limit
          *  @param {boolean} [enable] */
-        enableLimit(enable?: boolean): any;
-        /** Get the lower joint limit
+        enableLimit(enable?: boolean): void;
+        /** Get the lower joint limit, clockwise like angle
          *  @return {number} */
         getLowerLimit(): number;
-        /** Get the upper joint limit
+        /** Get the upper joint limit, clockwise like angle
          *  @return {number} */
         getUpperLimit(): number;
-        /** Set the joint limits
+        /** Set the joint limits, clockwise like angle
          *  @param {number} min
          *  @param {number} max */
-        setLimits(min: number, max: number): any;
+        setLimits(min: number, max: number): void;
         /** Is the joint motor enabled?
          *  @return {boolean} */
         isMotorEnabled(): boolean;
         /** Enable/disable the joint motor
          *  @param {boolean} [enable] */
-        enableMotor(enable?: boolean): any;
-        /** Set the motor speed
+        enableMotor(enable?: boolean): void;
+        /** Set the motor speed, clockwise like angle
          *  @param {number} speed */
-        setMotorSpeed(speed: number): any;
-        /** Get the motor speed
+        setMotorSpeed(speed: number): void;
+        /** Get the motor speed, clockwise like angle
          *  @return {number} */
         getMotorSpeed(): number;
-        /** Set the motor torque
+        /** Set the max motor torque, a magnitude
          *  @param {number} torque */
-        setMaxMotorTorque(torque: number): any;
+        setMaxMotorTorque(torque: number): void;
         /** Get the max motor torque
          *  @return {number} */
         getMaxMotorTorque(): number;
-        /** Get the motor torque given a time step
-         *  @param {number} time
+        /** Get the motor torque over the last step, clockwise like angle
+         *  @param {number} [time] - The step length in seconds, the world steps by timeDelta
          *  @return {number} */
-        getMotorTorque(time: number): number;
+        getMotorTorque(time?: number): number;
     }
     /**
      * Box2D Gear Joint
      * - A gear joint is used to connect two joints together
      * - Either joint can be a revolute or prismatic joint
      * - You specify a gear ratio to bind the motions together
+     * - joint1's angle or translation plus ratio times joint2's stays constant, angles clockwise like angle
+     * - It is destroyed along with either joint, or an object either joint is on
+     * - It turns objectB of each joint, so make each with its fixed or carrying object first, and a dynamic objectB
      * @extends Box2dJoint
      * @memberof Box2D
      */
     export class Box2dGearJoint extends Box2dJoint {
         /** Create a gear joint
-         *  @param {Box2dObject} objectA
-         *  @param {Box2dObject} objectB
+         *  @param {Box2dObject} objectA - objectB of joint1, Box2D joins that one whatever is passed
+         *  @param {Box2dObject} objectB - objectB of joint2, Box2D joins that one whatever is passed
          *  @param {Box2dJoint} joint1
          *  @param {Box2dJoint} joint2
          *  @param {number} [ratio] */
         constructor(objectA: Box2dObject, objectB: Box2dObject, joint1: Box2dJoint, joint2: Box2dJoint, ratio?: number);
         joint1: Box2dJoint;
         joint2: Box2dJoint;
+        ratioSign: number;
         /** Get the first joint
          *  @return {Box2dJoint} */
         getJoint1(): Box2dJoint;
@@ -5062,7 +6908,7 @@ declare module "littlejsengine" {
         getJoint2(): Box2dJoint;
         /** Set the gear ratio
          *  @param {number} ratio */
-        setRatio(ratio: number): any;
+        setRatio(ratio: number): void;
         /** Get the gear ratio
          *  @return {number} */
         getRatio(): number;
@@ -5080,10 +6926,10 @@ declare module "littlejsengine" {
         /** Create a prismatic joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchor
-         *  @param {Vector2} worldAxis
+         *  @param {Vector2} [anchor] - World position, objectB's position if not given
+         *  @param {Vector2} [worldAxis]
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor: Vector2, worldAxis?: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor?: Vector2, worldAxis?: Vector2, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -5093,7 +6939,7 @@ declare module "littlejsengine" {
         /** Get the local joint axis relative to bodyA
          *  @return {Vector2} */
         getLocalAxisA(): Vector2;
-        /** Get the reference angle
+        /** Get the reference angle, objectB angle minus objectA angle in the reference state
          *  @return {number} */
         getReferenceAngle(): number;
         /** Get the current joint translation
@@ -5107,7 +6953,7 @@ declare module "littlejsengine" {
         isLimitEnabled(): boolean;
         /** Enable/disable the joint limit
          *  @param {boolean} [enable] */
-        enableLimit(enable?: boolean): any;
+        enableLimit(enable?: boolean): void;
         /** Get the lower joint limit
          *  @return {number} */
         getLowerLimit(): number;
@@ -5117,34 +6963,33 @@ declare module "littlejsengine" {
         /** Set the joint limits
          *  @param {number} min
          *  @param {number} max */
-        setLimits(min: number, max: number): any;
+        setLimits(min: number, max: number): void;
         /** Is the motor enabled?
          *  @return {boolean} */
         isMotorEnabled(): boolean;
         /** Enable/disable the joint motor
          *  @param {boolean} [enable] */
-        enableMotor(enable?: boolean): any;
+        enableMotor(enable?: boolean): void;
         /** Set the motor speed
          *  @param {number} speed */
-        setMotorSpeed(speed: number): any;
+        setMotorSpeed(speed: number): void;
         /** Get the motor speed
          *  @return {number} */
         getMotorSpeed(): number;
         /** Set the maximum motor force
          *  @param {number} force */
-        setMaxMotorForce(force: number): any;
+        setMaxMotorForce(force: number): void;
         /** Get the maximum motor force
          *  @return {number} */
         getMaxMotorForce(): number;
-        /** Get the motor force given a time step
-         *  @param {number} time
+        /** Get the motor force over the last step
+         *  @param {number} [time] - The step length in seconds, the world steps by timeDelta
          *  @return {number} */
-        getMotorForce(time: number): number;
+        getMotorForce(time?: number): number;
     }
     /**
      * Box2D Wheel Joint
      * - Provides two degrees of freedom: translation along an axis fixed in objectA and rotation
-     * - You can use a joint limit to restrict the range of motion
      * - You can use a joint motor to drive the motion or to model joint friction
      * - This joint is designed for vehicle suspensions
      * @extends Box2dJoint
@@ -5154,10 +6999,10 @@ declare module "littlejsengine" {
         /** Create a wheel joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchor
-         *  @param {Vector2} worldAxis
+         *  @param {Vector2} [anchor] - World position, objectB's position if not given
+         *  @param {Vector2} [worldAxis]
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor: Vector2, worldAxis?: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor?: Vector2, worldAxis?: Vector2, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -5170,7 +7015,8 @@ declare module "littlejsengine" {
         /** Get the current joint translation
          *  @return {number} */
         getJointTranslation(): number;
-        /** Get the current joint translation speed
+        /** Get the current joint rotation speed in radians per second, clockwise like angle,
+         *  which is what this version of Box2D measures for a wheel joint
          *  @return {number} */
         getJointSpeed(): number;
         /** Is the joint motor enabled?
@@ -5178,31 +7024,32 @@ declare module "littlejsengine" {
         isMotorEnabled(): boolean;
         /** Enable/disable the joint motor
          *  @param {boolean} [enable] */
-        enableMotor(enable?: boolean): any;
-        /** Set the motor speed
+        enableMotor(enable?: boolean): void;
+        /** Set the motor speed, the wheel's turn in radians per second, clockwise like angle
          *  @param {number} speed */
-        setMotorSpeed(speed: number): any;
-        /** Get the motor speed
+        setMotorSpeed(speed: number): void;
+        /** Get the motor speed, clockwise like angle
          *  @return {number} */
         getMotorSpeed(): number;
-        /** Set the maximum motor torque
+        /** Set the maximum motor torque, a magnitude
          *  @param {number} torque */
-        setMaxMotorTorque(torque: number): any;
+        setMaxMotorTorque(torque: number): void;
         /** Get the max motor torque
          *  @return {number} */
         getMaxMotorTorque(): number;
-        /** Get the motor torque for a time step
+        /** Get the motor torque over the last step, clockwise like angle
+         *  @param {number} [time] - The step length in seconds, the world steps by timeDelta
          *  @return {number} */
-        getMotorTorque(time: any): number;
+        getMotorTorque(time?: number): number;
         /** Set the spring frequency in Hertz
          *  @param {number} hz */
-        setSpringFrequencyHz(hz: number): any;
+        setSpringFrequencyHz(hz: number): void;
         /** Get the spring frequency in Hertz
          *  @return {number} */
         getSpringFrequencyHz(): number;
         /** Set the spring damping ratio
          *  @param {number} ratio */
-        setSpringDampingRatio(ratio: number): any;
+        setSpringDampingRatio(ratio: number): void;
         /** Get the spring damping ratio
          *  @return {number} */
         getSpringDampingRatio(): number;
@@ -5217,28 +7064,35 @@ declare module "littlejsengine" {
         /** Create a weld joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchor
+         *  @param {Vector2} [anchor] - World position, objectB's position if not given
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor?: Vector2, collide?: boolean);
+        referenceAngle: number;
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
         /** Get the local anchor point relative to objectB's origin
          *  @return {Vector2} */
         getLocalAnchorB(): Vector2;
-        /** Get the reference angle
+        /** Get the reference angle, objectB angle minus objectA angle in the reference state
          *  @return {number} */
         getReferenceAngle(): number;
         /** Set the frequency in Hertz
          *  @param {number} hz */
-        setFrequency(hz: number): any;
+        setFrequency(hz: number): void;
         /** Get the frequency in Hertz
          *  @return {number} */
         getFrequency(): number;
         /** Set the damping ratio
          *  @param {number} ratio */
-        setSpringDampingRatio(ratio: number): any;
+        setDampingRatio(ratio: number): void;
         /** Get the damping ratio
+         *  @return {number} */
+        getDampingRatio(): number;
+        /** @deprecated since 1.20, use setDampingRatio
+         *  @param {number} ratio */
+        setSpringDampingRatio(ratio: number): void;
+        /** @deprecated since 1.20, use getDampingRatio
          *  @return {number} */
         getSpringDampingRatio(): number;
     }
@@ -5253,9 +7107,9 @@ declare module "littlejsengine" {
         /** Create a friction joint
          *  @param {Box2dObject} objectA
          *  @param {Box2dObject} objectB
-         *  @param {Vector2} anchor
+         *  @param {Vector2} [anchor] - World position, objectB's position if not given
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor: Vector2, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, anchor?: Vector2, collide?: boolean);
         /** Get the local anchor point relative to objectA's origin
          *  @return {Vector2} */
         getLocalAnchorA(): Vector2;
@@ -5289,21 +7143,21 @@ declare module "littlejsengine" {
          *  @param {Box2dObject} objectB
          *  @param {Vector2} groundAnchorA
          *  @param {Vector2} groundAnchorB
-         *  @param {Vector2} anchorA
-         *  @param {Vector2} anchorB
+         *  @param {Vector2} [anchorA] - World position, objectA's position if not given
+         *  @param {Vector2} [anchorB] - World position, objectB's position if not given
          *  @param {number}  [ratio]
          *  @param {boolean} [collide] */
-        constructor(objectA: Box2dObject, objectB: Box2dObject, groundAnchorA: Vector2, groundAnchorB: Vector2, anchorA: Vector2, anchorB: Vector2, ratio?: number, collide?: boolean);
+        constructor(objectA: Box2dObject, objectB: Box2dObject, groundAnchorA: Vector2, groundAnchorB: Vector2, anchorA?: Vector2, anchorB?: Vector2, ratio?: number, collide?: boolean);
         /** Get the first ground anchor
          *  @return {Vector2} */
         getGroundAnchorA(): Vector2;
         /** Get the second ground anchor
          *  @return {Vector2} */
         getGroundAnchorB(): Vector2;
-        /** Get the current length of the segment attached to objectA
+        /** Get the rest length of the segment attached to objectA, set at creation
          *  @return {number} */
         getLengthA(): number;
-        /** Get the current length of the segment attached to objectB
+        /** Get the rest length of the segment attached to objectB, set at creation
          *  @return {number} */
         getLengthB(): number;
         /** Get the pulley ratio
@@ -5334,16 +7188,16 @@ declare module "littlejsengine" {
         /** Get the target linear offset, in frame A, in meters.
          *  @return {Vector2} */
         getLinearOffset(): Vector2;
-        /** Set the target angular offset
+        /** Set the target angular offset, objectB angle minus objectA angle, clockwise like angle
          *  @param {number} offset */
         setAngularOffset(offset: number): void;
-        /** Get the target angular offset
+        /** Get the target angular offset, objectB angle minus objectA angle, clockwise like angle
          *  @return {number} */
         getAngularOffset(): number;
-        /** Set the maximum friction force
+        /** Set the maximum force
          *  @param {number} force */
         setMaxForce(force: number): void;
-        /** Get the maximum friction force
+        /** Get the maximum force
          *  @return {number} */
         getMaxForce(): number;
         /** Set the maximum torque
@@ -5360,7 +7214,7 @@ declare module "littlejsengine" {
         getCorrectionFactor(): number;
     }
     /** Draw a scalable nine-slice UI element in world space
-     *  This function can apply color and additive color if WebGL is enabled
+     *  Color and additive color apply in WebGL and Canvas2D (with canvasColorTiles)
      *  The nine-slice samples a 3x3 block of tiles from the tilesheet, it does not
      *  subdivide a single tile. Pass the top-left tile of that block as startTile;
      *  the other 8 tiles (edges, corners, and center) are taken automatically from
@@ -5370,33 +7224,40 @@ declare module "littlejsengine" {
      *  @param {Vector2} size - World space size
      *  @param {TileInfo} startTile - Top-left tile of the 3x3 block to sample the nine-slice from
      *  @param {Color} [color] - Color to modulate with
+     *  @param {number} [borderSize] - Rendered thickness of the border sections, 1 in world space and 32 pixels in
+     *    screen space by default
+     *  @param {Color} [additiveColor] - Additive color
+     *  @param {number} [extraSpace] - Extra spacing adjustment, .05 in world space and 2 pixels in screen space by
+     *    default
+     *  @param {number} [angle] - Angle to rotate by
+     *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
+     *  @param {boolean} [screenSpace=drawScreenSpace] - Use screen space coordinates
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use
+     *  @memberof DrawUtilities */
+    export function drawNineSlice(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    /**
+     * LittleJS Drawing Utilities Plugin
+     * - Extra drawing functions for LittleJS
+     * - Nine slice and three slice drawing, and TileSlice to keep one as a style, like a UI skin
+     * @namespace DrawUtilities
+     */
+    /** Draw a scalable nine-slice UI element in screen space, drawNineSlice with screenSpace set
+     *  - Draws with the 2D context by default, on top of what WebGL drew, like drawTextScreen
+     *  - With no angle its pieces land on whole pixels and meet exactly, so pixel art lines up and extraSpace is not used
+     *  @param {Vector2} pos - Screen space position
+     *  @param {Vector2} size - Screen space size
+     *  @param {TileInfo} startTile - Top-left tile of the 3x3 block to sample (see drawNineSlice)
+     *  @param {Color|number} [color=WHITE] - Color to modulate with; a number here is the borderSize of the order before 1.20, deprecated
      *  @param {number} [borderSize] - Rendered thickness of the border sections
      *  @param {Color} [additiveColor] - Additive color
      *  @param {number} [extraSpace] - Extra spacing adjustment
      *  @param {number} [angle] - Angle to rotate by
-     *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
-     *  @param {boolean} [screenSpace] - Use screen space coordinates
-     *  @param {CanvasRenderingContext2D} [context] - Canvas context to use
+     *  @param {boolean} [useWebGL] - Use WebGL for rendering
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use
      *  @memberof DrawUtilities */
-    export function drawNineSlice(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D): void;
-    /**
-     * LittleJS Drawing Utilities Plugin
-     * - Extra drawing functions for LittleJS
-     * - Nine slice and three slice drawing
-     * @namespace DrawUtilities
-     */
-    /** Draw a scalable nine-slice UI element to the main canvas in screen space
-     *  This function can not apply color because it draws using the 2d context
-     *  @param {Vector2} pos - Screen space position
-     *  @param {Vector2} size - Screen space size
-     *  @param {TileInfo} startTile - Top-left tile of the 3x3 block to sample (see drawNineSlice)
-     *  @param {number} [borderSize] - Rendered thickness of the border sections
-     *  @param {number} [extraSpace] - Extra spacing adjustment
-     *  @param {number} [angle] - Angle to rotate by
-     *  @memberof DrawUtilities */
-    export function drawNineSliceScreen(pos: Vector2, size: Vector2, startTile: TileInfo, borderSize?: number, extraSpace?: number, angle?: number): void;
+    export function drawNineSliceScreen(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color | number, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, ...args: any[]): void;
     /** Draw a scalable three-slice UI element in world space
-     *  This function can apply color and additive color if WebGL is enabled
+     *  Color and additive color apply in WebGL and Canvas2D (with canvasColorTiles)
      *  The three-slice samples 3 consecutive tiles from the tilesheet, it does not
      *  subdivide a single tile. Pass the first tile as startTile; the three tiles
      *  are used in order as corner, side, and center, then rotated and mirrored to
@@ -5405,85 +7266,149 @@ declare module "littlejsengine" {
      *  @param {Vector2} size - World space size
      *  @param {TileInfo} startTile - First of 3 consecutive tiles (corner, side, center) for the three-slice
      *  @param {Color} [color] - Color to modulate with
+     *  @param {number} [borderSize] - Rendered thickness of the border sections, 1 in world space and 32 pixels in
+     *    screen space by default
+     *  @param {Color} [additiveColor] - Additive color
+     *  @param {number} [extraSpace] - Extra spacing adjustment, .05 in world space and 2 pixels in screen space by
+     *    default
+     *  @param {number} [angle] - Angle to rotate by
+     *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
+     *  @param {boolean} [screenSpace=drawScreenSpace] - Use screen space coordinates
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use
+     *  @memberof DrawUtilities */
+    export function drawThreeSlice(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    /** Draw a scalable three-slice UI element in screen space, drawThreeSlice with screenSpace set
+     *  - Draws with the 2D context by default, on top of what WebGL drew, like drawTextScreen
+     *  - With no angle its pieces land on whole pixels and meet exactly, so pixel art lines up and extraSpace is not used
+     *  @param {Vector2} pos - Screen space position
+     *  @param {Vector2} size - Screen space size
+     *  @param {TileInfo} startTile - First of 3 consecutive tiles: corner, side, center (see drawThreeSlice)
+     *  @param {Color|number} [color=WHITE] - Color to modulate with; a number here is the borderSize of the order before 1.20, deprecated
      *  @param {number} [borderSize] - Rendered thickness of the border sections
      *  @param {Color} [additiveColor] - Additive color
      *  @param {number} [extraSpace] - Extra spacing adjustment
      *  @param {number} [angle] - Angle to rotate by
-     *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
-     *  @param {boolean} [screenSpace] - Use screen space coordinates
-     *  @param {CanvasRenderingContext2D} [context] - Canvas context to use
+     *  @param {boolean} [useWebGL] - Use WebGL for rendering
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use
      *  @memberof DrawUtilities */
-    export function drawThreeSlice(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D): void;
-    /** Draw a scalable three-slice UI element to the main canvas in screen space
-     *  This function can not apply color because it draws using the 2d context
-     *  @param {Vector2} pos - Screen space position
-     *  @param {Vector2} size - Screen space size
-     *  @param {TileInfo} startTile - First of 3 consecutive tiles: corner, side, center (see drawThreeSlice)
-     *  @param {number} [borderSize] - Rendered thickness of the border sections
-     *  @param {number} [extraSpace] - Extra spacing adjustment
-     *  @param {number} [angle] - Angle to rotate by
-     *  @memberof DrawUtilities */
-    export function drawThreeSliceScreen(pos: Vector2, size: Vector2, startTile: TileInfo, borderSize?: number, extraSpace?: number, angle?: number): void;
+    export function drawThreeSliceScreen(pos: Vector2, size: Vector2, startTile: TileInfo, color?: Color | number, borderSize?: number, additiveColor?: Color, extraSpace?: number, angle?: number, useWebGL?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, ...args: any[]): void;
+    /**
+     * A tile drawn as a box of any size, kept as a style to draw with, like a UI skin
+     * - 9 slices is a nine-slice from the 3x3 block of tiles at tileInfo, see drawNineSlice
+     * - 3 slices is a three-slice from the 3 tiles in a row at tileInfo, see drawThreeSlice
+     * - 1 slice is the whole tile stretched over the box, a plain image
+     * - The UI system draws a widget's background with one, see uiSystem.defaultSlice
+     * @memberof DrawUtilities
+     * @example
+     * const panel = new TileSlice(tile(0, 16), 9, .5); // a border of half a world unit
+     * panel.draw(vec2(0, 5), vec2(10, 4));
+     * uiSystem.defaultSlice = new TileSlice(tile(0, 16), 9, 16); // UI sizes are pixels, every widget made after this
+     */
+    export class TileSlice {
+        /** Create a tile slice style
+         *  @param {TileInfo} tileInfo - The tile, or the first of the tiles, to draw with
+         *  @param {number} [slices] - 9 for a nine-slice, 3 for a three-slice, 1 for the whole tile
+         *  @param {number} [borderSize] - Drawn thickness of the edges and corners, undefined for the draw's own default
+         *  @param {number} [extraSpace] - Extra spacing adjustment of the slices, undefined for the draw's own default */
+        constructor(tileInfo: TileInfo, slices?: number, borderSize?: number, extraSpace?: number);
+        /** @property {TileInfo} - The tile, or the first of the tiles, to draw with */
+        tileInfo: TileInfo;
+        /** @property {number} - 9 for a nine-slice, 3 for a three-slice, 1 for the whole tile */
+        slices: number;
+        /** @property {number|undefined} - Drawn thickness of the edges and corners, undefined for the draw's default
+         *  @type {number|undefined} */
+        borderSize: number | undefined;
+        /** @property {number|undefined} - Extra spacing adjustment of the slices, undefined for the draw's default
+         *  @type {number|undefined} */
+        extraSpace: number | undefined;
+        /** Draw it as a box in world space, or in screen space
+         *  @param {Vector2} pos - Center position
+         *  @param {Vector2} size - Size of the box
+         *  @param {Color} [color] - Color to modulate with
+         *  @param {Color} [additiveColor] - Additive color
+         *  @param {number} [angle] - Angle to rotate by
+         *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
+         *  @param {boolean} [screenSpace=drawScreenSpace] - Are pos and size in screen space?
+         *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use */
+        draw(pos: Vector2, size: Vector2, color?: Color, additiveColor?: Color, angle?: number, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+        /** Draw it as a box in screen space, with the 2D context by default, on top of what WebGL drew, like drawTextScreen
+         *  @param {Vector2} pos - Screen space center position
+         *  @param {Vector2} size - Screen space size
+         *  @param {Color} [color] - Color to modulate with
+         *  @param {Color} [additiveColor] - Additive color
+         *  @param {number} [angle] - Angle to rotate by
+         *  @param {boolean} [useWebGL] - Use WebGL for rendering
+         *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use */
+        drawScreen(pos: Vector2, size: Vector2, color?: Color, additiveColor?: Color, angle?: number, useWebGL?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+    }
     /** Draw a crescent / moon-phase shape built from a polygon
      *  Routes through drawPoly, so it supports WebGL, screen space, color, and outlines
+     *  - At angle 0 the lit side faces up while waxing (percent below .5) and down while waning, and the lit width
+     *    grows evenly with the phase, not as the real moon's does
      *  @param {Vector2} pos - Center position
      *  @param {number}  [size] - Diameter
      *  @param {number}  [percent] - Moon phase over a full cycle (0=new, .25=first quarter, .5=full, .75=last quarter), wraps
      *  @param {Color}   [color] - Fill color
      *  @param {number}  [angle] - Angle to rotate by
-     *  @param {boolean} [invert] - Flip which side is illuminated
+     *  @param {boolean} [invert] - Draw the unlit part of the disk instead of the lit part
      *  @param {number}  [lineWidth] - Outline width, 0 for no outline
      *  @param {Color}   [lineColor] - Outline color
      *  @param {boolean} [useWebGL=glEnable] - Use WebGL for rendering
-     *  @param {boolean} [screenSpace] - Use screen space coordinates
-     *  @param {CanvasRenderingContext2D} [context] - Canvas context to use
+     *  @param {boolean} [screenSpace=drawScreenSpace] - Use screen space coordinates
+     *  @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} [context] - Canvas context to use
      *  @memberof DrawUtilities */
-    export function drawCrescent(pos: Vector2, size?: number, percent?: number, color?: Color, angle?: number, invert?: boolean, lineWidth?: number, lineColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D): void;
+    export function drawCrescent(pos: Vector2, size?: number, percent?: number, color?: Color, angle?: number, invert?: boolean, lineWidth?: number, lineColor?: Color, useWebGL?: boolean, screenSpace?: boolean, context?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
     /** Get the list of points that make up a crescent / moon-phase shape
      *  Returns world-space points with pos and angle baked in, ready for drawPoly or other use
      *  @param {Vector2} pos - Center position
      *  @param {number}  [size] - Diameter
      *  @param {number}  [percent] - Moon phase over a full cycle (0=new, .25=first quarter, .5=full, .75=last quarter), wraps
      *  @param {number}  [angle] - Angle to rotate by
-     *  @param {boolean} [invert] - Flip which side is illuminated
+     *  @param {boolean} [invert] - The unlit part of the disk instead of the lit part
      *  @param {number}  [sides=glCircleSides] - Number of sides for a full circle (halved per arc)
      *  @return {Array<Vector2>} - List of points making up the crescent
      *  @memberof DrawUtilities */
     export function getCrescentPoints(pos: Vector2, size?: number, percent?: number, angle?: number, invert?: boolean, sides?: number): Array<Vector2>;
-    /** A numeric tween: drives a callback with a value interpolated between
+    /** A tween: drives a callback with a value interpolated between
      *  `start` and `end` over `duration` seconds. Pauses with the game by default.
+     *  - In TypeScript it is a `Tween<T>` of the type it tweens, which comes from `start` and `end` or
+     *    the callback's parameter, so `(v: number)=> ...` takes a number
+     *  @template [T=any]
      *  @memberof TweenSystem
      *  @example
      *  // Animate a fade-out over 2 seconds with an ease-out sine curve.
      *  new Tween((v) => obj.alpha = v, 1, 0, 2, { ease: Ease.OUT(Ease.SINE) });
      */
-    export class Tween {
+    export class Tween<T = any> {
         /** Create a new tween. The callback fires immediately with `start` so the
          *  target snaps to the start value on the same frame the tween is created.
          *
-         *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+         *  `start` and `end` may be numbers, Vector2, Vector3 or Color instances, or
          *  any object exposing a `lerp(other, percent) => sameType` method. The
          *  callback receives the interpolated value (a number, or a fresh instance
          *  for lerp-able types). Both endpoints must be the same type.
-         *  @param {function(number|Vector2|Color):void} callback - Called with the interpolated value each frame
-         *  @param {number|Vector2|Color} [start=0] - Starting value
-         *  @param {number|Vector2|Color} [end=1] - Ending value
+         *  @param {function(NonNullable<T>):void} callback - Called with the interpolated value each frame
+         *  @param {T} [start=0] - Starting value
+         *  @param {T} [end=1] - Ending value
          *  @param {number} [duration=1] - Duration in seconds
          *  @param {Object} [options]
          *  @param {function(number):number} [options.ease] - Easing function (defaults to LINEAR)
          *  @param {boolean} [options.useRealTime=false] - Advance even when the game is paused (matches Timer's useRealTime)
          *  @param {boolean} [options.paused=false] - Start in paused state */
-        constructor(callback: (arg0: number | Vector2 | Color) => void, start?: number | Vector2 | Color, end?: number | Vector2 | Color, duration?: number, options?: {
+        constructor(callback: (arg0: NonNullable<T>) => void, start?: T, end?: T, duration?: number, options?: {
             ease?: (arg0: number) => number;
             useRealTime?: boolean;
             paused?: boolean;
         });
-        /** @property {function(number|Vector2|Color):void} - Called with the interpolated value each frame */
-        callback: (arg0: number | Vector2 | Color) => void;
-        /** @property {number|Vector2|Color} - Starting value */
-        start: number | Vector2 | Color;
-        /** @property {number|Vector2|Color} - Ending value */
-        end: number | Vector2 | Color;
+        /** @property {function(T):void} - Called with the interpolated value each frame
+         *  @type {function(T):void} */
+        callback: (arg0: T) => void;
+        /** @property {T} - Starting value
+         *  @type {T} */
+        start: T;
+        /** @property {T} - Ending value
+         *  @type {T} */
+        end: T;
         /** @property {number} - Total duration in seconds */
         duration: number;
         /** @property {number} - Remaining time in seconds (counts down from duration to 0) */
@@ -5494,92 +7419,125 @@ declare module "littlejsengine" {
         useRealTime: boolean;
         /** @property {boolean} - If true, stop advancing until cleared */
         paused: boolean;
-        /** @private completion callback set by then(), loop(), pingPong(). */
+        /** @property {undefined|function():void} - Called once the tween completes: when its last pass ends,
+         *  the last iteration of a loop or pingPong, and again each time a restart plays through; then() sets it
+         *  @type {undefined|function():void} */
+        onComplete: undefined | (() => void);
+        /** Continuation when a pass ends, set by loop() and pingPong() to start the next iteration.
+         *  @private */
         private thenCallback;
-        /** @private remaining iterations including the current run (loop/pingPong only). */
+        /** Remaining iterations including the current run (loop/pingPong only).
+         *  @private */
         private loopRemaining;
+        /** Whether it is in the active list, see isActive
+         *  @private */
+        private active;
+        /** The update it was started in, it first moves on the one after
+         *  @private */
+        private activePass;
+        /** Engine time and real time of its last engine update, it moves by what passed since
+         *  @private */
+        private lastTime;
+        /** @private */
+        private lastTimeReal;
+        /** @property {Object|undefined} - The object tweenProperty animates, the tween stops once it is destroyed,
+         *  even while paused
+         *  @type {{destroyed?: boolean}|undefined} */
+        target: {
+            destroyed?: boolean;
+        } | undefined;
         /** Set the easing curve and return this for chaining.
          *  @param {function(number):number} easeFn
-         *  @returns {Tween}
-         *  @memberof TweenSystem */
-        setEase(easeFn: (arg0: number) => number): Tween;
-        /** Set a single completion callback. Calling `then` again replaces the
-         *  previous callback. Returns this for chaining.
-         *
-         *  Calling `then` after `loop` or `pingPong` overrides the loop chain
-         *  (last call wins).
+         *  @returns {Tween<T>} */
+        setEase(easeFn: (arg0: number) => number): Tween<T>;
+        /** Set the completion callback, `onComplete`, and return this for chaining.
+         *  It is called once the tween completes: when its pass ends, or for a
+         *  `loop` or `pingPong` when its last iteration ends, so an endless one
+         *  never calls it. Calling `then` again replaces the previous callback.
+         *  - It works with `loop` and `pingPong` in either order, neither replaces the other
+         *  - It is kept by `restart`, so a restarted tween calls it again when it completes
+         *  - `stop` and `tweenStopAll` end a tween without calling it
          *  @param {function():void} callback
-         *  @returns {Tween}
-         *  @memberof TweenSystem */
-        then(callback: () => void): Tween;
-        /** Repeat this tween `n` total times. After each iteration finishes, a
-         *  fresh tween with the same parameters takes over via the `then` slot.
+         *  @returns {Tween<T>} */
+        then(callback: () => void): Tween<T>;
+        /** Repeat this tween `n` total times. After each iteration finishes, the
+         *  same tween starts over, so the handle returned stays good for the whole
+         *  loop: pause or stop it to pause or stop every iteration left.
          *  `loop()` with no argument loops forever.
          *
-         *  Mutually exclusive with `pingPong`; calling either replaces the other,
-         *  and calling `then` after either clears the loop (last call wins).
+         *  Mutually exclusive with `pingPong`; calling either replaces the other.
+         *  A `then` callback, set before or after, is called when the last
+         *  iteration ends.
          *  @param {number} [count=Infinity]
-         *  @returns {Tween}
-         *  @memberof TweenSystem */
-        loop(count?: number): Tween;
+         *  @returns {Tween<T>} */
+        loop(count?: number): Tween<T>;
         /** Like `loop`, but swap `start` and `end` between iterations so the value
          *  bounces back and forth. `pingPong()` with no argument bounces forever.
          *
-         *  Mutually exclusive with `loop`; calling either replaces the other, and
-         *  calling `then` after either clears the loop (last call wins).
+         *  Mutually exclusive with `loop`; calling either replaces the other.
+         *  A `then` callback, set before or after, is called when the last
+         *  iteration ends.
          *  @param {number} [count=Infinity]
-         *  @returns {Tween}
-         *  @memberof TweenSystem */
-        pingPong(count?: number): Tween;
-        /** Pause this tween. While paused, tweenUpdate skips it.
-         *  @memberof TweenSystem */
+         *  @returns {Tween<T>} */
+        pingPong(count?: number): Tween<T>;
+        /** Pause this tween. While paused, tweenUpdate skips it. */
         pause(): void;
-        /** Resume a paused tween.
-         *  @memberof TweenSystem */
+        /** Resume a paused tween. */
         resume(): void;
         /** Reset this tween to the start: life back to duration, pause cleared,
          *  re-added to the active list if previously stopped, and the callback
          *  re-fired with the start value.
-         *  @memberof TweenSystem */
+         *  It replays one pass: a loop or pingPong that has finished is not started
+         *  over, a pingPong that ended on its way back plays that way again, and a
+         *  restart mid loop keeps the iterations left. Call loop or pingPong again
+         *  after restart to repeat it. The `then` callback is kept and is called
+         *  again when it completes. */
         restart(): void;
         /** True if this tween is in the active list and not paused.
-         *  @returns {boolean}
-         *  @memberof TweenSystem */
+         *  @returns {boolean} */
         isActive(): boolean;
         /** Get how far this tween has progressed, from 0 (just started) to 1
          *  (completed). Clamped — overshoot past completion still reads 1.
-         *  @returns {number}
-         *  @memberof TweenSystem */
+         *  @returns {number} */
         getPercent(): number;
         /** Get the current interpolated value (the value most recently passed to
-         *  the callback). Returns a number, Vector2, or Color depending on the
+         *  the callback). Returns a number, Vector2, Vector3 or Color depending on the
          *  tween's start/end types.
-         *  @returns {number|Vector2|Color}
-         *  @memberof TweenSystem */
-        getValue(): number | Vector2 | Color;
+         *  @returns {T} */
+        getValue(): T;
         /** Compute the interpolated value at the given remaining `life`.
          *  At life === duration the result is `start`; at life === 0 it is `end`.
+         *  - At life 0 it is the end value exactly
+         *  - A vector goes past its ends as far as the easing does, as a number does; a Color stays between them,
+         *    so its channels stay in range, and any other type goes as far as its own lerp takes it
          *  @param {number} life
-         *  @returns {number}
-         *  @memberof TweenSystem */
-        interp(life: number): number;
-        /** Remove this tween from the active list and prevent any pending then-callback.
-         *  @memberof TweenSystem */
+         *  @returns {T} */
+        interp(life: number): T;
+        /** Remove this tween from the active list, ending a loop or pingPong too, without calling
+         *  the then-callback. It keeps the then-callback, so a restart calls it when it completes. */
         stop(): void;
     }
     /** Tween a property on an object by dot-path. Returns the underlying Tween
      *  so all chaining methods (`setEase`, `then`, `loop`, `pingPong`, etc.)
      *  remain available.
      *
-     *  `start` and `end` may be numbers, Vector2 instances, Color instances, or
+     *  `start` and `end` may be numbers, Vector2, Vector3 or Color instances, or
      *  any object with a `lerp(other, percent) => sameType` method.
+     *
+     *  It stops on its own once the target is destroyed, so a looping tween on an object ends with it; a tween on a
+     *  value inside the object, like `tweenProperty(obj.pos, 'x')`, or a new Tween with its own callback, has to be
+     *  stopped by the game.
+     *  @template [T=any]
      *  @param {Object} target - The object whose property is being animated
      *  @param {string} propertyPath - Dot-separated path, e.g. `'pos.x'` or `'color'`
-     *  @param {number|Vector2|Color} start - Starting value
-     *  @param {number|Vector2|Color} end - Ending value
+     *  @param {T} start - Starting value
+     *  @param {T} end - Ending value
      *  @param {number} [duration=1] - Duration in seconds
      *  @param {Object} [options] - Same options as the Tween constructor
-     *  @returns {Tween}
+     *  @param {function(number):number} [options.ease] - Easing function (defaults to LINEAR)
+     *  @param {boolean} [options.useRealTime=false] - Advance even when the game is paused
+     *  @param {boolean} [options.paused=false] - Start in paused state
+     *  @returns {Tween<T>}
      *  @memberof TweenSystem
      *  @example
      *  // Numeric: slide an object's x with an ease-out sine curve
@@ -5589,17 +7547,23 @@ declare module "littlejsengine" {
      *  // Color: pulse between two colors
      *  tweenProperty(sprite, 'color', RED, BLUE, 1).pingPong();
      */
-    export function tweenProperty(target: any, propertyPath: string, start: number | Vector2 | Color, end: number | Vector2 | Color, duration?: number, options?: any): Tween;
-    /** Stop every active tween and clear their then-callbacks. Useful for resets
-     *  on level transitions or when changing scenes.
+    export function tweenProperty<T = any>(target: any, propertyPath: string, start: T, end: T, duration?: number, options?: {
+        ease?: (arg0: number) => number;
+        useRealTime?: boolean;
+        paused?: boolean;
+    }): Tween<T>;
+    /** Stop every active tween, ending loops too, without calling their then-callbacks.
+     *  Useful for resets on level transitions or when changing scenes.
      *  @memberof TweenSystem */
     export function tweenStopAll(): void;
     /** Engine plugin hook: advance every active tween by the appropriate delta.
-     *  Called once per render frame by the engine (no arguments). May also be
-     *  called explicitly with `(gameDelta, realDelta)` to drive tweens manually
-     *  — useful for headless tests or custom replay/scrubbing systems.
-     *  @param {number} [gameDelta] - Game-time delta in seconds; default: time - lastTime
-     *  @param {number} [realDelta] - Real-time delta in seconds; default: timeReal - lastTimeReal
+     *  The engine calls it with no arguments on every fixed update, so it can run
+     *  more than once in a rendered frame, and on paused updates too, where only
+     *  real time tweens move. May also be called with `(gameDelta, realDelta)` to drive tweens without the engine
+     *  loop, for headless tests or an engine in manual step that is not stepped; in a running game such a call adds to
+     *  the engine's own update, and a delta of 0 or less does nothing.
+     *  @param {number} [gameDelta] - Game-time delta in seconds; default: game time since the tween's last engine update
+     *  @param {number} [realDelta] - Real-time delta in seconds; default: real time since the tween's last engine update
      *  @memberof TweenSystem */
     export function tweenUpdate(gameDelta?: number, realDelta?: number): void;
     export namespace Ease {
@@ -5618,6 +7582,88 @@ declare module "littlejsengine" {
         function PIECEWISE(...fns: ((arg0: number) => number)[]): (arg0: number) => number;
         function BEZIER(x1: number, y1: number, x2: number, y2: number): (arg0: number) => number;
     }
+    /** Leave the current scene, destroy every object that is not persistent, and enter the next scene
+     *  - Setting the current scene again restarts it, and no scene leaves the game with none
+     *  - The switch happens at once, it can be called from anywhere but a scene's leave
+     *  @param {Scene} [scene] - The scene to enter
+     *  @memberof SceneSystem */
+    export function setScene(scene?: Scene): void;
+    /** Get the current scene
+     *  @return {Scene|undefined}
+     *  @memberof SceneSystem */
+    export function getScene(): Scene | undefined;
+    /**
+     * LittleJS Parallax Plugin
+     * - A background layer that follows the camera by a part of its movement, so it looks far away
+     * - Repeats across the view, so a level of any width has a background
+     * - Draws mountains by default, or anything a game draws into it
+     * @namespace Parallax
+     */
+    /**
+     * A background layer with parallax: an image that follows the camera by a part of its movement and repeats across
+     * the view, drawn once into a canvas by a function, mountains when none is given
+     * - A far layer has a parallax near 1 and a low renderOrder, a near one a smaller parallax and a higher renderOrder
+     * - The image should meet itself at its left and right edges to repeat without a seam, as the mountains do
+     * @memberof Parallax
+     * @extends CanvasLayer
+     * @example
+     * // three ranges of mountains, the far ones lighter and slower
+     * for (let i = 3; i--;)
+     *     new ParallaxLayer(vec2(0, i*2), vec2(40, 20), .9 - i*.2, -1e3 + i,
+     *         parallaxMountains(hsl(.6, .3, .7 - i*.2), hsl(.6, .5, .2), i));
+     *
+     * // or draw your own image into the layer
+     * new ParallaxLayer(vec2(), vec2(40, 20), .5, -1e3, (context, size)=>
+     * {
+     *     context.fillStyle = '#fff';
+     *     context.fillRect(size.x/2 - 20, size.y/2 - 20, 40, 40);
+     * });
+     */
+    export class ParallaxLayer extends CanvasLayer {
+        /** Create a parallax layer and draw its image
+         *  @param {Vector2} [pos] - Where the middle of the image is in the world when the camera is there too
+         *  @param {Vector2} [size] - World size of one copy of the image
+         *  @param {number|Vector2} [parallax] - How much of the camera's movement it follows, 0 stays with the world
+         *    and 1 with the screen, a Vector2 to follow x and y by different amounts
+         *  @param {number} [renderOrder] - Low to draw behind the game, far layers lowest
+         *  @param {function(OffscreenCanvasRenderingContext2D, Vector2, ParallaxLayer): void} [drawFunction] - Draws
+         *    the image, given the canvas context, its size in pixels and the layer; mountains when not given
+         *  @param {Vector2} [canvasSize] - Size of the image in pixels */
+        constructor(pos?: Vector2, size?: Vector2, parallax?: number | Vector2, renderOrder?: number, drawFunction?: (arg0: OffscreenCanvasRenderingContext2D, arg1: Vector2, arg2: ParallaxLayer) => void, canvasSize?: Vector2);
+        /** @property {Vector2} - How much of the camera's movement it follows on each axis, 0 stays with the world
+         *  and 1 with the screen */
+        parallax: Vector2;
+        /** @property {boolean} - Repeat the image across the view, left and right */
+        wrapX: boolean;
+        /** @property {boolean} - Repeat the image up and down the view */
+        wrapY: boolean;
+        /** @property {number} - How much the camera's zoom changes its size on the screen: 1 like the world, 0 not
+         *  at all, the same on the screen at any zoom as it is at zoomScale */
+        zoomFollow: number;
+        /** @property {number} - The camera scale its size is given for, used when zoomFollow is under 1 */
+        zoomScale: number;
+        /** @property {function(OffscreenCanvasRenderingContext2D, Vector2, ParallaxLayer): void} - Draws the
+         *  image, redraw() after changing it */
+        drawFunction: (arg0: OffscreenCanvasRenderingContext2D, arg1: Vector2, arg2: ParallaxLayer) => void;
+        /** Draw the image again with drawFunction, after changing it or what it draws from */
+        redraw(): void;
+        zoomFactor(): number;
+        /** World size one copy of the image is drawn at now, its size unless zoomFollow is under 1
+         *  @return {Vector2} */
+        getDrawSize(): Vector2;
+        /** Where each copy of the image is drawn now, in the world: one place, or with wrapping every place that
+         *  shows in the view
+         *  @return {Array<Vector2>} */
+        getDrawPositions(): Array<Vector2>;
+    }
+    /** A draw function for a ParallaxLayer: a range of mountains across the image, shaded from the color of their
+     *  peaks down to the color of their feet, that repeats with no seam
+     *  @param {Color} [topColor] - Color at the peaks
+     *  @param {Color} [bottomColor] - Color at the bottom of the image
+     *  @param {number} [seed] - The same seed gives the same mountains, random when not given
+     *  @return {function(OffscreenCanvasRenderingContext2D, Vector2): void}
+     *  @memberof Parallax */
+    export function parallaxMountains(topColor?: Color, bottomColor?: Color, seed?: number): (arg0: OffscreenCanvasRenderingContext2D, arg1: Vector2) => void;
     /** Grid pathfinder using A* with two optional smoothing passes.
      *  @memberof PathFinding
      *  @example
@@ -5634,25 +7680,40 @@ declare module "littlejsengine" {
          *  (size and walkability auto-derived) or a Vector2 grid size (user
          *  overrides isWalkable). */
         constructor(source: TileCollisionLayer | Vector2);
-        /** @property {Vector2} - Grid dimensions in tiles */
-        size: any;
-        /** @property {TileCollisionLayer|undefined} - Tile layer driving walkability, if any */
-        tileLayer: Vector2 | TileCollisionLayer;
+        /** @property {Vector2} - Grid dimensions in tiles
+         *  @type {Vector2} */
+        size: Vector2;
+        /** @property {TileCollisionLayer|undefined} - Tile layer driving walkability, if any
+         *  @type {TileCollisionLayer|undefined} */
+        tileLayer: TileCollisionLayer | undefined;
         /** @property {number} - A* heuristic multiplier (1 = admissible, higher = greedier) */
         heuristicWeight: number;
-        /** @property {number} - Maximum A* expansions before giving up */
-        maxLoop: number;
+        /** @property {number|undefined} - Most A* expansions before giving up, undefined for the number of cells,
+         *  so a search always finishes; a lower one caps the time a search takes, see searchGaveUp
+         *  @type {number|undefined} */
+        maxLoop: number | undefined;
+        /** @property {boolean} - True when the last search stopped at maxLoop with no path, so it gave up rather
+         *  than that there is no way through */
+        searchGaveUp: boolean;
         /** @property {boolean} - If true, post-process paths with two-pass smoothing */
         smoothPath: boolean;
         /** @property {boolean} - If true, draw debug visualization during findPath */
         debug: boolean;
         /** @property {number} - Debug primitive lifetime in seconds (0 disables drawing) */
         debugTime: number;
-        /** @property {Array<PathFinderNode>} - Flat row-major array of size.x*size.y nodes */
-        nodes: any[];
-        collisionScratch: Vector2;
+        /** @property {Array<PathFinderNode>} - Flat row-major array of size.x*size.y nodes
+         *  @type {Array<PathFinderNode>} */
+        nodes: Array<PathFinderNode>;
+        /** @private */
+        private nodeDataBuilt;
+        /** @private */
+        private collisionScratch;
+        /** @type {Array<PathFinderNode>}
+         *  @private */
+        private searchNodes;
         /** Default walkability: if a tile layer was provided, returns true when the
-         *  cell has no solid collision data; otherwise returns true. Override on
+         *  cell has no solid (positive) collision data, so negative data is open
+         *  like it is to the engine's collision; otherwise returns true. Override on
          *  the instance or via a subclass.
          *  @param {number} x - Tile x
          *  @param {number} y - Tile y
@@ -5671,23 +7732,20 @@ declare module "littlejsengine" {
         getNode(x: number, y: number): PathFinderNode | null;
         /** Convert a world-space position to integer tile coords (no clamping).
          *  @param {Vector2} worldPos
-         *  @returns {Vector2}
-         *  @memberof PathFinding */
+         *  @returns {Vector2} */
         worldToTile(worldPos: Vector2): Vector2;
         /** Convert integer tile coords to the world-space center of that tile.
          *  @param {number} x
          *  @param {number} y
-         *  @returns {Vector2}
-         *  @memberof PathFinding */
+         *  @returns {Vector2} */
         tileToWorld(x: number, y: number): Vector2;
         /** Reset all nodes and re-populate walkable / cost / posWorld from the
          *  current isWalkable / getCost overrides. Called at the start of
-         *  findPath; exposed so tests and tooling can drive it directly.
-         *  @private */
-        private buildNodeData;
+         *  findPath; call it directly before searches made with rebuild=false. */
+        buildNodeData(): void;
         /** Core A* search loop. Expects buildNodeData() to have been called first.
          *  Marks node.parent for path reconstruction. Returns true if endNode was
-         *  reached; false on disconnected goal or maxLoop exhaustion.
+         *  reached; false on disconnected goal or maxLoop exhaustion, which sets searchGaveUp.
          *  @param {PathFinderNode} startNode
          *  @param {PathFinderNode} endNode
          *  @returns {boolean}
@@ -5705,8 +7763,7 @@ declare module "littlejsengine" {
          *  @param {Vector2} worldPos
          *  @param {number} [searchRange=10] - Max box-radius in tiles
          *  @param {boolean} [rebuild=true] - Whether to call buildNodeData first
-         *  @returns {PathFinderNode|null}
-         *  @memberof PathFinding */
+         *  @returns {PathFinderNode|null} */
         getNearestClearNode(worldPos: Vector2, searchRange?: number, rebuild?: boolean): PathFinderNode | null;
         /** Smooth a node path by removing redundant turns and tightening corners
          *  where a grid-aligned diagonal is clear. Modifies the path in place.
@@ -5720,19 +7777,20 @@ declare module "littlejsengine" {
          *  isLineClear permits, so the result can leave grid centers and cut
          *  cleanly across open spaces.
          *
-         *  Bails (leaves the path unchanged) if any node has nonzero cost — a
-         *  straight geometric shortcut can't be trusted to be the lowest-cost
-         *  route when cost-weighted terrain is in play.
+         *  A node with a cost is kept, and a shortcut only runs between clear
+         *  nodes: isLineClear passes only through clear cells, so a straight line
+         *  it accepts costs no more than the grid path it replaces.
          *
-         *  Port of ShortenPath2() in pathFinding.cpp.
+         *  Replaces the port of ShortenPath2() in pathFinding.cpp, which could
+         *  add a segment it had not checked.
          *  @param {PathFinderNode[]} path
          *  @private */
         private smoothPathStringPull;
         /** Drop any middle node that lies exactly on the line through its two
          *  neighbors. Backstop for the smoothing passes — the corners pass
          *  intentionally keeps truly-straight runs, and the string-pulling pass
-         *  checks collinearity against the original path, not the in-progress
-         *  result, so it can leave 3+ collinear nodes in some edge cases.
+         *  falls back to the next node where no longer line is clear, so it can
+         *  leave 3+ collinear nodes in some edge cases.
          *  @param {PathFinderNode[]} path
          *  @private */
         private dropCollinearNodes;
@@ -5758,14 +7816,19 @@ declare module "littlejsengine" {
         /** Find a path from startPos to endPos in world space. Returns an array
          *  of world-space Vector2 points; empty array if no path exists.
          *
-         *  Start and end are snapped to the nearest walkable tile via
-         *  getNearestClearNode. Intermediate points are tile centers unless the
+         *  Start and end are snapped to the nearest walkable tile (a costed one
+         *  counts), within 10 tiles. Intermediate points are tile centers unless the
          *  string-pulling smoothing pass moves them off-grid.
+         *
+         *  By default, calls `buildNodeData()` first, which asks isWalkable and
+         *  getCost about every cell. When finding many paths with unchanged
+         *  walkability, pass `rebuild=false` and call `buildNodeData()` once
+         *  externally; the paths found are the same.
          *  @param {Vector2} startPos - World-space start
          *  @param {Vector2} endPos - World-space end
-         *  @returns {Vector2[]}
-         *  @memberof PathFinding */
-        findPath(startPos: Vector2, endPos: Vector2): Vector2[];
+         *  @param {boolean} [rebuild] - Whether to call buildNodeData first
+         *  @returns {Vector2[]} */
+        findPath(startPos: Vector2, endPos: Vector2, rebuild?: boolean): Vector2[];
     }
     /** A single grid cell tracked by the pathfinder. Allocated once per cell at
      *  PathFinder construction; reset (not reallocated) at the start of every
@@ -5779,7 +7842,7 @@ declare module "littlejsengine" {
         pos: Vector2;
         /** @property {Vector2} - World-space center of this tile (set by buildNodeData) */
         posWorld: Vector2;
-        /** @property {boolean} - True if this cell is passable (cleared each findPath call) */
+        /** @property {boolean} - True if this cell is passable (set by buildNodeData) */
         walkable: boolean;
         /** @property {number} - Extra cost added to A* G-score for stepping on this cell */
         cost: number;
@@ -5787,17 +7850,2849 @@ declare module "littlejsengine" {
         g: number;
         /** @property {number} - A* F-score: G + heuristic */
         f: number;
-        /** @property {PathFinderNode|null} - Parent for path reconstruction */
-        parent: any;
+        /** @property {number} - A* heuristic: the estimated cost left to the goal, breaks ties between equal F */
+        h: number;
+        /** @property {PathFinderNode|null} - Parent for path reconstruction
+         *  @type {PathFinderNode|null} */
+        parent: PathFinderNode | null;
         /** @property {boolean} - In the A* open list */
         isOpen: boolean;
         /** @property {boolean} - In the A* closed list */
         isClosed: boolean;
-        /** Reset per-search state (called at the start of buildNodeData). */
+        /** @property {number} - Where it is in the A* open list's heap, while open */
+        heapIndex: number;
+        /** Clear what a search left on this node, keeping walkable and cost */
+        resetSearch(): void;
+        /** Reset per-search state and walkability (called by buildNodeData). */
         reset(): void;
         /** True if walkable and not blocked by cost. */
         isClear(): boolean;
     }
+    /** Options for a tweak
+     *  @typedef {Object} TweakOptions
+     *  @property {number} [min] - Lowest value on the slider, the slider shows when min and max are both set
+     *  @property {number} [max] - Highest value on the slider
+     *  @property {number} [step] - Step for the slider and number box, a thousandth of the range by default
+     *  @property {string} [label] - Name to show in place of the path, and the name it is saved by with an object
+     *  @property {Object} [object] - Object the path is a field of, in place of a global, for an ES module game
+     *  @memberof Tweakables */
+    /** Add a value to the tweakables panel, so it can be changed while the game runs
+     *  - The path is the name of a global, or a dotted path to a field on one like 'player.speed'
+     *  - Only globals of a script can be found by name, an ES module game passes the object its values are on
+     *  - Its type comes from the value it has now: a number, boolean, Color, Vector2 or Vector3
+     *  - Call it after the value is set, at the end of gameInit
+     *  - Adding the same path again keeps its row and brings its tweaked value back, for an object made again;
+     *    with the object option it is known by its label, so two objects with the same field need their own labels
+     *  - Does nothing in release builds
+     *  @param {string} path - Name of a global, or a dotted path to a field on one or on the object option
+     *  @param {TweakOptions} [options]
+     *  @memberof Tweakables
+     *  @example
+     *  tweak('jumpSpeed', {min: 0, max: 1});
+     *  tweak('skyColor');
+     *  tweak('player.size', {label: 'Player Size'});
+     *  tweak('speed', {object: settings}); // settings.speed, in an ES module */
+    export function tweak(path: string, options?: TweakOptions): void;
+    /** Add a divider to the tweakables panel, with a label for the tweaks after it
+     *  - Does nothing in release builds
+     *  @param {string} [label]
+     *  @memberof Tweakables */
+    export function tweakDivider(label?: string): void;
+    /** Add a button to the tweakables panel that calls a function, like one to restart the level
+     *  - Adding the same label again replaces its function
+     *  - Does nothing in release builds
+     *  @param {string} label
+     *  @param {function():void} callback
+     *  @memberof Tweakables
+     *  @example
+     *  tweakButton('Restart', restartLevel); */
+    export function tweakButton(label: string, callback: () => void): void;
+    /** Add the engine settings a game most often tunes to the tweakables panel:
+     *  gravity, timeScale, cameraScale and soundVolume, under an Engine divider
+     *  - They are changed through their setters, so this works in the ES module build too
+     *  - Does nothing in release builds
+     *  @memberof Tweakables */
+    export function tweakEngineDefaults(): void;
+    /**
+     * LittleJS 3D Math Plugin
+     * - Vector3 and Matrix4 for 3D games and plugins
+     * - Right handed, Y up, angles in radians
+     * - Used by the Render3D plugin, but has no rendering dependencies
+     * @namespace Math3D
+     */
+    /**
+     * Create a 3D vector, can take 0, 1, 2 or 3 numbers
+     * - vec3() is zero, vec3(s) fills all three, vec3(x, y) sets z to 0
+     * @param {number} [x]
+     * @param {number} [y]
+     * @param {number} [z]
+     * @return {Vector3}
+     * @memberof Math3D
+     */
+    export function vec3(x?: number, y?: number, z?: number): Vector3;
+    /**
+     * Check if the object is a valid Vector3
+     * @param {any} v
+     * @return {boolean}
+     * @memberof Math3D
+     */
+    export function isVector3(v: any): boolean;
+    /**
+     * Returns a random Vector3 of a given length, pointing any direction evenly, or within a cone around +Y
+     * @param {number} [length]
+     * @param {number} [coneAngle] - Half angle of the cone around +Y in radians, PI is every direction
+     * @return {Vector3}
+     * @memberof Math3D
+     */
+    export function randVector3(length?: number, coneAngle?: number): Vector3;
+    /**
+     * Returns a random Vector3 inside a sphere, spread evenly through its volume, the 3D twin of randInCircle
+     * @param {number} [radius]
+     * @param {number} [minRadius] - Leave a hollow middle this big
+     * @return {Vector3}
+     * @memberof Math3D
+     */
+    export function randInSphere(radius?: number, minRadius?: number): Vector3;
+    /**
+     * 3D Vector object, right handed with Y up
+     * - Methods return new vectors except set and setFrom
+     * @memberof Math3D
+     * @example
+     * const a = vec3(1, 2, 3);
+     * const b = a.add(vec3(0, 1, 0)).normalize();
+     */
+    export class Vector3 {
+        /** Create a 3D vector
+         *  @param {number} [x]
+         *  @param {number} [y]
+         *  @param {number} [z] */
+        constructor(x?: number, y?: number, z?: number);
+        /** @property {number} - X axis location */
+        x: number;
+        /** @property {number} - Y axis location */
+        y: number;
+        /** @property {number} - Z axis location */
+        z: number;
+        /** Sets values of this vector and returns self
+         *  @param {number} [x]
+         *  @param {number} [y]
+         *  @param {number} [z]
+         *  @return {Vector3} */
+        set(x?: number, y?: number, z?: number): Vector3;
+        /** Copies the values of another vector into this one and returns self
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        setFrom(v: Vector3): Vector3;
+        /** Returns a new vector that is a copy of this
+         *  @return {Vector3} */
+        copy(): Vector3;
+        /** Returns a copy of this vector plus the vector passed in
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        add(v: Vector3): Vector3;
+        /** Returns a copy of this vector minus the vector passed in
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        subtract(v: Vector3): Vector3;
+        /** Returns a copy of this vector times the vector passed in
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        multiply(v: Vector3): Vector3;
+        /** Returns a copy of this vector divided by the vector passed in
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        divide(v: Vector3): Vector3;
+        /** Returns a copy of this vector scaled by the number passed in
+         *  @param {number} s
+         *  @return {Vector3} */
+        scale(s: number): Vector3;
+        /** Returns the length of this vector
+         *  @return {number} */
+        length(): number;
+        /** Returns the length of this vector squared
+         *  @return {number} */
+        lengthSquared(): number;
+        /** Returns a copy of this vector reflected by a surface normal
+         *  @param {Vector3} normal - Surface normal, should be normalized
+         *  @param {number} [restitution] - How much to bounce, 1 is a perfect bounce, 0 slides along the surface
+         *  @return {Vector3} */
+        reflect(normal: Vector3, restitution?: number): Vector3;
+        /** Returns the distance from this vector to the vector passed in
+         *  @param {Vector3} v
+         *  @return {number} */
+        distance(v: Vector3): number;
+        /** Returns the distance squared from this vector to the vector passed in
+         *  @param {Vector3} v
+         *  @return {number} */
+        distanceSquared(v: Vector3): number;
+        /** Returns a new vector in the same direction with the length passed in, zero stays zero
+         *  @param {number} [length]
+         *  @return {Vector3} */
+        normalize(length?: number): Vector3;
+        /** Returns a new vector clamped to the length passed in
+         *  @param {number} [length]
+         *  @return {Vector3} */
+        clampLength(length?: number): Vector3;
+        /** Returns the dot product of this vector and the vector passed in
+         *  @param {Vector3} v
+         *  @return {number} */
+        dot(v: Vector3): number;
+        /** Returns a vector at right angles to both this and the one passed in
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        cross(v: Vector3): Vector3;
+        /** Returns a new vector interpolated between this and the vector passed in, percent is clamped to 0-1
+         *  @param {Vector3} v
+         *  @param {number} percent
+         *  @return {Vector3} */
+        lerp(v: Vector3, percent: number): Vector3;
+        /** Returns a new vector turned around an axis, counter clockwise when the axis points at you
+         *  @param {Vector3} axis - Unit length
+         *  @param {number} angle - Radians
+         *  @return {Vector3} */
+        rotate(axis: Vector3, angle: number): Vector3;
+        /** Returns a new vector turned around the X axis, the way a positive pitch in rotation3D turns things
+         *  @param {number} angle - Radians
+         *  @return {Vector3} */
+        rotateX(angle: number): Vector3;
+        /** Returns a new vector turned around the Y axis, the way a positive yaw in rotation3D turns things
+         *  @param {number} angle - Radians
+         *  @return {Vector3} */
+        rotateY(angle: number): Vector3;
+        /** Returns a new vector turned around the Z axis, the way a positive roll in rotation3D turns things
+         *  @param {number} angle - Radians
+         *  @return {Vector3} */
+        rotateZ(angle: number): Vector3;
+        /** Returns a new vector with the absolute value of each component
+         *  @return {Vector3} */
+        abs(): Vector3;
+        /** Returns a new vector with each component floored
+         *  @return {Vector3} */
+        floor(): Vector3;
+        /** Returns a new vector with each component rounded
+         *  @return {Vector3} */
+        round(): Vector3;
+        /** Returns a new vector snapped down to a grid, grid is the number of steps per unit like Vector2.snap
+         *  @param {number} grid - Snap steps per unit, 2 snaps to halves
+         *  @return {Vector3} */
+        snap(grid: number): Vector3;
+        /** Returns this point transformed by a matrix, translation included
+         *  @param {Matrix4} matrix
+         *  @return {Vector3} */
+        transform(matrix: Matrix4): Vector3;
+        /** Returns this direction transformed by a matrix, rotation and scale only
+         *  @param {Matrix4} matrix
+         *  @return {Vector3} */
+        transformDirection(matrix: Matrix4): Vector3;
+        /** Checks if this is a valid vector
+         *  @return {boolean} */
+        isValid(): boolean;
+        /** Returns a string representation of this vector for debugging
+         *  @param {number} [digits] - Number of digits to display
+         *  @return {string} */
+        toString(digits?: number): string;
+    }
+    /**
+     * 4x4 transform matrix for moving, rotating and scaling points in 3D
+     * - Static builders like Matrix4.translation return a new matrix
+     * - Methods on a matrix change it in place and return it, so calls can chain
+     * - a.multiply(b) means b happens first, then a
+     * - Stored the way WebGL wants it, so it can be sent to a shader as is
+     * @memberof Math3D
+     * @example
+     * const m = buildMatrix(vec3(0, 1, 0), vec3(0, PI/2, 0)); // rotate then move up
+     * const p = m.transformPoint(vec3(1, 0, 0));
+     */
+    export class Matrix4 {
+        /** Returns a new identity matrix
+         *  @return {Matrix4} */
+        static identity(): Matrix4;
+        /** Returns a new translation matrix
+         *  @param {Vector3} v
+         *  @return {Matrix4} */
+        static translation(v: Vector3): Matrix4;
+        /** Returns a rotation matrix, rolled first, then pitched, then yawed
+         *  @param {Vector3} euler - vec3(pitch, yaw, roll) in radians
+         *  @param {Matrix4} [matrix] - Written into instead of a new one, for a loop that builds many
+         *  @return {Matrix4} */
+        static rotation(euler: Vector3, matrix?: Matrix4): Matrix4;
+        /** Returns a new scale matrix
+         *  @param {Vector3} v
+         *  @return {Matrix4} */
+        static scaling(v: Vector3): Matrix4;
+        /** Returns a new perspective projection, camera looks down -Z
+         *  @param {number} fov - Vertical field of view in radians
+         *  @param {number} aspect - Width divided by height
+         *  @param {number} near - Closest visible distance
+         *  @param {number} far - Furthest visible distance, Infinity is allowed
+         *  @return {Matrix4} */
+        static perspective(fov: number, aspect: number, near: number, far: number): Matrix4;
+        /** Returns a new orthographic projection, camera looks down -Z
+         *  @param {number} left - Edge of the visible box
+         *  @param {number} right - Edge of the visible box
+         *  @param {number} bottom - Edge of the visible box
+         *  @param {number} top - Edge of the visible box
+         *  @param {number} near - Closest visible distance
+         *  @param {number} far - Furthest visible distance, Infinity is not allowed here
+         *  @return {Matrix4} */
+        static orthographic(left: number, right: number, bottom: number, top: number, near: number, far: number): Matrix4;
+        /** Returns the transform of something at eye turned to face target
+         *  - Invert it to get a view matrix for a camera there
+         *  @param {Vector3} eye
+         *  @param {Vector3} target
+         *  @param {Vector3} [up]
+         *  @return {Matrix4} */
+        static lookAt(eye: Vector3, target: Vector3, up?: Vector3): Matrix4;
+        /** Create a matrix, identity by default
+         *  @param {Float32Array|Array<number>} [m] - 16 column major values */
+        constructor(m?: Float32Array | Array<number>);
+        /** @property {Float32Array} - The 16 column major values */
+        m: Float32Array;
+        /** Returns a new matrix that is a copy of this
+         *  @return {Matrix4} */
+        copy(): Matrix4;
+        /** Multiply this matrix by another and return this, the other happens first
+         *  @param {Matrix4} matrix
+         *  @return {Matrix4} */
+        multiply(matrix: Matrix4): Matrix4;
+        /** Append a translation, returns self
+         *  @param {Vector3} v
+         *  @return {Matrix4} */
+        translate(v: Vector3): Matrix4;
+        /** Append a rotation, returns self
+         *  @param {Vector3} euler - vec3(pitch, yaw, roll) in radians
+         *  @return {Matrix4} */
+        rotate(euler: Vector3): Matrix4;
+        /** Append a scale, returns self
+         *  @param {Vector3} v
+         *  @return {Matrix4} */
+        scale(v: Vector3): Matrix4;
+        /** Transpose this matrix in place, returns self
+         *  @return {Matrix4} */
+        transpose(): Matrix4;
+        /** Flip this matrix so it undoes itself, returns this and does nothing if it cannot be inverted
+         *  @return {Matrix4} */
+        invert(): Matrix4;
+        /** Transform a point, translation included
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        transformPoint(v: Vector3): Vector3;
+        /** Transform a direction, rotation and scale only
+         *  @param {Vector3} v
+         *  @return {Vector3} */
+        transformDirection(v: Vector3): Vector3;
+        /** Returns the translation part of this matrix
+         *  @return {Vector3} */
+        getTranslation(): Vector3;
+        /** Returns the determinant of the rotation and scale part: negative when the matrix mirrors, 0 when it flattens a
+         *  shape and has no inverse
+         *  @return {number} */
+        determinant(): number;
+        /** Returns the scale part of this matrix, the length of each axis; a mirroring matrix shows as a negative x
+         *  @return {Vector3} */
+        getScale(): Vector3;
+        /** Returns the rotation part of this matrix as vec3(pitch, yaw, roll), the angles Matrix4.rotation builds it from
+         *  - The scale is divided out first, so it works on a full transform
+         *  - A matrix with shear, from a scaled parent with a turned child, has no exact answer and gets the nearest
+         *  @return {Vector3} */
+        getRotation(): Vector3;
+        /** Returns a string representation of this matrix for debugging
+         *  @return {string} */
+        toString(): string;
+    }
+    /**
+     * Ray3D - A start point and a direction, what screenToRay returns and the raycast helpers take
+     * - The direction need not be unit length, the distances that come back are in units of it
+     * @memberof Math3D
+     * @example
+     * const ray = render3D.screenToRay(mousePosScreen);
+     * const distance = raycastPlane(ray, vec3(), vec3(0, 1, 0));
+     * if (distance !== undefined)
+     *     ball.pos3D = ray.getPosition(distance);
+     */
+    export class Ray3D {
+        /** Create a ray
+         *  @param {Vector3} [origin]
+         *  @param {Vector3} [direction] - Defaults to -Z, forward */
+        constructor(origin?: Vector3, direction?: Vector3);
+        /** @property {Vector3} - Where the ray starts */
+        origin: Vector3;
+        /** @property {Vector3} - Which way it goes */
+        direction: Vector3;
+        /** Returns the point a distance along the ray
+         *  @param {number} distance - What the raycast helpers return
+         *  @return {Vector3} */
+        getPosition(distance: number): Vector3;
+        /** Returns a new ray that is a copy of this
+         *  @return {Ray3D} */
+        copy(): Ray3D;
+    }
+    /**
+     * Build a transform for an object from its position, rotation and scale
+     * - A point is scaled first, then rotated, then moved, which is what you want for a game object
+     * @param {Vector3} [pos]
+     * @param {Vector3} [rotation] - vec3(pitch, yaw, roll) in radians
+     * @param {Vector3} [scale]
+     * @param {Matrix4} [matrix] - Written into instead of a new one, for a loop that builds many
+     * @return {Matrix4}
+     * @memberof Math3D
+     */
+    export function buildMatrix(pos?: Vector3, rotation?: Vector3, scale?: Vector3, matrix?: Matrix4): Matrix4;
+    /**
+     * Check if a point is inside a box, boundary is inclusive
+     * @param {Vector3} point
+     * @param {Vector3} pos - Center of the box
+     * @param {Vector3} size - Full size of the box
+     * @param {Vector3} [rotation] - How the box is turned, upright when left out
+     * @return {boolean}
+     * @memberof Math3D
+     */
+    export function isPointInBox3D(point: Vector3, pos: Vector3, size: Vector3, rotation?: Vector3): boolean;
+    /**
+     * Check if two boxes are overlapping, touching edges do not overlap
+     * @param {Vector3} posA
+     * @param {Vector3} sizeA - Full size of box A
+     * @param {Vector3} posB
+     * @param {Vector3} [sizeB] - Full size of box B, zero for a point
+     * @param {Vector3} [rotationA] - How box A is turned, upright when left out
+     * @param {Vector3} [rotationB] - How box B is turned
+     * @return {boolean}
+     * @memberof Math3D
+     */
+    export function isOverlapping3D(posA: Vector3, sizeA: Vector3, posB: Vector3, sizeB?: Vector3, rotationA?: Vector3, rotationB?: Vector3): boolean;
+    /**
+     * Returns the vector to move sphere A by so it no longer overlaps sphere B, or undefined
+     * @param {Vector3} posA
+     * @param {number} radiusA
+     * @param {Vector3} posB
+     * @param {number} radiusB
+     * @return {Vector3|undefined}
+     * @memberof Math3D
+     */
+    export function collideSphereSphere(posA: Vector3, radiusA: number, posB: Vector3, radiusB: number): Vector3 | undefined;
+    /**
+     * Returns the vector to move a sphere out of a box, or undefined
+     * @param {Vector3} pos - Sphere center
+     * @param {number} radius
+     * @param {Vector3} boxPos
+     * @param {Vector3} boxSize - Full size of the box
+     * @param {Vector3} [boxRotation] - How the box is turned, upright when left out
+     * @return {Vector3|undefined}
+     * @memberof Math3D
+     */
+    export function collideSphereBox(pos: Vector3, radius: number, boxPos: Vector3, boxSize: Vector3, boxRotation?: Vector3): Vector3 | undefined;
+    /**
+     * Returns the vector to move a sphere back inside an axis aligned box, or undefined when it is all inside
+     * - The inside out twin of collideSphereBox, for keeping things in a room or an arena
+     * - A sphere too big for the box on some axis is held at the middle of it on that axis
+     * @param {Vector3} pos - Sphere center
+     * @param {number} radius
+     * @param {Vector3} boxPos
+     * @param {Vector3} boxSize - Full size of the box
+     * @return {Vector3|undefined}
+     * @memberof Math3D
+     */
+    export function collideSphereInBox(pos: Vector3, radius: number, boxPos: Vector3, boxSize: Vector3): Vector3 | undefined;
+    /**
+     * Returns the vector to move a sphere out of a vertical cylinder, or undefined
+     * @param {Vector3} pos - Sphere center
+     * @param {number} radius
+     * @param {Vector3} cylinderPos
+     * @param {number} cylinderRadius
+     * @param {number} cylinderHeight - Full height along Y
+     * @return {Vector3|undefined}
+     * @memberof Math3D
+     */
+    export function collideSphereCylinder(pos: Vector3, radius: number, cylinderPos: Vector3, cylinderRadius: number, cylinderHeight: number): Vector3 | undefined;
+    /**
+     * Returns the vector to move box A by so it no longer overlaps box B, the shortest way out, or undefined
+     * - The 3D twin of collideBoxBox
+     * - Turned boxes are tested by the separating axis test, the push is along the direction they overlap least on
+     * @param {Vector3} posA
+     * @param {Vector3} sizeA - Full size of box A
+     * @param {Vector3} posB
+     * @param {Vector3} sizeB - Full size of box B
+     * @param {Vector3} [rotationA] - How box A is turned, upright when left out
+     * @param {Vector3} [rotationB] - How box B is turned
+     * @return {Vector3|undefined}
+     * @memberof Math3D
+     */
+    export function collideBoxBox3D(posA: Vector3, sizeA: Vector3, posB: Vector3, sizeB: Vector3, rotationA?: Vector3, rotationB?: Vector3): Vector3 | undefined;
+    /**
+     * Returns the distance along the ray to the first intersection with a sphere, or undefined
+     * - The hit is ray.getPosition(distance), a direction that is not unit length scales the distance
+     * - A ray starting inside the sphere is already there, so it gets back 0
+     * @param {Ray3D} ray
+     * @param {Vector3} pos - Sphere center
+     * @param {number} radius
+     * @return {number|undefined}
+     * @memberof Math3D
+     */
+    export function raycastSphere(ray: Ray3D, pos: Vector3, radius: number): number | undefined;
+    /**
+     * Returns the distance along the ray to a plane, or undefined if parallel or behind
+     * - The hit is ray.getPosition(distance), a direction that is not unit length scales the distance
+     * @param {Ray3D} ray
+     * @param {Vector3} planePos
+     * @param {Vector3} planeNormal
+     * @return {number|undefined}
+     * @memberof Math3D
+     */
+    export function raycastPlane(ray: Ray3D, planePos: Vector3, planeNormal: Vector3): number | undefined;
+    /**
+     * Returns the distance along the ray to the first intersection with a box, or undefined
+     * - The hit is ray.getPosition(distance), a direction that is not unit length scales the distance
+     * - A ray starting inside the box is already there, so it gets back 0
+     * @param {Ray3D} ray
+     * @param {Vector3} pos - Center of the box
+     * @param {Vector3} size - Full size of the box
+     * @param {Vector3} [rotation] - How the box is turned, upright when left out
+     * @return {number|undefined}
+     * @memberof Math3D
+     */
+    export function raycastBox(ray: Ray3D, pos: Vector3, size: Vector3, rotation?: Vector3): number | undefined;
+    /**
+     * LittleJS 3D Rendering Plugin
+     * - Adds a 3D scene that draws into the same WebGL canvas as the 2D game
+     * - Call new Render3DPlugin() in gameInit, then move render3D.camera and make EngineObject3D objects
+     * - EngineObject3D is an EngineObject with a 3D position, rotation and mesh
+     * - The 3D scene draws under the 2D sprites, so HUD and text land on top
+     * - Lighting is the sun plus ambient, with optional extra lights, fog and shadows
+     * - Any object or draw can bring its own Shader, a mainImage snippet the lighting then applies to
+     * - Build shapes with buildBox, buildSphere, buildGrid and buildLathe; the other builders, terrain, particles,
+     *   camera controls and the OBJ loader are in the Render3D Extras plugin, which goes after this one
+     * - Requires the Math3D plugin
+     * @namespace Render3D
+     */
+    /** Global Render3D plugin object
+     *  @type {Render3DPlugin}
+     *  @memberof Render3D */
+    export let render3D: Render3DPlugin;
+    /**
+     * Render3D Plugin - The 3D renderer, camera, lights, shadows and fog
+     * - There is one of these, in the global render3D
+     * - It draws the 3D scene before gameRender, so 2D drawing lands on top
+     * - Set renderAfter2D to draw the 3D scene over the 2D scene instead
+     * - Settings like lighting and specular are read as each thing draws
+     * - Every object sets them from its own flags, so you rarely touch them
+     * @memberof Render3D
+     * @example
+     * new Render3DPlugin;
+     * render3D.camera.pos = vec3(0, 5, 10);
+     * render3D.camera.lookAt(vec3());
+     * new EngineObject3D(vec3(), buildBox());
+     */
+    export class Render3DPlugin {
+        /** @type {Render3DDrawState} */
+        drawState: Render3DDrawState;
+        /** @property {number} - Goes up when a draw state field changes, so a batch sees at a glance that none did */
+        stateVersion: number;
+        /** @property {Camera3D} - The camera */
+        camera: Camera3D;
+        /** @property {Vector3} - Direction toward the sun, where its light comes from, like a directional Light3D;
+         *  read at each draw, and any length will do, the shading and the shadows normalize it themselves;
+         *  the sun is the one light that casts shadows */
+        sunDirection: Vector3;
+        /** @property {Color} - Sunlight color */
+        sunColor: Color;
+        /** @property {Color} - Ambient light color, from above when ambientGroundColor is set */
+        ambientColor: Color;
+        /** @property {Color|undefined} - Ambient light from below: set, the ambient blends from this on faces pointing
+         *  down to ambientColor on faces pointing up, the way a sky and a ground light a scene; setSky sets both from
+         *  its colors
+         *  @type {Color|undefined} */
+        ambientGroundColor: Color | undefined;
+        /** @property {Color|undefined} - Fog color, uses canvasClearColor when undefined
+         *  @type {Color|undefined} */
+        fogColor: Color | undefined;
+        /** @property {number} - Distance from the camera where fog starts */
+        fogStart: number;
+        /** @property {number} - Distance from the camera where fog is total, 0 disables fog */
+        fogEnd: number;
+        /** @property {Vector3} - Added to the velocity3D of every object with a mass each frame, scaled by its
+         *  gravityScale; sync2D objects use the 2D gravity */
+        gravity: Vector3;
+        /** @property {number|HeightMap|function(number, number): number} - Floor for objects with a softShadow: a
+         *  height, a HeightMap, or (x, z) => y
+         *  @type {number|HeightMap|function(number, number): number} */
+        softShadowHeight: number | HeightMap | ((arg0: number, arg1: number) => number);
+        /** @property {boolean} - Default for every builder's smooth argument: true for smooth vertex normals, false for
+         *  flat faces */
+        smoothShading: boolean;
+        /** @property {boolean} - Draw the camera's depth into a texture each frame for post processing:
+         *  PostProcessPlugin hands it to its shader as iChannel2, read with sceneDepth(uv); off by default and free
+         *  when off, on it draws the solid objects of the default layer once more, depth only */
+        depthTexture: boolean;
+        /** @property {boolean} - Cast real shadows from the sun, off by default and free when off */
+        shadows: boolean;
+        /** @property {number} - How far a sound played with playSound is heard when it was made with no range of
+         *  its own, in world units; further than the 2D soundDefaultRange, a 3D world is bigger */
+        soundDefaultRange: number;
+        /** @property {number} - Size of the shadow map in pixels, bigger is sharper and slower */
+        shadowMapSize: number;
+        /** @property {Light3D|undefined} - A spotlight, a Light3D with a coneAngle, to cast the shadows in place
+         *  of the sun, a flashlight in the dark: the shadow map looks down its cone, as far as its radius, and the
+         *  sun still lights the scene but casts none; undefined for the sun, as is a light that is off or has no cone
+         *  @type {Light3D|undefined} */
+        shadowLight: Light3D | undefined;
+        /** @property {number} - World size the shadow map covers around shadowCenter, smaller is sharper; it is a
+         *  square facing the light, so it turns as the light does, and about 1.5 times an area's width covers it from
+         *  any angle */
+        shadowRange: number;
+        /** @property {Vector3|undefined} - Center of the shadowed area, read each frame, undefined follows the camera
+         *  @type {Vector3|undefined} */
+        shadowCenter: Vector3 | undefined;
+        /** @property {number} - Stops surfaces shadowing themselves, raise for speckles, lower if shadows drift off */
+        shadowBias: number;
+        /** @property {number} - How much to blur the shadow edges */
+        shadowSoftness: number;
+        /** @property {Function|undefined} - Draw solid world here, it runs again for shadows so only draw in it
+         *  @type {Function|undefined} */
+        onRenderOpaque: Function | undefined;
+        /** @property {Function|undefined} - Draw see through things here, like glows, billboards and soft shadows
+         *  @type {Function|undefined} */
+        onRenderTransparent: Function | undefined;
+        /** @property {Mesh|undefined} - Sky dome from buildSky or setSky, drawn around the camera behind everything
+         *  @type {Mesh|undefined} */
+        sky: Mesh | undefined;
+        /** @property {boolean} - Draw the 3D scene on top of the 2D scene instead of under it */
+        renderAfter2D: boolean;
+        /** @property {boolean} - Draw see through things far to near so they blend correctly */
+        sortTransparent: boolean;
+        /** @property {boolean} - Skip meshes whose bounding sphere is outside the view */
+        frustumCulling: boolean;
+        /** @property {boolean} - Draw every use of a mesh in the opaque stage as one instanced call, mesh.instanced
+         *  overrides it per mesh */
+        instancing: boolean;
+        /** @property {boolean} - Sample textures through mipmaps so they do not shimmer in the distance, false uses
+         *  each texture's own filtering like 2D */
+        mipmaps: boolean;
+        /** @property {number} - Anisotropic filtering for textures seen at an angle, 1 to 16, 1 is off; needs mipmaps */
+        anisotropy: number;
+        /** @property {Mesh} - A box of size 1 that drawBox uses, for any object that is a box; set the object's scale3D
+         *  and color instead of editing the mesh, which would change every box that uses it */
+        boxMesh: Mesh;
+        /** @property {Mesh} - A smooth sphere of diameter 1 that drawSphere uses, shared the same way as boxMesh */
+        sphereMesh: Mesh;
+        /** @property {Mesh} - A flat square of size 1 facing +Y, seen from above only, for floors, water and decals;
+         *  stand it up with the object's rotation3D, and size it with scale3D */
+        planeMesh: Mesh;
+        /** @property {Mesh} - The same square seen and lit from both sides, for signs, cards and leaves */
+        planeMeshDoubleSided: Mesh;
+        /** @property {Mesh} - A square of size 1 facing +Z with the tile across it, the corners in the order
+         *  drawBillboard writes them; a ParticleEmitter3D draws its particles as instances of it, each with its own matrix */
+        billboardMesh: Mesh;
+        /** @property {boolean} - True while the 3D pass is running, 3D draws are only valid then */
+        isRendering: boolean;
+        /** @property {boolean} - True while the shadow map is being drawn, draws go to the depth only shader */
+        shadowPass: boolean;
+        /** @property {Matrix4} - This frame's view matrix */
+        viewMatrix: Matrix4;
+        /** @property {Matrix4} - This frame's projection matrix */
+        projectionMatrix: Matrix4;
+        /** @property {Matrix4} - This frame's combined view projection */
+        viewProjection: Matrix4;
+        /** @property {Matrix4} - This frame's light view projection for the shadow map */
+        shadowMatrix: Matrix4;
+        /** @property {Vector3} - Camera right axis this frame */
+        cameraRight: Vector3;
+        /** @property {Vector3} - Camera up axis this frame */
+        cameraUp: Vector3;
+        /** @property {Vector3} - Camera forward axis this frame */
+        cameraForward: Vector3;
+        cameraBack: Vector3;
+        /** @type {Array<Array<number>>} */
+        frustumPlanes: Array<Array<number>>;
+        /** @type {Array<Array<number>>} */
+        shadowPlanes: Array<Array<number>>;
+        /** @type {WebGLProgram|undefined} */
+        program: WebGLProgram | undefined;
+        /** @type {WebGLProgram|undefined} */
+        currentProgram: WebGLProgram | undefined;
+        lightCount: number;
+        /** @type {WebGLProgram|undefined} */
+        shadowShader: WebGLProgram | undefined;
+        /** @type {WebGLVertexArrayObject|undefined} */
+        vao: WebGLVertexArrayObject | undefined;
+        /** @type {WebGLTexture|undefined} */
+        whiteTexture: WebGLTexture | undefined;
+        /** @type {Map<number, WebGLSampler>} */
+        samplers: Map<number, WebGLSampler>;
+        /** @type {string|undefined} */
+        samplerKey: string | undefined;
+        /** @type {WebGLTexture|undefined} */
+        shadowTexture: WebGLTexture | undefined;
+        /** @type {WebGLFramebuffer|undefined} */
+        shadowFramebuffer: WebGLFramebuffer | undefined;
+        shadowTextureSize: number;
+        /** @type {WebGLTexture|undefined} */
+        cameraDepthTexture: WebGLTexture | undefined;
+        /** @type {WebGLFramebuffer|undefined} */
+        cameraDepthFramebuffer: WebGLFramebuffer | undefined;
+        cameraDepthWidth: number;
+        cameraDepthHeight: number;
+        depthPass: boolean;
+        contextGeneration: number;
+        uniforms: Map<any, any>;
+        /** @type {Object<string, Array<number>>} */
+        uniformValues: {
+            [x: string]: Array<number>;
+        };
+        shadowMapDrawn: boolean;
+        passIsDefault: boolean;
+        lightPositions: Float32Array;
+        lightColors: Float32Array;
+        lightCones: Float32Array;
+        shadowLightIndex: number;
+        shadowDepthBias: number;
+        /** @type {WebGLBuffer|undefined} */
+        streamBuffer: WebGLBuffer | undefined;
+        /** @type {Array<WebGLBuffer>} */
+        instanceBuffers: Array<WebGLBuffer>;
+        instanceBufferIndex: number;
+        /** @type {Array<Mesh>} */
+        instanceMeshes: Array<Mesh>;
+        /** @type {Array<Array<number>>} */
+        attribValues: Array<Array<number>>;
+        streamData: ArrayBuffer;
+        streamFloats: Float32Array;
+        streamInts: Uint32Array;
+        streamCount: number;
+        /** @type {TextureInfo|undefined} */
+        streamTileInfo: TextureInfo | undefined;
+        streamState: any;
+        /** @type {Mesh|undefined} */
+        capture: Mesh | undefined;
+        /** @type {Array<{distance: number, state: Object, draw: function(): void}>|undefined} */
+        transparentQueue: Array<{
+            distance: number;
+            state: any;
+            draw: () => void;
+        }> | undefined;
+        set lighting(arg: boolean);
+        /** Apply lighting, when false draws plain vertex color times texture and casts no shadow;
+         *  off for billboards, lines, ribbons and soft discs, an object sets emissive instead
+         *  @return {boolean} */
+        get lighting(): boolean;
+        set emissive(arg: number);
+        /** How much a surface lights itself, set per object by its emissive
+         *  @return {number} */
+        get emissive(): number;
+        set additive(arg: boolean);
+        /** Additive blending instead of alpha, in the transparent stage
+         *  @return {boolean} */
+        get additive(): boolean;
+        set depthTest(arg: boolean);
+        /** Test against the depth buffer, reset to true before each object and callback; a draw
+         *  with it off goes over what was drawn before it and under what is drawn after, by render order, which
+         *  ends the batch of meshes before it, so one per object costs a draw per object
+         *  @return {boolean} */
+        get depthTest(): boolean;
+        set depthWrite(arg: boolean);
+        /** Write to the depth buffer, owned by the stages: on for opaque, off for transparent
+         *  @return {boolean} */
+        get depthWrite(): boolean;
+        set cullBackFaces(arg: boolean);
+        /** Skip back faces, set by drawMesh from each mesh: off for strips so they show from
+         *  both sides
+         *  @return {boolean} */
+        get cullBackFaces(): boolean;
+        set mirrored(arg: boolean);
+        /** The transform mirrors the draw, so the other winding is the front, set by drawMesh
+         *  from each transform
+         *  @return {boolean} */
+        get mirrored(): boolean;
+        set specular(arg: number);
+        /** Strength of the highlight where the sun and the Light3D objects reflect, 0 is none and
+         *  1 adds a light's full color at its brightest; shininess sets its size
+         *  @return {number} */
+        get specular(): number;
+        set shininess(arg: number);
+        /** The highlight's exponent, how small and sharp it is: 4 is broad like rubber, 100 sharp
+         *  like polished metal; set from each object's shininess
+         *  @return {number} */
+        get shininess(): number;
+        set normalMap(arg: TextureInfo);
+        /** Normal map for the next draws, set from each object's normalMap
+         *  @return {TextureInfo|undefined} */
+        get normalMap(): TextureInfo;
+        set normalScale(arg: number);
+        /** How strongly the normal map bends the surface, set from each object's normalScale
+         *  @return {number} */
+        get normalScale(): number;
+        set reflectivity(arg: number);
+        /** How much the surface reflects the sky, 0 to 1, set from each object's reflectivity
+         *  @return {number} */
+        get reflectivity(): number;
+        set emissiveMap(arg: TextureInfo);
+        /** Emissive map for the next draws, set from each object's emissiveMap
+         *  @return {TextureInfo|undefined} */
+        get emissiveMap(): TextureInfo;
+        set emissiveMapColor(arg: Color);
+        /** Multiplies the emissive map, set from each object's emissiveMapColor; compared by its rgb, so a Color
+         *  changed in place is seen when it is set again, and undefined is white
+         *  @return {Color} */
+        get emissiveMapColor(): Color;
+        set shader(arg: Shader);
+        /** Custom Shader for the next draws, set from each object's shader; undefined draws
+         *  with the plugin's own
+         *  @return {Shader|undefined} */
+        get shader(): Shader;
+        set receiveShadow(arg: boolean);
+        /** Darken by the shadow map when shadows are on, turn it off for things that should
+         *  stay lit inside a shadow
+         *  @return {boolean} */
+        get receiveShadow(): boolean;
+        set pixelated(arg: boolean);
+        /** Keep texture pixels hard edged, no mipmaps and no blending between them, set per
+         *  object by pixelated
+         *  @return {boolean} */
+        get pixelated(): boolean;
+        set blend(arg: boolean);
+        /** Blending on, set by the stages
+         *  @return {boolean} */
+        get blend(): boolean;
+        /** Rebuild the view and projection matrices from the camera, called automatically each frame
+         *  @param {number} [aspect] - Width over height, defaults to the main canvas */
+        updateMatrices(aspect?: number): void;
+        /** Where a world point lands on screen as -1 to 1 across and up, with z as depth
+         *  - Uses this frame's camera, call updateMatrices first if the camera just moved
+         *  @param {Vector3} pos
+         *  @return {Vector3|undefined} - undefined when behind the camera or closer than the near plane */
+        worldToClip(pos: Vector3): Vector3 | undefined;
+        /** Project a world point to screen space pixels, same space as mousePosScreen
+         *  - The opposite of screenToRay, and it takes the same canvas so the pair agree
+         *  @param {Vector3} pos
+         *  @param {Vector2} [canvasSize] - Defaults to the main canvas size, as in screenToRay;
+         *    the projection is whatever updateMatrices last built, which screenToRay does for its canvas
+         *  @return {Vector2|undefined} - undefined when behind the camera or closer than the near plane */
+        worldToScreen(pos: Vector3, canvasSize?: Vector2): Vector2 | undefined;
+        /** Get the world ray under a screen position, for clicking on things in 3D
+         *  - Uses the camera where it is right now, so it is fine to call from gameUpdate
+         *  - It brings the view matrices up to date for that canvas, so worldToScreen stays its exact opposite
+         *  @param {Vector2} screenPos - Same space as mousePosScreen
+         *  @param {Vector2} [canvasSize] - Defaults to the main canvas size
+         *  @return {Ray3D} - Starts at the camera with a unit direction, or on the near plane when orthographic */
+        screenToRay(screenPos: Vector2, canvasSize?: Vector2): Ray3D;
+        /** Where a screen position lands on a flat ground plane, for top down games; use HeightMap.raycast for terrain
+         *  @param {Vector2} screenPos - Same space as mousePosScreen
+         *  @param {number} [groundHeight] - World height of the ground plane
+         *  @param {Vector2} [canvasSize] - Defaults to the main canvas size, as in screenToRay
+         *  @return {Vector3|undefined} - undefined when the ray misses the plane */
+        screenToGround(screenPos: Vector2, groundHeight?: number, canvasSize?: Vector2): Vector3 | undefined;
+        /** Find the nearest object under a screen position or along a ray, for clicking on things
+         *  - Each object is tested as the box around its mesh in its own space, or a sprite as the quad it draws,
+         *    not triangle by triangle
+         *  - engineObjectsRaycast3D is the other half of this, every object along a ray instead of the nearest
+         *  @param {Vector2|Ray3D} from - A screen position like mousePosScreen, or a ray to look along
+         *  @param {Array<EngineObject>} [objects] - Defaults to every object; only those with a mesh or a sprite count
+         *  @return {{object: EngineObject3D, distance: number}|undefined} */
+        pick(from: Vector2 | Ray3D, objects?: Array<EngineObject>): {
+            object: EngineObject3D;
+            distance: number;
+        } | undefined;
+        /** Play a sound at a 3D position, quieter with distance from the camera and panned by its side, like Sound.play
+         *  with a 2D position; a sound made with no range of its own is heard to soundDefaultRange, 100, and one given
+         *  a range keeps it
+         *  @param {Sound} sound
+         *  @param {Vector3} pos3D
+         *  @param {number} [volume]
+         *  @param {number} [pitch]
+         *  @param {number} [randomnessScale] - How much to scale pitch randomness
+         *  @param {boolean} [loop]
+         *  @param {boolean} [paused] - Start it paused
+         *  @return {SoundInstance|undefined} - undefined when out of range or sound is off */
+        playSound(sound: Sound, pos3D: Vector3, volume?: number, pitch?: number, randomnessScale?: number, loop?: boolean, paused?: boolean): SoundInstance | undefined;
+        /** Play a sound on a loop at a 3D position, the same as playSound with loop on
+         *  - Its volume and pan are set when it starts, change or stop it through the SoundInstance returned
+         *  @param {Sound} sound
+         *  @param {Vector3} pos3D
+         *  @param {number} [volume]
+         *  @param {number} [pitch]
+         *  @param {number} [randomnessScale] - How much to scale pitch randomness
+         *  @return {SoundInstance|undefined} - undefined when out of range or sound is off */
+        playSoundLoop(sound: Sound, pos3D: Vector3, volume?: number, pitch?: number, randomnessScale?: number): SoundInstance | undefined;
+        /** Is any part of a sphere on screen this frame, the test that skips meshes the camera cannot see
+         *  - While the shadow map is drawing it tests the shadow area instead
+         *  @param {Vector3} center
+         *  @param {number} radius
+         *  @return {boolean} */
+        isSphereVisible(center: Vector3, radius: number): boolean;
+        /** Draw a mesh with the current draw state, batched with its other uses in the opaque stage when instancing is on
+         *  @param {Mesh} mesh
+         *  @param {Matrix4|Vector3} [matrix] - Object transform, or just a position to draw it at
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Texture, mesh uvs map across the tile or the whole texture
+         *  @param {Color} [color] - Tint
+         *  @return {void} */
+        drawMesh(mesh: Mesh, matrix?: Matrix4 | Vector3, tileInfo?: TileInfo | TextureInfo, color?: Color): void;
+        /** Draw a triangle strip, batched into the stream with the current draw state
+         *  - Strip order: the first three points make a triangle, then each point makes another with the two before it
+         *  - List the first three points counter clockwise as seen from the front, or the face points away
+         *    and may vanish when back faces are culled
+         *  - inside a bake the strip goes into the mesh instead, in the transparent stage it is queued for sorting
+         *    and the arrays are read when the queue replays, so leave them unchanged until the stage ends
+         *  @param {Array<Vector3>} points - In strip order
+         *  @param {Vector3|Array<Vector3>} [normals] - One for all or one per point, default up
+         *  @param {Vector2|Array<Vector2>} [uvs] - One for all or one per point, 0-1 across the tile
+         *  @param {Color|Array<Color>} [colors] - One for all or one per point, vertex colors come before the texture
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Texture for this strip
+         *  @return {void} */
+        drawStrip(points: Array<Vector3>, normals?: Vector3 | Array<Vector3>, uvs?: Vector2 | Array<Vector2>, colors?: Color | Array<Color>, tileInfo?: TileInfo | TextureInfo): void;
+        /** Draw a strip with lighting off, for camera facing shapes where the light direction means nothing
+         *  @param {Array<Vector3>} points - Strip order
+         *  @param {Vector3|Array<Vector3>} [normals]
+         *  @param {Vector2|Array<Vector2>} [uvs]
+         *  @param {Color|Array<Color>} [colors]
+         *  @param {TileInfo|TextureInfo} [tileInfo] */
+        drawStripUnlit(points: Array<Vector3>, normals?: Vector3 | Array<Vector3>, uvs?: Vector2 | Array<Vector2>, colors?: Color | Array<Color>, tileInfo?: TileInfo | TextureInfo): void;
+        /** Draw the pending stream vertices as one strip with the state they were drawn under, called automatically when needed */
+        flush(): void;
+        /** Build a mesh once out of draw calls, instead of redrawing the shapes every frame
+         *  - Call the same drawStrip, drawQuad and drawBox calls inside, and get a mesh back
+         *  - Strips inside a bake ignore their tileInfo, the finished mesh picks the texture when it draws
+         *  - drawMesh, drawBox and drawSphere copy their mesh in, moved and tinted, their tileInfo dropped too
+         *  - The mesh skips its back faces like any, set doubleSided when what was drawn is open
+         *  @param {Function} drawFunction
+         *  @return {Mesh} */
+        bake(drawFunction: Function): Mesh;
+        /** Draw a layer's objects, solid ones first and see through ones after, called automatically
+         *  - The main layer also draws the sky, the render callbacks and the debug shapes
+         *  @param {Array<EngineObject3D>} objects
+         *  @param {boolean} [isDefault] */
+        renderStages(objects: Array<EngineObject3D>, isDefault?: boolean): void;
+        /** Queue a draw for the transparent stage, replayed far to near with the current draw state, or draw it now when
+         *  sorting is off
+         *  - The draw runs later, so it should hold copies of any values the caller may change before then
+         *  @param {Vector3} pos - Where the draw is, for sorting
+         *  @param {function(): void} draw
+         *  @return {void} */
+        queueTransparent(pos: Vector3, draw: () => void): void;
+        /** Draw the queued transparent draws far to near with the state each was drawn under, called automatically at the
+         *  end of the transparent stage */
+        flushTransparentQueue(): void;
+        /** Draw render3D.sky around the camera, unlit, unfogged and behind everything, called automatically by the pass */
+        drawSky(): void;
+        /** Rebuild the light's view projection around the shadow center, called automatically each frame shadows are on */
+        updateShadowMatrix(): void;
+        /** Build a sky dome, set it as the sky, and light the scene by it: the fog takes the horizon color, and the
+         *  ambient light comes from the top color above and the bottom color below, both at the ambient strength
+         *  @param {Color} [topColor] - Straight up
+         *  @param {Color} [horizonColor] - Level with the camera
+         *  @param {Color} [bottomColor] - Straight down, defaults to the horizon color
+         *  @param {number} [ambient] - How much of the sky colors lights the scene as ambient, 0 for none
+         *  @return {Mesh} - The dome, also in render3D.sky */
+        setSky(topColor?: Color, horizonColor?: Color, bottomColor?: Color, ambient?: number): Mesh;
+        /** Set where fog starts and ends, and its color
+         *  @param {number} fogStart - Distance from the camera where fog starts
+         *  @param {number} fogEnd - Distance where fog is total, 0 disables fog
+         *  @param {Color} [fogColor] - Leaves the color alone when not passed, setSky sets it to the horizon */
+        setFog(fogStart: number, fogEnd: number, fogColor?: Color): void;
+        /** Draw a box, untextured, for blocking out a scene without meshes or objects
+         *  @param {Vector3} pos - Center
+         *  @param {Vector3|number} [size] - Full size, a number for a cube
+         *  @param {Color} [color]
+         *  @param {Vector3} [rotation] - vec3(pitch, yaw, roll) */
+        drawBox(pos: Vector3, size?: Vector3 | number, color?: Color, rotation?: Vector3): void;
+        /** Draw a sphere, untextured and smooth shaded
+         *  @param {Vector3} pos - Center
+         *  @param {number} [size] - Diameter
+         *  @param {Color} [color] */
+        drawSphere(pos: Vector3, size?: number, color?: Color): void;
+        /** Draw a flat square that always faces the camera, unlit so it keeps its own colors
+         *  - Draw it from onRenderTransparent or a transparent object so it can fade
+         *  @param {Vector3} pos - Center
+         *  @param {Vector2} [size] - World units
+         *  @param {TileInfo|TextureInfo} [tileInfo]
+         *  @param {Color} [color]
+         *  @param {number} [angle] - Rotation in the camera plane, counter clockwise
+         *  @param {boolean} [upright] - Stand on world up and only turn to face the camera, for sprites on the ground
+         *  @return {void} */
+        drawBillboard(pos: Vector3, size?: Vector2, tileInfo?: TileInfo | TextureInfo, color?: Color, angle?: number, upright?: boolean): void;
+        /** Draw a quad from four corners in loop order, counter clockwise seen from the front, a is the top left of the texture
+         *  @param {Vector3} a
+         *  @param {Vector3} b
+         *  @param {Vector3} c
+         *  @param {Vector3} d
+         *  @param {TileInfo|TextureInfo} [tileInfo]
+         *  @param {Color|Array<Color>} [color] - One for all or one per corner */
+        drawQuad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, tileInfo?: TileInfo | TextureInfo, color?: Color | Array<Color>): void;
+        /** Draw a triangle, counter clockwise from outside is the front
+         *  @param {Vector3} a
+         *  @param {Vector3} b
+         *  @param {Vector3} c
+         *  @param {Color} [color] */
+        drawTriangle(a: Vector3, b: Vector3, c: Vector3, color?: Color): void;
+        /** Draw a line as a camera facing ribbon, unlit
+         *  @param {Vector3} posA
+         *  @param {Vector3} posB
+         *  @param {number} [width]
+         *  @param {Color} [color] */
+        drawLine(posA: Vector3, posB: Vector3, width?: number, color?: Color): void;
+        /** Draw a ribbon along a path, unlit and visible from both sides; width and color can change along it
+         *  - The texture runs along the length, u from the first point to the last
+         *  - A path that ends where it starts is a loop, and joins with no seam
+         *  @param {Array<Vector3>} points - Center line in order, at least two
+         *  @param {number|Array<number>} [width] - Full width, one for all or one per point
+         *  @param {TileInfo|TextureInfo} [tileInfo]
+         *  @param {Color|Array<Color>} [color] - One for all or one per point
+         *  @param {Vector3|Array<Vector3>} [side] - Direction across the ribbon, one for all or one per point, default
+         *    faces the camera */
+        drawRibbon(points: Array<Vector3>, width?: number | Array<number>, tileInfo?: TileInfo | TextureInfo, color?: Color | Array<Color>, side?: Vector3 | Array<Vector3>): void;
+        /** Draw a disc that fades to transparent at the rim, unlit, for glows, puffs and sky dots
+         *  @param {Vector3} pos - Center
+         *  @param {number} [size] - Diameter
+         *  @param {Color} [color]
+         *  @param {Vector3} [normal] - Facing direction, faces the camera by default
+         *  @param {number} [sides]
+         *  @return {void} */
+        drawSoftDisc(pos: Vector3, size?: number, color?: Color, normal?: Vector3, sides?: number): void;
+        /** Draw a soft round shadow on the ground under something, much cheaper than a real shadow
+         *  - Draw it from onRenderTransparent or from a transparent object
+         *  @param {Vector3} pos - Position of the thing casting the shadow
+         *  @param {number} [size] - Diameter
+         *  @param {number|HeightMap|function(number, number): number} [floorHeight] - Height of the ground, a HeightMap, or
+         *    (x, z) => y to follow terrain
+         *  @param {Color} [color]
+         *  @param {number} [lift] - How far above the ground to draw, raise it if the shadow cuts into rough ground
+         *  @return {void} */
+        drawSoftShadow(pos: Vector3, size?: number, floorHeight?: number | HeightMap | ((arg0: number, arg1: number) => number), color?: Color, lift?: number): void;
+    }
+    /**
+     * Camera3D - Position, rotation and lens for the 3D view
+     * - Looks down its -Z axis, rotation is vec3(pitch, yaw, roll)
+     * @memberof Render3D
+     */
+    export class Camera3D {
+        /** @property {Vector3} - World position */
+        pos: Vector3;
+        /** @property {Vector3} - Euler rotation, vec3(pitch, yaw, roll) in radians */
+        rotation: Vector3;
+        /** @property {number} - Vertical field of view in radians */
+        fov: number;
+        /** @property {number} - Near clip distance */
+        near: number;
+        /** @property {number} - Far clip distance, Infinity is allowed for a perspective view */
+        far: number;
+        /** @property {number} - Visible height in world units for an orthographic view, 0 is perspective */
+        orthographic: number;
+        /** @property {boolean} - Line the 3D camera up with the 2D camera, so 3D things at z=0 sit on the 2D sprites */
+        align2D: boolean;
+        /** Returns the camera's world transform
+         *  @return {Matrix4} */
+        getMatrix(): Matrix4;
+        /** Returns the view matrix, world to camera space
+         *  @return {Matrix4} */
+        getViewMatrix(): Matrix4;
+        /** Returns the projection matrix
+         *  @param {number} aspect - Width over height
+         *  @return {Matrix4} */
+        getProjectionMatrix(aspect: number): Matrix4;
+        /** Returns the direction the camera looks
+         *  @return {Vector3} */
+        getForward(): Vector3;
+        /** Returns the camera's right axis
+         *  @return {Vector3} */
+        getRight(): Vector3;
+        /** Returns the camera's up axis
+         *  @return {Vector3} */
+        getUp(): Vector3;
+        /** Point the camera at a target, sets pitch and yaw and clears roll
+         *  @param {Vector3} target */
+        lookAt(target: Vector3): void;
+        /** Put the camera on an orbit around a target, looking at it
+         *  @param {Vector3} target
+         *  @param {number} distance
+         *  @param {number} yaw - Radians around Y
+         *  @param {number} [pitch] - Radians above the horizon */
+        orbit(target: Vector3, distance: number, yaw: number, pitch?: number): void;
+        /** Chase a target from an offset, easing toward it, and look at it
+         *  @param {Vector3} target
+         *  @param {Vector3} offset - Where to sit relative to the target
+         *  @param {number} [percent] - How far to move toward the spot each call, 1 snaps */
+        follow(target: Vector3, offset: Vector3, percent?: number): void;
+        /** Line the 3D camera up with the 2D camera, called automatically when align2D is set
+         *  @param {number} [canvasHeight] - Defaults to the main canvas height */
+        update2D(canvasHeight?: number): void;
+    }
+    /**
+     * EngineObject3D - An EngineObject with a 3D transform and a mesh
+     * - Set pos3D, rotation3D and scale3D instead of the 2D pos, size and angle
+     * - Gets update, children, timers, destroy and renderOrder from EngineObject
+     * - velocity3D is added to pos3D each frame, slowed by damping, and render3D.gravity pulls it once it has a mass
+     * - Objects face -Z, the same way the camera does, so lookAt turns them to face a point
+     * - The 2D pos and velocity are still there but nothing draws them
+     * - These inherited fields are 2D only and do nothing here: angle, angleVelocity, additiveColor, drawSize and mirror;
+     *   damping, angleDamping, clampSpeed, friction and groundObject work as in 2D, on velocity3D and angleVelocity3D
+     * - The inherited shader works here as in 2D, and with emissive at 1 its snippet does its own lighting
+     * - Set sync2D for a 2D game with 3D looks, pos and angle then drive pos3D and rotation3D,
+     *   which is the one way those 2D fields reach a 3D object
+     * - setCollision takes the same flags as in 2D, but the solid collision happens in 3D against size3D
+     * - The solid box turns with rotation3D, so a turned wall or a ramp collides as it looks; resting on one no steeper
+     *   than groundAngle stands there
+     * - Its tile and raycast halves are 2D only so they default off here, and a child sits solid collision out
+     * - A sync2D object collides in 2D instead, which needs the 2D size set as well as size3D
+     * - setMesh swaps the mesh and frees the old one, for text and terrain that get built again
+     * - addChild attaches the 3D transform, and pos3D becomes an offset from the parent; attach keeps the child where
+     *   it is and works the offset out, and removeChild leaves it where it was in the world
+     * - The 2D offset arguments of addChild do nothing here, set the child's pos3D
+     * @extends EngineObject
+     * @memberof Render3D
+     * @example
+     * class Spinner extends EngineObject3D
+     * {
+     *     constructor(pos) { super(pos, buildBox(), undefined, RED); }
+     *     update() { this.rotation3D.y += .02; }
+     * }
+     */
+    export class EngineObject3D extends EngineObject {
+        /** Create a 3D object and add it to the object list
+         *  @param {Vector3} [pos3D] - World space position
+         *  @param {Mesh} [mesh] - Mesh to draw, undefined draws nothing
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Texture, mesh uvs map across the tile; a whole TextureInfo becomes
+         *    the tile that covers it
+         *  @param {Color} [color] - Tint */
+        constructor(pos3D?: Vector3, mesh?: Mesh, tileInfo?: TileInfo | TextureInfo, color?: Color);
+        /** @property {Vector3} - World space position, local to the parent when attached to an EngineObject3D */
+        pos3D: Vector3;
+        /** @property {Vector3} - Rotation vec3(pitch, yaw, roll) in radians, local to the parent when attached to an
+         *  EngineObject3D */
+        rotation3D: Vector3;
+        /** @property {Vector3} - Scale, local to the parent when attached to an EngineObject3D */
+        scale3D: Vector3;
+        /** @property {Vector3} - Added to pos3D each frame by the engine before update, like the 2D velocity, no super
+         *  call needed; damping and render3D.gravity act on it once the object has a mass */
+        velocity3D: Vector3;
+        /** @property {Vector3} - Added to rotation3D each frame by the engine before update, slowed by angleDamping */
+        angleVelocity3D: Vector3;
+        /** @property {Mesh|undefined} - Mesh to draw
+         *  @type {Mesh|undefined} */
+        mesh: Mesh | undefined;
+        size3D: Vector3;
+        /** @property {number} - Diameter of a soft shadow drawn under the object on render3D.softShadowHeight, 0 for
+         *  none; scale3D and a parent's scale grow it, so set it once for the unscaled object */
+        softShadow: number;
+        /** @property {boolean} - A sprite stands on world up instead of tilting toward the camera */
+        upright: boolean;
+        /** @property {boolean} - Keep this object's texture pixels hard edged, for pixel art that should not blur or bleed */
+        pixelated: boolean;
+        /** @property {boolean} - Copy the 2D pos and angle into pos3D and rotation3D each frame, for 2D games with 3D
+         *  looks; set mass to use 2D physics, and pos3D.z stays yours to set or move with velocity3D.z */
+        sync2D: boolean;
+        /** @property {boolean} - Draw in the transparent stage, blended and sorted far to near with depth writes off;
+         *  on for a sprite */
+        transparent: boolean;
+        /** @property {boolean} - Additive blending, in the transparent stage */
+        additive: boolean;
+        /** @property {number} - Strength of the highlight where the sun and the Light3D objects reflect, 0 is none and
+         *  1 adds a light's full color at its brightest; shininess sets its size */
+        specular: number;
+        /** @property {number} - The highlight's exponent, how small and sharp it is: 4 is broad like rubber, 16 the
+         *  default, 100 sharp like polished metal; shows only with specular above 0 */
+        shininess: number;
+        /** @property {TextureInfo|undefined} - A normal map that bends the surface at each texel so it catches the
+         *  light like bumps and grooves, green pointing up the image as OpenGL and glTF have it; read at the color
+         *  texture's coordinates, see normalMapFromHeight to make one in code
+         *  @type {TextureInfo|undefined} */
+        normalMap: TextureInfo | undefined;
+        /** @property {number} - How strongly the normal map bends the surface, 0 turns it off, as glTF's scale */
+        normalScale: number;
+        /** @property {number} - How much it reflects the sky, 0 none and 1 a mirror of it; the edges seen at a
+         *  glancing angle reflect more either way, as water and glass do */
+        reflectivity: number;
+        /** @property {TextureInfo|undefined} - A texture of where it glows, added on top of the lit surface so it
+         *  shows in the dark, like lit windows; read at the color texture's coordinates
+         *  @type {TextureInfo|undefined} */
+        emissiveMap: TextureInfo | undefined;
+        /** @property {Color} - Multiplies the emissive map, as glTF's emissiveFactor */
+        emissiveMapColor: Color;
+        /** @property {boolean} - Collide as the sphere that fits size3D instead of as the size3D box, so it rolls
+         *  around corners */
+        collideAsSphere3D: boolean;
+        /** @property {number} - The steepest slope it stands on, in radians from level, PI/4 by default: resting on
+         *  a solid within this of flat sets groundObject and holds it still, steeper it slides down */
+        groundAngle: number;
+        /** @property {boolean} - Darkened by the shadow map when render3D.shadows is on */
+        receiveShadow: boolean;
+        /** @property {boolean|undefined} - Draw this object over the 2D scene, undefined uses render3D.renderAfter2D
+         *  @type {boolean|undefined} */
+        renderAfter2D: boolean | undefined;
+        /** @property {Matrix4|undefined} - The transform from its parent, used in place of pos3D, rotation3D and
+         *  scale3D when set, for one they cannot hold like a glTF pose with shear; read every frame it is set
+         *  @type {Matrix4|undefined} */
+        localMatrix: Matrix4 | undefined;
+        worldMatrix: Matrix4;
+        matrixBuilt: Float64Array;
+        matrixVersion: number;
+        /** @type {EngineObject3D|undefined} */
+        matrixParent: EngineObject3D | undefined;
+        matrixParentVersion: number;
+        movePass: number;
+        /** Called by a VoxelMap to ask whether a block stops this object, a hook to let one through or react to it
+         *  @param {number} type - The block's type, 1 to 255
+         *  @param {Vector3} cell - The block's cell in the map
+         *  @return {boolean} - true to be stopped by it, every block stops it by default */
+        collideWithVoxel(type: number, cell: Vector3): boolean;
+        /** Returns the world position
+         *  @return {Vector3} */
+        getWorldPos3D(): Vector3;
+        /** Returns the direction the object faces, its -Z axis in the world
+         *  @return {Vector3} */
+        getForward3D(): Vector3;
+        /** Returns the object's right axis in the world
+         *  @return {Vector3} */
+        getRight3D(): Vector3;
+        /** Returns the object's up axis in the world
+         *  @return {Vector3} */
+        getUp3D(): Vector3;
+        /** Returns a copy of the object's world transform, the parent's included when attached to an EngineObject3D
+         *  - The object keeps its matrix and rebuilds it only when its position, rotation or scale changed, so this is
+         *    cheap to call
+         *  @return {Matrix4} */
+        getMatrix(): Matrix4;
+        /** Turn the object so its -Z axis points at a world space target, sets pitch and yaw and clears roll
+         *  @param {Vector3} target */
+        lookAt(target: Vector3): void;
+        /** Draw a different mesh and free the GPU buffer of the one it replaces
+         *  - For a mesh built again when something changes, like a score, a rebuilt terrain or a loaded model
+         *  - A mesh another object is still drawing is left alone, since builders are often shared
+         *  - Freeing one held somewhere else only costs it an upload, the points it was built from stay
+         *  @param {Mesh} [mesh] - The mesh to draw from now on, undefined to draw nothing
+         *  @return {Mesh|undefined} - The mesh passed in */
+        setMesh(mesh?: Mesh): Mesh | undefined;
+        /** Draw the object in 3D, called by the 3D pass with the draw state set from this object's flags, draws the mesh by default
+         *  @return {void} */
+        render3D(): void;
+    }
+    /**
+     * Mesh - Triangles with positions, normals, uvs and colors, uploaded once and drawn by matrix
+     * - Build with addStrip, addQuad, combine or the shape builders, then render each frame
+     * - Its back faces are skipped unless doubleSided is set, which the open builders like buildGrid do for you
+     * - Two forms: a triangle strip, what the builders make, or an indexed list of triangles over their own vertices,
+     *   what addTriangles and the model loaders make; upload sends the GPU an indexed list either way, see getTriangles,
+     *   so a strip's joins between its pieces cost nothing to draw, and toIndexed turns a strip mesh into the list form
+     * - The GPU buffer is created lazily on first render and dropped by dispose, or freed once the mesh is garbage
+     *   collected, so dispose is only needed to free it right away, like for a mesh rebuilt often
+     * @memberof Render3D
+     * @example
+     * const mesh = buildLathe([[0, -1], [1, 0], [0, 1]], 4); // octahedron
+     * mesh.render(buildMatrix(vec3(0, 1, 0)), undefined, RED);
+     */
+    export class Mesh {
+        /** @property {Array<Vector3>} - Vertex positions, in strip order or one per vertex of an indexed mesh
+         *  @type {Array<Vector3>} */
+        points: Array<Vector3>;
+        /** @property {Array<Vector3>} - Vertex normals
+         *  @type {Array<Vector3>} */
+        normals: Array<Vector3>;
+        /** @property {Array<Vector2>} - Vertex texture coords, 0-1 across the tile
+         *  @type {Array<Vector2>} */
+        uvs: Array<Vector2>;
+        /** @property {Array<Color>} - Vertex colors
+         *  @type {Array<Color>} */
+        colors: Array<Color>;
+        /** @property {WebGLBuffer|undefined} - GPU vertex buffer, created by upload
+         *  @type {WebGLBuffer|undefined} */
+        buffer: WebGLBuffer | undefined;
+        /** @property {WebGLBuffer|undefined} - GPU index buffer, the triangles, created by upload
+         *  @type {WebGLBuffer|undefined} */
+        indexBuffer: WebGLBuffer | undefined;
+        /** @property {number} - Indices in the GPU index buffer, three per triangle */
+        bufferCount: number;
+        indexType: number;
+        /** @property {boolean} - The mesh changed and needs uploading again, set it yourself if you edit the arrays */
+        dirty: boolean;
+        /** @property {boolean|undefined} - Draw every use of this mesh in the opaque stage as one instanced call,
+         *  undefined follows render3D.instancing
+         *  @type {boolean|undefined} */
+        instanced: boolean | undefined;
+        /** @property {boolean} - Draw both sides, each lit as the side that is seen; off skips the faces pointing away,
+         *  which is faster and right for closed shapes, the open builders like buildGrid and buildRibbon turn it on */
+        doubleSided: boolean;
+        /** @property {boolean} - The values change often but the shape never does, for a water surface or a cloth: set
+         *  once, the mesh keeps its GPU layout and a dirty upload only rewrites the vertices into the buffer it has;
+         *  the strip must keep the same points in the same order, a new point count asserts; the layout is decided by
+         *  the first upload, so strip entries equal then stay one vertex and triangles with no area then stay dropped,
+         *  set vertexKeys or give it distinct values at the start, not a flat grid of one color or points all in one place */
+        dynamicDraw: boolean;
+        /** @property {Array<number>|undefined} - The mesh as an indexed triangle list instead of a strip: the arrays
+         *  hold each vertex once and this says how they join, three vertex numbers per triangle, counter clockwise seen
+         *  from the front like a strip's first triangle; addTriangles and the loaders fill it, toIndexed turns a strip
+         *  mesh into this form
+         *  @type {Array<number>|undefined} */
+        indices: Array<number> | undefined;
+        /** @property {Int32Array|undefined} - Which strip entries are one vertex, set by a builder that knows, one
+         *  whole number per entry with equal numbers meaning the same vertex; upload skips its search for them, then
+         *  drops the keys, since an edit after that may tell the entries apart; adding geometry or recomputing normals
+         *  drops them too
+         *  @type {Int32Array|undefined} */
+        vertexKeys: Int32Array | undefined;
+        /** @type {{vertices: Array<number>, pointCount: number, data: ArrayBuffer}|undefined} */
+        vertexLayout: {
+            vertices: Array<number>;
+            pointCount: number;
+            data: ArrayBuffer;
+        } | undefined;
+        instanceCount: number;
+        /** @type {Float32Array|undefined} */
+        instanceData: Float32Array | undefined;
+        /** @property {number} - Bounding sphere radius around the origin, for culling and picking, computed by upload */
+        radius: number;
+        /** @property {{min: Vector3, max: Vector3}|undefined} - Bounding box, for picking, measured with the radius
+         *  @type {{min: Vector3, max: Vector3}|undefined} */
+        bounds: {
+            min: Vector3;
+            max: Vector3;
+        } | undefined;
+        contextGeneration: number;
+        /** Number of vertices in the mesh
+         *  @return {number} */
+        get vertexCount(): number;
+        /** Add a triangle strip, joined to the previous one by invisible flat triangles so one mesh holds many strips
+         *  - Strip order: the first three points make a triangle, then each point makes another with the two before it
+         *  - List the first three points counter clockwise as seen from the front, or the face points away
+         *    and may vanish when back faces are culled
+         *  @param {Array<Vector3>} points - Strip order
+         *  @param {Vector3|Array<Vector3>} [normals] - One for all or one per point, default up
+         *  @param {Vector2|Array<Vector2>} [uvs] - One for all or one per point, default zero
+         *  @param {Color|Array<Color>} [colors] - One for all or one per point, default white
+         *  @return {Mesh} */
+        addStrip(points: Array<Vector3>, normals?: Vector3 | Array<Vector3>, uvs?: Vector2 | Array<Vector2>, colors?: Color | Array<Color>): Mesh;
+        /** Add triangles over their own vertices, the indexed form a model file comes in
+         *  - The mesh becomes indexed: a strip mesh is turned into triangles first, and strips added later join as triangles
+         *  - List each triangle counter clockwise as seen from the front, like a strip's first triangle
+         *  @param {Array<Vector3>} points - Each vertex once
+         *  @param {Array<number>} indices - Three vertex numbers per triangle, into points
+         *  @param {Vector3|Array<Vector3>} [normals] - One for all or one per point, default up
+         *  @param {Vector2|Array<Vector2>} [uvs] - One for all or one per point, default zero
+         *  @param {Color|Array<Color>} [colors] - One for all or one per point, default white
+         *  @return {Mesh} */
+        addTriangles(points: Array<Vector3>, indices: Array<number>, normals?: Vector3 | Array<Vector3>, uvs?: Vector2 | Array<Vector2>, colors?: Color | Array<Color>): Mesh;
+        /** Turn a strip mesh into the indexed form, each distinct vertex once and the real triangles over them, in place
+         *  - An indexed mesh is left as it is; the builders make strips and a loader makes this, and either draws the same
+         *  @return {Mesh} */
+        toIndexed(): Mesh;
+        /** Add a flat quad from four corners in loop order, counter clockwise seen from the front, a is the top left of the texture
+         *  @param {Vector3} a
+         *  @param {Vector3} b
+         *  @param {Vector3} c
+         *  @param {Vector3} d
+         *  @param {Color|Array<Color>} [color] - One for all or one per corner
+         *  @param {Array<Vector2>} [uvs] - One per corner, default across the tile
+         *  @return {Mesh} */
+        addQuad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color?: Color | Array<Color>, uvs?: Array<Vector2>): Mesh;
+        /** Append another mesh transformed by a matrix, for building one shape out of several
+         *  @param {Mesh} mesh
+         *  @param {Matrix4|Vector3} [matrix] - Transform, or just a position to move it to
+         *  @param {Color} [color] - Multiplies the appended vertex colors
+         *  @return {Mesh} */
+        combine(mesh: Mesh, matrix?: Matrix4 | Vector3, color?: Color): Mesh;
+        /** Returns a new mesh: this one and its mirror image across the plane through the origin facing axis
+         *  - For modeling half a shape against that plane, a part that crosses it overlaps its image
+         *  @param {Vector3} [axis] - Faces the mirror plane, vec3(1,0,0) mirrors across x
+         *  @return {Mesh} */
+        mirror(axis?: Vector3): Mesh;
+        /** Returns a new mesh of count copies of this one, each turned further around an axis through the origin
+         *  @param {number} count - Copies, spaced evenly around the whole turn
+         *  @param {Vector3} [axis] - Up by default
+         *  @return {Mesh} */
+        spin(count: number, axis?: Vector3): Mesh;
+        /** Returns a new mesh of everything in this mesh or the other, see subtract
+         *  @param {Mesh} mesh - Closed, as the builders make them apart from the open ones like buildGrid
+         *  @param {Matrix4|Vector3} [matrix] - Places the other mesh, or just a position to move it to
+         *  @return {Mesh} */
+        union(mesh: Mesh, matrix?: Matrix4 | Vector3): Mesh;
+        /** Returns a new mesh of this one with the other cut out of it, CSG with BSP trees
+         *  - Both must be closed, every edge shared by two triangles, as the builders make them apart from the open
+         *    ones like buildGrid and buildRibbon; the result is closed and indexed, and neither mesh changes
+         *  - The faces a cut makes come from the other mesh's surface, turned to face out, with its normals, uvs and
+         *    colors, so a smooth cylinder drills a round hole
+         *  - Parts that overlap must be joined with union to be one solid, not with combine, mirror or spin, which
+         *    leave them overlapping, and CSG then gives a wrong shape
+         *  - Cuts split the triangles near them, so the result has more: a few thousand triangles take tens to a few
+         *    hundred milliseconds, so build shapes this way at load time, not every frame; joining several cutters
+         *    with union and cutting once is quicker than cutting with each in turn
+         *  - Details closer than about 1e-4 are made one, so build a very small part larger and scale it after
+         *  @param {Mesh} mesh - Closed, as the builders make them apart from the open ones like buildGrid
+         *  @param {Matrix4|Vector3} [matrix] - Places the other mesh, or just a position to move it to
+         *  @return {Mesh}
+         *  @example
+         *  const wall = buildBox(vec3(4, 3, .5)).subtract(buildBox(vec3(1, 2, 1)), vec3(0, -.5, 0)); // a doorway */
+        subtract(mesh: Mesh, matrix?: Matrix4 | Vector3): Mesh;
+        /** Returns a new mesh of only what is in both this mesh and the other, see subtract
+         *  @param {Mesh} mesh - Closed, as the builders make them apart from the open ones like buildGrid
+         *  @param {Matrix4|Vector3} [matrix] - Places the other mesh, or just a position to move it to
+         *  @return {Mesh} */
+        intersect(mesh: Mesh, matrix?: Matrix4 | Vector3): Mesh;
+        /** Scale every uv, so a whole texture repeats across the mesh when its TextureInfo wraps
+         *  @param {Vector2|number} scale - Repeats across and up, a number for both
+         *  @return {Mesh} */
+        scaleUVs(scale: Vector2 | number): Mesh;
+        /** Move, turn or scale every vertex in place, normals follow along
+         *  @param {Matrix4|Vector3} matrix - Transform, or just an offset to move by
+         *  @return {Mesh} */
+        transform(matrix: Matrix4 | Vector3): Mesh;
+        /** Turn the mesh inside out so it is lit and drawn from within, for rooms and domes
+         *  @return {Mesh} */
+        flipNormals(): Mesh;
+        /** Set every vertex color
+         *  @param {Color} color
+         *  @return {Mesh} */
+        setColor(color: Color): Mesh;
+        /** Measure the axis aligned box around the vertices
+         *  @return {{min: Vector3, max: Vector3}} */
+        getBounds(): {
+            min: Vector3;
+            max: Vector3;
+        };
+        /** Move the mesh so the center of its bounds is on the origin
+         *  @return {Mesh} */
+        center(): Mesh;
+        /** Scale the mesh evenly so its largest extent is a size, for loaded models of unknown units
+         *  @param {number} [size]
+         *  @return {Mesh} */
+        fit(size?: number): Mesh;
+        /** Measure the bounding sphere around the origin into radius, called by upload
+         *  @return {number} */
+        computeRadius(): number;
+        /** Derive normals from the triangles, of the strip or of the index list
+         *  @param {boolean} [smooth] - Round the lighting across faces instead of giving each face a hard edge; flat
+         *    normals on an indexed mesh give every corner its own vertex
+         *  @return {Mesh} */
+        computeNormals(smooth?: boolean): Mesh;
+        /** Pack the vertices and create the GPU buffer, called automatically by render
+         *  @return {Mesh} */
+        upload(): Mesh;
+        /** The mesh as an indexed triangle list, what upload sends to the GPU: the strip's real triangles over its
+         *  distinct vertices, the joins between its pieces dropped and every triangle facing the way it did in the strip
+         *  - Vertices are compared to a millionth, so two at one place with the same normal, uv and color are one
+         *  @return {{vertices: Array<number>, indices: Array<number>}} - vertices are strip indices, one per distinct
+         *    vertex; indices are the triangles, three per triangle, into vertices */
+        getTriangles(): {
+            vertices: Array<number>;
+            indices: Array<number>;
+        };
+        /** Draw the mesh with the current draw state, batched with its other uses in the opaque stage
+         *  @param {Matrix4|Vector3} [matrix] - Object transform, or just a position to draw it at
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Texture, mesh uvs map across the tile or the whole texture
+         *  @param {Color} [color] - Tint */
+        render(matrix?: Matrix4 | Vector3, tileInfo?: TileInfo | TextureInfo, color?: Color): void;
+        /** Delete the GPU buffer now, the CPU arrays stay so the mesh can be rendered again
+         *  - Optional, the buffer is freed anyway once the mesh is garbage collected, this frees it right away */
+        dispose(): void;
+    }
+    /**
+     * InstancedMesh3D - Many copies of one mesh drawn as one call, with their transforms kept on the GPU
+     * - For big sets that mostly stay put: an instance costs nothing per frame until it changes, so a hundred thousand
+     *   trees cost what one tree does; objects and drawMesh batch by themselves too, but rebuild their batch every frame
+     * - setTransformAt, setMatrixAt and setColorAt change one instance, and only the changed range uploads before the
+     *   next draw; the matrices and the colors are kept apart, so moving instances uploads 64 bytes each
+     * - For many instances moving every frame, setTransforms places a run of them from arrays of positions, rotations
+     *   and scales in one loop, the fastest way; or write matrixData directly and call markDirtyRange
+     * - The instances are in world space; the object's own pos3D, rotation3D and scale3D do not move them
+     * - The whole set is culled by one bounding sphere around the origin, worked out when culling reads it, or set by hand
+     *   with radius; it casts and receives shadows like any object
+     * - The object's flags cover the whole set, one emissive, one tileInfo, one shader; only the colors are per instance
+     * - A mirrored instance, one with a negative scale, shows its inside unless the mesh is doubleSided
+     * - A transparent set draws in one go in the transparent stage, its instances are not sorted against each other;
+     *   the set sorts against other transparent draws by the object's position, so put pos3D at its middle
+     * - pick, the raycast and the collect helpers do not see the instances, test them yourself from matrixData
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const forest = new InstancedMesh3D(treeMesh, 1000);
+     * for (let i = 0; i < 1000; ++i)
+     *     forest.setTransformAt(i, randomGroundPos(), vec3(0, rand(2*PI), 0));
+     */
+    export class InstancedMesh3D extends EngineObject3D {
+        /** Create a set of instances of a mesh, each at the origin in the object's color until it is set
+         *  @param {Mesh} mesh
+         *  @param {number} count - How many instances there is room for, all of them draw until count is lowered
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Texture for all of them
+         *  @param {Color} [color] - The color they start with */
+        constructor(mesh: Mesh, count: number, tileInfo?: TileInfo | TextureInfo, color?: Color);
+        /** @property {number} - How many instances draw, the first ones, up to the count it was made with */
+        count: number;
+        /** @property {number} - How many instances it was made with */
+        maxCount: number;
+        /** @property {Float32Array} - Each instance's matrix, 16 floats, what moving them uploads; edit it directly and
+         *  call markDirty for the instances changed */
+        matrixData: Float32Array;
+        /** @property {Float32Array} - Each instance's color and uv rect, 8 floats, uploaded only when they change; edit
+         *  it directly and call markColorDirty for the instances changed */
+        colorData: Float32Array;
+        /** @property {number} - First instance whose matrix uploads before the next draw */
+        dirtyStart: number;
+        /** @property {number} - One past the last instance whose matrix uploads, nothing when it is not past dirtyStart */
+        dirtyEnd: number;
+        /** @property {number} - First instance whose color uploads before the next draw */
+        colorDirtyStart: number;
+        /** @property {number} - One past the last instance whose color uploads */
+        colorDirtyEnd: number;
+        reachSquared: number;
+        scaleSquared: number;
+        boundsStart: number;
+        boundsEnd: number;
+        /** @type {number|undefined} */
+        fixedRadius: number | undefined;
+        buffer: WebGLBuffer;
+        /** @type {WebGLBuffer|undefined} */
+        colorBuffer: WebGLBuffer | undefined;
+        bufferGeneration: number;
+        uvTileInfo: TileInfo | TextureInfo;
+        /** Place an instance by its position, rotation and scale, what buildMatrix takes, written straight in with no
+         *  matrix made; in world space
+         *  @param {number} i
+         *  @param {Vector3} [pos]
+         *  @param {Vector3} [rotation] - Euler angles in radians
+         *  @param {Vector3} [scale] */
+        setTransformAt(i: number, pos?: Vector3, rotation?: Vector3, scale?: Vector3): void;
+        /** Place a run of instances from arrays indexed by instance, plain or typed, as a game keeps them: each is placed
+         *  as setTransformAt places it, all in one loop with nothing made, the fastest way to move many every frame;
+         *  in world space
+         *  @param {number} start - First instance
+         *  @param {number} count - How many
+         *  @param {ArrayLike<number>} x - Positions
+         *  @param {ArrayLike<number>} y
+         *  @param {ArrayLike<number>} z
+         *  @param {ArrayLike<number>} [rx] - Euler angles in radians, all three or none for upright
+         *  @param {ArrayLike<number>} [ry]
+         *  @param {ArrayLike<number>} [rz]
+         *  @param {ArrayLike<number>} [sx] - Scales, all three or none for 1
+         *  @param {ArrayLike<number>} [sy]
+         *  @param {ArrayLike<number>} [sz] */
+        setTransforms(start: number, count: number, x: ArrayLike<number>, y: ArrayLike<number>, z: ArrayLike<number>, rx?: ArrayLike<number>, ry?: ArrayLike<number>, rz?: ArrayLike<number>, sx?: ArrayLike<number>, sy?: ArrayLike<number>, sz?: ArrayLike<number>): void;
+        /** Place an instance, in world space
+         *  @param {number} i
+         *  @param {Matrix4} matrix */
+        setMatrixAt(i: number, matrix: Matrix4): void;
+        /** The matrix of an instance
+         *  @param {number} i
+         *  @return {Matrix4} */
+        getMatrixAt(i: number): Matrix4;
+        /** Color an instance
+         *  @param {number} i
+         *  @param {Color} color */
+        setColorAt(i: number, color: Color): void;
+        /** Note that an instance's matrix changed, so it uploads before the next draw and the bounds take it in when
+         *  they are read; setTransformAt and setMatrixAt call this, and so must an edit made straight to matrixData
+         *  @param {number} i */
+        markDirty(i: number): void;
+        /** Note that a run of instances' matrices changed, for code that writes matrixData directly, the lowest level
+         *  way to move many: they upload before the next draw and the bounds take them in when they are read
+         *  @param {number} start - First instance
+         *  @param {number} end - One past the last */
+        markDirtyRange(start: number, end: number): void;
+        /** Note that an instance's color changed, so it uploads before the next draw; setColorAt calls this, and so must
+         *  an edit made straight to colorData
+         *  @param {number} i */
+        markColorDirty(i: number): void;
+        set radius(arg: number);
+        /** Radius of the sphere around the origin that holds every instance set so far, for culling: the farthest
+         *  instance, and the mesh's size at the largest scale; it only grows, and takes in the instances set since it
+         *  was last read, so with frustum culling off it is never worked out. Set it to fix the sphere, which a big set
+         *  that is culled can use to skip that work, and set it to undefined to go back to the bounds
+         *  @return {number} */
+        get radius(): number;
+    }
+    /**
+     * Spin a flat outline around the Y axis to make a round shape, like a vase or a wheel
+     * - profile is [[radius, y], ...] from bottom to top
+     * - A profile that ends where it starts makes a closed ring like a donut
+     * - An end left open, with a radius and no cap, makes the mesh doubleSided so its inside shows
+     * - An end on the axis smooth shades as a round pole like a sphere's when its segment is within 45 degrees of
+     *   level, and as a point like a cone's tip when it is steeper
+     * @param {Array<Array<number>>} profile
+     * @param {number} [sides] - Around the axis
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @param {boolean} [capped] - Close the ends that have a radius with flat discs
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * const vase = buildLathe([[0, -1], [.8, -.3], [.9, .2], [.4, .6], [0, 1]], 12);
+     */
+    export function buildLathe(profile: Array<Array<number>>, sides?: number, smooth?: boolean, capped?: boolean): Mesh;
+    /**
+     * Build a cylinder standing on the Y axis, centered on the origin
+     * @param {number} [size] - Diameter
+     * @param {number} [height]
+     * @param {number} [sides] - Around
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @param {boolean} [capped] - Close the ends
+     * @param {number} [bevel] - Size of the cut on the top and bottom rims, clamped to the radius and half the height
+     * @param {number} [bevelSegments] - Steps around each rim, 1 for a flat chamfer
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildCylinder(size?: number, height?: number, sides?: number, smooth?: boolean, capped?: boolean, bevel?: number, bevelSegments?: number): Mesh;
+    /**
+     * Build a sphere centered on the origin
+     * @param {number} [size] - Diameter
+     * @param {number} [sides] - Around
+     * @param {number} [rings] - Top to bottom
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildSphere(size?: number, sides?: number, rings?: number, smooth?: boolean): Mesh;
+    /**
+     * Build a cone standing on the Y axis, centered on the origin, the point up
+     * @param {number} [size] - Diameter of the base
+     * @param {number} [height]
+     * @param {number} [sides] - Around
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @param {boolean} [capped] - Close the base
+     * @param {number} [bevel] - Size of the cut on the base rim, clamped to the radius and half the slanted side
+     * @param {number} [bevelSegments] - Steps around the rim, 1 for a flat chamfer
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildCone(size?: number, height?: number, sides?: number, smooth?: boolean, capped?: boolean, bevel?: number, bevelSegments?: number): Mesh;
+    /**
+     * Build a capsule standing on the Y axis, centered on the origin: a cylinder with a half sphere on each end
+     * @param {number} [size] - Diameter
+     * @param {number} [height] - Total height including the rounded ends, at least the size
+     * @param {number} [sides] - Around
+     * @param {number} [rings] - On each end
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildCapsule(size?: number, height?: number, sides?: number, rings?: number, smooth?: boolean): Mesh;
+    /**
+     * Build a donut lying flat around the Y axis
+     * @param {number} [size] - Diameter of the whole donut, outside edge to outside edge
+     * @param {number} [tubeSize] - Diameter of the tube
+     * @param {number} [sides] - Around the ring
+     * @param {number} [tubeSides] - Around the tube
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildTorus(size?: number, tubeSize?: number, sides?: number, tubeSides?: number, smooth?: boolean): Mesh;
+    /**
+     * Build a box centered on the origin, six flat faces with uvs covering each face
+     * - bevel cuts its edges and corners: 1 segment is a flat chamfer, more round them, and the biggest bevel, half
+     *   the smallest side, rounds a cube into a ball
+     * @param {Vector3|number} [size] - Full size, a number for a cube
+     * @param {number} [bevel] - Size of the cut on each edge, clamped to half the smallest side
+     * @param {number} [bevelSegments] - Steps around each edge, 1 for a flat chamfer
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildBox(size?: Vector3 | number, bevel?: number, bevelSegments?: number): Mesh;
+    /**
+     * Build a heightfield grid in the XZ plane centered on the origin
+     * - smooth rounds the lighting across cells and colors each corner
+     * - flat lights and colors each cell on its own, so a checkerboard stays crisp
+     * - doubleSided, a sheet seen from both sides; turn it off for ground only ever seen from above
+     * - One cell is a plain square, render3D.planeMesh and planeMeshDoubleSided are shared ones
+     * @param {Vector2|number} [size] - World size along X and Z, a number for a square
+     * @param {Vector2|number} [segments] - Cells along X and Z, a number for both
+     * @param {Color|function(number, number): Color} [color] - One Color for the whole grid, or (x, z) => Color
+     * @param {function(number, number): number} [heightFunction] - (x, z) => y, default flat
+     * @param {boolean} [smooth] - Defaults to render3D.smoothShading with a heightFunction; a flat grid is flat shaded,
+     *   since its light is even anyway and smoothing would only blend its cell colors; pass smooth to blend a gradient
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * const ground = buildGrid(vec2(20), 10, (x, z)=> (floor(x / 2) + floor(z / 2)) & 1 ? GRAY : WHITE); // 2 unit checks
+     */
+    export function buildGrid(size?: Vector2 | number, segments?: Vector2 | number, color?: Color | ((arg0: number, arg1: number) => Color), heightFunction?: (arg0: number, arg1: number) => number, smooth?: boolean): Mesh;
+    /**
+     * Build a lit ribbon along a path, for roads, tracks and walls
+     * - Each segment is a flat quad, the sides are across the path in the plane of the up vector
+     * - doubleSided, so it is seen and lit from below as well
+     * @param {Array<Vector3>} points - Center line in order
+     * @param {number|Array<number>} [width] - Full width, one for all or one per point
+     * @param {Color|Array<Color>} [color] - One for all or one per point
+     * @param {boolean} [closed] - Join the last point back to the first
+     * @param {Vector3} [up] - Which way the ribbon faces
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * const road = buildRibbon(trackPoints, 8, GRAY, true); // a loop of road
+     */
+    export function buildRibbon(points: Array<Vector3>, width?: number | Array<number>, color?: Color | Array<Color>, closed?: boolean, up?: Vector3): Mesh;
+    /**
+     * Build a hull from a row of diamond shaped slices along Z, for ships, planes and cars
+     * - Each slice is [z, width, top, bottom, sideHeight]
+     * - sideHeight is 0 to 1 and puts the side corners between the bottom and the top
+     * - List the slices nose first, with the nose at the largest z
+     * @param {Array<Array<number>>} stations
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * const hull = buildLoft([[1.2, .4, .2, -.1], [0, 1.4, .5, -.4], [-1, 1, .3, -.3]]);
+     */
+    export function buildLoft(stations: Array<Array<number>>): Mesh;
+    /**
+     * Build a sky dome: a sphere colored by direction, wound to be seen from inside
+     * - set it as render3D.sky and the pass draws it around the camera behind everything
+     * @param {Color} [topColor] - Straight up
+     * @param {Color} [horizonColor] - Level with the camera
+     * @param {Color} [bottomColor] - Straight down, what a camera looking at the ground sees past its edge; defaults to the
+     *   horizon color
+     * @param {number} [sides] - Around
+     * @param {number} [rings] - Top to bottom
+     * @return {Mesh}
+     * @memberof Render3D
+     */
+    export function buildSky(topColor?: Color, horizonColor?: Color, bottomColor?: Color, sides?: number, rings?: number): Mesh;
+    /** Make a normal map from a height at each pixel, for bumps and grooves with no image file: the slope at each pixel
+     *  from its neighbors' heights, taken around the edges so the map tiles; set it as an object's normalMap
+     *  @param {Vector2} size - In pixels
+     *  @param {function(number, number): number} heightFunction - The height 0 to 1 at a pixel, x across and y down
+     *  @param {number} [strength] - How steep the slopes are: a height change of 1 over one pixel leans the normal
+     *  by strength
+     *  @return {TextureInfo} - Wraps; headless it has no image
+     *  @memberof Render3D */
+    export function normalMapFromHeight(size: Vector2, heightFunction: (arg0: number, arg1: number) => number, strength?: number): TextureInfo;
+    /**
+     * Turn a sprite into a 3D block model by giving its pixels thickness
+     * - A pixel counts as solid when it is more than half opaque
+     * - Each pixel keeps its own color, so white art takes the object's tint
+     * - Runs of matching pixels merge into one face, and side walls appear only at the sprite's edges
+     * - A texture's pixels are read once and kept, so redrawing a canvas texture will not change what this builds
+     * - Pixels can also be an array of rows, each a Color, a truthy value for white, or a falsy value for empty
+     * @param {TileInfo|Array<Array<Color|number|boolean>>} pixels - A tile from a loaded texture, or rows of pixels,
+     *  each a Color (empty when see through), a truthy value for white or a falsy value for empty
+     * @param {Vector2} [size] - World width and height of the whole tile, centered like buildBox
+     * @param {number} [depth] - Thickness along Z
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * new EngineObject3D(vec3(), buildExtrude(tile(3, 16), vec2(2), .5)); // a chunky version of tile 3
+     */
+    export function buildExtrude(pixels: TileInfo | Array<Array<Color | number | boolean>>, size?: Vector2, depth?: number): Mesh;
+    /**
+     * Build a mesh of extruded text from an image font, the engine font by default so it needs no assets
+     * - Each glyph is extruded once per font and reused, the block is centered and faces +Z
+     * - Newlines stack downward, spaced a little wider than the character height so the sides do not collide
+     * - Every call builds a new mesh, dispose the old one when text changes often
+     * - Glyphs are white in the engine font, so the object's color tints the text
+     * @param {string|number} text
+     * @param {number} [size] - Character height in world units
+     * @param {number} [depth] - Thickness along Z
+     * @param {ImageFont} [font] - Defaults to engineImageFont
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * new EngineObject3D(vec3(0, 2, 0), buildText3D('HELLO'), undefined, YELLOW);
+     */
+    export function buildText3D(text: string | number, size?: number, depth?: number, font?: ImageFont): Mesh;
+    /**
+     * HeightMap - Terrain from a grid of heights: an object that draws itself, and that objects with collideLevel stand on
+     * - heights is a 2D array [row][column] of 0 to 1 values
+     * - Row 0 is the far edge at -Z and column 0 is the left edge at -X
+     * - It can be an image instead, where the red channel is the height
+     * - colors is an optional 2D array of Colors or an image, sampled per vertex
+     * - images are read through a canvas, so they must be same origin or loaded with crossOrigin set
+     * - pos3D is the center of the map, its grid spans mapSize on X and Z around it, and a full value is height above it
+     * - getHeight, getNormal, getColor and raycast are in world space, with the map's position taken off
+     * - It stays upright and unscaled, its lookups do not turn with it
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const terrain = new HeightMap(heightImage, vec2(100, 100), 10, colorImage);
+     * const y = terrain.getHeight(x, z); // stand things on it, or give them collideLevel
+     */
+    export class HeightMap extends EngineObject3D {
+        /** Create a height map from an array or an image, it draws itself and joins the level's collision
+         *  @param {Array<Array<number>>|HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|TextureInfo} heights
+         *  @param {Vector2} [mapSize] - World size along X and Z
+         *  @param {number} [height] - World height of a full value
+         *  @param {Array<Array<Color>>|HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|TextureInfo} [colors]
+         *  @param {Vector3} [pos3D] - Center of the map
+         *  @param {boolean} [smooth] - Defaults to render3D.smoothShading */
+        constructor(heights: Array<Array<number>> | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | TextureInfo, mapSize?: Vector2, height?: number, colors?: Array<Array<Color>> | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | TextureInfo, pos3D?: Vector3, smooth?: boolean);
+        /** @property {Array<Array<number>>} - Heights 0-1 as [row][column], rows along Z, rebuild() after changing them */
+        heights: number[][];
+        /** @property {Array<Array<Color>>|undefined} - Vertex colors as [row][column], undefined for white
+         *  @type {Array<Array<Color>>|undefined} */
+        colors: Array<Array<Color>> | undefined;
+        /** @property {Vector2} - World size along X and Z */
+        mapSize: Vector2;
+        /** @property {number} - World height of a full value */
+        height: number;
+        /** @property {boolean} - Smooth shading, rebuild() after changing it */
+        smooth: boolean;
+        /** Number of rows, along Z
+         *  @return {number} */
+        get rows(): number;
+        /** Number of columns, along X
+         *  @return {number} */
+        get columns(): number;
+        /** World height at a position, exactly the height of the mesh buildMesh draws there, clamped at the edges
+         *  @param {number|Vector3} x - X, or a position to take X and Z from
+         *  @param {number} [z]
+         *  @return {number} */
+        getHeight(x: number | Vector3, z?: number): number;
+        /** Surface normal at a position, from the slope across a sample
+         *  @param {number|Vector3} x - X, or a position to take X and Z from
+         *  @param {number} [z]
+         *  @return {Vector3} */
+        getNormal(x: number | Vector3, z?: number): Vector3;
+        /** Color of the nearest sample to a position, white when there are no colors
+         *  @param {number|Vector3} x - X, or a position to take X and Z from
+         *  @param {number} [z]
+         *  @return {Color} */
+        getColor(x: number | Vector3, z?: number): Color;
+        /** Distance along a ray to where it crosses the terrain surface, or undefined for a miss
+         *  - Exact: the ground is flat inside each triangle, so the ray is checked between each grid line and
+         *    cell diagonal it crosses, and a hill it only grazes is still hit
+         *  - A ray that starts under the ground crosses on its way out, so the hit is still on the surface
+         *  @param {Ray3D} ray - From screenToRay, or any ray
+         *  @return {number|undefined} */
+        raycast(ray: Ray3D): number | undefined;
+        /** Build the terrain mesh, one vertex per sample, centered on the map's own origin
+         *  @param {boolean} [smooth] - Defaults to render3D.smoothShading
+         *  @return {Mesh} */
+        buildMesh(smooth?: boolean): Mesh;
+        /** Make the mesh again from the heights and colors, after changing them or smooth */
+        rebuild(): void;
+        /** How far along a ray the surface is, for picking, see raycast
+         *  @param {Ray3D} ray
+         *  @return {number|undefined}
+         *  @ignore */
+        levelRaycast3D(ray: Ray3D): number | undefined;
+        /** Where a short move goes under the surface, for a particle's move in one frame: the part of the move made
+         *  before it, 0 to 1, and the surface normal there; undefined when it stays above, starts under, or is off the map
+         *  @param {Vector3} from
+         *  @param {Vector3} to
+         *  @return {{distance: number, normal: Vector3}|undefined}
+         *  @ignore */
+        levelSegment3D(from: Vector3, to: Vector3): {
+            distance: number;
+            normal: Vector3;
+        };
+        /** Keep an object above the ground, called by the engine for each object with collideLevel
+         *  @param {EngineObject3D} o
+         *  @param {Vector3} oldPos - Where it was before it moved
+         *  @param {boolean} [wasOn] - It stood on this map last frame
+         *  @ignore */
+        levelCollide3D(o: EngineObject3D, oldPos: Vector3, wasOn?: boolean): void;
+    }
+    /** What VoxelMap.raycast finds: how far along the ray, the block's cell and type, and the normal of the face it comes in
+     *  through
+     *  @typedef {{distance: number, cell: Vector3, normal: Vector3, type: number}} VoxelHit
+     *  @memberof Render3D */
+    /**
+     * VoxelMap - A grid of blocks, a 3D tile map: it draws itself, and objects with collideLevel collide with it
+     * - pos3D is its corner, as a 2D tile layer's is, and each cell is one world unit, so cell (x, y, z) fills
+     *   pos3D + (x..x+1, y..y+1, z..z+1); it stays upright and unscaled at the root
+     * - A block's type is a number from 1 to 255, 0 is empty; a type shows that tile of the sheet on every face unless
+     *   setBlockType gives it its own faces, or makes it see-through or transparent
+     * - Faces between blocks are left out, and the map is drawn in chunks of 16 cells a side, a chunk built again only
+     *   when a block in or beside it changes
+     * - Objects with collideLevel collide with it, see EngineObject3D.collideWithVoxel, and raycast finds the block a ray
+     *   hits and the face it comes in through
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const map = new VoxelMap(vec3(), vec3(32, 16, 32), tile(0, 16));
+     * map.setBlockType(1, {top: 0, side: 1, bottom: 2}); // grass
+     * map.setVoxel(vec3(3, 0, 5), 1);
+     */
+    export class VoxelMap extends EngineObject3D {
+        /** Create a voxel map, it draws itself and joins the level's collision
+         *  @param {Vector3} [pos3D] - Its corner
+         *  @param {Vector3} [mapSize] - Cells along X, Y and Z
+         *  @param {TileInfo} [tileInfo] - The sheet's first tile, as for a TileLayer, a block's type counts tiles from it;
+         *    give the tiles a border of their own edge pixels, 2 or more, and that padding, or the blurred mipmaps of the
+         *    distance blend each tile with the ones beside it and show seams along the block edges */
+        constructor(pos3D?: Vector3, mapSize?: Vector3, tileInfo?: TileInfo);
+        /** @property {Vector3} - Cells along X, Y and Z */
+        mapSize: Vector3;
+        /** @property {Uint8Array} - The block type of each cell, x + mapSize.x * (y + mapSize.y * z), 0 empty; call
+         *  rebuild() after changing it directly */
+        data: Uint8Array;
+        /** @property {boolean} - Darken the corners where blocks meet, rebuild() after changing it */
+        ambientOcclusion: boolean;
+        chunkCount: Vector3;
+        /** @type {Array<Mesh|undefined>} */
+        chunkMeshes: Array<Mesh | undefined>;
+        /** @type {Array<Mesh|undefined>} */
+        chunkTransparentMeshes: Array<Mesh | undefined>;
+        /** @type {Array<Vector3>} */
+        chunkCenters: Array<Vector3>;
+        chunksChanged: Set<any>;
+        /** @type {Array<{faces: Array<number>, seeThrough: boolean, transparent: boolean}|undefined>} */
+        blockTypes: Array<{
+            faces: Array<number>;
+            seeThrough: boolean;
+            transparent: boolean;
+        } | undefined>;
+        tiles: Map<any, any>;
+        /** The block type at a cell, 0 for empty or outside the map
+         *  @param {Vector3} cell
+         *  @return {number} */
+        getVoxel(cell: Vector3): number;
+        /** The block type at whole number cell coordinates, 0 outside
+         *  @param {number} x
+         *  @param {number} y
+         *  @param {number} z
+         *  @return {number}
+         *  @ignore */
+        voxelAt(x: number, y: number, z: number): number;
+        /** Set the block at a cell, 0 clears it; a cell outside the map is ignored
+         *  @param {Vector3} cell
+         *  @param {number} type - 0 to 255 */
+        setVoxel(cell: Vector3, type: number): void;
+        /** Mark the chunk holding a cell as changed, a cell outside the map has none
+         *  @param {number} x
+         *  @param {number} y
+         *  @param {number} z
+         *  @ignore */
+        markChunk(x: number, y: number, z: number): void;
+        /** Give a block type its own faces, or make it see-through or transparent
+         *  @param {number} type - 1 to 255
+         *  @param {number|Array<number>|{top?: number, side: number, bottom?: number}} faces - A tile index for every face,
+         *    six in the order +x, -x, +y, -y, +z, -z, or the side's with the top and bottom's, which default to the side's
+         *  @param {{seeThrough?: boolean, transparent?: boolean}} [options] - seeThrough for holes in its texture, like
+         *    leaves, so the blocks beside it keep their faces; transparent to blend, like glass or water, drawn in the
+         *    transparent stage, and see-through too */
+        setBlockType(type: number, faces: number | Array<number> | {
+            top?: number;
+            side: number;
+            bottom?: number;
+        }, { seeThrough, transparent }?: {
+            seeThrough?: boolean;
+            transparent?: boolean;
+        }): void;
+        /** A block type's faces and how it is seen through
+         *  @param {number} type
+         *  @return {{faces: Array<number>, seeThrough: boolean, transparent: boolean}}
+         *  @ignore */
+        blockType(type: number): {
+            faces: Array<number>;
+            seeThrough: boolean;
+            transparent: boolean;
+        };
+        /** Build every chunk again, after changing data directly or ambientOcclusion */
+        rebuild(): void;
+        /** Build the chunks that changed, the map calls it before it draws */
+        buildChunks(): void;
+        /** Build one chunk's meshes, a face for each block side that shows
+         *  @param {number} index
+         *  @ignore */
+        buildChunk(index: number): void;
+        /** The uvs of a tile's corners, top left, bottom left, top right, bottom right, the tile counted from the map's
+         *  first tile as a TileLayer counts them; kept, and shared by every face that shows it
+         *  @param {number} index
+         *  @return {Array<Vector2>}
+         *  @ignore */
+        tileUVs(index: number): Array<Vector2>;
+        /** Whether a box hits a block that stops the object, see EngineObject3D.collideWithVoxel
+         *  @param {Vector3} pos - Center of the box in the world
+         *  @param {Vector3} size
+         *  @param {EngineObject3D} o
+         *  @return {boolean}
+         *  @ignore */
+        boxBlocked(pos: Vector3, size: Vector3, o: EngineObject3D): boolean;
+        /** Keep an object out of the blocks, one axis at a time as 2D tiles do, called by the engine for each object with
+         *  collideLevel; a sphere collides as its box, and one moving more than about a cell a frame can pass through
+         *  - One already in blocks, as when a block is set on it, is pushed up to stand on those in its lower half when
+         *    there is room, or else left free to move out of them, but not into any it is not in already
+         *  @param {EngineObject3D} o
+         *  @param {Vector3} oldPos - Where it was before it moved
+         *  @ignore */
+        levelCollide3D(o: EngineObject3D, oldPos: Vector3): void;
+        /** The first block a ray hits, walking the grid cell by cell: its distance along the ray, its cell, the normal of
+         *  the face it comes in through, which a new block goes against, and its type
+         *  - A ray that starts inside a block hits it at 0, its normal back along the ray
+         *  @param {Ray3D} ray - Its distance is in the ray's own units, as the other raycasts
+         *  @param {number} [maxDistance]
+         *  @param {function(number, Vector3): boolean} [test] - (type, cell) says which blocks count, every block by default
+         *  @return {VoxelHit|undefined} */
+        raycast(ray: Ray3D, maxDistance?: number, test?: (arg0: number, arg1: Vector3) => boolean): VoxelHit | undefined;
+        /** How far along a ray the first block is, for picking, see raycast
+         *  @param {Ray3D} ray
+         *  @return {number|undefined}
+         *  @ignore */
+        levelRaycast3D(ray: Ray3D): number | undefined;
+        /** Where a short move goes into a block, for a particle's move in one frame: the part of the move made before it,
+         *  0 to 1, and the normal of the face it comes in through; undefined when it hits none, or starts inside one
+         *  @param {Vector3} from
+         *  @param {Vector3} to
+         *  @return {{distance: number, normal: Vector3}|undefined}
+         *  @ignore */
+        levelSegment3D(from: Vector3, to: Vector3): {
+            distance: number;
+            normal: Vector3;
+        } | undefined;
+        /** Draw the chunks, each at its center, with the whole texture so each face shows its own tile
+         *  @param {boolean} transparent
+         *  @ignore */
+        renderChunks(transparent: boolean): void;
+    }
+    /**
+     * Light3D - A light that is an EngineObject3D, so it can move, follow a parent or be destroyed like anything else
+     * - A point light: it lights what is near it and fades out by its radius, DirectionalLight3D shines from far away
+     * - A coneAngle makes it a spotlight: it shines along its own forward, turned by rotation3D or by what it is
+     *   attached to, inside the cone, fading over the part of it coneSoftness says
+     * - The sun, render3D.sunDirection, casts the shadows; a spotlight can cast them in its place, see
+     *   render3D.shadowLight; the other lights light and make highlights without one
+     * - Only the 8 lights nearest the camera are used each frame
+     * - radius is where the light fades out, and it fades fast, so a small radius wants a higher intensity
+     * - intensity multiplies the color, above 1 for a light brighter than white
+     * - radius is a world distance, so scale3D does not change it
+     * - An alpha, an intensity or a radius of 0 switches it off, and a light that is off takes none of those slots
+     * - Draws nothing but its glow, when it has one; add a small emissive mesh if the lamp itself should be seen
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const torch = new Light3D(vec3(0, 3, 0), 10, hsl(.1, 1, .65));
+     */
+    export class Light3D extends EngineObject3D {
+        /** Create a point light
+         *  @param {Vector3} [pos3D] - Where it is
+         *  @param {number} [radius] - Distance where the light fades to nothing
+         *  @param {Color} [color] - Light color, its alpha fades it
+         *  @param {number} [intensity] - Brightness, multiplies the color, above 1 is brighter than white */
+        constructor(pos3D?: Vector3, radius?: number, color?: Color, intensity?: number);
+        /** @property {number} - Distance where the light fades to nothing */
+        radius: number;
+        /** @property {number} - Brightness, multiplies the color, above 1 is brighter than white */
+        intensity: number;
+        /** @property {boolean} - Shine from far away, from its position toward the origin, instead of out from its
+         *  position with a falloff; DirectionalLight3D sets it */
+        directional: boolean;
+        /** @property {number} - Makes it a spotlight: the angle in radians from its forward out to the edge of its
+         *  cone, so the beam is twice this across; 0 for a light that shines every way */
+        coneAngle: number;
+        /** @property {number} - How much of the cone is its fading edge: 0 a hard edge, .2 by default, the outer
+         *  fifth, 1 fading all the way from the middle of the beam */
+        coneSoftness: number;
+        /** @property {number} - Size of a soft hazy glow drawn over the light, like a lamp at night, 0 for none; it
+         *  is added onto what is behind it, and what is in front of the light hides it */
+        glow: number;
+        /** @property {number} - How fast the glow fades from its middle: 1 by default, .5 a wide haze, 2 a tight
+         *  bright core */
+        glowFalloff: number;
+    }
+    /**
+     * DirectionalLight3D - A Light3D that shines from far away with no falloff, like sunlight
+     * - It shines from its position toward the origin, like a three.js DirectionalLight: only the direction to it
+     *   counts, so moving it or its parent swings the light around; parent it to a sun in the sky and it follows
+     * - It cannot sit on the origin, since that leaves no direction
+     * - It casts no shadow: the sun, render3D.sunDirection, does, or a spotlight set as render3D.shadowLight
+     * @extends Light3D
+     * @memberof Render3D
+     * @example
+     * const fill = new DirectionalLight3D(vec3(-1, 1, 1), hsl(.6, .5, .3)); // from the back left and above
+     */
+    export class DirectionalLight3D extends Light3D {
+        /** Create a directional light
+         *  @param {Vector3} [pos3D] - Where it shines from, toward the origin
+         *  @param {Color} [color] - Light color, its alpha fades it
+         *  @param {number} [intensity] - Brightness, multiplies the color, above 1 is brighter than white */
+        constructor(pos3D?: Vector3, color?: Color, intensity?: number);
+    }
+    /**
+     * CameraControl3D - Drag to turn the camera around a point, roll the wheel to zoom
+     * - An EngineObject3D, so move its pos3D to follow something, or parent it to an object
+     * - Destroy it to hand the camera back, and it stops driving the camera
+     * - Set persistent to keep it when engineObjectsDestroy clears out a level
+     * - Every part of it is a field, so a game can change the buttons, speeds and limits
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * new CameraControl3D(vec3(0, 1, 0), 15); // look at a point from 15 units away
+     */
+    export class CameraControl3D extends EngineObject3D {
+        /** Create a camera control, it drives render3D.camera every frame
+         *  @param {Vector3} [target] - The point to look at, its pos3D
+         *  @param {number} [distance] - How far the camera sits from the target
+         *  @param {number} [pitch] - Angle above the horizon, PI/2 looks straight down, clamped to pitchRange
+         *  @param {number} [idleSpin] - Turned each frame while not dragging, 0 holds still */
+        constructor(target?: Vector3, distance?: number, pitch?: number, idleSpin?: number);
+        /** @property {number} - How far the camera sits from the target */
+        distance: number;
+        /** @property {number} - Angle above the horizon */
+        pitch: number;
+        /** @property {number} - Turned each frame while not dragging */
+        idleSpin: number;
+        /** @property {number} - Angle around the target, dragging changes it */
+        yaw: number;
+        /** @property {number} - Mouse button that turns the camera, 0 is left and 2 is right */
+        dragButton: number;
+        /** @property {number} - How far dragging a pixel turns the camera */
+        dragSpeed: number;
+        /** @property {number} - How much one wheel notch zooms, 0 turns zooming off */
+        zoomSpeed: number;
+        /** @property {Vector2} - Closest and furthest the wheel can zoom to */
+        zoomRange: Vector2;
+        /** @property {Vector2} - Lowest and highest pitch, so it cannot tip over the top, widened to hold the pitch given */
+        pitchRange: Vector2;
+    }
+    /**
+     * FirstPersonCamera3D - Look around with the mouse and move with the keys, with the camera at its position
+     * - Click to capture the mouse so looking needs no button held, Esc lets it go; holding the button looks too, for touch
+     * - WASD or the arrow keys walk level, or move the way it looks when fly is set
+     * - An EngineObject3D that moves by velocity3D, so give it a size3D and call setCollision to walk into solid
+     *   objects instead of through them; walking keeps velocity3D.y, so render3D.gravity can pull it down
+     * - Starts from wherever render3D.camera is, so it can take over from another camera without a jump
+     * - As the child of an EngineObject3D, like a player on a ship, its yaw, pitch and walking are relative to the parent,
+     *   so it turns and moves with it
+     * - Destroy it to hand the camera back
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const player = new FirstPersonCamera3D(vec3(0, 1.5, 5));
+     * player.size3D = vec3(1); // bump into solid objects
+     * player.collideAsSphere3D = true;
+     * player.setCollision();
+     */
+    export class FirstPersonCamera3D extends EngineObject3D {
+        /** Create a first person camera, it drives render3D.camera every frame
+         *  @param {Vector3} [pos3D] - Where the eye is, defaults to where the camera is now
+         *  @param {number} [yaw] - Radians around Y, defaults to the camera's
+         *  @param {number} [pitch] - Radians up from level, defaults to the camera's */
+        constructor(pos3D?: Vector3, yaw?: number, pitch?: number);
+        /** @property {number} - Angle around Y, the mouse turns it */
+        yaw: number;
+        /** @property {number} - Angle up from level, the mouse tilts it */
+        pitch: number;
+        /** @property {number} - World units per frame at full speed */
+        moveSpeed: number;
+        /** @property {number} - How far a pixel of mouse movement turns the view */
+        lookSpeed: number;
+        /** @property {Vector2} - Lowest and highest pitch */
+        pitchRange: Vector2;
+        /** @property {boolean} - Move the way it looks, up and down included, instead of walking level */
+        fly: boolean;
+        /** @property {boolean} - Capture the mouse on a click, so looking needs no button held */
+        lockPointer: boolean;
+        /** @property {number} - Speed of a jump in world units a frame, 0 for none; Space or gamepad button 0 jumps
+         *  while it stands on something, a height map, a voxel map or a solid, see groundObject */
+        jumpSpeed: number;
+        /** @property {number} - How far above its position the eye is, in its own space, so with a size3D the eye can
+         *  sit toward the top of the body instead of its middle; keep it under half the body's height, or the eye is
+         *  outside the body and sees through a ceiling it stands under */
+        eyeHeight: number;
+    }
+    /**
+     * A particle as a ParticleEmitter3D's callbacks see it: one object the emitter reuses, set from the particle for each
+     * call and written back after it, so copy what you keep
+     * @typedef {Object} Particle3D
+     * @property {ParticleEmitter3D} emitter - The emitter it is in
+     * @property {Vector3} pos - Where it is, change it to move it
+     * @property {Vector3} velocity - How far it moves each frame
+     * @property {number} age - Seconds it has lived
+     * @property {number} lifeTime - Seconds it lives
+     * @property {number} scale - How much the emitter grows its effect, from its scale3D and its parents', as the 2D
+     *   particle's scale
+     * @property {boolean} destroyed - Set by destroy
+     * @property {function(): void} destroy - End it this update, the destroy callback gets it
+     * @memberof Render3D
+     */
+    /**
+     * @callback Particle3DCallback - A function a ParticleEmitter3D calls with one of its particles
+     * @param {Particle3D} particle
+     * @memberof Render3D
+     */
+    /**
+     * @callback Particle3DCollideCallback - Decides whether a particle stops where it hits the level, a filter as in 2D
+     * @param {Particle3D} particle
+     * @param {EngineObject3D} level - The HeightMap or VoxelMap it hit
+     * @param {Vector3} pos - Where it hit
+     * @return {boolean|void} - true to stop it there; a callback that returns nothing lets it pass through
+     * @memberof Render3D
+     */
+    /**
+     * ParticleEmitter3D - Spawns camera facing particles, the 3D twin of ParticleEmitter
+     * - Each particle is a flat square facing the camera, with a soft round dot when no tile is given
+     * - Set trailTime to draw each particle as a streak along where it has been, for sparks
+     * - Set angleSpeed to tumble them in the camera plane, which the 2D emitter takes as an argument
+     * - Particles shoot out along the emitter's own up axis, turned by rotation3D
+     * - emitConeAngle spreads them, PI sprays in every direction
+     * - Speeds are per frame and sizes are world units, the same as the 2D emitter
+     * - scale3D, its own or a parent's, grows the whole effect: the spawn area, the sizes, the speed and the fall
+     * - gravity here is its own number added to velocity y each frame, so an effect keeps its own fall wherever it is
+     *   used, the same as the 2D emitter's gravity; gravityScale adds a share of render3D.gravity on top, as the 2D
+     *   emitter's gravityScale adds the engine's gravity
+     * - An emitter with an emitTime destroys itself once its last particle is gone, like the 2D emitter
+     * - Callbacks as the 2D emitter's: particleCreateCallback, particleUpdateCallback, particleCollideCallback and
+     *   particleDestroyCallback, each given a Particle3D, one object the emitter reuses for every particle and call
+     * - collideLevel, off by default, has particles hit the height maps and voxel maps, bouncing by restitution and
+     *   sliding by friction
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * // fire: a stream upward, yellow fading to transparent red, additive
+     * new ParticleEmitter3D(vec3(), .5, 0, 100, .3, undefined, hsl(.12, 1, .6), hsl(.08, 1, .5), hsl(0, 1, .5, 0), hsl(0, 1, .25, 0), 1, .5, 1.5, .05, .95, 0, .3, .2, true);
+     */
+    export class ParticleEmitter3D extends EngineObject3D {
+        /** Create a particle emitter
+         *  @param {Vector3} [pos3D] - World space position of the emitter
+         *  @param {number|Vector3} [emitSize] - Spawn area, a number for a sphere diameter or a vec3 for a box
+         *  @param {number} [emitTime] - How long to keep emitting, 0 is forever
+         *  @param {number} [emitRate] - Particles per second, 0 does not emit
+         *  @param {number} [emitConeAngle] - Half angle around the emit direction, PI is every direction
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Tile to render particles with, or a whole texture, undefined is untextured
+         *  @param {Color} [colorStartA] - Color at start of life, randomized between the start colors
+         *  @param {Color} [colorStartB]
+         *  @param {Color} [colorEndA] - Color at end of life, randomized between the end colors
+         *  @param {Color} [colorEndB]
+         *  @param {number} [particleTime] - How long particles live in seconds
+         *  @param {number} [sizeStart] - Particle size at start of life
+         *  @param {number} [sizeEnd] - Particle size at end of life
+         *  @param {number} [speed] - Spawn speed in world units per frame
+         *  @param {number} [damping] - Per frame velocity multiplier, 1 is none
+         *  @param {number} [gravity] - Per frame change to velocity y, negative pulls down; its own number, and
+         *    gravityScale adds a share of render3D.gravity on top
+         *  @param {number} [fadeRate] - Fraction of life spent fading, half in and half out
+         *  @param {number} [randomness] - Extra randomness applied to speed, size and life
+         *  @param {boolean} [additive] - Additive blending */
+        constructor(pos3D?: Vector3, emitSize?: number | Vector3, emitTime?: number, emitRate?: number, emitConeAngle?: number, tileInfo?: TileInfo | TextureInfo, colorStartA?: Color, colorStartB?: Color, colorEndA?: Color, colorEndB?: Color, particleTime?: number, sizeStart?: number, sizeEnd?: number, speed?: number, damping?: number, gravity?: number, fadeRate?: number, randomness?: number, additive?: boolean);
+        /** @property {number|Vector3} - Spawn area, a number for a sphere diameter or a vec3 for a box */
+        emitSize: number | Vector3;
+        /** @property {boolean} - Flatten the spawn area across the way it emits, its own up: a sphere becomes a disc
+         *  and a box a flat rectangle, for rain from a sheet of sky or flames from a patch of ground */
+        emitFlat: boolean;
+        /** @property {number} - How long to keep emitting, 0 is forever */
+        emitTime: number;
+        /** @property {number} - Particles per second, 0 does not emit */
+        emitRate: number;
+        /** @property {number} - Half angle around the emit direction, PI is every direction */
+        emitConeAngle: number;
+        /** @property {Color} - Color at start of life, randomized between the start colors */
+        colorStartA: Color;
+        /** @property {Color} - Color at start of life, randomized between the start colors */
+        colorStartB: Color;
+        /** @property {Color} - Color at end of life, randomized between the end colors */
+        colorEndA: Color;
+        /** @property {Color} - Color at end of life, randomized between the end colors */
+        colorEndB: Color;
+        /** @property {number} - How long particles live in seconds */
+        particleTime: number;
+        /** @property {number} - Particle size at start of life */
+        sizeStart: number;
+        /** @property {number} - Particle size at end of life */
+        sizeEnd: number;
+        /** @property {number} - Spawn speed in world units per frame */
+        speed: number;
+        /** @property {number} - Per frame change to velocity y, its own number and not render3D.gravity */
+        gravity: number;
+        /** @property {number} - Fraction of life spent fading, half in and half out */
+        fadeRate: number;
+        /** @property {number} - Extra randomness applied to speed, size and life */
+        randomness: number;
+        /** @property {number} - Seconds of each particle's path to draw as a ribbon behind it, 0 draws billboards;
+         *  with engineVariableStep it keeps trailTime * frameRate updates of path */
+        trailTime: number;
+        /** @property {number} - Radians per frame each particle turns in the camera plane, either way; 0 is no spin */
+        angleSpeed: number;
+        /** @property {Float32Array} - The live particles, 21 floats each: position, velocity, start and end color, start
+         *  and end size, life, age, angle, spin, and trail point count; the emitter owns them, nothing else needs to */
+        particleData: Float32Array;
+        /** @property {number} - How many particles are alive, the first that many of particleData */
+        particleCount: number;
+        /** @property {Float32Array|undefined} - The trail points of every particle, trailMax per particle oldest first, when trailTime is set
+         *  @type {Float32Array|undefined} */
+        trailData: Float32Array | undefined;
+        /** @property {number} - Trail points kept per particle, from trailTime */
+        trailMax: number;
+        /** @property {number} - How much a particle grips where it lands, 0 to 1: its speed along the surface is
+         *  cut by this much on each hit, on top of the friction, 1 stops it there */
+        stick: number;
+        /** @property {Particle3DCallback|undefined} - Called with each particle as it is made
+         *  @type {Particle3DCallback|undefined} */
+        particleCreateCallback: Particle3DCallback | undefined;
+        /** @property {Particle3DCallback|undefined} - Called with each particle each update, after it moves
+         *  @type {Particle3DCallback|undefined} */
+        particleUpdateCallback: Particle3DCallback | undefined;
+        /** @property {Particle3DCollideCallback|undefined} - Decides if a particle stops where it hits the level,
+         *  with collideLevel on; a callback that returns nothing lets it through
+         *  @type {Particle3DCollideCallback|undefined} */
+        particleCollideCallback: Particle3DCollideCallback | undefined;
+        /** @property {Particle3DCallback|undefined} - Called with each particle as it goes, its life over or destroyed
+         *  @type {Particle3DCallback|undefined} */
+        particleDestroyCallback: Particle3DCallback | undefined;
+        /** @property {Particle3D} - The particle the callbacks get, one object for every particle and call
+         *  @type {Particle3D} */
+        particleView: Particle3D;
+        /** @property {Vector3|undefined} - Where the emitter was at its last update, for when its parent is destroyed
+         *  @type {Vector3|undefined} */
+        worldPos3D: Vector3 | undefined;
+        emitTimeBuffer: number;
+        /** Spawn one particle now */
+        emitParticle(): void;
+        particleCall(callback: any, k: any, level: any, pos: any): any;
+        particleCollide(k: any, x: any, y: any, z: any): boolean;
+    }
+    /**
+     * Trail3D - A ribbon through where the object has been, thinning and fading with age
+     * - Records its world position each frame it moves, so parent it to something that moves or set pos3D yourself
+     * - The samples are world space, so width is a world width and scale3D does nothing to the ribbon
+     * - Drawn unlit in the transparent stage, dies down on its own once the object stops
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * const trail = new Trail3D(vec3(), 1, .3, undefined, hsl(.08, 1, .5), hsl(0, 1, .5, 0), true);
+     * ball.addChild(trail); // follows the ball
+     */
+    export class Trail3D extends EngineObject3D {
+        /** Create a trail
+         *  @param {Vector3} [pos3D]
+         *  @param {number} [lifeTime] - Seconds the ribbon takes to thin and fade from head to tail,
+         *    Infinity keeps every sample at full width and never drops one, so it grows as long as the object moves
+         *  @param {number} [width] - Width at the head, it thins to nothing at the tail
+         *  @param {TileInfo|TextureInfo} [tileInfo] - Tile or whole texture stretched along the trail, undefined is untextured
+         *  @param {Color} [color] - Color at the head
+         *  @param {Color} [colorEnd] - Color at the tail
+         *  @param {boolean} [additive] - Additive blending */
+        constructor(pos3D?: Vector3, lifeTime?: number, width?: number, tileInfo?: TileInfo | TextureInfo, color?: Color, colorEnd?: Color, additive?: boolean);
+        finishing: boolean;
+        /** @property {number} - Seconds the ribbon takes to thin and fade from head to tail, Infinity never drops a sample */
+        lifeTime: number;
+        /** @property {number} - Width at the head */
+        width: number;
+        /** @property {Color} - Color at the tail */
+        colorEnd: Color;
+        /** @property {Vector3|undefined} - Direction across the ribbon, recorded with each sample, undefined faces the camera
+         *  @type {Vector3|undefined} */
+        side: Vector3 | undefined;
+        /** @property {Array<{pos: Vector3, side: Vector3|undefined, time: number}>} - Recorded samples, oldest first
+         *  @type {Array<{pos: Vector3, side: Vector3|undefined, time: number}>} */
+        samples: Array<{
+            pos: Vector3;
+            side: Vector3 | undefined;
+            time: number;
+        }>;
+        /** Forget the trail so far, for when the object teleports */
+        clear(): void;
+        worldPos3D: Vector3;
+    }
+    /**
+     * LensFlare3D - The sun's lens flare, the old kind: a glow at the sun and a row of discs and rings of different
+     * sizes along the line from the sun through the middle of the screen
+     * - Make one and it shows, over the 3D scene and under what the game draws after, a HUD; destroy it to take it away
+     * - It follows render3D.sunDirection, and fades out as the sun leaves the screen or goes behind something
+     * - flareSize, count, intensity and saturation set its look, seed picks another arrangement, and its color tints it,
+     *   with the sun's own color; or give it elements of your own
+     * - visible is how much of the sun shows, 0 to 1, eased over fadeTime, there for a game to read
+     * - What hides the sun is found with a ray from the camera, against the level and every object that is not see
+     *   through, each as the box around its mesh, see render3D.pick; turn it off with occlusion
+     * - It needs WebGL, and it draws nothing in the shadow of renderAfter2D
+     * @extends EngineObject3D
+     * @memberof Render3D
+     * @example
+     * new LensFlare3D;                // the sun flares
+     * new LensFlare3D(1.5, 10, .7, 0); // bigger, 10 ghosts, dimmer, all one color
+     */
+    export class LensFlare3D extends EngineObject3D {
+        /** Create the sun's lens flare
+         *  @param {number} [size] - Scales every part of it, 1 by default
+         *  @param {number} [count] - How many ghosts there are along the line, besides the glow at the sun
+         *  @param {number} [intensity] - How bright it is
+         *  @param {number} [saturation] - How colorful the ghosts are, 0 for all the flare's own color, 1 a rainbow
+         *  @param {Color} [color] - Tints the whole flare, with the sun's color */
+        constructor(size?: number, count?: number, intensity?: number, saturation?: number, color?: Color);
+        /** @property {number} - Scales every part of the flare */
+        flareSize: number;
+        /** @property {number} - How many ghosts there are along the line, besides the glow at the sun */
+        count: number;
+        /** @property {number} - How bright it is */
+        intensity: number;
+        /** @property {number} - How colorful the ghosts are, 0 for all the flare's own color, 1 a rainbow */
+        saturation: number;
+        /** @property {number} - Picks the arrangement of the ghosts, another seed is another flare */
+        seed: number;
+        /** @property {Array<{at: number, size: number, color: Color, shape: string}>|undefined} - The parts of the
+         *  flare, to set your own in place of the ones made from count, seed and saturation: at is where along the
+         *  line, 0 the sun, 1 the middle of the screen, 2 as far past it; size is across, as a part of the screen's
+         *  height; shape is glow, disc or ring
+         *  @type {Array<{at: number, size: number, color: Color, shape: string}>|undefined} */
+        elements: {
+            at: number;
+            size: number;
+            color: Color;
+            shape: string;
+        }[];
+        /** @property {Light3D|undefined} - A light the flare is of in place of the sun, a lamp or a spotlight: the
+         *  flare is at the light and in its color, smaller from farther than the light reaches, hidden by what is
+         *  in front of the light, and a spotlight's shows from inside its beam only
+         *  @type {Light3D|undefined} */
+        light: Light3D | undefined;
+        /** @property {boolean} - Fade out when something is between the camera and the sun */
+        occlusion: boolean;
+        /** @property {number} - Seconds the flare takes to fade out or in when the sun is hidden or shows again */
+        fadeTime: number;
+        /** @property {number} - How much of the sun shows, 0 hidden or behind the camera to 1 in plain view, eased */
+        visible: number;
+        madeKey: string;
+        /** @type {Array<{at: number, size: number, color: Color, shape: string}>} */
+        made: {
+            at: number;
+            size: number;
+            color: Color;
+            shape: string;
+        }[];
+        /** The parts of the flare: the elements set by hand, or the ones made from count, seed and saturation, a glow
+         *  and a core at the sun and the ghosts, made again when one of those changes
+         *  @return {Array<{at: number, size: number, color: Color, shape: string}>} */
+        getElements(): Array<{
+            at: number;
+            size: number;
+            color: Color;
+            shape: string;
+        }>;
+        flareSource(): {
+            direction: Vector3;
+            distance: number;
+            pos: Vector3;
+        };
+        /** Where the sun, or the flare's light, is on the screen, in pixels like mousePosScreen, undefined when it is
+         *  behind the camera
+         *  @return {Vector2|undefined} */
+        getSunScreenPos(): Vector2 | undefined;
+        /** The parts of the flare as they are drawn now: each one's place on the screen, its size in pixels and its
+         *  color, dimmed by how much of the sun shows; empty when there is nothing to draw
+         *  @return {Array<{pos: Vector2, size: number, color: Color, shape: string}>} */
+        getScreenElements(): Array<{
+            pos: Vector2;
+            size: number;
+            color: Color;
+            shape: string;
+        }>;
+        /** Is something between the camera and the sun, or the flare's light: the level, or an object that is not see
+         *  through
+         *  @return {boolean} */
+        isSunHidden(): boolean;
+    }
+    /**
+     * Collect the EngineObject3D objects whose boxes overlap a sphere or a box, the 3D twin of engineObjectsCollect
+     * - Each object is its size3D box at its world position, turned as it is turned; lights, emitters and trails have no
+     *   size and are never collected
+     * @param {Vector3} pos - Center of the area
+     * @param {Vector3|number} size - Diameter of a sphere if a number, 0 for a point, full size of a box if a Vector3
+     * @param {Array<EngineObject>} [objects] - Defaults to every object
+     * @param {boolean} [testCenters] - Test only each object's center, a little faster, and ignores object sizes
+     * @return {Array<EngineObject3D>}
+     * @memberof Render3D
+     */
+    export function engineObjectsCollect3D(pos: Vector3, size: Vector3 | number, objects?: Array<EngineObject>, testCenters?: boolean): Array<EngineObject3D>;
+    /**
+     * Call a function for each EngineObject3D whose box overlaps a sphere or a box
+     * - An object destroyed by an earlier callback is skipped
+     * @param {Vector3} pos - Center of the area
+     * @param {Vector3|number} size - Diameter of a sphere if a number, 0 for a point, full size of a box if a Vector3
+     * @param {function(EngineObject3D): void} callback
+     * @param {Array<EngineObject>} [objects] - Defaults to every object
+     * @param {boolean} [testCenters] - Test only each object's center, see engineObjectsCollect3D
+     * @memberof Render3D
+     */
+    export function engineObjectsCallback3D(pos: Vector3, size: Vector3 | number, callback: (arg0: EngineObject3D) => void, objects?: Array<EngineObject>, testCenters?: boolean): void;
+    /**
+     * Collect every EngineObject3D a ray passes through, nearest first, the 3D twin of engineObjectsRaycast
+     * - The ray has no end, so everything along it counts however far away it is
+     * - Use render3D.pick for the nearest one on its own, with the distance to it
+     * @param {Ray3D} ray - From render3D.screenToRay, or any ray
+     * @param {Array<EngineObject>} [objects] - Defaults to every object; only those with a mesh or a sprite count
+     * @return {Array<EngineObject3D>}
+     * @memberof Render3D
+     */
+    export function engineObjectsRaycast3D(ray: Ray3D, objects?: Array<EngineObject>): Array<EngineObject3D>;
+    /**
+     * Parse Wavefront OBJ text into a Mesh
+     * - Reads v, vt, vn and f lines with convex polygons of any size, materials and groups are ignored
+     * - Normals come from the file when every corner of a face has one, otherwise from the face
+     * - Use mesh.center() and mesh.fit(size) to bring a model of unknown units to the origin
+     * - Back faces are skipped like any mesh, set doubleSided for a model with open walls or single sided parts
+     * @param {string} text
+     * @param {boolean} [smooth] - Compute smooth normals for the faces the file gives none, defaults to render3D.smoothShading
+     * @return {Mesh}
+     * @memberof Render3D
+     * @example
+     * new EngineObject3D(vec3(), parseOBJ(objText).center().fit(4));
+     */
+    export function parseOBJ(text: string, smooth?: boolean): Mesh;
+    /**
+     * Fetch and parse an OBJ file
+     * @param {string} url
+     * @param {boolean} [smooth] - Compute smooth normals when the file has none, defaults to render3D.smoothShading
+     * @return {Promise<Mesh>}
+     * @memberof Render3D
+     * @example
+     * const mesh = await loadOBJ('ship.obj'); // in an async gameInit
+     */
+    export function loadOBJ(url: string, smooth?: boolean): Promise<Mesh>;
+    /**
+     * GLTFModel - A loaded model: its parts, and everything as one mesh
+     * @memberof GLTF
+     */
+    export class GLTFModel {
+        /** @param {Array<GLTFPart>} parts @param {Array<GLTFAnimation>} [animations] @param {Object} [nodeTree] */
+        constructor(parts: Array<GLTFPart>, animations?: Array<GLTFAnimation>, nodeTree?: any);
+        /** @property {Array<GLTFPart>} - One per primitive of every node that has a mesh */
+        parts: GLTFPart[];
+        /** @property {Array<GLTFAnimation>} - The animations, play one through createObject's GLTFObject
+         *  @type {Array<GLTFAnimation>} */
+        animations: Array<GLTFAnimation>;
+        nodeTree: any;
+        modelMatrix: Matrix4;
+        /** @property {Mesh} - Every part combined, each tinted with its material color; the texture is textureInfo,
+         *  and blending and unlit stay with the parts, which createObject draws */
+        mesh: Mesh;
+        /** @property {TextureInfo|undefined} - The texture to draw mesh with, when every part uses the same one
+         *  @type {TextureInfo|undefined} */
+        textureInfo: TextureInfo | undefined;
+        /** @type {{min: Vector3, max: Vector3}|undefined} */
+        bounds: {
+            min: Vector3;
+            max: Vector3;
+        } | undefined;
+        /** The box around every part, measured once and again after transform, so change the model through that
+         *  @return {{min: Vector3, max: Vector3}} */
+        getBounds(): {
+            min: Vector3;
+            max: Vector3;
+        };
+        /** Move every part so the center of the model's bounds is on the origin, like Mesh.center
+         *  @return {GLTFModel} */
+        center(): GLTFModel;
+        /** Scale every part evenly so the model's largest extent is a size, like Mesh.fit, for models of unknown units
+         *  @param {number} [size]
+         *  @return {GLTFModel} */
+        fit(size?: number): GLTFModel;
+        /** Move, turn or scale every part and the combined mesh together
+         *  @param {Matrix4|Vector3} matrix - Transform, or just an offset to move by
+         *  @return {GLTFModel} */
+        transform(matrix: Matrix4 | Vector3): GLTFModel;
+        /** Find an animation by name or number
+         *  @param {string|number|GLTFAnimation} animation
+         *  @return {GLTFAnimation|undefined} */
+        getAnimation(animation: string | number | GLTFAnimation): GLTFAnimation | undefined;
+        /** How far each part has moved from its resting place at a time in an animation, one matrix per part
+         *  - createObject's GLTFObject calls this as it plays, a game only needs it to pose something by hand
+         *  @param {GLTFAnimation} animation
+         *  @param {number} time - Seconds into it
+         *  @return {Array<Matrix4>} */
+        getPose(animation: GLTFAnimation, time: number): Array<Matrix4>;
+        /** Free the GPU buffers of every part's mesh and of the combined mesh, and the textures, for a model that is
+         *  done with, like a level's models when the next level loads
+         *  - Destroy the objects createObject made from it first; a mesh drawn again only uploads again, but a freed
+         *    texture is gone */
+        dispose(): void;
+        /** Make an object at a position with a child per part, so each keeps its own texture, color and blending, and
+         *  the model's animations can play on it; the way to show a model with windows or other see through parts,
+         *  which the combined mesh draws solid, or one that moves
+         *  @param {Vector3} [pos3D]
+         *  @return {GLTFObject} - The root, move and turn it and the parts follow */
+        createObject(pos3D?: Vector3): GLTFObject;
+    }
+    /**
+     * LittleJS glTF Plugin
+     * - Loads glTF 2.0 models: a .gltf with its .bin and images beside it, or a .glb with everything in one file
+     * - A model comes back as parts, one Mesh per primitive of every node placed by the node tree, each with its
+     *   material's color and base color texture, plus everything combined into one Mesh
+     * - Geometry: positions, normals, uvs, vertex colors and indices; skins and morph targets are not read
+     * - Node animations play: parts that move, turn and scale, like doors, wheels and propellers, through the
+     *   GLTFObject that createObject makes; a skinned character's walk is not read
+     * - Materials give a base color and texture and whether they blend; glass made with KHR_materials_transmission blends too,
+     *   and a KHR_materials_unlit material comes in emissive, its own color with no shading
+     * - A material's normal map and emissive map load too, with its normal scale and emissive factor, read at the base
+     *   color texture's uvs; roughness, metalness and occlusion maps are not loaded
+     * - The base color texture reads the uv set its texCoord names, moved by KHR_texture_transform as gltfpack and
+     *   Blender write it
+     * - An OPAQUE material, the default, ignores its texture's alpha as the format says: a texture only such materials
+     *   use loads with its alpha set to 1, so the 3D pass cuts no holes in it; MASK always cuts at half, alphaCutoff
+     *   is not read
+     * - Material and vertex colors are linear in glTF and are converted to sRGB at load, the space textures are in
+     * - glTF and LittleJS agree on the axes, y up and -z forward, on counter clockwise triangles and on uvs running down
+     * - Requires the Render3D plugin
+     * @namespace GLTF
+     * @example
+     * const model = await loadGLTF('ship.glb');   // in an async gameInit
+     * const ship = model.createObject(vec3(0, 1, 0)); // an object with a child per part, textures and all
+     * ship.play('fly');                            // and its animation, by name or number
+     * new EngineObject3D(vec3(), model.mesh);      // or the whole thing as one mesh, still
+     */
+    /**
+     * GLTFPart - One primitive of a model, placed where its node put it
+     * @memberof GLTF
+     */
+    export class GLTFPart {
+        /** @param {string} name @param {Mesh} mesh @param {Color} color @param {TextureInfo|undefined} textureInfo @param {boolean} transparent */
+        constructor(name: string, mesh: Mesh, color: Color, textureInfo: TextureInfo | undefined, transparent: boolean);
+        /** @property {string} - The node's name, or its mesh's */
+        name: string;
+        /** @property {Mesh} - The geometry in model space, the node transforms applied, with the vertex colors the file had;
+         *  a node resting at scale 0 is applied at scale 1 there, so an animation can grow it from nothing */
+        mesh: Mesh;
+        /** @property {Color} - The material's base color, to draw the mesh tinted with */
+        color: Color;
+        /** @property {TextureInfo|undefined} - The material's base color texture, undefined without one or without WebGL
+         *  @type {TextureInfo|undefined} */
+        textureInfo: TextureInfo | undefined;
+        /** @property {boolean} - The material blends or is glass, so the part belongs in the transparent stage */
+        transparent: boolean;
+        /** @property {boolean} - Its texture's sampler asks for nearest filtering, hard edged pixels, as pixel art
+         *  and voxel tools export; the object createObject makes draws it pixelated */
+        pixelated: boolean;
+        /** @property {number} - The node it came from, which an animation moves it with */
+        node: number;
+        /** @property {boolean} - The material is unlit (KHR_materials_unlit), its own color with no shading; the object
+         *  createObject makes draws it with emissive 1 */
+        unlit: boolean;
+        /** @property {TextureInfo|undefined} - The material's normal map, drawn with the base color texture's uvs
+         *  @type {TextureInfo|undefined} */
+        normalMap: TextureInfo | undefined;
+        /** @property {number} - The normal map's strength, its scale in the file */
+        normalScale: number;
+        /** @property {TextureInfo|undefined} - The material's emissive map, or a white texture when it has an
+         *  emissiveFactor and no texture, so it glows all over
+         *  @type {TextureInfo|undefined} */
+        emissiveMap: TextureInfo | undefined;
+        /** @property {Color} - The emissiveFactor, which multiplies the emissive map */
+        emissiveMapColor: Color;
+    }
+    /**
+     * GLTFObject - A model as an object with a child per part, which plays the model's animations
+     * - model.createObject makes one; move, turn and scale it like any EngineObject3D and the parts follow
+     * - play starts an animation by name or number, and the object moves its parts each frame as it runs
+     * - The parts' meshes stay where they rest, an animation moves the child objects that draw them
+     * @extends EngineObject3D
+     * @memberof GLTF
+     * @example
+     * const door = model.createObject(vec3(0, 0, 5));
+     * door.play('open', false); // once, holding the last pose
+     */
+    export class GLTFObject extends EngineObject3D {
+        /** Make the object and its parts, model.createObject is the usual way
+         *  @param {GLTFModel} model
+         *  @param {Vector3} [pos3D] */
+        constructor(model: GLTFModel, pos3D?: Vector3);
+        /** @property {GLTFModel} - The model it shows */
+        model: GLTFModel;
+        /** @property {GLTFAnimation|undefined} - The animation playing, or the last one, undefined for none
+         *  @type {GLTFAnimation|undefined} */
+        animation: GLTFAnimation | undefined;
+        /** @property {number} - Seconds into the animation */
+        animationTime: number;
+        /** @property {number} - How fast it plays, 1 is as made, negative plays it backward */
+        animationSpeed: number;
+        /** @property {boolean} - Start again at the end, or stop there and hold the last pose */
+        animationLoop: boolean;
+        /** @property {boolean} - Whether it is moving through the animation now */
+        animationPlaying: boolean;
+        /** @property {Array<EngineObject3D>} - The child that draws each of the model's parts, in the order of
+         *  model.parts, which an animation poses; one destroyed or taken off the object is left alone
+         *  @type {Array<EngineObject3D>} */
+        parts: Array<EngineObject3D>;
+        /** Play an animation from its start
+         *  @param {string|number|GLTFAnimation} [animation] - Its name, its number in model.animations, or itself
+         *  @param {boolean} [loop] - Start again at the end, or stop there
+         *  @param {number} [speed] - 1 is as made, negative plays it backward from its end */
+        play(animation?: string | number | GLTFAnimation, loop?: boolean, speed?: number): void;
+        /** Stop the animation where it is, the parts hold that pose */
+        stop(): void;
+        /** Put the parts where the animation has them at a time, playing or not
+         *  @param {number} time - Seconds into the animation */
+        setAnimationTime(time: number): void;
+    }
+    /**
+     * GLTFAnimation - One animation of a model: keys that move, turn and scale its nodes over time
+     * - Play it through the GLTFObject that model.createObject makes
+     * @memberof GLTF
+     */
+    export class GLTFAnimation {
+        /** @param {string} name @param {Array<Object>} channels */
+        constructor(name: string, channels: Array<any>);
+        /** @property {string} - Its name in the file, or 'animation' and its number when it has none */
+        name: string;
+        /** @property {Array<Object>} - What it moves: for each, a node, which of its translation, rotation or scale,
+         *  the key times and values, and how to go between keys, LINEAR, STEP or CUBICSPLINE
+         *  @type {Array<Object>} */
+        channels: Array<any>;
+        /** @property {number} - Length in seconds, the time of its last key
+         *  @type {number} */
+        duration: number;
+    }
+    /** Parse a model from GLB bytes or glTF JSON, fetching the buffers and images it refers to
+     *  @param {ArrayBuffer|Object|string} data - GLB bytes, or the glTF JSON as bytes, text or an object
+     *  @param {string} [baseUrl] - Where the .bin and image files are, with its trailing slash; loadGLTF passes the file's folder
+     *  @return {Promise<GLTFModel>}
+     *  @memberof GLTF */
+    export function parseGLTF(data: ArrayBuffer | any | string, baseUrl?: string): Promise<GLTFModel>;
+    /** Load a glTF or GLB model, the .bin and images of a .gltf from beside it
+     *  - A texture only OPAQUE materials use loads with its alpha set to 1, so the 3D pass cuts no holes in it
+     *  @param {string} url
+     *  @return {Promise<GLTFModel>}
+     *  @memberof GLTF */
+    export function loadGLTF(url: string): Promise<GLTFModel>;
+    /** Draw a debug wireframe box
+     *  @param {Vector3} pos - Center
+     *  @param {Vector3|number} [size] - Full size, a number for a cube
+     *  @param {Color} [color]
+     *  @param {number} [time] - How long to show it, 0 is one frame
+     *  @param {Vector3} [rotation] - vec3(pitch, yaw, roll)
+     *  @memberof Render3D */
+    export function debugBox3D(pos: Vector3, size?: Vector3 | number, color?: Color, time?: number, rotation?: Vector3): void;
+    /** Draw a debug wireframe sphere as three rings
+     *  @param {Vector3} pos - Center
+     *  @param {number} [size] - Diameter
+     *  @param {Color} [color]
+     *  @param {number} [time] - How long to show it, 0 is one frame
+     *  @memberof Render3D */
+    export function debugSphere3D(pos: Vector3, size?: number, color?: Color, time?: number): void;
+    /** Draw a debug line
+     *  @param {Vector3} posA
+     *  @param {Vector3} posB
+     *  @param {Color} [color]
+     *  @param {number} [width]
+     *  @param {number} [time] - How long to show it, 0 is one frame
+     *  @memberof Render3D */
+    export function debugLine3D(posA: Vector3, posB: Vector3, color?: Color, width?: number, time?: number): void;
+    /** Draw a debug point as a small cross of three lines
+     *  @param {Vector3} pos
+     *  @param {Color} [color]
+     *  @param {number} [time] - How long to show it, 0 is one frame
+     *  @param {number} [size] - Length of the cross
+     *  @memberof Render3D */
+    export function debugPoint3D(pos: Vector3, color?: Color, time?: number, size?: number): void;
+    /** Add a type of object, so level3DLoad makes one wherever a level has an object of that type
+     *  - The name is a string because minified builds rename classes
+     *  - A class, or any function with a prototype, is made with new make(pos3D, properties); an arrow function is
+     *    called as make(pos3D, properties), for what is not an object, like a player start
+     *  - properties is the defaults with the object's own values over them, and each of the type's own is also set on
+     *    what was made; a property the type has no default for is in properties and is not set
+     *  - Give a class a constructor of its own that takes the position: one that hands every argument on to
+     *    EngineObject3D would hand it the properties as its mesh
+     *  - An EngineObject3D then gets the object's rotation, and its scale times the scale it was made with
+     *  - Adding a name again replaces it, Box, Sphere, Cylinder and Light too
+     *  @param {string} name - The type the objects have in the level
+     *  @param {Function} make - A class made at each object's position, or a function called with it
+     *  @param {Object} [defaults] - Properties of each one made, the level editor shows inputs for them
+     *  @param {TileInfo} [tileInfo] - An icon for the level editor
+     *  @memberof Level3D
+     *  @example
+     *  level3DAddType('Crate', Crate, {health: 3});
+     *  level3DAddType('PlayerStart', (pos)=> playerStart = pos); */
+    export function level3DAddType(name: string, make: Function, defaults?: any, tileInfo?: TileInfo): void;
+    /** Add a type that is a mesh and nothing more, a static prop with no class to write, for a built mesh or a model
+     *  - Each object has a color and a solid property, solid collides as the box around the mesh
+     *  @param {string} name - The type the objects have in the level
+     *  @param {Mesh} mesh - Shared by every object of the type
+     *  @param {TileInfo} [tileInfo] - Its texture
+     *  @param {Color} [color] - Its color, an object's own color property goes over it
+     *  @memberof Level3D
+     *  @example
+     *  level3DAddMesh('Tree', treeMesh, tile(4)); */
+    export function level3DAddMesh(name: string, mesh: Mesh, tileInfo?: TileInfo, color?: Color): void;
+    /** Make the objects of a level, each from the type added for its name
+     *  - The level is an object: {littlejs3D: 1, objects: [{id, type, pos: [x, y, z]}, ...]}, and {} is a new one
+     *  - rotation is pitch, yaw and roll in degrees, scale is a number for each axis, both left out when they are
+     *    the default, and properties holds what differs from the type's defaults
+     *  - A Color property is a #rrggbb or #rrggbbaa string, a Vector2 or Vector3 an array, as the default says
+     *  - An object whose type was not added is skipped, with a warning in debug builds
+     *  - What a file written by hand gets wrong uses the default: a value that is not of its default's type
+     *  - An object its type can not make is skipped with an error in debug builds, where asserts throw, and the rest
+     *    of the level is made
+     *  - A level may hold a map of blocks, in a voxels block: pos, its corner, size, its cells along x, y and z, and
+     *    blocks, runs of a count and a type along x, then y, then z; it is made a VoxelMap, the first of what is
+     *    returned, see level3DVoxelSetup for its sheet
+     *  - A level may hold a terrain, in a terrain block: pos, its center, size, its size in the world along x and z,
+     *    height, how tall a full height is, color, and heights, rows of 0 to 1 from -z to +z, each from -x to +x; it
+     *    is made a HeightMap, returned with what else was made; paint, when it has it, colors its samples: colors, a
+     *    list, and cells, runs of a count and a color along the rows, 0 for the terrain's own and 1 the list's first
+     *  - A level may hold prefabs of its own, in a prefabs block, each by its name as level3DAddPrefab takes it; they
+     *    are added before its objects are made, one the game added itself keeps its place
+     *  - A level may set the scene too, in a scene block beside its objects: sky, three colors for straight up, the
+     *    horizon and straight down, ambient, how much of them lights the scene, .5 when not given, sunDirection and
+     *    sunColor, fog, its start and end, fogColor, the horizon color when not given, and shadows; what the block
+     *    leaves out stays as the game set it, and a level with no block changes nothing
+     *  @param {Object} level - The level, the level editor edits this same object
+     *  @return {Array<any>} - What each object's type made, a function that made nothing is left out
+     *  @memberof Level3D */
+    export function level3DLoad(level: any): Array<any>;
+    /** Add a prefab: a small level, its objects placed about its own origin, to place many times under one name
+     *  - It is a type from then on: a level's object of that type, the level editor's Place list and level3DSpawn make
+     *    an instance, a Prefab3D; an instance is made of the prefab as it is then, so the level editor, where a prefab
+     *    changes, makes its instances again
+     *  - The prefab is a level as the level editor saves it, {objects: [...]}, so the editor is the prefab editor too;
+     *    only its objects are used, and they may be of other prefabs
+     *  - With attached true in it the parts are children of the instance and move with it as one body, without
+     *    collision of their own, a prefab inside it too; its handle is at the middle of the box around them and its
+     *    size3D is that box, so setCollision makes the body solid where it is seen; otherwise each part is an object of its own in the world and collides as one placed
+     *    by hand does
+     *  - Adding a name again replaces it
+     *  @param {string} name - The type its instances have in a level
+     *  @param {Object} prefab - {objects, attached}
+     *  @memberof Level3D
+     *  @example
+     *  level3DAddPrefab('Tower', {objects: [{type: 'Box', pos: [0, 1, 0], scale: [2, 2, 2]},
+     *      {type: 'Cylinder', pos: [0, 3, 0]}]});
+     *  level3DLoad({objects: [{type: 'Tower', pos: [5, 0, 5]}, {type: 'Tower', pos: [-5, 0, 5], rotation: [0, 45, 0]}]}); */
+    export function level3DAddPrefab(name: string, prefab: any): void;
+    /** Load a prefab from a file the level editor saved and add it
+     *  @param {string} name - The type its instances have in a level
+     *  @param {string} url
+     *  @return {Promise<void>}
+     *  @memberof Level3D */
+    export function level3DLoadPrefab(name: string, url: string): Promise<void>;
+    /** Make one object of a type added with level3DAddType, level3DAddMesh or level3DAddPrefab, from code, with no
+     *  level: a prefab's instance, or a plain type
+     *  @param {string} type - The type's name
+     *  @param {Vector3} [pos3D]
+     *  @param {Vector3} [rotation3D] - In radians, as an object has it
+     *  @param {Vector3} [scale3D] - Times the scale the type makes it with
+     *  @param {Object} [properties] - Over the type's defaults
+     *  @return {any} - What the type made, a Prefab3D for a prefab, undefined when there is no such type
+     *  @memberof Level3D
+     *  @example
+     *  level3DAddPrefab('House', await fetchJSON('house.json'));
+     *  level3DSpawn('House', vec3(10, 0, 0), vec3(0, PI/2, 0)); */
+    export function level3DSpawn(type: string, pos3D?: Vector3, rotation3D?: Vector3, scale3D?: Vector3, properties?: any): any;
+    /**
+     * An instance of a prefab, what a prefab's type makes: a handle with no shape of its own, and its parts, what the
+     * prefab's objects made
+     * - Parts of a prefab that is not attached are objects of their own in the world: moving, turning or sizing the
+     *   handle puts them where it now says with its next update, or call placeParts; destroying it destroys them
+     * - Parts of an attached prefab are its children and move with it as one body
+     * @extends EngineObject3D
+     * @memberof Level3D
+     */
+    export class Prefab3D extends EngineObject3D {
+        /** Create an instance of a prefab, made by its type: place one with a level or level3DSpawn
+         *  @param {Vector3} [pos3D]
+         *  @param {string} [prefabName] - A prefab added with level3DAddPrefab */
+        constructor(pos3D?: Vector3, prefabName?: string);
+        /** @property {string} - The prefab it is an instance of */
+        prefabName: string;
+        /** @property {boolean} - Are its parts its children, moving with it as one body */
+        attached: boolean;
+        /** @property {Array<any>} - What the prefab's objects made, in the prefab's order */
+        parts: any[];
+        /** @property {Vector3} - From the prefab's origin to the handle, in the prefab's own space: nothing for
+         *  separate parts, and for an attached prefab the middle of the box around its parts, where its handle
+         *  is, as an object's place is the middle of its body */
+        originOffset: Vector3;
+        partObjects: any[];
+        partsPlaced: string;
+        partsMade: boolean;
+        /** Put the instance with its prefab's origin at a place, turned and sized as the handle is: where a level's
+         *  object or level3DSpawn says it goes; the handle of an attached prefab is then at the middle of its body
+         *  @param {Vector3} pos3D */
+        placeAt(pos3D: Vector3): void;
+        /** Put the parts where the handle is now, making them the first time; called by the handle's update when it
+         *  has moved, turned or changed size */
+        placeParts(): void;
+        placeKey(): string;
+        makeParts(): void;
+    }
+    /** How a level's block map is made: the sheet its blocks show tiles of, and a function to set it up
+     *  - A level's voxels block makes a VoxelMap when the level loads, with texture 0 and the default tile size unless
+     *    a sheet is given here; a block's type shows that tile of the sheet on every face
+     *  - setup is called with each map a level makes, to give block types their own faces or make them see-through
+     *  - Call it before level3DLoad; with no arguments the defaults are back
+     *  @param {TileInfo} [tileInfo] - The sheet's first tile, as for a VoxelMap
+     *  @param {function(VoxelMap): void} [setup]
+     *  @example
+     *  level3DVoxelSetup(tile(0, 16, 1), (map)=> map.setBlockType(1, {top: 0, side: 1, bottom: 2})); // grass
+     *  @memberof Level3D */
+    export function level3DVoxelSetup(tileInfo?: TileInfo, setup?: (arg0: VoxelMap) => void): void;
     /**
      * LittleJS Three.js Plugin
      * - Renders a three.js scene on a canvas behind the LittleJS canvases
@@ -5835,6 +10730,14 @@ declare module "littlejsengine" {
         camera: any;
         /** @property {boolean} - Lock the camera to the LittleJS 2D camera so the z=0 plane matches world space */
         cameraAlign2D: boolean;
+        /** @property {number|undefined} - Near plane of the aligned camera before any zoom out, from camera.near on the
+         *  first aligned frame; while aligned, change this rather than camera.near
+         *  @type {number|undefined} */
+        cameraNear: number | undefined;
+        /** @property {number|undefined} - Far plane of the aligned camera before any zoom out, from camera.far on the
+         *  first aligned frame; while aligned, change this rather than camera.far
+         *  @type {number|undefined} */
+        cameraFar: number | undefined;
         /** Position the camera so the z=0 plane exactly matches LittleJS world space,
          *  called automatically when cameraAlign2D is set */
         alignCamera2D(): void;
@@ -5906,10 +10809,10 @@ declare module "littlejsengine" {
         constructor(size?: number);
         /** @property {number} - Width and height of the sheet in pixels */
         size: number;
-        /** @property {OffscreenCanvas} - Canvas holding the packed images */
-        canvas: OffscreenCanvas;
         /** @property {OffscreenCanvasRenderingContext2D} - 2d context for the canvas */
         context: OffscreenCanvasRenderingContext2D;
+        /** @property {OffscreenCanvas} - Canvas holding the packed images */
+        canvas: OffscreenCanvas;
         /** @property {TextureInfo} - The texture info for this sheet */
         textureInfo: TextureInfo;
         /** @property {Vector2} - Where the next image will be packed */
@@ -5920,17 +10823,17 @@ declare module "littlejsengine" {
         glDirty: boolean;
         /** Find a spot for an image on this sheet without drawing it
          *  @param {Vector2} imageSize - Size of the source image in pixels
-         *  @param {Vector2} [frameSize] - Size of each frame, or the whole image if not passed
+         *  @param {Vector2} [frameSize] - Size of each frame, or the whole image less its source padding if not passed
          *  @param {number} [padding] - How many pixels padding around each frame
          *  @param {number|Vector2} [sourcePadding] - How many pixels padding around each frame in the source image
-         *  @return {TileInfo} Tile for the packed image, or undefined if the sheet is full */
-        tryAdd(imageSize: Vector2, frameSize?: Vector2, padding?: number, sourcePadding?: number | Vector2): TileInfo;
+         *  @return {TileInfo|undefined} Tile for the packed image, or undefined if the sheet is full */
+        tryAdd(imageSize: Vector2, frameSize?: Vector2, padding?: number, sourcePadding?: number | Vector2): TileInfo | undefined;
         /** Draw an image into this sheet at a tile returned by tryAdd
-         *  @param {HTMLImageElement} image - Source image to copy from
+         *  @param {HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|ImageBitmap} image - Source image to copy from
          *  @param {TileInfo} tileInfo - Where to put it, from tryAdd
          *  @param {boolean} [update] - Upload to webgl now, pass false when batching
          *  @param {number|Vector2} [sourcePadding] - How many pixels padding around each frame in the source image */
-        drawImage(image: HTMLImageElement, tileInfo: TileInfo, update?: boolean, sourcePadding?: number | Vector2): void;
+        drawImage(image: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap, tileInfo: TileInfo, update?: boolean, sourcePadding?: number | Vector2): void;
         /** Upload the canvas to webgl if it has changed since the last upload
          *  Only needed after batching, drawImage uploads automatically by default */
         updateTexture(): void;
@@ -5942,7 +10845,8 @@ declare module "littlejsengine" {
      *  - Grid images keep their layout and frames wrap down to the next row
      *  - Pass sourcePadding if the source image has padding baked in around frames
      *  @param {string} src - Image source path
-     *  @param {Vector2|number} [frameSize] - Size of each animation frame in pixels
+     *  @param {Vector2|number} [frameSize] - Size of each animation frame in pixels, or the whole image less its
+     *  source padding if not passed
      *  @param {number} [padding] - How many pixels padding around each frame
      *  @param {number|Vector2} [sourcePadding] - How many pixels padding around each frame in the source image
      *  @return {TileInfo}
@@ -5961,14 +10865,16 @@ declare module "littlejsengine" {
      *  @param {string} imageSrc - Atlas image path
      *  @param {string|Object} jsonSrc - Atlas json path, or already parsed json data
      *  @param {number} [padding] - How many pixels padding around each frame
-     *  @return {Object} Object mapping frame and animation names to TileInfos
+     *  @return {Object<string, TileInfo>} Object mapping frame and animation names to TileInfos
      *  @example
      *  const atlas = loadAtlas('sprites.png', 'sprites.json');
      *  await spritesReady();
      *  drawTile(pos, size, atlas.player);          // a single frame
      *  drawTile(pos, size, atlas.run.frame(2));    // frame 2 of the run animation
      *  @memberof TextureSheets */
-    export function loadAtlas(imageSrc: string, jsonSrc: string | any, padding?: number): any;
+    export function loadAtlas(imageSrc: string, jsonSrc: string | any, padding?: number): {
+        [x: string]: TileInfo;
+    };
     /** Parse atlas json into a list of named frame groups, used by loadAtlas
      *  - Accepts TexturePacker json (hash and array) and Aseprite json
      *  - Frames tagged in Aseprite or named like run_0, run_1 group into animations
@@ -5987,4 +10893,167 @@ declare module "littlejsengine" {
      *  }
      *  @memberof TextureSheets */
     export function spritesReady(): Promise<any>;
+    /**
+     * LittleJS Particle Effects Plugin
+     * - Ready made particle effects in one line, particleEffect('fire', pos), and particleEffect3D for 3D
+     * - Every built-in effect is tuned around a one unit emitter; options.scale grows it to fit, options.hue and
+     *   options.saturation recolor it
+     * - Effects are plain data, {name, settings, behaviors}, the format the particle designer saves: load a library the
+     *   designer saved with particleEffectsLoad and play its effects by name
+     * - The built-in effects draw with a sheet of shapes the plugin draws itself, so they need no image
+     * @namespace ParticleEffects
+     */
+    /** The groups the settings are in, in order
+     *  @type {Array<string>}
+     *  @memberof ParticleEffects */
+    export const particleEffectGroups: Array<string>;
+    /** Every setting an effect has: its name, kind (number, checkbox, color or shape), default, the range the designer's
+     *  slider covers (min, max, step), the hard limits a typed value is clamped to, and whether it is set after the
+     *  emitter is made rather than passed to its constructor (extra)
+     *  @type {Array<{group:string, name:string, kind:string, value:any, min:number, max:number, step:number,
+     *  description:string, hardMin:number, hardMax:number, extra:boolean}>}
+     *  @memberof ParticleEffects */
+    export const particleEffectSettings: Array<{
+        group: string;
+        name: string;
+        kind: string;
+        value: any;
+        min: number;
+        max: number;
+        step: number;
+        description: string;
+        hardMin: number;
+        hardMax: number;
+        extra: boolean;
+    }>;
+    /** The behaviors an effect can use, each a push applied to every particle every update, with a 2D and a 3D version
+     *  @type {Array<{name:string, update:(Function|undefined), update3D:(Function|undefined), min:number, max:number,
+     *  value:number, description:string}>}
+     *  @memberof ParticleEffects */
+    export const particleEffectBehaviors: Array<{
+        name: string;
+        update: (Function | undefined);
+        update3D: (Function | undefined);
+        min: number;
+        max: number;
+        value: number;
+        description: string;
+    }>;
+    /** Names of the shapes the plugin draws, for an effect's shape setting
+     *  @type {Array<string>}
+     *  @memberof ParticleEffects */
+    export const particleEffectShapes: Array<string>;
+    /** Any input into a whole effect: missing fields take their defaults, bad ones are dropped or clamped
+     *  @param {Object} [raw] - {name, settings, behaviors}, from a library file, the designer or code
+     *  @return {{name:string, settings:Object, behaviors:Array<{name:string, strength:number}>}}
+     *  @memberof ParticleEffects */
+    export function particleEffectSanitize(raw?: any): {
+        name: string;
+        settings: any;
+        behaviors: {
+            name: string;
+            strength: number;
+        }[];
+    };
+    /** A copy of an effect with its four colors turned around the color wheel and their saturation scaled; lightness and
+     *  alpha stay, and grey and white have no hue to turn
+     *  @param {Object} effect
+     *  @param {number} [hue] - How far around the wheel, 1 is all the way
+     *  @param {number} [saturation] - Multiplies the saturation, 0 is grey, clamped to 1
+     *  @return {Object}
+     *  @memberof ParticleEffects */
+    export function particleEffectRecolor(effect: any, hue?: number, saturation?: number): any;
+    /** Add effects to play by name, sanitized; one with the name of an effect already there replaces it
+     *  @param {Array<Object>|Object} effects
+     *  @memberof ParticleEffects */
+    export function particleEffectsAdd(effects: Array<any> | any): void;
+    /** The effect with a name, any case, undefined if there is none
+     *  @param {string} name
+     *  @return {Object|undefined}
+     *  @memberof ParticleEffects */
+    export function particleEffectsGet(name: string): any | undefined;
+    /** A library file, or one effect, into sanitized effects; throws on bad input
+     *  @param {string} text
+     *  @return {Array<Object>}
+     *  @memberof ParticleEffects */
+    export function particleEffectsParse(text: string): Array<any>;
+    /** The text of a library file with these effects, what particleEffectsLoad and the designer read
+     *  @param {Array<Object>} effects
+     *  @return {string}
+     *  @memberof ParticleEffects */
+    export function particleEffectsText(effects: Array<any>): string;
+    /** Load a library file the particle designer saved and add its effects
+     *  @param {string} url
+     *  @return {Promise<Array<Object>>} - The effects it had
+     *  @memberof ParticleEffects */
+    export function particleEffectsLoad(url: string): Promise<Array<any>>;
+    /** The tile of a built-in shape, on a sheet the plugin draws once; undefined headless, without a canvas or without
+     *  WebGL, where an effect draws untextured squares
+     *  @param {string} name - One of particleEffectShapes
+     *  @return {TileInfo|undefined}
+     *  @memberof ParticleEffects */
+    export function particleEffectShapeTile(name: string): TileInfo | undefined;
+    /** Play an effect: a 2D emitter set to it, placed, scaled and recolored
+     *  - A continuous effect (fire, a torch) goes until destroyed or given an emitTime, a one-shot ends itself
+     *  - Any setting in the options replaces the effect's own for this play: {emitTime: .5} for a burst of a continuous
+     *    effect, {emitTime: 0, emitRate: 30} to keep a one-shot going, or speed, particleTime and the rest
+     *  - Attach it to an object with addChild to follow it
+     *  @param {string|Object} nameOrEffect - A built-in or added effect's name, or an effect
+     *  @param {Vector2} [pos]
+     *  @param {Object} [options] - What to change for this play, each left out when not wanted:
+     *    scale grows the whole effect, the built-ins fit a one unit object at 1;
+     *    hue turns its colors around the color wheel, 1 is all the way;
+     *    saturation multiplies its saturation, 0 is grey;
+     *    angle is its direction, 0 is up, the effect's own angle when not given;
+     *    tileInfo, a TileInfo or a TextureInfo, is the game's own art to draw with in place of the effect's shape,
+     *    tinted by its colors, a whole texture drawn as one tile;
+     *    and any effect setting by its name, emitTime, emitRate, speed and the rest, replaces the effect's own
+     *  @return {ParticleEmitter|undefined} - undefined when there is no such effect
+     *  @memberof ParticleEffects */
+    export function particleEffect(nameOrEffect: string | any, pos?: Vector2, options?: any): ParticleEmitter | undefined;
+    /** Play an effect in 3D: a ParticleEmitter3D set to it, placed, scaled and recolored
+     *  - The same effect data as particleEffect, so the look carries across: a circle spawn area becomes a sphere and a
+     *    rectangle a box as deep as it is wide, both flat across the way it emits with options.flatten, a disc or a
+     *    sheet; a trail becomes a streak of the same length, and the settings the 3D emitter lacks (particleConeAngle,
+     *    randomColorLinear, velocityInheritance, localSpace) are left out; the stick behavior becomes the emitter's
+     *    stick, its grip where a particle lands
+     *  @param {string|Object} nameOrEffect - A built-in or added effect's name, or an effect
+     *  @param {Vector3} [pos3D]
+     *  @param {Object} [options] - scale, hue, saturation, angle, tileInfo and any setting as particleEffect; angle turns it
+     *    about z, so 0 is up; flatten makes the spawn area flat across the way it emits
+     *  @return {ParticleEmitter3D|undefined} - undefined when there is no such effect
+     *  @memberof ParticleEffects */
+    export function particleEffect3D(nameOrEffect: string | any, pos3D?: Vector3, options?: any): ParticleEmitter3D | undefined;
+    /** The names of the built-in effects, in the order a gallery shows them
+     *  @type {Array<string>}
+     *  @memberof ParticleEffects */
+    export const particleEffectsBuiltIn: Array<string>;
+    /** Set a 2D emitter to an effect, live, so a running one keeps its particles
+     *  @param {ParticleEmitter} emitter
+     *  @param {Object} effect
+     *  @memberof ParticleEffects */
+    export function particleEffectApply(emitter: ParticleEmitter, effect: any): void;
+    /** Set a 3D emitter to an effect, live, so a running one keeps its particles; its place, scale and flatten stay
+     *  @param {ParticleEmitter3D} emitter
+     *  @param {Object} effect
+     *  @memberof ParticleEffects */
+    export function particleEffectApply3D(emitter: ParticleEmitter3D, effect: any): void;
+    /** An effect with a 2D emitter's settings, to save, build again, or build in 3D with particleEffect3D; its tile is
+     *  left out, since a hand made emitter's tile is its own texture and not one an effect can name, and so is its
+     *  scale, which an effect does not keep: pass it again with options.scale
+     *  @param {ParticleEmitter} emitter
+     *  @param {string} [name]
+     *  @return {Object}
+     *  @memberof ParticleEffects */
+    export function particleEffectFromEmitter(emitter: ParticleEmitter, name?: string): any;
+    /** Add a behavior effects can use by name, or replace one
+     *  @param {string} name
+     *  @param {function(Particle, number): void} update - Pushes a 2D particle, given the strength
+     *  @param {function(Particle3D, number): void} [update3D] - The same for a 3D particle, none leaves 3D alone
+     *  @param {number} [min] - Strength range the designer offers
+     *  @param {number} [max]
+     *  @param {number} [value] - Strength when first added
+     *  @param {string} [description]
+     *  @memberof ParticleEffects */
+    export function particleEffectsAddBehavior(name: string, update: (arg0: Particle, arg1: number) => void, update3D?: (arg0: Particle3D, arg1: number) => void, min?: number, max?: number, value?: number, description?: string): void;
 }

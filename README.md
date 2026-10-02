@@ -8,7 +8,7 @@
 
 This repo is the **AI-assisted LittleJS toolkit** — everything you need to build games, but not the games themselves:
 - starter templates you can fork and remix
-- helper modules for menus, sound/FX, sprites, and live tweaking
+- helper modules for menus, sound/FX, and sprites
 - docs and prompts to improve LittleJS + AI workflows
 
 The 50+ finished games built with these tools live in their own repo: the **[LittleJS Arcade](https://killedbyapixel.github.io/LittleJSArcade/)** ([source](https://github.com/KilledByAPixel/LittleJSArcade)).
@@ -37,7 +37,7 @@ Cloning this repo is only needed for browsing the templates by hand — the plug
 
 **Developing the plugin itself?** Load it from your working tree with `claude --plugin-dir .` (use forward slashes in the path — backslashes get mangled and silently load nothing), then `/reload-plugins` after edits. Don't `/plugin install` your local copy — that installs a frozen snapshot.
 
-Every user-visible change needs two things in the same commit: a bumped `version` in `.claude-plugin/plugin.json` and an entry in [CHANGELOG.md](CHANGELOG.md). The plugin cache is keyed by version, so without a bump, people who already installed the plugin receive nothing. When bumping the engine in `dist/`, also refresh `reference.md` by hand.
+Every user-visible change needs two things in the same commit: a bumped `version` in `.claude-plugin/plugin.json` and an entry in [CHANGELOG.md](CHANGELOG.md). The plugin cache is keyed by version, so without a bump, people who already installed the plugin receive nothing. When bumping the engine in `dist/`, also copy the engine repo's `REFERENCE.md` over `reference.md`.
 
 For other tools, LittleJS also works great with GitHub Copilot, Codex, and Cursor.
 
@@ -81,15 +81,14 @@ Single-file references to copy patterns from when adding a feature — not full 
 - [menuGame.html](templates/menuGame.html) — title, pause, options, medals, HUD toolbar
 - [box2dGame.html](templates/box2dGame.html) — Box2D physics (pool, plinko, pinball)
 - [textureGame.html](templates/textureGame.html) — procedural sprite atlases from canvas draw ops
-- [tweakableGame.html](templates/tweakableGame.html) — live-tweak globals via an HTML slider overlay
+- [tweakableGame.html](templates/tweakableGame.html) — live-tweak globals with the engine's tweakables panel
 - [uiGame.html](templates/uiGame.html) — canvas-drawn UI (menus, sliders, dialogs)
-- [threejsGame.html](templates/threejsGame.html) — three.js 3D scene behind the LittleJS canvas
 
-Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter), `tweakables.js` (live value tweaking).
+Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter). Live value tweaking needs no helper — `tweak()` is built into the engine's debug build.
 
-### 🧊 Three.js 3D games
+### 🧊 3D games
 
-The engine includes a [three.js](https://threejs.org/) plugin (`ThreeJSPlugin` + `ThreeJSObject`) that renders a 3D scene behind the LittleJS canvas — LittleJS keeps handling the input, physics, and HUD while three.js draws the world. See [examples/threejsGame/](examples/threejsGame/) for a mini 3D platformer demo (three.js loads from a CDN at startup, everything else works the same as any other game).
+LittleJS has a built-in 3D renderer that shares the canvas with your 2D game: meshes from shape builders, height map terrain, shadows, lights, fog, particles, cameras, and 3D objects with the same physics, children and timers as 2D ones. It is part of the engine file, so a 3D game still opens straight from `file://` with nothing to install or download. See [examples/3dGame/](examples/3dGame/) — the engine's own 3D example — for all of it in one scene.
 
 ## 🕹️ Built With These Tools
 

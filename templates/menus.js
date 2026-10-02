@@ -1775,14 +1775,14 @@ function setSilentAttract(on = true)
 // One blob per game (player-facing data) plus one global blob (site-wide
 // settings such as mute). All writes funnel through engine readSaveData /
 // writeSaveData. Call saveDataInit('GameName') once in gameInit, before any
-// menu construction, tweak() call, or getSaveData/saveData call — this
+// menu construction or getSaveData/saveData call — this
 // primes both blobs and is the canonical save name for the game (matches
 // medalsInit by convention).
 //
 // Storage layout:
 //   localStorage['<GameName>']        — { options:{...}, ...gameCustomFields }
 //   localStorage['littlejs.global']   — { muted: boolean }
-//   localStorage['<GameName>.tweaks'] — owned by tweakables.js (separate)
+//   (the engine's tweakables panel keeps its own entry, 'LittleJS tweaks <page path>')
 //
 // Public API:
 //   saveDataInit(name)   call once in gameInit. Caches the blobs.
@@ -3210,7 +3210,7 @@ function buildMenuItem(item)
     if (item.type === 'checkbox')  return buildCheckbox(item);
     if (item.type === 'color')     return buildColor(item);
     if (item.type === 'input')     return buildInput(item);
-    if (item.type === 'grid')      return buildGrid(item);
+    if (item.type === 'grid')      return buildGridItem(item);
     if (item.type === 'custom')    return buildCustom(item);
     console.warn('createMenu: unknown item type:', item.type);
     return null;
@@ -3236,7 +3236,8 @@ function wireActivate(el, onClick)
     });
 }
 
-function buildGrid(item)
+// (not named buildGrid: that is an engine global, the 3D grid mesh builder)
+function buildGridItem(item)
 {
     const columns = item.columns || 3;
     const wrap = document.createElement('div');

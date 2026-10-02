@@ -3,11 +3,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
-<script src="engineLoader.js?1780757258646"></script>
-<script src="menus.js?1780757258646"></script>
-<script src="gameFx.js?1780757258646"></script>
-<script src="textureGenerator.js?1780757258646"></script>
-<script src="tweakables.js?1780757258646"></script>
+<script src="engineLoader.js?1790923667481"></script>
+<script src="menus.js?1790923667481"></script>
+<script src="gameFx.js?1790923667481"></script>
+<script src="textureGenerator.js?1790923667481"></script>
 <script>
 'use strict';
 
@@ -31,7 +30,7 @@ let board = [];
 let currentPlayer = PLAYER_1;
 let hoverCell = null;
 
-// Piece drop-shadow — a darkened circle drawn under each piece (press \ to tweak).
+// Piece drop-shadow — a darkened circle drawn under each piece (tweakable, see gameInit).
 let shadowEnable = true;
 let shadowOffset = 0.12;    // world-unit offset (down-right, opposite the highlight)
 let shadowDarkness = 0.35;  // 0..1 — how much it darkens the board underneath
@@ -142,7 +141,8 @@ async function gameInit()
 
     sfxPlace = new SoundGenerator({frequency: 440, release: 0.05, volume: 0.3});
 
-    // Piece shadow tweakables — press \ to open the panel and adjust live.
+    // Piece shadow tweakables — in a debug build (add #debug to the URL) press
+    // Esc, then 9, to open the engine's tweakables panel and adjust live.
     tweakDivider('Piece Shadow');
     tweak('shadowEnable');
     tweak('shadowOffset',   {min: 0, max: 0.5});

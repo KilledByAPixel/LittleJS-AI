@@ -6,6 +6,42 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-02
+
+Ships engine **1.23.0** (up from 1.18.30). This is five engine releases at once — 1.19 through 1.23 — and the engine roughly tripled in size: built-in 3D, level editors, tweakables, parallax and more are now part of every build.
+
+### Changed
+
+- **3D now means LittleJS 3D, not three.js.** The engine has its own 3D renderer (`Render3DPlugin`, `EngineObject3D`, the `render3D` global) inside `littlejs.js`: meshes from shape builders, height map and voxel terrain, shadows, lights, fog, particles, cameras, glTF/OBJ loading, 3D levels. The skills and `AGENTS.md` now always recommend it for a 3D game. A 3D game needs no CDN and opens from `file://` like any other. The engine still contains its three.js plugin for anyone who wants it, but nothing here uses or recommends it unless three.js is asked for by name.
+- **Live tweaking is an engine plugin.** `tweak()`, `tweakDivider()`, `tweakButton()` and `tweakEngineDefaults()` are engine functions now, so `templates/tweakableGame.html`, `boardGame.html` and `bloom.js` use those and no template loads a tweakables script. Differences from the old helper: the panel opens with Esc then 9 (or `debugTweakables = true`) instead of `\`; `tweakEngineDefaults()` always adds its rows (the `tweakShowEngineDefaults` opt-in flag is gone); the `{value: ...}` option is gone, set the variable in code instead; values are saved under `LittleJS tweaks <page path>` rather than `<GameName>.tweaks`, so previously saved tweaks do not carry over. New: `tweakButton`, Vector3 values, an alpha slider on colors, and `{object}` for ES module games.
+- `reference.md` is the engine's 1.23.0 reference: about 2300 lines, up from about 950. The `littlejs-api` skill's lookup advice is updated for the size and the new sections.
+- The scaffolding skill's size checks follow the engine: `littlejs.js` is about 1.9MB now, so "under ~100KB means a truncated copy" became "under ~1MB". A built zip of an empty game is about 123KB, since every build includes the plugins.
+- The privacy policy no longer lists a three.js CDN request, because no game made with the plugin makes one.
+
+### Added
+
+- `examples/3dGame/` — the engine's own 3D example (rolling ball on a terrain island with shadows, a forest, sprites, 3D text, lights, particles, bloom and a free camera), the copy-from starter for 3D games. It ships one small `tiles.png`, listed in its `build.json` `data`.
+- Engine 1.19 through 1.23, all documented in `reference.md`. Beyond 3D and tweakables: 2D and 3D level editors in the debug build (Esc, then 0) with object layers and an extension API; `ParallaxLayer`; custom `Shader`s on any draw; ready-made post-process effects (`postProcessBloom`, `postProcessTV`, scanlines, vignette, ...); particle effect presets; a scene system; audio effects; `engineVariableStep`; touch pinch as the mouse wheel; a loading screen and `engineAddLoad`.
+- Conventions for 3D (Y up, -Z forward, diameters vs radii, the 3D pass, WebGL stays on) and a warning that the engine now declares about 1600 top-level names, so a game-level `function` that reuses one silently replaces the engine's.
+
+### Removed
+
+- `examples/threejsGame/` and `templates/threejsGame.html`.
+- `templates/tweakables.js`, replaced by the engine plugin. A project scaffolded earlier that vendored its own copy keeps working until its engine is updated; after that, delete the script tag and the `sources` entry — the calls stay the same.
+
+### Fixed
+
+- `templates/menus.js` declared a function named `buildGrid`, which is now also the engine's 3D grid mesh builder. Loaded after the engine, the menu's version replaced it, which would have broken `buildGrid` in any 3D game with menus. Renamed to `buildGridItem`.
+- Adding `#debug` (or `#release` / `#min`) to the URL of a template that is already open did nothing, because a hash change does not reload the page. `templates/engineLoader.js` now reloads when the flag asks for a different build than the one running. The templates' script cache-bust number is bumped too, so browsers fetch the new loader and engine.
+
+### Engine changes worth knowing when updating an older game
+
+- `canvasClearColor` defaults to transparent black (`CLEAR_BLACK`) instead of `BLACK`, and `canvasMaxSize` to 3840x2160.
+- `collideTiles` is deprecated in favour of `collideLevel` (same flag; the old name still works).
+- Box2D: world gravity is the engine's `setGravity(...)`; `Box2dTileLayer(tileLayer)`, `addPoly(points, density, ...)`, `setMassData(localCenter, mass, inertia)`, `setFilterData(categoryBits, ignoreCategoryBits, groupIndex)` and `Box2dTargetJoint(object, fixedObject, worldPos)` changed their arguments.
+- `drawNineSliceScreen` / `drawThreeSliceScreen` take `color` before `borderSize`.
+- The debug build takes the number keys, `C` and `+`/`-` while the debug overlay is open.
+
 ## [1.0.11] - 2026-09-18
 
 ### Fixed

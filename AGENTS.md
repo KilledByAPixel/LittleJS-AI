@@ -56,12 +56,13 @@ Template selection for new games
 - Use `templates/boardGame.html` for turn-based grid/board games.
 - Use `templates/box2dGame.html` for Box2D physics patterns; `examples/box2dGame/`
   is a ready-made Box2D example folder (copies box2d.wasm.js/.wasm via `data`).
+- Use `examples/3dGame/` for 3D games. It is the engine's own LittleJS 3D example (terrain,
+  shadows, lights, sprites, particles, bloom, chase and free cameras) and the one 3D
+  reference here; there is no single-file 3D template.
 - Use `templates/menuGame.html` when the game needs title/pause/options UI.
 - Use `templates/textureGame.html` for procedural sprite-atlas workflows.
-- Use `templates/tweakableGame.html` for runtime tuning workflows.
+- Use `templates/tweakableGame.html` for runtime tuning workflows (the engine's tweakables plugin).
 - Use `templates/uiGame.html` when canvas UI widgets are required.
-- Use `templates/threejsGame.html` for three.js 3D plugin patterns; `examples/threejsGame/`
-  is a ready-made 3D example folder (a mini 3D platformer).
 
 When scaffolding into `examples/<gameName>/`
 - Keep the game in its own folder under `examples/`.
@@ -71,29 +72,45 @@ When scaffolding into `examples/<gameName>/`
   - `../../templates/menus.js`
   - `../../templates/gameFx.js`
   - `../../templates/textureGenerator.js`
-  - `../../templates/tweakables.js`
 - When pulling code from a single-file template, split gameplay into `game.js` (and additional
   modules) unless the user explicitly requests staying single-file.
 
-Three.js 3D rendering (built-in plugin)
-- The engine build includes a three.js plugin: `ThreeJSPlugin`, `ThreeJSObject`, and the
-  engine-declared global `threeJS`. It renders a 3D scene on a canvas behind the LittleJS
-  canvas; `examples/threejsGame/` is the reference example.
-- three.js itself is not bundled. Load it at the top of an async `gameInit` (the engine
-  awaits `gameInit`, same as `box2dInit`):
-  `THREE = await import('https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js');`
-  then `new ThreeJSPlugin(THREE);`. Declare `let THREE;` at top level and do not construct
-  any `THREE.*` objects before the import completes (no top-level `new THREE.Vector3(...)`).
-- Do NOT declare `let threeJS` in game code — the engine owns that global and the plugin
-  constructor assigns it.
-- Call `setGLEnable(false)` at the top of `game.js` so the LittleJS canvas only draws
-  Canvas2D content (HUD text, particles) on top of the 3D scene.
-- By default `cameraAlign2D` locks the 3D camera to the 2D camera so the z=0 plane matches
-  LittleJS world space; set `threeJS.cameraAlign2D = false` to drive a free/chase camera.
-- Use `ThreeJSObject` so LittleJS physics drives meshes: `z` is height above the 2D plane,
-  mesh rotation syncs from `angle`, and destroying the object removes its mesh from the scene.
-- This is the accepted exception to the no-CDN rule — three.js games need internet at
-  runtime unless the user asks to ship three.js locally.
+3D rendering (LittleJS 3D, built in)
+- ALWAYS use the engine's built-in 3D for a 3D game: `Render3DPlugin`, `EngineObject3D`, and the
+  engine-declared global `render3D`. It is part of `dist/littlejs.js` — nothing to import, no
+  CDN, works from `file://`. `examples/3dGame/` is the reference example; the API is the
+  "LittleJS 3D Math", "LittleJS 3D Rendering" and "LittleJS 3D Levels" sections of `reference.md`.
+- Do NOT use three.js. The engine still ships a `ThreeJSPlugin` for people who want it, but this
+  repo has no three.js template or example and nothing here should load three.js. Only reach for
+  it when the user explicitly asks for three.js by name; a request for "3D" means LittleJS 3D.
+  When porting three.js code, read "Coming from three.js" in `reference.md` first.
+- Setup is one line at the top of `gameInit`: `new Render3DPlugin;`. It creates `render3D` and
+  draws the scene automatically each frame. Do NOT declare `render3D` in game code.
+- Keep WebGL enabled. The 3D scene draws on the engine's WebGL canvas, so do NOT call
+  `setGLEnable(false)` (that was three.js advice). 2D draws and the HUD layer over the 3D
+  scene as usual; put HUD text in `gameRenderPost` with `drawTextScreen`.
+- Coordinates: right handed, Y is up, -Z is forward, the ground is the XZ plane. Map 2D input
+  onto it as `vec3(move.x, 0, -move.y)` where `move = keyDirection()`.
+- Objects: `new EngineObject3D(pos3D, mesh, tileInfo, color)`, with `pos3D`, `rotation3D`
+  (pitch, yaw, roll in radians), `scale3D`, `velocity3D`. It extends `EngineObject`, so `update()`,
+  `destroy()`, timers, children and `setCollision()` work the same. The 2D fields (`pos`,
+  `angle`, `angleVelocity`, `mirror`, `drawSize`) do nothing on a 3D object.
+- Meshes come from builders (`buildBox`, `buildSphere`, `buildCylinder`, `buildCone`,
+  `buildGrid`, `buildText3D`, ...) or the shared `render3D.boxMesh` / `sphereMesh` / `planeMesh`
+  scaled with `scale3D`. A `tileInfo` with no mesh draws a billboard sprite. Builders take FULL
+  sizes (diameters), like `drawCircle`; `Light3D` and the collision helpers take a radius.
+- 3D draw calls (`render3D.drawMesh` and friends) only work inside the 3D pass: an object's
+  `render3D()` method, or `render3D.onRenderOpaque` / `onRenderTransparent`. Calling them from
+  `gameRender` asserts.
+- Cameras: `render3D.camera.orbit(target, distance, yaw, pitch)`, `.lookAt(target)`, or
+  `.follow(target, offset, percent)` called every frame from `gameUpdatePost`; or
+  `new CameraControl3D(target, distance)` (orbit with the mouse) / `new FirstPersonCamera3D`.
+- Off by default, turn on what the game needs: `render3D.gravity = vec3(0, -.01, 0)` (objects
+  also need a `mass` to fall), `render3D.shadows = true`, `render3D.setSky(...)`,
+  `render3D.setFog(start, end)`. `postProcessBloom()` after the plugin makes bright things glow.
+- Terrain and levels: `HeightMap` and `VoxelMap` draw themselves and collide with objects that
+  have a mass; `level3DLoad` builds a level from plain JSON, and the debug build's 3D level
+  editor (Esc, then 0) edits it.
 
 Project constraints
 - Indent with 4 spaces, not 2 and not tabs.
@@ -110,12 +127,17 @@ UI and helper modules
   module, not the engine, so the game must load it before calling them.
 - Use `templates/textureGenerator.js` for generated texture atlases; its helpers (e.g.
   `initDefaultAtlas`) require loading that module.
-- Use `templates/tweakables.js` for runtime tweak controls and persistence.
+- Runtime tweak controls are an engine plugin, not a helper module: call `tweak('globalName',
+  {min, max})`, `tweakDivider(label)`, `tweakButton(label, callback)` and `tweakEngineDefaults()`
+  at the end of `gameInit`. There is nothing to load and no `templates/tweakables.js` any more.
+  The panel is debug-build only (Esc opens the debug overlay, 9 toggles the panel, or set
+  `debugTweakables = true`); release builds stub the functions out. Changed values are saved
+  per page and Copy puts them on the clipboard as code.
 
 Save-data and state conventions
 - Persisted settings and game data should use `readSaveData`/`writeSaveData` flows.
 - `saveDataInit('GameName')` comes from `templates/menus.js`, not the engine — only call it in a
-  game that loads that module, at the top of `gameInit` before menu/tweak/medal setup.
+  game that loads that module, at the top of `gameInit` before menu/medal setup.
 - Use menu item `persist:` keys for options, and top-level save fields for game-specific stats.
 
 LittleJS best-practice rules
@@ -164,8 +186,16 @@ Common pitfalls
 - Y-axis is up-positive in world space (falling gravity is negative Y).
 - `drawText` is world-space; `drawTextScreen` is pixel/screen-space.
 - With Box2D, call `await box2dInit()` at top of `gameInit` before bodies.
-- With three.js, `await import(...)` the module at the top of `gameInit` before creating
-  `ThreeJSPlugin` or any `THREE.*` objects.
+- With LittleJS 3D, call `new Render3DPlugin` at the top of `gameInit` before making any
+  `EngineObject3D`, and never `setGLEnable(false)` in a 3D game.
+- In 3D, Y is up and -Z is forward; builders take diameters, lights take a radius; `camera.fov`
+  and `rotation3D` are radians.
+- The engine bundle now declares about 1600 top-level names (`vec3`, `Mesh`, `Shader`,
+  `buildGrid`, `tweak`, `levelEditor`, `render3D`, ...). A game-level `function` with one of
+  those names silently REPLACES the engine's; a `let`/`const`/`class` throws at load. Grep
+  `dist/littlejs.js` for a name before declaring it at top level.
+- The debug build owns some keys while the debug overlay is open (Esc toggles it): 1-8 debug
+  views, 9 the tweakables panel, 0 the level editor, C the 3D free camera, +/- time scale.
 - Do not redefine built-in math shortcuts.
 - Do not write custom WebAudio code when `SoundGenerator` (from `templates/gameFx.js`) is appropriate.
 - Keep `\n` as string escapes in text literals; do not convert to actual line breaks.
@@ -219,7 +249,12 @@ Editing the skills in this repo (read this before touching `skills/`)
   forms work anywhere.
 
 Notes
-- `reference.md` documents major LittleJS API surface.
+- `reference.md` documents major LittleJS API surface. It is a verbatim copy of the engine
+  repo's `REFERENCE.md`; when bumping the engine, copy `dist/*` and that file together.
+- Engine plugins that ship in the bundle and need no helper module: 3D (`render3D`),
+  tweakables, the 2D/3D level editors (`levelEditor`), `ParallaxLayer`, the light system,
+  tweens, scenes, pathfinding, texture sheets, and post-process effects (`postProcessBloom`,
+  `postProcessTV`, ...). Check `reference.md` before hand-rolling any of these.
 - Open each game's `index.html` directly in the browser for testing (no server required).
 - `saveDataInit` (templates/menus.js), `SoundGenerator` (templates/gameFx.js), and
   `initDefaultAtlas` (templates/textureGenerator.js) are helper modules, NOT engine globals —

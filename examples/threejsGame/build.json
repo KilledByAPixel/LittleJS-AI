@@ -1,5 +1,0 @@
-{
-    "title": "LittleJS Three.js Platformer Demo",
-    "name": "threejsGame",
-    "sources": ["game.js"]
-}

@@ -1,5 +1,5 @@
 # The LittleJS engine builds in dist/ are vendored third-party artifacts, not
-# project source. Marking them keeps a ~640KB engine bump out of diffs and out
+# project source. Marking them keeps a ~1.9MB engine bump out of diffs and out
 # of code review, where it is pure noise: nobody should line-read a generated
 # engine build, and a reviewer who tries will drown in it.
 #

@@ -1,12 +1,13 @@
 {
     "name": "littlejs-ai",
-    "version": "1.0.11",
+    "version": "1.1.0",
     "private": true,
     "description": "AI-assisted LittleJS toolkit and Claude Code plugin. Version here tracks .claude-plugin/plugin.json, which is what actually gates plugin updates.",
     "scripts": {
         "build:emptyGame": "node build.mjs emptyGame",
         "build:pong": "node build.mjs pong",
         "build:box2dGame": "node build.mjs box2dGame",
+        "build:3dGame": "node build.mjs 3dGame",
         "build:all": "node build.mjs --all"
     },
     "devDependencies": {

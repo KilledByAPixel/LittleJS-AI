@@ -1,6 +1,6 @@
 # Privacy Policy — LittleJS Claude Code Plugin
 
-*Effective 2026-09-18*
+*Effective 2026-10-02*
 
 ## Summary
 
@@ -18,11 +18,10 @@ The plugin is a set of instruction files (skills), a copy of the LittleJS game e
 
 ## Network activity
 
-The plugin itself makes no network requests. Three things around it do, and each is your action rather than the plugin's:
+The plugin itself makes no network requests. Two things around it do, and each is your action rather than the plugin's:
 
 1. **Installing or updating the plugin** — Claude Code fetches this repository from GitHub.
-2. **Building a 3D game** — a game that uses the three.js template loads three.js from the jsDelivr CDN when the game runs. This is the game you made, and only if you chose 3D.
-3. **The optional zip build** — `npm install` fetches build tools from the npm registry, only if you run it.
+2. **The optional zip build** — `npm install` fetches build tools from the npm registry, only if you run it.
 
 ## Third parties
 

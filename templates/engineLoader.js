@@ -21,7 +21,7 @@
 'use strict';
 {
     const BUILD = 'release';            // shipped default: 'debug' | 'release' | 'min'
-    const VER   = '1780292569262';      // engine cache-bust; bump on engine update
+    const VER   = '1790922152946';      // engine cache-bust; bump on engine update
     const FILES = { debug: 'littlejs.js', release: 'littlejs.release.js', min: 'littlejs.min.js' };
     const KEY   = 'littlejs-build';
 
@@ -64,6 +64,18 @@
                 : (stored && FILES[stored]) ? stored
                 : BUILD;
     document.write('<script src="../dist/' + FILES[build] + '?' + VER + '"><\/script>');
+
+    // Typing #debug (or #release / #min) onto the URL of a page that is already open
+    // only changes the hash, the page does not load again. Reload when the flag asks
+    // for a different build than the one running, so the flag does what it says.
+    addEventListener('hashchange', () => {
+        const flag = (location.hash.match(/\b(debug|release|min)\b/) || [])[1];
+        const wanted = (param && FILES[param]) ? param
+                     : (flag && FILES[flag]) ? flag
+                     : (stored && FILES[stored]) ? stored
+                     : BUILD;
+        if (wanted !== build) location.reload();
+    });
 
     // Centrally apply engine settings every game shared, so they don't have to be
     // repeated in each file: silence the version/build console messages and hide the

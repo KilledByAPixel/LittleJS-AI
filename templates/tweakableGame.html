@@ -2,11 +2,10 @@
 <title>LittleJS Tweakables Template</title>
 <meta charset="utf-8">
 </head>
-<script src="engineLoader.js?1780757258646"></script>
-<script src="gameFx.js?1780757258646"></script>
-<script src="textureGenerator.js?1780757258646"></script>
-<script src="menus.js?1780757258646"></script>
-<script src="tweakables.js?1780757258646"></script>
+<script src="engineLoader.js?1790923667481"></script>
+<script src="gameFx.js?1790923667481"></script>
+<script src="textureGenerator.js?1790923667481"></script>
+<script src="menus.js?1790923667481"></script>
 <script>
 'use strict';
 
@@ -16,7 +15,12 @@ gravity = vec2(0, -.01);
 
 ///////////////////////////////////////////////////////////////////////////////
 // TWEAKABLES TEMPLATE
-// Press \ (backslash) to open the tweakables panel.
+// Uses the engine's built-in tweakables plugin (tweak, tweakDivider,
+// tweakButton, tweakEngineDefaults) — there is no helper module to load.
+// The panel exists in debug builds only: open this page with #debug on the
+// URL. This template shows the panel from the start (debugTweakables); in any
+// game, Esc opens the debug overlay and 9 toggles the panel.
+// Release builds stub the tweak functions out, so the code's values are used.
 // Demonstrates every tweakable type in one small bouncing-ball scene.
 
 // game state — these globals are tweakables
@@ -33,15 +37,24 @@ let trail = [];
 async function gameInit()
 {
     saveDataInit('LittleJS Tweakable Demo');
-    tweakEngineDefaults();
 
+    // show the panel from the start (debug builds only; 9 toggles it while the
+    // debug overlay is open)
+    debugTweakables = true;
+
+    // add values at the end of gameInit, after they are set. the type comes
+    // from the value: number, boolean, Color, Vector2 or Vector3
+    tweakDivider('Ball');
     tweak('ballRadius');                                  // no range -> number input only
     tweak('ballSpeed', {min: 0, max: 10});                // slider
     tweak('bounceCount', {min: 1, max: 20, step: 1});     // integer slider
-    tweak('showTrail');                                   // boolean
-    tweak('ballColor');                                   // color picker
-    tweak('ballPos', {min: -15, max: 15});                // vec2 paired with sliders
-    tweak('gravity.y', {min: -.05, max: 0});              // dotted path with slider
+    tweak('showTrail', {label: 'Trail'});                 // boolean, with a friendlier name
+    tweak('ballColor');                                   // color picker + alpha
+    tweak('ballPos', {min: -15, max: 15});                // vec2, a number per axis
+    tweakButton('Stop Ball', ()=> ballVel = vec2());      // button that calls a function
+
+    // gravity, timeScale, cameraScale and soundVolume under an Engine divider
+    tweakEngineDefaults();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -124,7 +137,8 @@ function gameRender()
 ///////////////////////////////////////////////////////////////////////////////
 function gameRenderPost()
 {
-    drawTextScreen('Press \\ to tweak.  Click to launch the ball.',
+    drawTextScreen(debug ? 'Tweak the panel values.  Click to launch the ball.' :
+        'Add #debug to the URL for the tweak panel.  Click to launch the ball.',
         vec2(mainCanvasSize.x/2, 30), 24,
         hsl(0, 0, 1), 4, hsl(0, 0, 0));
 }

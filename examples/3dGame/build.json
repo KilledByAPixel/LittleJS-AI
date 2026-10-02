@@ -1,0 +1,6 @@
+{
+    "title": "LittleJS 3D Example",
+    "name": "3dGame",
+    "sources": ["game.js"],
+    "data": ["tiles.png"]
+}

@@ -40,11 +40,13 @@ Copy base — pick the closest **example game folder** (under `<plugin>/examples
 | Game uses…                  | Copy this folder | Why                                                  |
 |-----------------------------|------------------|--------------------------------------------------------|
 | Box2D physics               | `box2dGame/`     | Already wires `box2dInit`, the wasm loader, `data`   |
-| three.js 3D rendering       | `threejsGame/`   | Already wires `ThreeJSPlugin` + CDN module import    |
+| 3D (any 3D game)            | `3dGame/`        | LittleJS built-in 3D — `Render3DPlugin`, terrain, lights, cameras |
 | Anything else (the default) | `emptyGame/`     | Canonical non-physics starter                        |
 | A simple arcade reference   | `pong/`          | Complete tiny game to read for structure             |
 
 > These four are the only vetted starters — name them directly, don't glob for others.
+>
+> **3D always means the engine's built-in LittleJS 3D** (`Render3DPlugin`, `EngineObject3D`, the `render3D` global). It is part of `littlejs.js` — no import, no CDN, no extra file. Do not use three.js unless the user asks for three.js by name. `3dGame/` is a full tour of the 3D plugin (a 600-unit island, a forest, orbs, bloom): copy it for the wiring, then cut its scene down to what the game needs. It also ships a small `tiles.png` for its sprites — copy that file too and keep it in `engineInit`'s image list and in `build.json` `data`, or delete all three together if the game draws no sprites.
 
 Pattern source — pick the closest **template** (`<plugin>/templates/*.html`):
 
@@ -52,13 +54,12 @@ Pattern source — pick the closest **template** (`<plugin>/templates/*.html`):
 |----------------------------------------|---------------------------|-----------------------------------------------------|
 | Basic shapes / text / camera (default) | `game.html`               | —                                                   |
 | Box2D physics                          | `box2dGame.html`          | (engine wasm loader, not a template module)         |
-| three.js 3D                            | `threejsGame.html`        | —                                                   |
 | Turn-based grid / board                | `boardGame.html`          | —                                                   |
 | Playing cards                          | `cardsGame.html`          | `textureGenerator.js`, `cards.js`                   |
 | Title / pause / options UI             | `menuGame.html`           | `menus.js`                                          |
 | Procedural sprite atlas                | `textureGame.html`        | `textureGenerator.js`                               |
 | Shape/abstract/neon visuals, or many round entities | `textureGame.html` | `textureGenerator.js` — then apply the **atlas-shape-art** skill |
-| Runtime tuning controls                | `tweakableGame.html`      | `tweakables.js`                                     |
+| Runtime tuning controls                | `tweakableGame.html`      | — (engine plugin, `tweak()`, debug builds only)     |
 | Canvas UI widgets                      | `uiGame.html`             | `menus.js` (+ `uiGame.html` patterns)               |
 | Sound effects + screen shake (any game)| (read `gameFx.js` API)    | `gameFx.js`                                         |
 
@@ -68,14 +69,14 @@ Combine rows freely — `gameFx.js` stacks onto any other choice. Load order mat
 
 Copy from `<plugin>` into the project directory:
 
-1. The chosen starter's files (`index.html`, `game.js`, `build.json`) into the project ROOT (not a subfolder).
+1. The chosen starter's files (`index.html`, `game.js`, `build.json`, plus `tiles.png` for `3dGame`) into the project ROOT (not a subfolder).
 2. `dist/littlejs.js` → `./dist/`. For Box2D also `dist/box2d.wasm.js` + `dist/box2d.wasm.wasm`. Copy ONLY this one engine build now — it is the debug build the page loads while developing, and its asserts and watermark help catch mistakes. Do not copy `littlejs.release.js` at scaffold time; it doubles the vendored size for a file nothing opens yet. It gets copied in later, in **Shipping** below, when the user asks for a zip.
 3. Each helper module chosen in Step 2 → `./templates/` (only the ones needed, not all of them).
 4. `build.mjs` → project root.
 
-**Copying is tool-agnostic, with one hard exception.** Use whatever file mechanism is available — Bash `cp`, PowerShell `Copy-Item`, or reading each file and writing it to the destination; if one mechanism is unavailable or denied, try another. The exception: **the engine files must be copied with a real copy command** (`cp`, `Copy-Item`, or equivalent). NEVER read-and-write `littlejs.js` — it is ~640KB / ~15k lines, and a read truncates silently, producing a corrupt engine that fails with no usable error. Read-and-write is fine for the small helper modules only. If no copy command is available at all, STOP and tell the user, exactly as the CDN rule below says.
+**Copying is tool-agnostic, with one hard exception.** Use whatever file mechanism is available — Bash `cp`, PowerShell `Copy-Item`, or reading each file and writing it to the destination; if one mechanism is unavailable or denied, try another. The exception: **the engine files must be copied with a real copy command** (`cp`, `Copy-Item`, or equivalent). NEVER read-and-write `littlejs.js` — it is ~1.9MB / ~40k lines, and a read truncates silently, producing a corrupt engine that fails with no usable error. Read-and-write is fine for the small helper modules only. If no copy command is available at all, STOP and tell the user, exactly as the CDN rule below says.
 
-**Never substitute a CDN for the LittleJS engine.** The engine must be a local file in the project's `dist/`. If it genuinely cannot be copied by any available mechanism, STOP and tell the user plainly that the scaffold is incomplete and why (e.g. "the copy was denied — approve file copying, or copy `<plugin>/dist/littlejs.js` to `dist/` yourself"). Do not paper over it with a CDN `<script src>`, and do not leave an empty `dist/` beside an `index.html` pointing somewhere else. The one exception is **three.js** for a 3D game, which is loaded from a CDN by design (as `<plugin>/examples/threejsGame/` already does) — that exception covers three.js only, never LittleJS itself.
+**Never substitute a CDN for the LittleJS engine.** The engine must be a local file in the project's `dist/`. If it genuinely cannot be copied by any available mechanism, STOP and tell the user plainly that the scaffold is incomplete and why (e.g. "the copy was denied — approve file copying, or copy `<plugin>/dist/littlejs.js` to `dist/` yourself"). Do not paper over it with a CDN `<script src>`, and do not leave an empty `dist/` beside an `index.html` pointing somewhere else. A 3D game needs no CDN either — LittleJS 3D is inside the engine file.
 
 Then fix up the copies:
 
@@ -101,7 +102,7 @@ Then fix up the copies:
    }
    ```
 
-   Omit `data` unless the game genuinely ships a file alongside the page. These games use no external textures or audio — art is drawn procedurally — so a `data` entry naming an image that does not exist is the one thing that reliably breaks `npm run build`. For Box2D add `"data": ["dist/box2d.wasm.js", "dist/box2d.wasm.wasm"]` (data files are copied into the build by basename).
+   Omit `data` unless the game genuinely ships a file alongside the page. These games use no external textures or audio — art is drawn procedurally — so a `data` entry naming an image that does not exist is the one thing that reliably breaks `npm run build`. For Box2D add `"data": ["dist/box2d.wasm.js", "dist/box2d.wasm.wasm"]` (data files are copied into the build by basename). A game copied from `3dGame` keeps `"data": ["tiles.png"]` for as long as it loads that image.
 
 7. Generate `package.json` (build tooling only — playing the game needs none of it, and you do NOT run `npm install` now):
 
@@ -114,7 +115,7 @@ Then fix up the copies:
    }
    ```
 
-8. **Verify self-containment before declaring done.** Check the byte size of `dist/littlejs.js`, not just its existence: a real engine is several hundred KB, so anything under ~100KB means a truncated or failed copy, not a working engine — stop and report that, don't declare the game ready. Also confirm no `<script src>` in the generated `index.html` points at an external URL — the three.js module import in a 3D game being the only allowed exception. If either check fails, fix it or stop and say so; do not report the game as ready. Say in the reply that the engine is local, e.g. "engine copied to `dist/littlejs.js` — opens from `file://`, no internet needed".
+8. **Verify self-containment before declaring done.** Check the byte size of `dist/littlejs.js`, not just its existence: a real engine is about 1.9MB, so anything under ~1MB means a truncated or failed copy, not a working engine — stop and report that, don't declare the game ready. Also confirm no `<script src>` in the generated `index.html` points at an external URL, and that `game.js` imports nothing from one. If either check fails, fix it or stop and say so; do not report the game as ready. Say in the reply that the engine is local, e.g. "engine copied to `dist/littlejs.js` — opens from `file://`, no internet needed".
 
 9. Write a `.gitignore` at the project root so the optional build doesn't litter the project:
 
@@ -124,7 +125,7 @@ Then fix up the copies:
    node_modules/
    ```
 
-10. Write a `.gitattributes` at the project root. This matters more than it looks: without it the vendored engine lands in the project's first commit as ~640KB of "new code", and every later reviewer — human or AI — treats it as project source that needs reading and verifying. It is a third-party build artifact and nobody should ever line-read it.
+10. Write a `.gitattributes` at the project root. This matters more than it looks: without it the vendored engine lands in the project's first commit as ~1.9MB of "new code", and every later reviewer — human or AI — treats it as project source that needs reading and verifying. It is a third-party build artifact and nobody should ever line-read it.
 
     ```gitattributes
     # Everything below is vendored from the LittleJS plugin, not written here:
@@ -136,7 +137,7 @@ Then fix up the copies:
     #   -diff              git prints "Binary files differ" instead of dumping
     #                      the contents
 
-    # The engine is a ~640KB generated build. Nobody should ever read it, and
+    # The engine is a ~1.9MB generated build. Nobody should ever read it, and
     # nobody edits it, so hide its contents outright.
     dist/** -diff linguist-vendored
 
@@ -155,7 +156,7 @@ Then fix up the copies:
 
     The effect on a first commit: the diff shows your `game.js`, `index.html`, and `build.json` — a few hundred reviewable lines — instead of burying them under thousands of lines of engine, build tooling, and helper modules.
 
-**Never review, verify, or summarize the contents of anything you copied out of the plugin** — the engine, `build.mjs`, or the helper modules. Confirming the engine copied means checking that `dist/littlejs.js` exists and is the right size (step 8): not diffing it, not reading it, not comparing it byte-by-byte against the source. Say "engine vendored (~640KB)" and move on. The game code you wrote is the only thing that deserves review.
+**Never review, verify, or summarize the contents of anything you copied out of the plugin** — the engine, `build.mjs`, or the helper modules. Confirming the engine copied means checking that `dist/littlejs.js` exists and is the right size (step 8): not diffing it, not reading it, not comparing it byte-by-byte against the source. Say "engine vendored (~1.9MB)" and move on. The game code you wrote is the only thing that deserves review.
 
 The project is now self-contained: `index.html` opens and plays immediately. **Stop here — do not run `npm install` or `npm run build` as part of scaffolding.** The deliverable is a playable `index.html`. The zip is a separate, later step (see **Shipping** below) that happens only when the user asks to ship, package, or submit the game. Building at scaffold time wastes minutes, installs tooling the user may never want, and would package the debug engine.
 
@@ -211,11 +212,13 @@ If `build.mjs` warns that it is using the DEBUG engine, that is step 1 not done 
 - **Scaffolding into or writing to `<plugin>`** — it is read-only and wiped on update. Copy OUT of it only.
 - **Basing the project on a template** (`templates/*.html`) — single-file references; copy patterns OUT of them, copy the FOLDER from an example game.
 - **Copying `emptyGame` for a physics game** — copy `box2dGame` so wasm/`data` are already wired.
+- **Reaching for three.js for a 3D game** — copy `3dGame` and use the built-in `render3D`. Don't carry three.js habits over either: keep WebGL on (no `setGLEnable(false)`), Y is up, builders take diameters.
+- **Loading a `tweakables.js` helper** — there isn't one any more; `tweak()` is an engine function.
 - **Listing `littlejs.js` in `build.json` `sources`** — the engine is auto-prepended; only list loose JS.
 - **Forgetting `"engine"` in a standalone `build.json`** — the default path (`../../dist/littlejs.release.js`) only exists in the repo layout, so a standalone project must set `"engine": "dist/littlejs.js"` explicitly.
 - **Copying both engine builds** — vendor only `dist/littlejs.js`. Shipping `littlejs.release.js` too doubles the project's size for a file nothing loads.
 - **Treating the vendored engine as reviewable code** — reading it, diffing it, or verifying it line by line wastes the whole turn on third-party source. `.gitattributes` marks it so tools stop surfacing it; you should ignore it too.
 - **`cards.js` before `textureGenerator.js`** — load order matters.
 - **Leaving `../../` paths in a standalone `index.html`** — every `src` must resolve inside the project folder.
-- **Loading the engine from a CDN** (`unpkg`/`jsdelivr`) because a copy failed — the game then needs internet and `dist/` is left empty. Retry the copy with another mechanism, or stop and tell the user. Only three.js may come from a CDN.
+- **Loading the engine from a CDN** (`unpkg`/`jsdelivr`) because a copy failed — the game then needs internet and `dist/` is left empty. Retry the copy with another mechanism, or stop and tell the user. Nothing a game needs comes from a CDN.
 - **Reporting the game as ready without size-checking `dist/littlejs.js`** — an empty `dist/`, or a truncated engine from a read-and-write "copy", produces a blank page with no error the user can act on.
