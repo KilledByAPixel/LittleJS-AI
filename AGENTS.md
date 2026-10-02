@@ -80,6 +80,14 @@ When scaffolding into `examples/<gameName>/`
   engine-declared global `render3D`. It is part of `dist/littlejs.js` — nothing to import, no
   CDN, works from `file://`. `examples/3dGame/` is the reference example; the API is the
   "LittleJS 3D Math", "LittleJS 3D Rendering" and "LittleJS 3D Levels" sections of `reference.md`.
+- Why built-in: it shares the engine's canvas, physics, objects, input, sound and particles, so
+  everything else in this file still applies to a 3D game, and it has far more ready-made
+  options than the three.js bridge ever exposed here — shape builders and CSG, extruded sprites
+  and 3D text, OBJ/glTF loading, height map and voxel terrain with collision, shadow maps,
+  point/spot/directional lights, fog and sky, materials (specular, normal and emissive maps,
+  reflectivity), custom shaders, instancing, 3D particles and trails, billboards, orbit/chase/
+  first-person cameras, picking and raycasts, 3D sound, JSON levels with prefabs, and a 3D
+  level editor. Grep `reference.md` for the feature before building it by hand.
 - Do NOT use three.js. The engine still ships a `ThreeJSPlugin` for people who want it, but this
   repo has no three.js template or example and nothing here should load three.js. Only reach for
   it when the user explicitly asks for three.js by name; a request for "3D" means LittleJS 3D.
@@ -140,6 +148,11 @@ UI and helper modules
   an old TV in one piece. Only one post-process is active at a time, so combine effects with
   `postProcessEffects` rather than creating two plugins. `postProcess.setShaderCode(code)`
   switches effects while running. Do not hand-write a bloom shader.
+- Common particle effects are one engine call: `particleEffect(name, pos, {scale, hue})`, or
+  `particleEffect3D(name, pos3D, ...)` in 3D. Built-in names: fire, torch, smoke, steam,
+  explosion, sparks, hit, dust, debris, sparkle, magic, heal, poison, portal, rain, snow, leaves,
+  bubbles, fireflies, trail, muzzle, blood, confetti, splash. Reach for a hand-tuned
+  `ParticleEmitter` only when none of these fits.
 
 Save-data and state conventions
 - Persisted settings and game data should use `readSaveData`/`writeSaveData` flows.

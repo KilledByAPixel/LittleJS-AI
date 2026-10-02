@@ -22,6 +22,7 @@ Ships engine **1.23.0** (up from 1.18.30). This is five engine releases at once 
 
 - `examples/3dGame/` — the engine's own 3D example (rolling ball on a terrain island with shadows, a forest, sprites, 3D text, lights, particles, bloom and a free camera), the copy-from starter for 3D games. It ships one small `tiles.png`, listed in its `build.json` `data`.
 - Engine 1.19 through 1.23, all documented in `reference.md`. Beyond 3D and tweakables: 2D and 3D level editors in the debug build (Esc, then 0) with object layers and an extension API; `ParallaxLayer`; custom `Shader`s on any draw; ready-made post-process effects (`postProcessBloom`, `postProcessTV`, scanlines, vignette, ...); particle effect presets; a scene system; audio effects; `engineVariableStep`; touch pinch as the mouse wheel; a loading screen and `engineAddLoad`.
+- Guidance to use the engine's ready-made particle effects (`particleEffect(name, pos)`) and post-process effects before hand-rolling either, and why built-in 3D is preferred: it shares the engine's objects, physics and input and has far more options built in.
 - Conventions for 3D (Y up, -Z forward, diameters vs radii, the 3D pass, WebGL stays on) and a warning that the engine now declares about 1600 top-level names, so a game-level `function` that reuses one silently replaces the engine's.
 
 ### Removed

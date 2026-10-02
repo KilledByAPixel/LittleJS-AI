@@ -43,7 +43,7 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 - `isOverlapping(posA, sizeA, posB, sizeB)` for AABB hit tests; `isOnScreen()` for culling; `screenToWorld()` / `worldToScreen()` for coordinate conversion; `Timer` for timed events.
 - Math: `clamp`, `lerp`, `percent`, `rand`, `randInt`, and `Vector2` methods (`add`, `scale`, `distance`, `normalize`, `rotate`, ...) — don't rewrite them.
 - Sound: `Sound` / `zzfx()` (ZzFX) — never write custom WebAudio code.
-- FX: `ParticleEmitter` for explosions/trails/sparkles; `postProcessBloom()` for glow; `ParallaxLayer` for scrolling backgrounds.
+- FX: `particleEffect(name, pos)` plays a ready-made effect (explosion, sparks, smoke, fire, dust, confetti, ...; `particleEffect3D` in 3D), `ParticleEmitter` for anything custom; `postProcessBloom()` for glow, never a hand-written bloom shader; `ParallaxLayer` for scrolling backgrounds.
 - Live tuning: `tweak('globalName', {min, max})` at the end of `gameInit` adds a value to the engine's tweakables panel (also `tweakDivider`, `tweakButton`, `tweakEngineDefaults`). Debug build only — Esc opens the debug overlay, 9 toggles the panel, or set `debugTweakables = true`; in a release build the calls do nothing. Don't build a custom slider overlay.
 - Tile-based collision: `TileCollisionLayer` and the engine's tile-collision flow; put tile reactions in `collideWithTile(tileData, pos)`. Don't build a custom tile-collision engine.
 - Prefer world-space drawing (`drawTile`, `drawRect`, `drawText`, ...); most draw functions take a `screenSpace` parameter if needed.
