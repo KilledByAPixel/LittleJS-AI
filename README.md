@@ -26,18 +26,19 @@ Make games with LittleJS, a fast open-source HTML5 engine that's simple to build
 
 Then in any empty folder, ask for a game ("make me a breakout game"). Claude scaffolds a complete project — engine included — that opens straight from `file://` with no server and no npm install.
 
-The plugin ships four skills:
+The plugin ships five skills:
 
 - `littlejs-conventions` — engine rules and pitfalls, applied automatically to any LittleJS code
 - `new-littlejs-game` — scaffolds a complete playable game project
 - `littlejs-api` — exact API signature lookup from the bundled reference
 - `atlas-shape-art` — fast recolorable shape sprites from the built-in atlas
+- `custom-level-editor` — turns the engine's built-in 2D and 3D level editors into an editor for your game
 
 Cloning this repo is only needed for browsing the templates by hand — the plugin bundles everything else.
 
 **Developing the plugin itself?** Load it from your working tree with `claude --plugin-dir .` (use forward slashes in the path — backslashes get mangled and silently load nothing), then `/reload-plugins` after edits. Don't `/plugin install` your local copy — that installs a frozen snapshot.
 
-Every user-visible change needs two things in the same commit: a bumped `version` in `.claude-plugin/plugin.json` and an entry in [CHANGELOG.md](CHANGELOG.md). The plugin cache is keyed by version, so without a bump, people who already installed the plugin receive nothing. When bumping the engine in `dist/`, also copy the engine repo's `REFERENCE.md` over `reference.md`.
+Every user-visible change needs two things in the same commit: a bumped `version` in `.claude-plugin/plugin.json` and an entry in [CHANGELOG.md](CHANGELOG.md). The plugin cache is keyed by version, so without a bump, people who already installed the plugin receive nothing. When bumping the engine in `dist/`, also copy the engine repo's `REFERENCE.md` over `reference.md` and its `EDITOR.md` over `skills/custom-level-editor/EDITOR.md`.
 
 For other tools, LittleJS also works great with GitHub Copilot, Codex, and Cursor.
 

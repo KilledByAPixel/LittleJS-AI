@@ -44,6 +44,7 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 - Math: `clamp`, `lerp`, `percent`, `rand`, `randInt`, and `Vector2` methods (`add`, `scale`, `distance`, `normalize`, `rotate`, ...) — don't rewrite them.
 - Sound: `Sound` / `zzfx()` (ZzFX) — never write custom WebAudio code.
 - FX: `particleEffect(name, pos)` plays a ready-made effect (explosion, sparks, smoke, fire, dust, confetti, ...; `particleEffect3D` in 3D), `ParticleEmitter` for anything custom; `postProcessBloom()` for glow, never a hand-written bloom shader; `ParallaxLayer` for scrolling backgrounds.
+- Level editing: the debug build has 2D and 3D level editors (Esc, then 0) that a game customizes through the `levelEditor` global — don't write an editor from scratch; use the **custom-level-editor** skill.
 - Live tuning: `tweak('globalName', {min, max})` at the end of `gameInit` adds a value to the engine's tweakables panel (also `tweakDivider`, `tweakButton`, `tweakEngineDefaults`). Debug build only — Esc opens the debug overlay, 9 toggles the panel, or set `debugTweakables = true`; in a release build the calls do nothing. Don't build a custom slider overlay.
 - Tile-based collision: `TileCollisionLayer` and the engine's tile-collision flow; put tile reactions in `collideWithTile(tileData, pos)`. Don't build a custom tile-collision engine.
 - Prefer world-space drawing (`drawTile`, `drawRect`, `drawText`, ...); most draw functions take a `screenSpace` parameter if needed.

@@ -116,6 +116,10 @@ When scaffolding into `examples/<gameName>/`
 - Off by default, turn on what the game needs: `render3D.gravity = vec3(0, -.01, 0)` (objects
   also need a `mass` to fall), `render3D.shadows = true`, `render3D.setSky(...)`,
   `render3D.setFog(start, end)`. `postProcessBloom()` after the plugin makes bright things glow.
+- Level editors: the debug build has a 2D tile/object editor and a 3D level editor, both
+  customized through the `levelEditor` global (own types, keys, buttons, tools, save). Never
+  write a level editor from scratch; follow `skills/custom-level-editor/SKILL.md`, which bundles
+  the engine's `EDITOR.md`.
 - Terrain and levels: `HeightMap` and `VoxelMap` draw themselves and collide with objects that
   have a mass; `level3DLoad` builds a level from plain JSON, and the debug build's 3D level
   editor (Esc, then 0) edits it.
@@ -232,7 +236,7 @@ This repo is also a Claude Code plugin
 - `.claude-plugin/marketplace.json` uses `"source": "./"`, so the ENTIRE repo is copied into
   every user's plugin cache on install. Anything added at the repo root ships to users.
   There is no ignore mechanism for plugin payload — keep unrelated material in its own repo.
-- The four skills in `skills/` are the plugin's product. They must stay portable:
+- The five skills in `skills/` are the plugin's product. They must stay portable:
   `littlejs-conventions` in particular must contain zero repo paths, since it runs in projects
   that have none of this repo's structure.
 - In a SKILL.md, `${CLAUDE_PLUGIN_ROOT}` does NOT expand — use `${CLAUDE_SKILL_DIR}`, and reach
@@ -270,7 +274,10 @@ Editing the skills in this repo (read this before touching `skills/`)
 
 Notes
 - `reference.md` documents major LittleJS API surface. It is a verbatim copy of the engine
-  repo's `REFERENCE.md`; when bumping the engine, copy `dist/*` and that file together.
+  repo's `REFERENCE.md`; when bumping the engine, copy `dist/*` and that file together, and
+  refresh the engine files bundled in `skills/custom-level-editor/` (`EDITOR.md`, and
+  `examples/editor2D.js` / `editor3D.js`, which are the engine's `levelEditor.js` and
+  `render3dLevelEditor.js` shorts).
 - Engine plugins that ship in the bundle and need no helper module: 3D (`render3D`),
   tweakables, the 2D/3D level editors (`levelEditor`), `ParallaxLayer`, the light system,
   tweens, scenes, pathfinding, texture sheets, and post-process effects (`postProcessBloom`,
