@@ -74,7 +74,7 @@ Copy from `<plugin>` into the project directory:
 3. Each helper module chosen in Step 2 → `./templates/` (only the ones needed, not all of them).
 4. `build.mjs` → project root.
 
-**Copying is tool-agnostic, with one hard exception.** Use whatever file mechanism is available — Bash `cp`, PowerShell `Copy-Item`, or reading each file and writing it to the destination; if one mechanism is unavailable or denied, try another. The exception: **the engine files must be copied with a real copy command** (`cp`, `Copy-Item`, or equivalent). NEVER read-and-write `littlejs.js` — it is ~1.9MB / ~40k lines, and a read truncates silently, producing a corrupt engine that fails with no usable error. Read-and-write is fine for the small helper modules only. If no copy command is available at all, STOP and tell the user, exactly as the CDN rule below says.
+**Copying is tool-agnostic, with one hard exception.** Use whatever file mechanism is available — Bash `cp`, PowerShell `Copy-Item`, or reading each file and writing it to the destination; if one mechanism is unavailable or denied, try another. The exception: **the engine files must be copied with a real copy command** (`cp`, `Copy-Item`, or equivalent). NEVER read-and-write `littlejs.js` — it is ~2.1MB / ~44k lines, and a read truncates silently, producing a corrupt engine that fails with no usable error. Read-and-write is fine for the small helper modules only. If no copy command is available at all, STOP and tell the user, exactly as the CDN rule below says.
 
 **Never substitute a CDN for the LittleJS engine.** The engine must be a local file in the project's `dist/`. If it genuinely cannot be copied by any available mechanism, STOP and tell the user plainly that the scaffold is incomplete and why (e.g. "the copy was denied — approve file copying, or copy `<plugin>/dist/littlejs.js` to `dist/` yourself"). Do not paper over it with a CDN `<script src>`, and do not leave an empty `dist/` beside an `index.html` pointing somewhere else. A 3D game needs no CDN either — LittleJS 3D is inside the engine file.
 
@@ -115,7 +115,7 @@ Then fix up the copies:
    }
    ```
 
-8. **Verify self-containment before declaring done.** Check the byte size of `dist/littlejs.js`, not just its existence: a real engine is about 1.9MB, so anything under ~1MB means a truncated or failed copy, not a working engine — stop and report that, don't declare the game ready. Also confirm no `<script src>` in the generated `index.html` points at an external URL, and that `game.js` imports nothing from one. If either check fails, fix it or stop and say so; do not report the game as ready. Say in the reply that the engine is local, e.g. "engine copied to `dist/littlejs.js` — opens from `file://`, no internet needed".
+8. **Verify self-containment before declaring done.** Check the byte size of `dist/littlejs.js`, not just its existence: a real engine is about 2.1MB, so anything under ~1MB means a truncated or failed copy, not a working engine — stop and report that, don't declare the game ready. Also confirm no `<script src>` in the generated `index.html` points at an external URL, and that `game.js` imports nothing from one. If either check fails, fix it or stop and say so; do not report the game as ready. Say in the reply that the engine is local, e.g. "engine copied to `dist/littlejs.js` — opens from `file://`, no internet needed".
 
 9. Write a `.gitignore` at the project root so the optional build doesn't litter the project:
 
@@ -125,7 +125,7 @@ Then fix up the copies:
    node_modules/
    ```
 
-10. Write a `.gitattributes` at the project root. This matters more than it looks: without it the vendored engine lands in the project's first commit as ~1.9MB of "new code", and every later reviewer — human or AI — treats it as project source that needs reading and verifying. It is a third-party build artifact and nobody should ever line-read it.
+10. Write a `.gitattributes` at the project root. This matters more than it looks: without it the vendored engine lands in the project's first commit as ~2.1MB of "new code", and every later reviewer — human or AI — treats it as project source that needs reading and verifying. It is a third-party build artifact and nobody should ever line-read it.
 
     ```gitattributes
     # Everything below is vendored from the LittleJS plugin, not written here:
@@ -137,7 +137,7 @@ Then fix up the copies:
     #   -diff              git prints "Binary files differ" instead of dumping
     #                      the contents
 
-    # The engine is a ~1.9MB generated build. Nobody should ever read it, and
+    # The engine is a ~2.1MB generated build. Nobody should ever read it, and
     # nobody edits it, so hide its contents outright.
     dist/** -diff linguist-vendored
 
@@ -156,7 +156,7 @@ Then fix up the copies:
 
     The effect on a first commit: the diff shows your `game.js`, `index.html`, and `build.json` — a few hundred reviewable lines — instead of burying them under thousands of lines of engine, build tooling, and helper modules.
 
-**Never review, verify, or summarize the contents of anything you copied out of the plugin** — the engine, `build.mjs`, or the helper modules. Confirming the engine copied means checking that `dist/littlejs.js` exists and is the right size (step 8): not diffing it, not reading it, not comparing it byte-by-byte against the source. Say "engine vendored (~1.9MB)" and move on. The game code you wrote is the only thing that deserves review.
+**Never review, verify, or summarize the contents of anything you copied out of the plugin** — the engine, `build.mjs`, or the helper modules. Confirming the engine copied means checking that `dist/littlejs.js` exists and is the right size (step 8): not diffing it, not reading it, not comparing it byte-by-byte against the source. Say "engine vendored (~2.1MB)" and move on. The game code you wrote is the only thing that deserves review.
 
 The project is now self-contained: `index.html` opens and plays immediately. **Stop here — do not run `npm install` or `npm run build` as part of scaffolding.** The deliverable is a playable `index.html`. The zip is a separate, later step (see **Shipping** below) that happens only when the user asks to ship, package, or submit the game. Building at scaffold time wastes minutes, installs tooling the user may never want, and would package the debug engine.
 

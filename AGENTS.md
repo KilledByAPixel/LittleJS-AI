@@ -185,6 +185,9 @@ Tile collision rule
 - For tile-based collision, use `TileCollisionLayer` and engine tile collision flow.
 - Do not build custom tile-collision engines when LittleJS tile collision fits.
 - Put tile reactions in `collideWithTile(tileData, pos)`.
+- One-way platforms (jump up through, land on) are built in: `layer.setOneWay(tile, vec2(0,1))` for
+  tiles, `obj.oneWay` for solid objects. Fast small objects (bullets) set `obj.isBullet = true` so
+  they never tunnel through tiles; do not hand-roll a raycast for either.
 
 Scratch files / temp
 - Put throwaway scripts and temporary artifacts in `local/temp/`.
@@ -218,8 +221,8 @@ Common pitfalls
   `buildGrid`, `tweak`, `levelEditor`, `render3D`, ...). A game-level `function` with one of
   those names silently REPLACES the engine's; a `let`/`const`/`class` throws at load. Grep
   `dist/littlejs.js` for a name before declaring it at top level.
-- The debug build owns some keys while the debug overlay is open (Esc toggles it): 1-8 debug
-  views, 9 the tweakables panel, 0 the level editor, C the 3D free camera, +/- time scale.
+- The debug build owns some keys while the debug overlay is open (Esc toggles it): 1-7 debug
+  views (7 a screenshot), 9 the tweakables panel, 0 the level editor, C the 3D free camera, +/- time scale.
 - Do not redefine built-in math shortcuts.
 - Do not write custom WebAudio code when `SoundGenerator` (from `templates/gameFx.js`) is appropriate.
 - Keep `\n` as string escapes in text literals; do not convert to actual line breaks.

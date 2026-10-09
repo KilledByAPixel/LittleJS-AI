@@ -22,8 +22,8 @@ is run by `test/editorCustom.test.mjs` straight from this file, so it works as w
    and release are ended for you.
 5. **A type is named by a string**, never by its class, because minified builds rename classes.
 6. **Use `levelEditor.edit3D` and `levelEditor.edit2D` only inside what the editor calls**: a key's action, a
-   button's click, a tool's callbacks, `onUpdate`, `onDraw`. In a release build they are undefined, and none of
-   those are ever called.
+   button's click, a tool's callbacks, `onUpdate`, `onDraw`. In a release build none of those are ever called;
+   `edit2D` is there and changes nothing, and `edit3D` is undefined, as it is in a game without the 3D plugins.
 7. **`levelEditor.is3D`** says which editor is in use, for a game that has both kinds of level.
 
 ## The hooks
@@ -341,6 +341,8 @@ after a reload.
 
 ## Where the working examples are
 
+- `examples/shorts/customEditor.js`: a 2D editor class of a game's own, with a tool that lays out rooms by a
+  drag, a button, a key and an overlay drawn in `onDraw`.
 - `examples/shorts/render3dLevelEditor.js`: a 3D level with its own Coin and PlayerStart types and both hooks.
 - `examples/shorts/render3dPrefab.js`: the 3D editor used as a prefab maker.
 - `examples/shorts/levelEditor.js` and `examples/platformer/`: the 2D editor with a game's own types, palette

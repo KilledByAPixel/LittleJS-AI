@@ -6,6 +6,17 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-08
+
+Ships engine **1.27.0** (up from 1.23.1).
+
+### Changed
+
+- Engine 1.27.0, four releases of new features: one-way platforms for tiles (`layer.setOneWay`) and solid objects (`oneWay`), `isBullet` so fast small objects never tunnel through tiles, 2D light cones and gels, a directional sun for the 2D light system, 3D environment maps and sky boxes, glTF skinned animation, tilt-shift and depth-of-field post effects, Wavedash achievements, leaderboards, stats and cloud saves, Newgrounds cloud saves, much faster object collision with many solids, and clearer errors for common mistakes. `littlejs.js` is now about 2.1MB.
+- Removed by the engine: the debug overlay's video capture (key 8, `debugVideoCapture*`), `collideTiles` (use `collideLevel`), and the weld joint's `setSpringDampingRatio` (use `setDampingRatio`). Nothing in the plugin's templates or examples used them.
+- AGENTS.md and the skills follow: one-way platforms and `isBullet` are named so they are not hand-rolled, the debug keys list drops 8, `collideTiles` is called removed rather than deprecated, and the new-game skill's engine size check expects about 2.1MB.
+- The `custom-level-editor` skill's bundled `EDITOR.md` and editor examples are refreshed from the engine.
+
 ## [1.2.1] - 2026-10-02
 
 Ships engine **1.23.1** (up from 1.23.0).

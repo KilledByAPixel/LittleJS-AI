@@ -61,7 +61,7 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 - On a 3D object the 2D fields `pos`, `angle`, `angleVelocity`, `mirror` and `drawSize` do nothing; use `pos3D`, `rotation3D`, `angleVelocity3D`, `scale3D`.
 - `drawText` is world-space (size ~3 is normal); `drawTextScreen` is pixel/screen-space (size ~80 is normal). Don't mix them up.
 - Spin uses `angleVelocity` / `angleDamping` — the standard-sounding `angularVelocity` is a silent no-op.
-- Tile collision is the `collideLevel` flag (third argument of `setCollision`); the old name `collideTiles` is deprecated.
+- Tile collision is the `collideLevel` flag (third argument of `setCollision`); the old name `collideTiles` was removed and does nothing.
 - Bounciness is `restitution` (0 to 1). Older LittleJS called it `elasticity`; that property no longer exists and setting it does nothing.
 - To handle a collision yourself, return `false` from `collideWithObject(other)` — that skips the engine's position/velocity resolution for the pair (how a paddle steers a ball). Returning `true`, the default, lets the engine resolve it.
 - The canvas can be any aspect ratio. To keep a fixed playfield fully visible, set the scale each frame in `gameUpdatePost`: `setCameraScale(min(mainCanvasSize.x / viewW, mainCanvasSize.y / viewH))`.
