@@ -9,7 +9,8 @@ examples/*/*.zip
 local/
 temp/
 docs/
-.github/
+.github/*
+!.github/dependabot.yml
 .vscode/
 
 # personal Claude Code settings (machine-specific)

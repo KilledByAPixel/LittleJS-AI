@@ -6,6 +6,16 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-14
+
+### Changed
+
+- `build.mjs` runs terser and bestzip without a shell. It used to pass file names inside an `npx` command string; it now runs each tool's script with `node` and passes the names as separate arguments, so a file name can never be read as a command. Builds produce the same output. If terser or bestzip is not installed, the build now stops and says to run `npm install`, where `npx` used to try to download it.
+
+### Added
+
+- `SECURITY.md`, which explains how to report a vulnerability privately, and a Dependabot config that keeps the build tools up to date.
+
 ## [1.3.0] - 2026-10-08
 
 Ships engine **1.27.0** (up from 1.23.1).

@@ -1,0 +1,7 @@
+version: 2
+updates:
+    # build tools only (terser, bestzip); nothing here ships in a game
+    - package-ecosystem: npm
+      directory: /
+      schedule:
+          interval: monthly

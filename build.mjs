@@ -31,10 +31,28 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXAMPLES_DIR = join(__dirname, 'examples');
+
+// run an installed tool's bin script with node directly: no shell, and the
+// arguments are passed as an array so file names are never parsed as commands
+const require = createRequire(import.meta.url);
+function runTool(binPath, args, options)
+{
+    let bin;
+    try
+    {
+        bin = require.resolve(binPath);
+    }
+    catch
+    {
+        throw new Error(`${binPath.split('/')[0]} is not installed; run "npm install" beside build.mjs first`);
+    }
+    execFileSync(process.execPath, [bin, ...args], {stdio: 'inherit', ...options});
+}
 
 function fail(message)
 {
@@ -258,8 +276,7 @@ function buildGameDir(gameDir, gameName)
     {
         console.log('Zipping...');
         const sources = ['index.html', ...dataFiles.map(f => basename(f))];
-        execSync(`npx bestzip "../${name}.zip" ${sources.map(f => `"${f}"`).join(' ')}`,
-            {cwd: BUILD_FOLDER, stdio: 'inherit'});
+        runTool('bestzip/bin/cli.js', [ZIP_PATH, ...sources], {cwd: BUILD_FOLDER});
         console.log(`Size of ${name}.zip: ${fs.statSync(ZIP_PATH).size} bytes`);
     }
 
@@ -299,7 +316,7 @@ function Build(outputFile, files=[], buildSteps=[])
 function minifyBuildStep(filename)
 {
     console.log('Running terser...');
-    execSync(`npx terser "${filename}" -c -m -o "${filename}"`, {stdio: 'inherit'});
+    runTool('terser/bin/terser', [filename, '-c', '-m', '-o', filename]);
 }
 
 // normalize a <script src> basename for matching against build inputs:
