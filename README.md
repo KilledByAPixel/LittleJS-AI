@@ -79,6 +79,7 @@ Single-file references to copy patterns from when adding a feature — not full 
 
 - [game.html](templates/game.html) — minimal scaffold (shapes, text, camera)
 - [boardGame.html](templates/boardGame.html) — grid-based games (chess, sokoban, match-3)
+- [platformerGame.html](templates/platformerGame.html) — tile-collision platformer with one-way ledges and a follow camera
 - [menuGame.html](templates/menuGame.html) — title, pause, options, medals, HUD toolbar
 - [box2dGame.html](templates/box2dGame.html) — Box2D physics (pool, plinko, pinball)
 - [textureGame.html](templates/textureGame.html) — procedural sprite atlases from canvas draw ops

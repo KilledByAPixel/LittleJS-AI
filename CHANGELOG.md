@@ -6,6 +6,12 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-03
+
+### Added
+
+- `templates/platformerGame.html`, a platformer pattern reference with no image files. The level is built in code on a `TileCollisionLayer`, which draws its own cells as colored blocks, and has one-way ledges (`layer.setOneWay`), a little grace time to jump after leaving a ledge, and pits that send you back to the start. The engine's `FollowCamera` follows the player with a dead zone, look-ahead and level bounds, and a hard landing shakes the view with `cameraShake`. AGENTS.md, the README and the new-game skill's template table list it for platformers and side-scrollers.
+
 ## [1.4.0] - 2026-11-03
 
 Ships engine **1.29.1** (up from 1.27.0).

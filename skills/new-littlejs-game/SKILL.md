@@ -55,6 +55,7 @@ Pattern source — pick the closest **template** (`<plugin>/templates/*.html`):
 | Basic shapes / text / camera (default) | `game.html`               | —                                                   |
 | Box2D physics                          | `box2dGame.html`          | (engine wasm loader, not a template module)         |
 | Turn-based grid / board                | `boardGame.html`          | —                                                   |
+| Platformer / side-scroller             | `platformerGame.html`     | — (tile collision, `FollowCamera`, `cameraShake`)   |
 | Playing cards                          | `cardsGame.html`          | `textureGenerator.js`, `cards.js`                   |
 | Title / pause / options UI             | `menuGame.html`           | `menus.js`                                          |
 | Procedural sprite atlas                | `textureGame.html`        | `textureGenerator.js`                               |

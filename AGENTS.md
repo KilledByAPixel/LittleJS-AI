@@ -54,6 +54,9 @@ Template selection for new games
   the folder game's `game.js`; do not base a new game's structure on a single-file template.
 - Use `templates/game.html` for the default non-physics scaffold (shapes, text, camera).
 - Use `templates/boardGame.html` for turn-based grid/board games.
+- Use `templates/platformerGame.html` for side-scrollers and platformers: a level built on a
+  `TileCollisionLayer`, one-way platforms, a `FollowCamera` with look-ahead and level bounds, and
+  `cameraShake` on hard landings.
 - Use `templates/box2dGame.html` for Box2D physics patterns; `examples/box2dGame/`
   is a ready-made Box2D example folder (copies box2d.wasm.js/.wasm via `data`).
 - Use `examples/3dGame/` for 3D games. It is the engine's own LittleJS 3D example (terrain,

@@ -1,0 +1,153 @@
+<!DOCTYPE html><head>
+<title>LittleJS Platformer Template</title>
+<meta charset="utf-8">
+</head>
+<script src="engineLoader.js?1790925797986"></script>
+<script>
+'use strict';
+
+///////////////////////////////////////////////////////////////////////////////
+// PLATFORMER TEMPLATE
+// - A level built in code on a TileCollisionLayer, which draws its own cells
+//   as flat colored blocks when the game has no image
+// - One-way platforms with layer.setOneWay: jump up through, land on top
+// - The engine's FollowCamera: smoothing, a dead zone, look ahead and bounds
+// - cameraShake on a hard landing
+// - Arrows / WASD move, Space or Up jumps
+
+// engine settings (engine globals - assign, do not redeclare)
+gravity = vec2(0, -.012);
+cameraScale = 32;
+canvasClearColor = hsl(.58, .5, .75);
+
+const levelSize = vec2(160, 30);
+const tileSolid = 1, tileOneWay = 2; // tile indices stored in the layer's data
+let level, player, camera;
+
+///////////////////////////////////////////////////////////////////////////////
+class Player extends EngineObject
+{
+    constructor(pos)
+    {
+        super(pos, vec2(.8, 1.2), undefined, 0, hsl(.13, 1, .55));
+        this.setCollision(); // collide with solid objects and the level
+        this.groundTimer = new Timer; // a moment of grace to jump after leaving a ledge
+        this.fallSpeed = 0;           // fastest fall since last on the ground
+        this.jumpHeld = false;        // jump input last frame, so holding it jumps once
+    }
+
+    update()
+    {
+        // run, with a little drag so it slows when the keys are let go
+        const move = keyDirection();
+        this.velocity.x = lerp(this.velocity.x, move.x * .2, this.groundObject ? .3 : .1);
+
+        // the engine sets groundObject while standing on a tile or a solid object
+        if (this.groundObject)
+        {
+            // a hard landing shakes the view up and down
+            if (this.fallSpeed < -.4) // a plain jump lands at about -.35
+                cameraShake(min(1, -this.fallSpeed), vec2(0, 1));
+            this.fallSpeed = 0;
+            this.groundTimer.set(.1);
+        }
+        else
+            this.fallSpeed = min(this.fallSpeed, this.velocity.y);
+
+        // jump on a fresh press of Space, Up/W or gamepad A, not by holding it
+        const jump = keyIsDown('Space') || move.y > 0 || gamepadIsDown(0);
+        if (jump && !this.jumpHeld && this.groundTimer.active())
+        {
+            this.velocity.y = .35;
+            this.groundTimer.unset();
+        }
+        this.jumpHeld = jump;
+
+        // fell out of the level: back to the start, the camera jumps with it
+        if (this.pos.y < -5)
+        {
+            this.pos = vec2(4, 12);
+            this.velocity = vec2();
+            camera.snap();
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function setTile(pos, tile, color)
+{
+    level.setData(pos, new TileLayerData(tile, 0, false, color));
+    level.setCollisionData(pos, 1);
+}
+
+function buildLevel()
+{
+    level = new TileCollisionLayer(vec2(), levelSize);
+    level.setOneWay(tileOneWay, vec2(0, 1)); // passed through moving up
+
+    const random = new RandomGenerator(7); // the same level every time
+    let height = 4, ledgeHeight = 0;
+    for (let x = 0; x < levelSize.x; ++x)
+    {
+        // walls at both ends keep the player in
+        const isWall = x == 0 || x == levelSize.x - 1;
+
+        // the ground wanders up and down, with an occasional pit away from the start
+        if (x > 10 && x % 6 == 0)
+            height = clamp(height + random.int(-2, 3), 2, 9);
+        const isPit = x > 12 && x < levelSize.x - 6 && x % 23 < 3;
+
+        const top = isWall ? levelSize.y : isPit ? 0 : height;
+        for (let y = 0; y < top; ++y)
+        {
+            const grass = y == top - 1 && !isWall;
+            const color = grass ? hsl(.3, .6, .45) : hsl(.08, .4, .3 + random.float(.05));
+            setTile(vec2(x, y), tileSolid, color);
+        }
+
+        // a flat one-way ledge floats above every stretch of ground,
+        // its height set where it starts so the ground under it can change
+        if (x % 14 == 4)
+            ledgeHeight = height + 4;
+        if (!isWall && x % 14 >= 4 && x % 14 < 9)
+            setTile(vec2(x, ledgeHeight), tileOneWay, hsl(.55, .6, .6));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameInit()
+{
+    buildLevel();
+    player = new Player(vec2(4, 12));
+
+    // the view follows the player after objects move, so it never lags a frame
+    camera = new FollowCamera(player, .15); // target, smoothing in seconds
+    camera.deadZone  = vec2(1, 3);          // move this much before the view does
+    camera.lookAhead = vec2(3, 0);          // show more of the way the player runs
+    camera.boundsMin = vec2();              // never show past the level's sides or bottom
+    camera.boundsMax = vec2(levelSize.x, Infinity);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdate() {}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameUpdatePost() {}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRender()
+{
+    // a sky gradient behind everything, always filling the view
+    drawRectGradient(cameraPos, getCameraSize(), hsl(.6, .6, .55), hsl(.55, .5, .85));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+function gameRenderPost()
+{
+    drawTextScreen('Arrows move, Space jumps', vec2(mainCanvasSize.x/2, 50), 32,
+        WHITE, 4, BLACK);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
+</script></body></html>
