@@ -112,7 +112,10 @@ When scaffolding into `examples/<gameName>/`
   `gameRender` asserts.
 - Cameras: `render3D.camera.orbit(target, distance, yaw, pitch)`, `.lookAt(target)`, or
   `.follow(target, offset, percent)` called every frame from `gameUpdatePost`; or
-  `new CameraControl3D(target, distance)` (orbit with the mouse) / `new FirstPersonCamera3D`.
+  `new CameraControl3D(target, distance)` (orbit with the mouse), `new ThirdPersonCamera3D(target)`
+  (swings behind a moving player, pulled in by walls) or `new FirstPersonCamera3D` (mouse or
+  gamepad look). These camera objects set `render3D.camera` in `updateCamera()`, after every
+  object has moved; the newest one made drives the view.
 - Off by default, turn on what the game needs: `render3D.gravity = vec3(0, -.01, 0)` (objects
   also need a `mass` to fall), `render3D.shadows = true`, `render3D.setSky(...)`,
   `render3D.setFog(start, end)`. `postProcessBloom()` after the plugin makes bright things glow.
@@ -135,8 +138,15 @@ Project constraints
 UI and helper modules
 - Use `templates/menus.js` for front-end menu UI (title/pause/options/dialogs/toolbars).
 - Do not hand-roll DOM menu systems when `menus.js` already covers it.
-- Use `SoundGenerator` and screen-shake helpers from `templates/gameFx.js` — they live in that
-  module, not the engine, so the game must load it before calling them.
+- Use `SoundGenerator` from `templates/gameFx.js`. It lives in that module, not the engine, so
+  the game must load it before calling it.
+- Screen shake is an engine function: `cameraShake(amount, direction)` adds a shake that fades on
+  its own (amount up to 1, `vec2(0, 1)` shakes only up and down), in 2D and 3D, without moving the
+  game's own `cameraPos`. Tune it with `setCameraShakeDistance` / `Angle` / `Decay`; for an options
+  toggle, `setCameraShakeDistance(on ? .5 : 0)` plus `setCameraShakeAngle(on ? .05 : 0)`.
+  gameFx's old `addScreenShake` is gone; `templates/menuGame.html` shows the toggle wired up.
+- A 2D camera that follows the player is the engine's `FollowCamera` (`new FollowCamera(player)`,
+  with smoothing, `deadZone`, `lookAhead` and level bounds). Do not lerp `cameraPos` by hand.
 - Use `templates/textureGenerator.js` for generated texture atlases; its helpers (e.g.
   `initDefaultAtlas`) require loading that module.
 - Runtime tweak controls are an engine plugin, not a helper module: call `tweak('globalName',
@@ -173,6 +183,7 @@ LittleJS best-practice rules
   - `gamepadStick()` for analog movement/aim.
   - `isOnScreen` for culling.
   - `Timer` for timed events.
+  - `randPick(items)` / `randWeighted(items, weights)` for random choices from a list.
 - Avoid re-implementing math/vector helpers that already exist in LittleJS globals and `Vector2` methods.
 - Prefer world-space drawing APIs.
 
@@ -184,10 +195,15 @@ Directional input rule
 Tile collision rule
 - For tile-based collision, use `TileCollisionLayer` and engine tile collision flow.
 - Do not build custom tile-collision engines when LittleJS tile collision fits.
-- Put tile reactions in `collideWithTile(tileData, pos)`.
+- Put tile reactions in `collideWithTile(tileData, pos, isHit)`. `isHit` is true for a real hit and
+  false while the physics only probes which side was hit, so act once on `isHit`.
 - One-way platforms (jump up through, land on) are built in: `layer.setOneWay(tile, vec2(0,1))` for
   tiles, `obj.oneWay` for solid objects. Fast small objects (bullets) set `obj.isBullet = true` so
-  they never tunnel through tiles; do not hand-roll a raycast for either.
+  they never tunnel through tiles; do not hand-roll a raycast for either. Box2D objects take
+  `oneWay` too, `setSurfaceSpeed(speed)` makes a conveyor, and `preSolve(...)` with
+  `contact.enabled = false` drops through a platform.
+- A tile layer draws its changed cells by itself: `setData(pos, data)` / `clearData(pos)` with no
+  `redraw` argument shows on the next render, so do not call `redraw()` after editing cells.
 
 Scratch files / temp
 - Put throwaway scripts and temporary artifacts in `local/temp/`.
@@ -283,8 +299,9 @@ Notes
   `render3dLevelEditor.js` shorts).
 - Engine plugins that ship in the bundle and need no helper module: 3D (`render3D`),
   tweakables, the 2D/3D level editors (`levelEditor`), `ParallaxLayer`, the light system,
-  tweens, scenes, pathfinding, texture sheets, and post-process effects (`postProcessBloom`,
-  `postProcessTV`, ...). Check `reference.md` before hand-rolling any of these.
+  tweens, scenes, pathfinding, texture sheets, cameras (`FollowCamera`, `ThirdPersonCamera3D`,
+  `cameraShake`), and post-process effects (`postProcessBloom`, `postProcessTV`, ...). Check
+  `reference.md` before hand-rolling any of these.
 - Open each game's `index.html` directly in the browser for testing (no server required).
 - `saveDataInit` (templates/menus.js), `SoundGenerator` (templates/gameFx.js), and
   `initDefaultAtlas` (templates/textureGenerator.js) are helper modules, NOT engine globals —

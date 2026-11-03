@@ -149,55 +149,11 @@ class SoundGenerator extends Sound
     }
 }
 
-// ============================================================================
-// Screen shake — per-frame nudge on cameraPos that is removed again next frame,
-// so it never accumulates into a permanent offset. Decays linearly to zero.
-// Stacks by keeping whichever active shake has the larger (amount × remaining)
-// "energy" — strongest event wins, weaker is discarded.
-//
-// Registered as a single engine plugin at file-scope. Future game-feel
-// helpers (hit-stop, flashes, etc.) can slot into gameFxUpdate / gameFxRender
-// below without games needing additional engineAddPlugin calls.
-// ============================================================================
-
-let _shakeAmount    = 0;     // peak amplitude in world units
-let _shakeRemaining = 0;     // seconds left
-let _shakeDuration  = 1;     // original duration of the active event
-let _shakeEnabled   = true;
-let _shakeOffset    = vec2(); // nudge currently applied to cameraPos (undone next frame)
-
-function addScreenShake(amount, duration)
-{
-    if (!(amount > 0) || !(duration > 0)) return;
-    const newEnergy = amount * duration;
-    const curEnergy = _shakeAmount * _shakeRemaining;
-    if (newEnergy <= curEnergy) return;
-    _shakeAmount    = amount;
-    _shakeRemaining = duration;
-    _shakeDuration  = duration;
-}
-
-function setScreenShakeEnabled(b) { _shakeEnabled = !!b; }
-function isScreenShakeEnabled()   { return _shakeEnabled; }
-
-function _shakeUpdate()
-{
-    // undo last frame's nudge first, so the camera always returns to where the
-    // game put it and shake can never drift it (this used to be a random walk)
-    cameraPos = cameraPos.subtract(_shakeOffset);
-    _shakeOffset = vec2();
-    if (_shakeRemaining <= 0) return;
-    _shakeRemaining -= timeDelta;
-    if (_shakeRemaining <= 0)
-    {
-        _shakeAmount = 0;
-        return;
-    }
-    if (!_shakeEnabled) return;
-    const a = _shakeAmount * (_shakeRemaining / _shakeDuration);
-    _shakeOffset = vec2(rand(-a, a), rand(-a, a));
-    cameraPos = cameraPos.add(_shakeOffset);
-}
+// Screen shake now lives in the LittleJS engine: cameraShake(amount, direction)
+// adds a shake that fades on its own and never moves the game's cameraPos. The
+// old addScreenShake / setScreenShakeEnabled / isScreenShakeEnabled helpers were
+// removed; an options toggle sets setCameraShakeDistance and setCameraShakeAngle
+// to 0 to turn it off.
 
 // Active input device (lastInputDevice + usingMouseInput/usingKeyboardInput/
 // usingGamepadInput) now lives in the LittleJS engine — this helper was promoted
@@ -356,16 +312,3 @@ function clearParticles()
     for (const o of engineObjects)
         if (o instanceof ParticleEmitter) o.destroy(true);
 }
-
-function gameFxUpdate()
-{
-    _shakeUpdate();
-    // future feel-helpers slot in here
-}
-
-function gameFxRender()
-{
-    // reserved for future render-phase effects
-}
-
-engineAddPlugin(gameFxUpdate, gameFxRender);

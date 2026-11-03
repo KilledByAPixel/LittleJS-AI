@@ -41,12 +41,13 @@ Engine globals share top-level scope with game scripts. A top-level `let`/`const
 - `keyDirection()` for ALL arrow/WASD directional input (returns a vec2) — never write manual arrow-key OR chains. WASD is already included (`inputWASDEmulateDirection` defaults to true), so don't wire it by hand. `keyIsDown()` is for non-directional actions (jump, interact).
 - `gamepadStick(0)` for analog movement/aim; `mousePos` (world-space), `mouseWasPressed(0)` / `mouseIsDown(0)` for the mouse.
 - `isOverlapping(posA, sizeA, posB, sizeB)` for AABB hit tests; `isOnScreen()` for culling; `screenToWorld()` / `worldToScreen()` for coordinate conversion; `Timer` for timed events.
-- Math: `clamp`, `lerp`, `percent`, `rand`, `randInt`, and `Vector2` methods (`add`, `scale`, `distance`, `normalize`, `rotate`, ...) — don't rewrite them.
+- Camera: `new FollowCamera(player)` follows a target in 2D (smoothing, `deadZone`, `lookAhead`, level bounds) — don't lerp `cameraPos` by hand. `cameraShake(amount, direction)` is the screen shake (amount up to 1, fades on its own, never moves the game's `cameraPos`). In 3D, `ThirdPersonCamera3D`, `CameraControl3D` and `FirstPersonCamera3D` drive `render3D.camera`.
+- Math: `clamp`, `lerp`, `percent`, `rand`, `randInt`, `randPick(items)`, `randWeighted(items, weights)`, and `Vector2` methods (`add`, `scale`, `distance`, `normalize`, `rotate`, ...) — don't rewrite them.
 - Sound: `Sound` / `zzfx()` (ZzFX) — never write custom WebAudio code.
 - FX: `particleEffect(name, pos)` plays a ready-made effect (explosion, sparks, smoke, fire, dust, confetti, ...; `particleEffect3D` in 3D), `ParticleEmitter` for anything custom; `postProcessBloom()` for glow, never a hand-written bloom shader; `ParallaxLayer` for scrolling backgrounds.
 - Level editing: the debug build has 2D and 3D level editors (Esc, then 0) that a game customizes through the `levelEditor` global — don't write an editor from scratch; use the **custom-level-editor** skill.
 - Live tuning: `tweak('globalName', {min, max})` at the end of `gameInit` adds a value to the engine's tweakables panel (also `tweakDivider`, `tweakButton`, `tweakEngineDefaults`). Debug build only — Esc opens the debug overlay, 9 toggles the panel, or set `debugTweakables = true`; in a release build the calls do nothing. Don't build a custom slider overlay.
-- Tile-based collision: `TileCollisionLayer` and the engine's tile-collision flow; put tile reactions in `collideWithTile(tileData, pos)`. Don't build a custom tile-collision engine.
+- Tile-based collision: `TileCollisionLayer` and the engine's tile-collision flow; put tile reactions in `collideWithTile(tileData, pos, isHit)` and act once on `isHit` (false while the physics only probes). Don't build a custom tile-collision engine. A tile layer draws cells changed with `setData` / `clearData` on its own; no `redraw()` needed.
 - Prefer world-space drawing (`drawTile`, `drawRect`, `drawText`, ...); most draw functions take a `screenSpace` parameter if needed.
 
 ## Pitfalls (each of these causes silent bugs)

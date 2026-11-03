@@ -79,14 +79,16 @@ function gameUpdate()
     if (ballVel.x > 0 && isOverlapping(ball, ballSize, vec2(rightX, rightY), paddleSize))
         bounceOffPaddle(rightX - (paddleSize.x + ballSize.x) / 2, rightY, -1);
 
-    if (ball.x < -half.x*1.5)
+    if (ball.x < -half.x)
     {
         ++rightScore;
+        cameraShake(.6);
         resetBall(1);
     }
     else if (ball.x > half.x)
     {
         ++leftScore;
+        cameraShake(.6);
         resetBall(-1);
     }
 }
@@ -97,6 +99,7 @@ function bounceOffPaddle(ballX, paddleY, dir)
     ballVel.x = dir * Math.abs(ballVel.x);
     ballVel.y += (ball.y - paddleY) * 0.05;
     ballVel = ballVel.normalize(ballSpeed);
+    cameraShake(.2, vec2(1, 0)); // a small sideways jolt on each hit
 }
 
 function gameUpdatePost()

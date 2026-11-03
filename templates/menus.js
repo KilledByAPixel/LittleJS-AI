@@ -1059,7 +1059,7 @@ function _toolbarToggleFullscreen()
 //       extraItems: [                         // custom controls go above BACK
 //           {type:'checkbox', label:'SCREEN SHAKE', value:true,
 //                            persist:'shake',
-//                            onChange: v => screenShakeEnabled = v},
+//                            onChange: v => setCameraShakeDistance(v ? .5 : 0)},
 //       ],
 //   });
 //

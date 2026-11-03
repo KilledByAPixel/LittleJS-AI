@@ -6,6 +6,27 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-03
+
+Ships engine **1.29.1** (up from 1.27.0).
+
+### Changed
+
+- Engine 1.29.1, four releases of new features: a camera plugin with `FollowCamera` (smoothing, dead zone, look ahead, level bounds) and `ThirdPersonCamera3D`, `cameraShake(amount, direction)`, normal maps for the 2D light system, `CanvasLayer` drawing in world space and `scroll`, tile layers that draw their changed cells without `redraw()`, `textureInfo.updateData`, `randPick` and `randWeighted`, `FirstPersonCamera3D` on a gamepad, 3D shaders that move vertices, `mesh.setVertexData`, Box2D one-way platforms, conveyor belts and `preSolve`, child objects whose `pos` and `angle` can be set, and much more precise TypeScript types. `littlejs.js` is now about 2.2MB.
+- Behavior changes in the engine: `CameraControl3D` and `FirstPersonCamera3D` set `render3D.camera` in `updateCamera()`, after every object has moved; `setData` / `clearData` with no `redraw` argument now draw the cell on the next render; a `TileLayer`'s `drawRect` / `drawTile` follow its angle and mirror. Removed: `audioSuspendedWhenHidden`. Nothing in the plugin's templates or examples was affected.
+- Screen shake is now the engine's `cameraShake`. AGENTS.md and the skills recommend it, and `FollowCamera` for a 2D camera that follows the player, instead of a hand-lerped `cameraPos`.
+- `templates/menuGame.html` follows its player with a `FollowCamera` (smoothing and a dead zone) over a dotted ground, Space shakes the view, and its SCREEN SHAKE option now really turns the shake off. `examples/pong/` shakes a little on each paddle hit and more on a score.
+
+### Fixed
+
+- `examples/pong/` scored a point for the right player only once the ball was half again as far past the left edge as the right edge needs, so the left side's point came late. Both sides now score at the field's edge.
+
+### Removed
+
+- `gameFx.js`'s own screen shake (`addScreenShake`, `setScreenShakeEnabled`, `isScreenShakeEnabled`) and the engine plugin it registered. It nudged `cameraPos` every frame, which fights a `FollowCamera`; use `cameraShake`. Games scaffolded earlier keep their own copy of `gameFx.js` and are not affected.
+- `examples/3dGame/` is refreshed from the engine: the island is a 3D level, so Esc then 0 opens the 3D level editor on it, and the ball rolls the way a `ThirdPersonCamera3D` faces.
+- `reference.md` is the engine's 1.29.1 reference (about 2700 lines); the `littlejs-api` skill's size note and the new-game skill's engine size check follow.
+
 ## [1.3.1] - 2026-10-14
 
 ### Changed

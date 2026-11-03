@@ -85,7 +85,7 @@ Single-file references to copy patterns from when adding a feature — not full 
 - [tweakableGame.html](templates/tweakableGame.html) — live-tweak globals with the engine's tweakables panel
 - [uiGame.html](templates/uiGame.html) — canvas-drawn UI (menus, sliders, dialogs)
 
-Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX + screen shake), `textureGenerator.js` (sprite painter). Live value tweaking needs no helper — `tweak()` is built into the engine's debug build.
+Mix in helper scripts to add features: `menus.js` (DOM menus + best score + game-over dialog + setPlaying/quitToTitle), `gameFx.js` (procedural SFX), `textureGenerator.js` (sprite painter). Live value tweaking needs no helper — `tweak()` is built into the engine's debug build.
 
 ### 🧊 3D games
 
