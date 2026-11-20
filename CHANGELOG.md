@@ -6,6 +6,18 @@ Notable changes to the **littlejs** Claude Code plugin. Follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-19
+
+Ships engine **1.31.0** (up from 1.29.1).
+
+### Changed
+
+- Engine 1.31.0, three releases of new features: `MeshCollider` makes any mesh part of the 3D level's collision (ramps, stairs, loaded models), moving `HeightMap` / `MeshCollider` / `VoxelMap` solids are lifts, 3D billboards and particles are lit, a `Shader` takes uniforms of the game's own (`shader.setUniform`), `InstancedMesh3D.setDataAt` for per-instance shader data, icons in text (`setTextIcon('coin', tile(5))`, then `':coin:'` in any drawn text), `engineIsFrozen()`, `uiSystem.isPressOverUI(button)`, a `GLTFObject`'s `color` and `transparent`, `readSaveData` giving back a `vec2` / `vec3` / `Color` where its default is one, pinch zoom and async `onRestart` in the level editors, and much faster 3D collision. `littlejs.js` is now about 2.6MB.
+- Behavior changes in the engine: 3D sprites, particles and `drawBillboard` are lit (set `emissive = 1` for the old look); 3D ground steeper than an object's `groundAngle` is slid down and not walked, on a `HeightMap` too; two 3D solids with mass trade momentum; `render3D.pick` and `engineObjectsRaycast3D` give back a glTF model or prefab, not its part; a 2D level object type made by an arrow function is called `make(pos, properties)`; `mousePosScreen` is half a pixel less; a `Timer` of a whole number of frames elapses on the frame it ends. Debug builds assert on more mistakes, like a key name with no capital (`'space'`). Nothing in the plugin's templates or examples was affected.
+- The conventions skill and AGENTS.md note the lit billboards, the 3D slope rule and capitalized key names; the level editor skill notes the arrow function call and async `onRestart`.
+- `examples/3dGame/` is refreshed from the engine: it survives the level editor taking out or replacing the terrain, and the engine sound stops when the level restarts.
+- `reference.md` is the engine's 1.31.0 reference (about 2800 lines) and the `custom-level-editor` skill bundles the 1.31.0 `EDITOR.md` and editor examples (the 3D one adds a walkable ramp with mesh collision); the skills' size notes follow.
+
 ## [1.5.0] - 2026-11-03
 
 ### Added

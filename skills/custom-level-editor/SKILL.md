@@ -7,7 +7,7 @@ description: Use when a LittleJS game needs a level editor or editable levels �
 
 LittleJS (1.23+) has two level editors inside the debug build — a 2D one that paints tile layers and places objects in a Tiled map, and a 3D one that places, moves, rotates and scales objects, paints blocks and sculpts terrain. Both are a starting point, meant to be turned into the editor for one particular game. **Do not write a level editor from scratch.** Undo, autosave, selection, copy and paste, snapping, file save and a play/edit toggle are already there.
 
-The full API with tested code for every feature is in `${CLAUDE_SKILL_DIR}/EDITOR.md` (the engine's own guide, ~330 lines — read it before writing editor code). Two complete small games that start in the editor are in `${CLAUDE_SKILL_DIR}/examples/`: `editor2D.js` and `editor3D.js`.
+The full API with tested code for every feature is in `${CLAUDE_SKILL_DIR}/EDITOR.md` (the engine's own guide, ~490 lines — read it before writing editor code). Two complete small games that start in the editor are in `${CLAUDE_SKILL_DIR}/examples/`: `editor2D.js` and `editor3D.js`.
 
 ## Pick the level of customization
 
@@ -35,14 +35,14 @@ This is the step that turns an existing game into one the editor can work on.
 2. **Register the game's types before loading**, by name, with default properties. Each default that is a number, boolean, string, `Color` or vector becomes an input in the editor's panel, saved per object.
    - 2D: `objectLayersAddType('Coin', Coin, {value: 1}, tile(6))` — the class is made with `new Coin(pos)`, the defaults are then set on it, and the tile is its icon in the editor.
    - 3D: `level3DAddType('Spawner', Spawner, {rate: 2, color: hsl(0, 1, .5)})` — the class is made with `new Spawner(pos3D, properties)`, so it needs its **own constructor** taking those two; one that forwards every argument to `EngineObject3D` would pass the properties as the mesh. `level3DAddMesh('Tree', mesh)` is a static prop with no class.
-   - A thing that is not an object (a player start, a camera point) is an arrow function — `objectLayersAddType('PlayerStart', (pos)=> playerStart = pos)`.
+   - A thing that is not an object (a player start, a camera point) is an arrow function — `objectLayersAddType('PlayerStart', (pos)=> playerStart = pos)`. An arrow function is called `make(pos, properties)` in both 2D and 3D (engine 1.31+), so do not give it a second parameter with a default, like `(pos, size=vec2(2))=> ...` — it would be handed the properties object.
 3. **Write one `loadLevel()`** that destroys everything and rebuilds from the data, and call it from `gameInit`:
    - 2D: `engineObjectsDestroy(); tileLayersLoad(level, tile(0, 16), 0, collisionLayerIndex); objectLayersLoad(level);` then make the player.
    - 3D: `engineObjectsDestroy(); level3DLoad(level);` then make the player.
 4. **Set the two hooks** that make the editor useful for playtesting:
 
    ```javascript
-   levelEditor.onRestart = loadLevel;                  // adds a Restart button
+   levelEditor.onRestart = loadLevel;                  // adds a Restart button; may be async (engine 1.31+)
    levelEditor.onPlayFrom = (pos)=> { player.pos = pos.copy(); player.velocity = vec2(); }; // "Play from mouse"
    ```
 
@@ -103,7 +103,7 @@ A good custom editor, in order: the game's types with useful default properties;
 
 ## Forking the editor
 
-The API adds things *beside* the editor's own tools; it does not change them. To change them, the editor's source has to be edited — `src/engineEditor.js` (2D, ~135KB) and `plugins/render3dEditor.js` (3D, ~165KB) in the engine repository, https://github.com/KilledByAPixel/LittleJS.
+The API adds things *beside* the editor's own tools; it does not change them. To change them, the editor's source has to be edited — `src/engineEditor.js` (2D, ~185KB) and `plugins/render3dEditor.js` (3D, ~205KB) in the engine repository, https://github.com/KilledByAPixel/LittleJS.
 
 A modified copy of either file **cannot be loaded as an extra script next to the engine**: the debug build already contains the editor, and its top-level `let`/`const`/`class` declarations would be declared twice, which is a load error. The way that works:
 

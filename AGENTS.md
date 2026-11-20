@@ -236,7 +236,12 @@ Common pitfalls
   `EngineObject3D`, and never `setGLEnable(false)` in a 3D game.
 - In 3D, Y is up and -Z is forward; builders take diameters, lights take a radius; `camera.fov`
   and `rotation3D` are radians.
-- The engine bundle now declares about 1600 top-level names (`vec3`, `Mesh`, `Shader`,
+- 3D sprites, particles and `drawBillboard` are lit by the scene (engine 1.30+); set
+  `emissive = 1` for a sprite or emitter that should keep its own colors.
+- 3D ground steeper than an object's `groundAngle` is slid down, not walked (engine 1.31+);
+  raise `groundAngle` on the walker for steep ramps. `new MeshCollider(mesh, pos3D)` makes any
+  mesh level collision.
+- The engine bundle now declares about 2100 top-level names (`vec3`, `Mesh`, `Shader`,
   `buildGrid`, `tweak`, `levelEditor`, `render3D`, ...). A game-level `function` with one of
   those names silently REPLACES the engine's; a `let`/`const`/`class` throws at load. Grep
   `dist/littlejs.js` for a name before declaring it at top level.
